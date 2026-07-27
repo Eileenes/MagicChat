@@ -136,10 +136,11 @@ type conversationReferencePayload struct {
 }
 
 type messagePayload struct {
-	Body    json.RawMessage `json:"body"`
-	ID      string          `json:"id"`
-	Seq     int64           `json:"seq"`
-	Summary string          `json:"summary"`
+	Body             json.RawMessage `json:"body"`
+	ID               string          `json:"id"`
+	ReplyToMessageID string          `json:"reply_to_message_id,omitempty"`
+	Seq              int64           `json:"seq"`
+	Summary          string          `json:"summary"`
 }
 
 type messageBody struct {
@@ -190,8 +191,13 @@ type forwardBundleItemPayload struct {
 }
 
 type sendMessageRequestPayload struct {
-	Target  sendMessageTarget `json:"target"`
-	Message messageBody       `json:"message"`
+	Target           sendMessageTarget `json:"target"`
+	Message          messageBody       `json:"message"`
+	ReplyToMessageID string            `json:"reply_to_message_id,omitempty"`
+}
+
+type sendMessageResponsePayload struct {
+	Message messagePayload `json:"message"`
 }
 
 type sendMessageTarget struct {
@@ -276,12 +282,14 @@ type temporaryFileReadURLPayload struct {
 }
 
 type historyMessagePayload struct {
-	Body      json.RawMessage `json:"body,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
-	ID        string          `json:"id"`
-	Seq       int64           `json:"seq"`
-	Sender    senderPayload   `json:"sender"`
-	Summary   string          `json:"summary"`
+	Body             json.RawMessage        `json:"body,omitempty"`
+	CreatedAt        time.Time              `json:"created_at"`
+	ID               string                 `json:"id"`
+	ReplyTo          *historyMessagePayload `json:"reply_to,omitempty"`
+	ReplyToMessageID string                 `json:"reply_to_message_id,omitempty"`
+	Seq              int64                  `json:"seq"`
+	Sender           senderPayload          `json:"sender"`
+	Summary          string                 `json:"summary"`
 }
 
 func New(ctx context.Context, cfg config.Config) (*Client, error) {
@@ -702,11 +710,14 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 			}
 		}
 		if needsTopic {
-			if err := sendMarkdownReply(ctx, writeJSON, payload.Conversation, complexTaskTopicNotice); err != nil {
+			notice, err := sendMarkdownReplyRequest(
+				ctx, requester, payload.Conversation, complexTaskTopicNotice, payload.Message.ID,
+			)
+			if err != nil {
 				log.Printf("send agent topic notice failed: %v", err)
 				return sendAgentFallback(ctx, prepared.ErrorSink) == nil
 			}
-			topic, err := createConversationTopic(ctx, requester, payload.Conversation.ID, payload.Message.ID)
+			topic, err := createConversationTopic(ctx, requester, payload.Conversation.ID, notice.ID)
 			if err != nil {
 				log.Printf("create agent topic failed: %v", err)
 				return sendAgentFallback(ctx, prepared.ErrorSink) == nil
@@ -822,7 +833,13 @@ func prepareAgentRunWithAuthorization(ctx context.Context, requester appRequeste
 	if conversationContext.Topic != nil {
 		source := conversationContext.Topic.SourceMessage
 		source.Seq = 0
-		historyMessages = append([]historyMessagePayload{source}, historyMessages...)
+		topicContextMessages := []historyMessagePayload{source}
+		if source.ReplyTo != nil {
+			quoted := *source.ReplyTo
+			quoted.Seq = 0
+			topicContextMessages = append([]historyMessagePayload{quoted}, topicContextMessages...)
+		}
+		historyMessages = append(topicContextMessages, historyMessages...)
 	}
 	history, err := buildAgentHistory(payload.Message.ID, historyMessages)
 	if err != nil {
@@ -1379,6 +1396,43 @@ func sendMarkdownReply(ctx context.Context, writeJSON func(context.Context, enve
 		Method:  methodMessageSend,
 		Payload: payload,
 	})
+}
+
+func sendMarkdownReplyRequest(
+	ctx context.Context,
+	requester appRequester,
+	conversation conversationPayload,
+	content string,
+	replyToMessageID string,
+) (messagePayload, error) {
+	targetType := conversation.Type
+	switch targetType {
+	case "app", "group", "topic":
+	default:
+		return messagePayload{}, fmt.Errorf("unsupported reply conversation type %q", targetType)
+	}
+	raw, err := requester.Request(ctx, methodMessageSend, sendMessageRequestPayload{
+		Target: sendMessageTarget{
+			Type:           targetType,
+			ConversationID: conversation.ID,
+		},
+		Message: messageBody{
+			Type:    "markdown",
+			Content: content,
+		},
+		ReplyToMessageID: strings.TrimSpace(replyToMessageID),
+	})
+	if err != nil {
+		return messagePayload{}, err
+	}
+	var response sendMessageResponsePayload
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return messagePayload{}, fmt.Errorf("parse message send response: %w", err)
+	}
+	if strings.TrimSpace(response.Message.ID) == "" {
+		return messagePayload{}, errors.New("message send response is invalid")
+	}
+	return response.Message, nil
 }
 
 func newRequestID() string {

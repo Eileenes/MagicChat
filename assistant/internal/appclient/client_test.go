@@ -508,6 +508,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 	var actions []string
 	var agentRequests []agent.Request
 	var sent []envelope
+	var notice sendMessageRequestPayload
 	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
 		switch method {
 		case methodConversationMessagesList:
@@ -516,6 +517,16 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 					historyTextMessage("message-1", 1, "user-1", "Alice", "请处理 {(@app/"+appID+")}"),
 				},
 			})
+		case methodMessageSend:
+			actions = append(actions, "send-notice")
+			raw, err := json.Marshal(payload)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(raw, &notice); err != nil {
+				return nil, err
+			}
+			return json.Marshal(sendMessageResponsePayload{Message: messagePayload{ID: "notice-1", Seq: 2}})
 		case methodConversationTopicCreate:
 			actions = append(actions, "create-topic")
 			var topicRequest topicMutationRequestPayload
@@ -526,7 +537,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 			if err := json.Unmarshal(raw, &topicRequest); err != nil {
 				return nil, err
 			}
-			if topicRequest.ConversationID != "conversation-group-1" || topicRequest.SourceMessageID != "message-1" {
+			if topicRequest.ConversationID != "conversation-group-1" || topicRequest.SourceMessageID != "notice-1" {
 				t.Fatalf("topic creation request = %#v", topicRequest)
 			}
 			return testTopicMutationResponse("topic-1", "请处理")
@@ -552,11 +563,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 			if err := json.Unmarshal(message.Payload, &payload); err != nil {
 				t.Fatalf("decode sent message: %v", err)
 			}
-			if payload.Message.Content == complexTaskTopicNotice {
-				actions = append(actions, "send-notice")
-			} else {
-				actions = append(actions, "send-reply")
-			}
+			actions = append(actions, "send-reply")
 			sent = append(sent, message)
 			return nil
 		},
@@ -570,21 +577,17 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 		agentRequests[0].Conversation.Parent.Type != "group" {
 		t.Fatalf("conversation = %#v, want topic-1 topic", agentRequests[0].Conversation)
 	}
-	if len(sent) != 2 {
-		t.Fatalf("sent count = %d, want 2", len(sent))
+	if len(sent) != 1 {
+		t.Fatalf("sent count = %d, want 1", len(sent))
 	}
 	if !slices.Equal(actions, []string{"send-notice", "create-topic", "send-reply"}) {
 		t.Fatalf("actions = %v", actions)
 	}
-	var notice sendMessageRequestPayload
-	if err := json.Unmarshal(sent[0].Payload, &notice); err != nil {
-		t.Fatalf("decode topic notice: %v", err)
-	}
-	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice {
+	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice || notice.ReplyToMessageID != "message-1" {
 		t.Fatalf("topic notice = %#v", notice)
 	}
 	var reply sendMessageRequestPayload
-	if err := json.Unmarshal(sent[1].Payload, &reply); err != nil {
+	if err := json.Unmarshal(sent[0].Payload, &reply); err != nil {
 		t.Fatalf("decode topic reply: %v", err)
 	}
 	if reply.Target.Type != "topic" || reply.Target.ConversationID != "topic-1" {
@@ -604,6 +607,8 @@ func TestHandleParsedServerMessageRunsGroupMessageWithUppercaseDirectAppMention(
 					historyTextMessage("message-1", 1, "user-1", "Alice", "请处理 {(@app/"+mentionedAppID+")}"),
 				},
 			})
+		case methodMessageSend:
+			return json.Marshal(sendMessageResponsePayload{Message: messagePayload{ID: "notice-1", Seq: 2}})
 		case methodConversationTopicCreate:
 			return testTopicMutationResponse("topic-1", "请处理")
 		default:
@@ -676,7 +681,13 @@ func TestHandleParsedServerMessageRecoversAgentSessionFromTopic(t *testing.T) {
 					ID: "parent-group", Name: "产品讨论组", Type: "group",
 				},
 				ParentConversationID: "parent-group",
-				SourceMessage:        historyTextMessage("parent-message-42", 42, "user-1", "Alice", "请整理发布计划"),
+				SourceMessage: func() historyMessagePayload {
+					source := historyTextMessage("parent-notice-43", 43, appID, "茉莉", complexTaskTopicNotice)
+					quoted := historyTextMessage("parent-message-42", 42, "user-1", "Alice", "请整理发布计划")
+					source.ReplyToMessageID = quoted.ID
+					source.ReplyTo = &quoted
+					return source
+				}(),
 			},
 		})
 	})
@@ -698,8 +709,9 @@ func TestHandleParsedServerMessageRecoversAgentSessionFromTopic(t *testing.T) {
 		request.Conversation.Parent == nil || request.Conversation.Parent.ID != "parent-group" || request.Conversation.Parent.Type != "group" {
 		t.Fatalf("recovered agent request = %#v", request)
 	}
-	if len(request.History) != 3 || request.History[0].Seq != 0 || request.History[0].Summary != "请整理发布计划" ||
-		request.History[1].Summary != "已经开始处理" || request.History[2].Summary != "我们先讨论一下实现方案" {
+	if len(request.History) != 4 || request.History[0].Seq != 0 || request.History[0].Summary != "请整理发布计划" ||
+		request.History[1].Seq != 0 || request.History[1].Summary != complexTaskTopicNotice ||
+		request.History[2].Summary != "已经开始处理" || request.History[3].Summary != "我们先讨论一下实现方案" {
 		t.Fatalf("recovered topic history = %#v", request.History)
 	}
 	if len(sent) != 1 {
@@ -1713,6 +1725,13 @@ func testTopicMutationResponse(topicID, name string) (json.RawMessage, error) {
 		Conversation: conversationPayload{ID: topicID, Name: name, Type: "topic"},
 		Created:      true,
 	})
+}
+
+func testMessageSendResponse(messageID string) json.RawMessage {
+	raw, _ := json.Marshal(sendMessageResponsePayload{
+		Message: messagePayload{ID: messageID},
+	})
+	return raw
 }
 
 func waitForSignal(t *testing.T, ch <-chan struct{}, label string) {

@@ -87,6 +87,48 @@ func TestServiceCreateAndListPreserveIdempotencyOutboxAndReply(t *testing.T) {
 	}
 }
 
+func TestServiceAppMessageCanReplyToVisibleMessage(t *testing.T) {
+	db := openMessageTestDB(t)
+	fixture := insertMessageTestFixture(t, db)
+	service := NewService(Dependencies{DB: db, Bodies: &messageBodyProcessorRecorder{}})
+
+	original, err := service.Create(context.Background(), CreateCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "user-instruction", Body: json.RawMessage(`{"type":"text","content":"请分析项目进展"}`),
+	})
+	if err != nil {
+		t.Fatalf("create original message: %v", err)
+	}
+	replyBody := json.RawMessage(`{"type":"markdown","content":"这个工作有点复杂"}`)
+	reply, err := service.CreateAsApp(context.Background(), CreateAsAppCommand{
+		AppID: fixture.app.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "app-quoted-reply", ReplyToMessageID: original.Message.ID, Body: replyBody,
+		Finalize: func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+			return body, "这个工作有点复杂", nil
+		},
+	})
+	if err != nil || !reply.Created || reply.Message.ReplyToMessageID != original.Message.ID {
+		t.Fatalf("create app quoted reply = %#v, err = %v", reply, err)
+	}
+	var stored store.Message
+	if err := db.First(&stored, "id = ?", reply.Message.ID).Error; err != nil {
+		t.Fatalf("load app quoted reply: %v", err)
+	}
+	if stored.ReplyToMessageID == nil || *stored.ReplyToMessageID != original.Message.ID {
+		t.Fatalf("stored reply_to_message_id = %v, want %s", stored.ReplyToMessageID, original.Message.ID)
+	}
+	_, err = service.CreateAsApp(context.Background(), CreateAsAppCommand{
+		AppID: fixture.app.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "invalid-app-quote", ReplyToMessageID: uuid.NewString(), Body: replyBody,
+		Finalize: func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+			return body, "invalid", nil
+		},
+	})
+	if ErrorCodeOf(err) != CodeInvalidRequest {
+		t.Fatalf("invalid app quote error = %v, want invalid_request", err)
+	}
+}
+
 func TestDirectAppMessagesRequireCurrentAccessWhileGroupMessagesUseMembership(t *testing.T) {
 	db := openMessageTestDB(t)
 	fixture := insertMessageTestFixture(t, db)

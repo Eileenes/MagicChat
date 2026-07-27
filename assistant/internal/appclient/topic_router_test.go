@@ -188,7 +188,8 @@ func TestHandleParsedServerMessageRepliesInCurrentConversationWhenTopicIsNotNeed
 func TestHandleParsedServerMessageDefaultsToTopicWhenRoutingFails(t *testing.T) {
 	appID := "00000000-0000-0000-0000-000000000001"
 	var sent []envelope
-	requester := appRequestFunc(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+	var notice sendMessageRequestPayload
+	requester := appRequestFunc(func(_ context.Context, method string, request any) (json.RawMessage, error) {
 		switch method {
 		case methodConversationMessagesList:
 			return json.Marshal(appListConversationMessagesResponsePayload{
@@ -196,7 +197,27 @@ func TestHandleParsedServerMessageDefaultsToTopicWhenRoutingFails(t *testing.T) 
 					historyTextMessage("message-1", 1, "user-1", "Alice", "请处理 {(@app/"+appID+")}"),
 				},
 			})
+		case methodMessageSend:
+			raw, err := json.Marshal(request)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(raw, &notice); err != nil {
+				return nil, err
+			}
+			return json.Marshal(sendMessageResponsePayload{Message: messagePayload{ID: "notice-1", Seq: 2}})
 		case methodConversationTopicCreate:
+			var topicRequest topicMutationRequestPayload
+			raw, err := json.Marshal(request)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(raw, &topicRequest); err != nil {
+				return nil, err
+			}
+			if topicRequest.SourceMessageID != "notice-1" {
+				t.Fatalf("topic source message id = %q, want notice-1", topicRequest.SourceMessageID)
+			}
 			return testTopicMutationResponse("topic-1", "请处理")
 		default:
 			t.Fatalf("unexpected app request method %q", method)
@@ -224,18 +245,14 @@ func TestHandleParsedServerMessageDefaultsToTopicWhenRoutingFails(t *testing.T) 
 		},
 	)
 
-	if !handled || len(sent) != 2 {
+	if !handled || len(sent) != 1 {
 		t.Fatalf("handled = %t, sent = %d", handled, len(sent))
 	}
-	var notice sendMessageRequestPayload
-	if err := json.Unmarshal(sent[0].Payload, &notice); err != nil {
-		t.Fatalf("decode topic notice: %v", err)
-	}
-	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice {
+	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice || notice.ReplyToMessageID != "message-1" {
 		t.Fatalf("topic notice = %#v", notice)
 	}
 	var reply sendMessageRequestPayload
-	if err := json.Unmarshal(sent[1].Payload, &reply); err != nil {
+	if err := json.Unmarshal(sent[0].Payload, &reply); err != nil {
 		t.Fatalf("decode reply: %v", err)
 	}
 	if reply.Target.Type != "topic" || reply.Target.ConversationID != "topic-1" {

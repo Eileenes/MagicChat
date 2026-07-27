@@ -539,6 +539,93 @@ func TestAppTopicLifecycleIsIdempotentParticipantScopedAndSequenceSafe(t *testin
 	}
 }
 
+func TestAppTopicCreatedFromQuotedNoticeKeepsOriginalInstructionSemantics(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 27, 5, 0, 0, 0, time.UTC)
+	requester := insertConversationTestUser(t, db, "quoted-topic-requester@example.com", "Requester", now)
+	member := insertConversationTestUser(t, db, "quoted-topic-member@example.com", "Member", now)
+	parent, instruction := insertConversationTopicFixture(t, db, requester, member, now)
+	app := store.App{
+		ID: uuid.NewString(), Name: "Assistant", Enabled: true,
+		Visibility: store.AppVisibilityPublic, ConnectionSecret: "assistant-secret",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&store.ConversationMember{
+		ConversationID: parent.ID, MemberType: store.ConversationMemberTypeApp,
+		MemberID: app.ID, Role: store.ConversationMemberRoleMember,
+		JoinedAt: now, HistoryVisibleFromSeq: 1,
+	}).Error; err != nil {
+		t.Fatalf("create app member: %v", err)
+	}
+	appID := app.ID
+	notice := store.Message{
+		ID: uuid.NewString(), ConversationID: parent.ID, Seq: 2,
+		SenderType: store.MessageSenderTypeApp, SenderID: &appID,
+		ReplyToMessageID: &instruction.ID,
+		Body:             json.RawMessage(`{"type":"markdown","content":"这个工作有点复杂，我会创建一个独立的话题来跟进。"}`),
+		Summary:          "这个工作有点复杂，我会创建一个独立的话题来跟进。",
+		CreatedAt:        now.Add(time.Second), UpdatedAt: now.Add(time.Second),
+	}
+	if err := db.Create(&notice).Error; err != nil {
+		t.Fatalf("create quoted notice: %v", err)
+	}
+	if err := db.Model(&store.Conversation{}).Where("id = ?", parent.ID).Updates(map[string]any{
+		"last_message_id": notice.ID, "last_message_seq": notice.Seq,
+		"last_message_at": notice.CreatedAt, "last_message_summary": notice.Summary,
+	}).Error; err != nil {
+		t.Fatalf("advance parent conversation: %v", err)
+	}
+
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now.Add(2 * time.Second) }})
+	created, err := service.CreateTopicAsApp(context.Background(), AppCreateTopicCommand{
+		AppID: app.ID, ParentConversationID: parent.ID, SourceMessageID: notice.ID,
+	})
+	if err != nil || !created.Created || created.SourceMessageID != notice.ID || created.Name != instruction.Summary {
+		t.Fatalf("create quoted app topic = %#v, err = %v", created, err)
+	}
+	for _, participant := range []struct {
+		memberType string
+		memberID   string
+		want       int64
+	}{
+		{store.ConversationMemberTypeApp, app.ID, 1},
+		{store.ConversationMemberTypeUser, requester.ID, 1},
+		{store.ConversationMemberTypeUser, member.ID, 0},
+	} {
+		var count int64
+		if err := db.Model(&store.ConversationTopicParticipant{}).Where(
+			"conversation_id = ? AND participant_type = ? AND participant_id = ?",
+			created.ConversationID, participant.memberType, participant.memberID,
+		).Count(&count).Error; err != nil {
+			t.Fatalf("count participant: %v", err)
+		}
+		if count != participant.want {
+			t.Fatalf("participant %s/%s count = %d, want %d", participant.memberType, participant.memberID, count, participant.want)
+		}
+	}
+	if err := db.Model(&store.ConversationMember{}).Where(
+		"conversation_id = ? AND member_type = ? AND member_id = ?",
+		parent.ID, store.ConversationMemberTypeUser, requester.ID,
+	).Update("role", store.ConversationMemberRoleMember).Error; err != nil {
+		t.Fatalf("demote requester: %v", err)
+	}
+	detail, err := service.GetTopic(context.Background(), GetTopicCommand{
+		Actor: actorFromTestUser(requester), TopicConversationID: created.ConversationID,
+	})
+	if err != nil || !detail.CanArchive || detail.SourceMessage.ID != notice.ID || detail.SourceMessage.Sender.ID != app.ID {
+		t.Fatalf("quoted topic detail = %#v, err = %v", detail, err)
+	}
+	archived, err := service.ArchiveTopic(context.Background(), ArchiveTopicCommand{
+		Actor: actorFromTestUser(requester), TopicConversationID: created.ConversationID,
+	})
+	if err != nil || archived.Topic == nil || !archived.Topic.Archived {
+		t.Fatalf("requester archives quoted topic = %#v, err = %v", archived, err)
+	}
+}
+
 func TestClosingTopicRollsBackWhenAppEventOutboxInsertFails(t *testing.T) {
 	db := openConversationTestDB(t)
 	now := time.Date(2026, 7, 20, 8, 15, 0, 0, time.UTC)

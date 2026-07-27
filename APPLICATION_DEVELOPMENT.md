@@ -181,6 +181,7 @@ const ws = new WebSocket(process.env.MAGICCHAT_APP_WS_URL, {
     "message": {
       "id": "消息 ID",
       "seq": 42,
+      "reply_to_message_id": "被引用消息 ID（可选）",
       "body": {"type": "text", "content": "请生成本周报表"},
       "summary": "请生成本周报表",
       "created_at": "2026-07-20T06:05:00Z"
@@ -391,6 +392,7 @@ function resolvePendingRequest(replyTo, envelope) {
 | `target.type` | 是 | `user`、`app`、`group`、`topic` 或 `conversation`。 |
 | `target.user_id` | 条件必填 | `target.type=user` 时使用。 |
 | `target.conversation_id` | 条件必填 | 其他目标类型使用。 |
+| `reply_to_message_id` | 否 | 引用同一目标会话内当前应用可见的消息。 |
 | `message` | 是 | 消息 body。 |
 
 示例：
@@ -401,6 +403,7 @@ function resolvePendingRequest(replyTo, envelope) {
     "type": "group",
     "conversation_id": "群聊 ID"
   },
+  "reply_to_message_id": "被引用消息 ID",
   "message": {
     "type": "markdown",
     "content": "## 处理结果\n\n已生成 5 项统计。"
@@ -448,7 +451,7 @@ function resolvePendingRequest(replyTo, envelope) {
 
 用户提交后，应用通过可靠的 `choice.response_created` 事件获取所选 ID。该事件必须与其他可靠事件一样在业务处理成功后调用 `events.ack`。
 
-响应包含 `conversation`、`message` 和 `created`。同一请求 ID 重试不会重复发送。
+响应包含 `conversation`、`message` 和 `created`；引用消息时，响应的 `message.reply_to_message_id` 会返回被引用消息 ID。同一请求 ID 重试不会重复发送。
 
 ### 4.4 `users.get`
 
