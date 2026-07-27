@@ -48,7 +48,10 @@ export const IPC = {
   transportRequest: "desktop:v1:transport-request",
   updaterCheck: "desktop:v1:updater-check",
   updaterDownload: "desktop:v1:updater-download",
+  updaterGetState: "desktop:v1:updater-get-state",
   updaterInstall: "desktop:v1:updater-install",
+  updaterOpenManual: "desktop:v1:updater-open-manual",
+  updaterOpenRelease: "desktop:v1:updater-open-release",
   updaterState: "desktop:v1:updater-state",
   unknownServer: "desktop:v1:unknown-server",
 } as const
@@ -100,11 +103,48 @@ export type RendererRuntimeSnapshot = Readonly<{
   page: "chat" | "contacts" | "init" | "login" | "projects" | "setup" | "unknown"
 }>
 
+export type UpdaterStatus =
+  | "available"
+  | "checking"
+  | "downloaded"
+  | "downloading"
+  | "error"
+  | "idle"
+  | "installing"
+  | "manual"
+  | "unsupported"
+
+export type UpdaterErrorCode =
+  | "checksum_invalid"
+  | "disk_full"
+  | "metadata_invalid"
+  | "network"
+  | "permission_denied"
+  | "platform_mismatch"
+  | "platform_signature_required"
+  | "rate_limited"
+  | "update_failed"
+
 export type UpdaterState = Readonly<{
-  errorCode?: string
+  currentVersion: string
+  errorCode?: UpdaterErrorCode
+  installMode: "manual" | "ota" | "unsupported"
+  installationSource: "appimage" | "deb" | "development" | "mac_app" | "nsis" | "unknown"
+  manualAction?: Readonly<{ label: string }>
   progress?: number
-  status: "available" | "checking" | "downloaded" | "downloading" | "error" | "idle" | "manual"
-  version?: string
+  retryable: boolean
+  status: UpdaterStatus
+  targetVersion?: string
+}>
+
+export type UpdaterInstallResult = Readonly<{
+  reason?:
+    | "active_transfers"
+    | "install_failed"
+    | "install_in_progress"
+    | "not_downloaded"
+    | "prepare_failed"
+  status: "blocked" | "failed" | "started"
 }>
 
 export interface DesktopBridge {
@@ -167,7 +207,10 @@ export interface DesktopBridge {
   updater: {
     check(): Promise<UpdaterState>
     download(): Promise<void>
-    install(): Promise<void>
+    getState(): Promise<UpdaterState>
+    install(): Promise<UpdaterInstallResult>
+    openManualDownload(): Promise<void>
+    openReleasePage(): Promise<void>
     subscribe(listener: (state: UpdaterState) => void): () => void
   }
 }

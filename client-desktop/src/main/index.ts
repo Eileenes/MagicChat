@@ -70,9 +70,15 @@ async function start(): Promise<void> {
     await store.setSettings({ selectedServerId: profile.id })
     await windows.verifyAndNavigate(`/chat/${encodeURIComponent(input.conversationId)}${input.messageId ? `?message=${encodeURIComponent(input.messageId)}` : ""}`)
   })
-  const updater = new UpdaterService()
   const http = new HttpTransport(profiles, sessions)
   const uploads = new StreamingUploadController(profiles, sessions)
+  const updater = new UpdaterService({
+    hasActiveTransfers: () => files.hasActiveTransfers() || uploads.hasActiveTransfers(),
+    prepareInstall: async () => {
+      windows.prepareToQuit()
+      return () => windows.cancelPrepareToQuit()
+    },
+  })
   const unregisterIpc = registerIpc({ auth, credentials, diagnostics, files, http, notifications, profiles, realtime, sessions, store, system, updater, uploads })
 
   const hidden = process.argv.includes("--hidden") && store.getSettings().autoLaunch
@@ -96,6 +102,12 @@ async function start(): Promise<void> {
   let cleanupStarted = false
   let transferExitConfirmed = false
   app.on("before-quit", (event) => {
+    if (updater.isInstallIntent()) {
+      auth.dispose()
+      realtime.closeAll()
+      void files.cleanup()
+      return
+    }
     if (cleanupStarted) return
     if (!transferExitConfirmed && (files.hasActiveTransfers() || uploads.hasActiveTransfers())) {
       event.preventDefault()
@@ -108,8 +120,9 @@ async function start(): Promise<void> {
     auth.dispose()
     realtime.closeAll()
     event.preventDefault()
-    void files.cleanup().finally(() => { unregisterIpc(); app.quit() })
+    void files.cleanup().finally(() => { updater.dispose(); unregisterIpc(); app.quit() })
   })
+  app.once("will-quit", () => updater.dispose())
   process.on("uncaughtException", (error) => void diagnostics.record("main", error.name))
   process.on("unhandledRejection", () => void diagnostics.record("main", "unhandled-rejection"))
   app.on("child-process-gone", (_event, details) => {

@@ -1,4 +1,4 @@
-name: Desktop Release
+name: Desktop Stable Release
 
 on:
   push:
@@ -6,10 +6,44 @@ on:
       - "desktop-v*"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: desktop-stable-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.release.outputs.commit }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: 在安装依赖前验证 Annotated Tag
+        id: release
+        run: node client-desktop/scripts/prepare-release-worktree.mjs --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA" --github-output "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: client-desktop/pnpm-lock.yaml
+      - name: 安装依赖
+        working-directory: ${{ steps.release.outputs.desktop-directory }}
+        run: pnpm install --frozen-lockfile
+      - name: 执行平台无关质量门禁
+        working-directory: ${{ steps.release.outputs.desktop-directory }}
+        run: pnpm check && pnpm test && pnpm build && pnpm verify:build && pnpm verify:workflow
+
   package:
+    needs: quality
     env:
       MAGICCHAT_RELEASE_CHANNEL: stable
     strategy:
@@ -37,9 +71,63 @@ jobs:
             target: AppImage deb
             arch: arm64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: 准备内部临时构建树
+        id: worktree
+        shell: bash
+        run: node client-desktop/scripts/prepare-release-worktree.mjs --tag "${{ needs.quality.outputs.tag }}" --commit "${{ needs.quality.outputs.commit }}" --github-output "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: client-desktop/pnpm-lock.yaml
+      - name: 安装依赖
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        run: pnpm install --frozen-lockfile
+      - name: 生成并校验生产构建
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        run: pnpm build && pnpm verify:build
+      - name: 生成 Stable 制品
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --${{ matrix.platform }} ${{ matrix.target }} --${{ matrix.arch }} --config electron-builder.yml --publish never
+      - name: 校验安装包真实版本与架构
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        run: pnpm verify:package -- --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --tag "${{ needs.quality.outputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: magicchat-desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.exe
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.dmg
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.zip
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.AppImage
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.deb
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.blockmap
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/latest.yml
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/latest-mac.yml
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/latest-linux.yml
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/latest-linux-arm64.yml
+          if-no-files-found: error
+
+  release:
+    needs: [quality, package]
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 11.1.3
@@ -50,38 +138,23 @@ jobs:
           cache-dependency-path: client-desktop/pnpm-lock.yaml
       - working-directory: client-desktop
         run: pnpm install --frozen-lockfile
-      - working-directory: client-desktop
-        run: pnpm verify:boundaries && pnpm typecheck && pnpm test && pnpm build && pnpm verify:build
-      - name: 生成未签名 POC 安装包
-        working-directory: client-desktop
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: pnpm exec electron-builder --${{ matrix.platform }} ${{ matrix.target }} --${{ matrix.arch }} --config electron-builder.yml
-      - name: 校验安装包目录元数据与内容
-        working-directory: client-desktop
-        run: pnpm verify:package -- --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: magicchat-desktop-${{ matrix.platform }}-${{ matrix.arch }}
-          path: |
-            client-desktop/dist/*.exe
-            client-desktop/dist/*.dmg
-            client-desktop/dist/*.zip
-            client-desktop/dist/*.AppImage
-            client-desktop/dist/*.deb
-            client-desktop/dist/*.yml
-            client-desktop/dist/*.blockmap
-          if-no-files-found: error
-
-  release:
-    needs: package
-    runs-on: ubuntu-latest
-    steps:
       - uses: actions/download-artifact@v5
         with:
           path: artifacts
-          merge-multiple: true
-      - name: 创建 GitHub Release
+      - name: 生成精确发布资产计划
+        working-directory: client-desktop
+        run: |
+          pnpm release:prepare-assets -- \
+            --tag "${{ needs.quality.outputs.tag }}" \
+            --commit "${{ needs.quality.outputs.commit }}" \
+            --output ../release-assets \
+            --input win:x64:../artifacts/magicchat-desktop-win-x64 \
+            --input win:arm64:../artifacts/magicchat-desktop-win-arm64 \
+            --input mac:universal:../artifacts/magicchat-desktop-mac-universal \
+            --input linux:x64:../artifacts/magicchat-desktop-linux-x64 \
+            --input linux:arm64:../artifacts/magicchat-desktop-linux-arm64
+      - name: 通过 Draft 事务发布并复核远端摘要
+        working-directory: client-desktop
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/* --draft --prerelease --title "MagicChat Desktop $GITHUB_REF_NAME" --notes "未签名 POC 构建，客户端使用 Stable 更新通道。"
+        run: pnpm release:publish -- --plan ../release-assets/release-plan.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
