@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   openManual: vi.fn(),
   openRelease: vi.fn(),
   openSettings: undefined as (() => void) | undefined,
+  messageNotificationSoundEnabled: undefined as (() => boolean) | undefined,
   remove: vi.fn(),
 }))
 
@@ -27,10 +28,15 @@ vi.mock("@/app/App", () => ({
 }))
 
 vi.mock("@/lib/desktop-host", () => ({
-  configureDesktopHost: (options: { openSettings(): void }) => {
+  configureDesktopHost: (options: {
+    messageNotificationSoundEnabled?(): boolean
+    openSettings(): void
+  }) => {
     mocks.openSettings = options.openSettings
+    mocks.messageNotificationSoundEnabled = options.messageNotificationSoundEnabled
     return () => {
       mocks.openSettings = undefined
+      mocks.messageNotificationSoundEnabled = undefined
     }
   },
   createDesktopRealtimeClient: vi.fn(),
@@ -52,6 +58,7 @@ vi.mock("./desktop-transport", () => ({
 describe("桌面设置服务器管理", () => {
   beforeEach(() => {
     mocks.openSettings = undefined
+    mocks.messageNotificationSoundEnabled = undefined
     mocks.openManual.mockReset().mockResolvedValue(undefined)
     mocks.openRelease.mockReset().mockResolvedValue(undefined)
     mocks.remove.mockResolvedValue(undefined)
@@ -100,6 +107,48 @@ describe("桌面设置服务器管理", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("本地配置写入失败")
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument()
+  })
+
+  it("展示并保存新消息提示音开关", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    const soundToggle = screen.getByRole("checkbox", { name: "新消息提示音" })
+    expect(soundToggle).toBeChecked()
+
+    await user.click(soundToggle)
+
+    expect(bridge.settings.set).toHaveBeenCalledWith({ messageSoundEnabled: false })
+    await waitFor(() => expect(soundToggle).not.toBeChecked())
+    await waitFor(() => expect(mocks.messageNotificationSoundEnabled?.()).toBe(false))
+  })
+
+  it("设置保存失败时保留原值并显示错误", async () => {
+    const bridge = createDesktopBridge()
+    vi.mocked(bridge.settings.set).mockRejectedValueOnce(
+      new Error("EACCES: permission denied, rename '/Users/test/desktop-config.json'"),
+    )
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    const soundToggle = screen.getByRole("checkbox", { name: "新消息提示音" })
+    await user.click(soundToggle)
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("设置保存失败，请重试")
+    expect(screen.queryByText(/Users\/test/)).not.toBeInTheDocument()
+    expect(soundToggle).toBeChecked()
+    expect(mocks.messageNotificationSoundEnabled?.()).toBe(true)
   })
 
   it("展示实验性更新信息并支持键盘触发手动升级", async () => {
@@ -242,6 +291,13 @@ function createDesktopBridge(
     retryable: false,
     status: "manual",
   }
+  let settings = {
+    autoLaunch: false,
+    closeBehavior: "background" as const,
+    messageSoundEnabled: true,
+    notificationPrivacy: "metadata" as const,
+    selectedServerId: profile.id,
+  }
   return {
     app: {
       info: vi.fn().mockResolvedValue({
@@ -290,13 +346,11 @@ function createDesktopBridge(
       select: vi.fn(),
     },
     settings: {
-      get: vi.fn().mockResolvedValue({
-        autoLaunch: false,
-        closeBehavior: "background",
-        notificationPrivacy: "metadata",
-        selectedServerId: profile.id,
+      get: vi.fn().mockImplementation(async () => ({ ...settings })),
+      set: vi.fn().mockImplementation(async (patch) => {
+        settings = { ...settings, ...patch }
+        return { ...settings }
       }),
-      set: vi.fn(),
     },
     shell: { openExternal: vi.fn() },
     transport: {
