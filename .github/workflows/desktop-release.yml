@@ -71,7 +71,7 @@ jobs:
             target: AppImage deb
             arch: arm64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
@@ -94,7 +94,23 @@ jobs:
       - name: 生成并校验生产构建
         working-directory: ${{ steps.worktree.outputs.desktop-directory }}
         run: pnpm build && pnpm verify:build
-      - name: 生成 Stable 制品
+      - name: 生成 macOS 临时仅签名制品
+        if: matrix.platform == 'mac'
+        shell: bash
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        env:
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          DEBUG: electron-osx-sign*
+        run: |
+          set -euo pipefail
+          : "${CSC_KEY_PASSWORD:?缺少 Repository Secret：MACOS_CERTIFICATE_PASSWORD}"
+          : "${CSC_LINK:?缺少 Repository Secret：MACOS_CERTIFICATE_P12_BASE64}"
+          echo "::warning::macOS 当前为临时仅签名模式，制品未提交 Apple 公证且未包含 stapled ticket"
+
+          pnpm exec electron-builder --mac dmg zip --universal --config electron-builder.yml --publish never
+      - name: 生成非 macOS Stable 制品
+        if: matrix.platform != 'mac'
         working-directory: ${{ steps.worktree.outputs.desktop-directory }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"

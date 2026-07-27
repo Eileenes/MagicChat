@@ -55,6 +55,28 @@ export function validateDesktopReleaseWorkflow(workflow) {
   ]) {
     assert(packageCommands.includes(command), `package 缺少命令：${command}`)
   }
+  const macPackageStep = jobs.package.steps.find(
+    (step) => step.if === "matrix.platform == 'mac'" && step.run?.includes("electron-builder"),
+  )
+  assert(macPackageStep, "package 缺少独立的 macOS 签名步骤")
+  for (const [name, reference] of [
+    ["CSC_KEY_PASSWORD", "secrets.MACOS_CERTIFICATE_PASSWORD"],
+    ["CSC_LINK", "secrets.MACOS_CERTIFICATE_P12_BASE64"],
+  ]) {
+    assert(
+      String(macPackageStep.env?.[name] ?? "").includes(reference),
+      `macOS 签名步骤缺少受管凭据：${name}`,
+    )
+  }
+  assert(macPackageStep.run.includes("临时仅签名模式"), "macOS 临时仅签名步骤必须输出未公证警告")
+  assert(
+    !Object.keys(macPackageStep.env ?? {}).some((name) => name.startsWith("APPLE_")),
+    "macOS 临时仅签名步骤不得注入 Apple 公证凭据",
+  )
+  assert(
+    !Object.hasOwn(macPackageStep.env ?? {}, "CSC_IDENTITY_AUTO_DISCOVERY"),
+    "macOS 签名步骤不得关闭证书发现",
+  )
   const releaseCommands = commands(jobs.release)
   assert(releaseCommands.includes("release:prepare-assets"), "release 必须使用单一资产准备入口")
   assert(releaseCommands.includes("release:publish"), "release 必须使用 Draft 发布事务")
