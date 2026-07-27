@@ -1,7 +1,4 @@
-export type ClientDataFetch = (
-  input: RequestInfo | URL,
-  init?: RequestInit
-) => Promise<Response>
+export type ClientDataFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 export type ClientDataSuccessEnvelope<T> = {
   data?: T
@@ -101,6 +98,7 @@ export type ConversationResponse = {
   member_count?: number
   members?: ConversationMemberResponse[]
   name?: string
+  notification_muted?: boolean
   pinned?: boolean
   projects?: ConversationProjectResponse[]
   type?: string
@@ -185,6 +183,11 @@ export type ListClientConversationsResponse = {
 export type SetConversationPinResponse = {
   conversation_id?: string
   pinned?: boolean
+}
+
+export type SetConversationMuteResponse = {
+  conversation_id?: string
+  muted?: boolean
 }
 
 export type CreateDirectConversationResponse = {
@@ -527,6 +530,7 @@ export type MarkConversationReadResponse = {
 
 export type MessageCreatedEventPayloadResponse = {
   message?: MessageResponse
+  notification_muted?: boolean
 }
 
 export type MessageUpdatedEventPayloadResponse = {
@@ -559,6 +563,11 @@ export type ConversationMemberMentionedEventPayloadResponse = {
 export type ConversationPinUpdatedEventPayloadResponse = {
   conversation_id?: string
   pinned?: boolean
+}
+
+export type ConversationMuteUpdatedEventPayloadResponse = {
+  conversation_id?: string
+  muted?: boolean
 }
 
 export type TopicEventPayloadResponse = {
@@ -650,6 +659,7 @@ export type ClientConversation = {
   memberCount: number
   members?: ClientConversationMember[]
   name: string
+  notificationMuted?: boolean
   pinned?: boolean
   projects?: ClientConversationProject[]
   type: "direct" | "group" | "app" | "topic"
@@ -839,8 +849,7 @@ export type ClientEntityCardMessageInput = {
   type: "entity_card"
 }
 
-export type ClientCardSendInput =
-  ClientCardMessageBody | ClientEntityCardMessageInput
+export type ClientCardSendInput = ClientCardMessageBody | ClientEntityCardMessageInput
 
 export type ClientFileMessageBody = {
   fileId: string

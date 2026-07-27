@@ -11,6 +11,7 @@ export const BRIDGE_VERSION = 1 as const
 
 export const IPC = {
   appInfo: "desktop:v1:app-info",
+  appearanceThemeSet: "desktop:v1:appearance-theme-set",
   authCancel: "desktop:v1:auth-cancel",
   authFinished: "desktop:v1:auth-finished",
   authStart: "desktop:v1:auth-start",
@@ -56,6 +57,8 @@ export const IPC = {
   unknownServer: "desktop:v1:unknown-server",
 } as const
 
+export type DesktopThemeSource = "dark" | "light" | "system"
+
 export type ServerProfile = ServerTarget &
   Readonly<{
     createdAt: string
@@ -97,8 +100,18 @@ export type RendererRuntimeSnapshot = Readonly<{
     projects: number
   }>
   eventLoopLagMs: number
-  lastRefresh?: Readonly<{ ageMs: number; durationMs: number; name: "contacts" | "conversations" | "me" | "projects" }>
-  lastRequest?: Readonly<{ ageMs: number; durationMs: number; group: string; method: string; status?: number }>
+  lastRefresh?: Readonly<{
+    ageMs: number
+    durationMs: number
+    name: "contacts" | "conversations" | "me" | "projects"
+  }>
+  lastRequest?: Readonly<{
+    ageMs: number
+    durationMs: number
+    group: string
+    method: string
+    status?: number
+  }>
   longTasks: Readonly<{ count: number; maxDurationMs: number }>
   page: "chat" | "contacts" | "init" | "login" | "projects" | "setup" | "unknown"
 }>
@@ -150,6 +163,7 @@ export type UpdaterInstallResult = Readonly<{
 export interface DesktopBridge {
   readonly version: typeof BRIDGE_VERSION
   app: { info(): Promise<DesktopAppInfo> }
+  appearance: { setThemeSource(source: DesktopThemeSource): Promise<void> }
   badge: { set(count: number): Promise<void> }
   tray: { setMessages(messages: ReadonlyArray<TrayMessage>): Promise<void> }
   clipboard: {
@@ -166,9 +180,15 @@ export interface DesktopBridge {
     reportRuntime(snapshot: RendererRuntimeSnapshot): void
   }
   files: {
-    download(target: AuthenticatedTarget, path: string, suggestedName: string): Promise<{ path?: string }>
+    download(
+      target: AuthenticatedTarget,
+      path: string,
+      suggestedName: string,
+    ): Promise<{ path?: string }>
     openLocation(path: string): Promise<void>
-    pick(options?: { multiple?: boolean }): Promise<ReadonlyArray<{ id: string; name: string; size: number }>>
+    pick(options?: {
+      multiple?: boolean
+    }): Promise<ReadonlyArray<{ id: string; name: string; size: number }>>
     upload(target: AuthenticatedTarget, apiPath: string, fileId: string): Promise<ClientResponse>
   }
   notifications: { show(input: NotificationInput): Promise<void> }
@@ -202,7 +222,10 @@ export interface DesktopBridge {
     streamAbort(streamId: string): Promise<void>
     streamChunk(streamId: string, chunk: Uint8Array): Promise<void>
     streamFinish<T>(streamId: string): Promise<ClientResponse<T>>
-    streamStart(target: AuthenticatedTarget, request: Pick<ClientRequest, "headers" | "method" | "path" | "requestId">): Promise<string>
+    streamStart(
+      target: AuthenticatedTarget,
+      request: Pick<ClientRequest, "headers" | "method" | "path" | "requestId">,
+    ): Promise<string>
   }
   updater: {
     check(): Promise<UpdaterState>

@@ -41,9 +41,9 @@ describe("ClientDataProvider", () => {
                 : [
                     createConversationResponse("conversation-1"),
                     createConversationResponse("conversation-2"),
-                  ]
-            )
-          )
+                  ],
+            ),
+          ),
         )
       }
 
@@ -61,7 +61,7 @@ describe("ClientDataProvider", () => {
         <ClientDataProvider>
           <ConversationCount />
         </ClientDataProvider>
-      </MemoryRouter>
+      </MemoryRouter>,
     )
 
     await act(async () => undefined)
@@ -97,9 +97,7 @@ describe("ClientDataProvider", () => {
       }
       if (url === "/api/client/conversations") {
         return Promise.resolve(
-          jsonResponse(
-            createConversationsResponse([createTopicConversationResponse()])
-          )
+          jsonResponse(createConversationsResponse([createTopicConversationResponse()])),
         )
       }
       if (url === "/api/client/projects?limit=100") {
@@ -114,7 +112,7 @@ describe("ClientDataProvider", () => {
         <ClientDataProvider>
           <TopicArchiveProbe />
         </ClientDataProvider>
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000)
@@ -123,6 +121,58 @@ describe("ClientDataProvider", () => {
     expect(screen.getByTestId("topic-count")).toHaveTextContent("1")
     act(() => screen.getByRole("button", { name: "archive topic" }).click())
     expect(screen.getByTestId("topic-count")).toHaveTextContent("0")
+  })
+
+  it("updates conversation mute state after the API succeeds", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(
+          jsonResponse(createConversationsResponse([createConversationResponse("conversation-1")])),
+        )
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      if (url === "/api/client/conversations/conversation-1/mute") {
+        expect(init?.method).toBe("PUT")
+        return Promise.resolve(
+          jsonResponse({
+            data: { conversation_id: "conversation-1", muted: true },
+            success: true,
+          }),
+        )
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <ConversationMuteProbe />
+        </ClientDataProvider>
+      </MemoryRouter>,
+    )
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    expect(screen.getByTestId("mute-state")).toHaveTextContent("active")
+
+    await act(async () => {
+      screen.getByRole("button", { name: "mute conversation" }).click()
+    })
+
+    expect(screen.getByTestId("mute-state")).toHaveTextContent("muted")
   })
 
   it("recovers exact reactions for version gaps and loaded-conversation sync", async () => {
@@ -138,33 +188,24 @@ describe("ClientDataProvider", () => {
       }
       if (url === "/api/client/conversations") {
         return Promise.resolve(
-          jsonResponse(
-            createConversationsResponse([
-              createConversationResponse("conversation-1"),
-            ])
-          )
+          jsonResponse(createConversationsResponse([createConversationResponse("conversation-1")])),
         )
       }
       if (url === "/api/client/projects?limit=100") {
         return Promise.resolve(jsonResponse(createProjectsResponse()))
       }
-      if (
-        url === "/api/client/conversations/conversation-1/messages?limit=20"
-      ) {
+      if (url === "/api/client/conversations/conversation-1/messages?limit=20") {
         return Promise.resolve(jsonResponse(createMessagesResponse()))
       }
-      if (
-        url ===
-        "/api/client/conversations/conversation-1/messages/reactions/query"
-      ) {
+      if (url === "/api/client/conversations/conversation-1/messages/reactions/query") {
         snapshotRequestCount += 1
         return Promise.resolve(
           jsonResponse(
             createReactionSnapshotsResponse(
               snapshotRequestCount === 1 ? 3 : 4,
-              snapshotRequestCount === 1 ? "👍" : "🎉"
-            )
-          )
+              snapshotRequestCount === 1 ? "👍" : "🎉",
+            ),
+          ),
         )
       }
       return Promise.reject(new Error(`unexpected request: ${url}`))
@@ -176,7 +217,7 @@ describe("ClientDataProvider", () => {
         <ClientDataProvider>
           <ReactionSyncProbe />
         </ClientDataProvider>
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000)
@@ -275,6 +316,22 @@ function ReactionSyncProbe() {
           ? `${message.reactionVersion}:${message.reactions[0]?.text ?? "none"}`
           : "unloaded"}
       </div>
+    </>
+  )
+}
+
+function ConversationMuteProbe() {
+  const { conversations, setConversationMuted } = useClientData()
+  const conversation = conversations[0]
+
+  return (
+    <>
+      <button
+        aria-label="mute conversation"
+        onClick={() => void setConversationMuted(conversation.id, true)}
+        type="button"
+      />
+      <div data-testid="mute-state">{conversation.notificationMuted ? "muted" : "active"}</div>
     </>
   )
 }
