@@ -57,6 +57,13 @@ if (!window.ResizeObserver) {
   })
 }
 
+if (!Element.prototype.scrollIntoView) {
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: () => undefined,
+  })
+}
+
 afterEach(() => {
   cleanup()
 })

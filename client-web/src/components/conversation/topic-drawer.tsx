@@ -12,6 +12,7 @@ import {
   normalizeMessageReactionsUpdatedEventPayload,
   participateConversationTopic,
   type ClientMessage,
+  type ImageCaptionType,
   type ClientTopicDetail,
   type MessageChoiceSnapshot,
   type MessageReactionSnapshot,
@@ -361,9 +362,15 @@ function TopicDrawerContent({
     return message
   }
 
-  async function sendImage(image: File) {
+  async function sendImage(
+    image: File,
+    caption: string,
+    captionType: ImageCaptionType
+  ) {
     if (!conversation) return null
     const message = await sendConversationImage(conversation.id, image, {
+      caption,
+      captionType,
       replyToMessageId: replyTarget?.id,
     })
     if (message) setReplyTarget(null)

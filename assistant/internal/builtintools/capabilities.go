@@ -554,6 +554,8 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 			"minLength":   1,
 			"description": "消息内容。text/markdown 中可嵌入精确 @ token：{(@user/用户UUID)}、{(@app/应用UUID)} 或 {(@user/all)}；UUID 必须来自可信上下文，指定对象必须是目标会话成员。image 时为可下载 URL；file 且没有 url 时为小文本文件内容。",
 		},
+		"caption":      map[string]any{"type": "string", "maxLength": maxImageMessageCaptionRunes, "description": "image 的可选图片说明，可嵌入与 text/markdown 相同的精确 @ token。"},
+		"caption_type": map[string]any{"type": "string", "enum": []string{messageTypeText, messageTypeMarkdown}, "description": "image 图片说明格式，默认为 text。"},
 		"name":         map[string]any{"type": "string", "minLength": 1, "maxLength": 255},
 		"url":          map[string]any{"type": "string", "minLength": 1, "maxLength": 2048, "description": "文件消息的下载地址，或卡片消息的跳转地址。卡片仅允许以 / 开头的站内路径或明确以 http://、https:// 开头的外链；禁止 javascript:、data:、//host、反斜杠和包含空白的地址。"},
 		"title":        map[string]any{"type": "string", "minLength": 1, "maxLength": 240, "description": "卡片或图表消息标题；chart 的限制以对应分支为准。"},
@@ -577,7 +579,24 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 	messageConstraint := map[string]any{
 		"oneOf": []any{
 			map[string]any{
-				"properties": map[string]any{"type": map[string]any{"enum": []string{messageTypeText, messageTypeMarkdown, messageTypeImage}}},
+				"properties": map[string]any{"type": map[string]any{"enum": []string{messageTypeText, messageTypeMarkdown}}},
+				"required":   []string{"type", "content"},
+				"not": map[string]any{"anyOf": []any{
+					map[string]any{"required": []string{"caption"}},
+					map[string]any{"required": []string{"caption_type"}},
+					map[string]any{"required": []string{"name"}},
+					map[string]any{"required": []string{"url"}},
+					map[string]any{"required": []string{"title"}},
+					map[string]any{"required": []string{"description"}},
+					map[string]any{"required": []string{"chart_type"}},
+					map[string]any{"required": []string{"data"}},
+					map[string]any{"required": []string{"content_type"}},
+					map[string]any{"required": []string{"selection"}},
+					map[string]any{"required": []string{"options"}},
+				}},
+			},
+			map[string]any{
+				"properties": map[string]any{"type": map[string]any{"enum": []string{messageTypeImage}}},
 				"required":   []string{"type", "content"},
 				"not": map[string]any{"anyOf": []any{
 					map[string]any{"required": []string{"name"}},
@@ -595,6 +614,8 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 				"properties": map[string]any{"type": map[string]any{"enum": []string{messageTypeChoice}}},
 				"required":   []string{"type", "content_type", "content", "selection", "options"},
 				"not": map[string]any{"anyOf": []any{
+					map[string]any{"required": []string{"caption"}},
+					map[string]any{"required": []string{"caption_type"}},
 					map[string]any{"required": []string{"name"}},
 					map[string]any{"required": []string{"url"}},
 					map[string]any{"required": []string{"title"}},
@@ -611,6 +632,8 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 					map[string]any{"required": []string{"content"}, "not": map[string]any{"required": []string{"url"}}},
 				},
 				"not": map[string]any{"anyOf": []any{
+					map[string]any{"required": []string{"caption"}},
+					map[string]any{"required": []string{"caption_type"}},
 					map[string]any{"required": []string{"title"}},
 					map[string]any{"required": []string{"description"}},
 					map[string]any{"required": []string{"chart_type"}},
@@ -624,6 +647,8 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 				"properties": map[string]any{"type": map[string]any{"enum": []string{messageTypeCard}}},
 				"required":   []string{"type", "title", "description", "url"},
 				"not": map[string]any{"anyOf": []any{
+					map[string]any{"required": []string{"caption"}},
+					map[string]any{"required": []string{"caption_type"}},
 					map[string]any{"required": []string{"content"}},
 					map[string]any{"required": []string{"name"}},
 					map[string]any{"required": []string{"chart_type"}},
@@ -642,6 +667,8 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 				"required": []string{"type", "chart_type", "title", "data", "description"},
 				"oneOf":    chartMessageVariantsSchema(),
 				"not": map[string]any{"anyOf": []any{
+					map[string]any{"required": []string{"caption"}},
+					map[string]any{"required": []string{"caption_type"}},
 					map[string]any{"required": []string{"content"}},
 					map[string]any{"required": []string{"name"}},
 					map[string]any{"required": []string{"url"}},

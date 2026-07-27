@@ -125,6 +125,15 @@ func TestServiceSanitizesForwardBodiesAndPreservesLimits(t *testing.T) {
 		t.Fatalf("body = %s, summary = %q, metrics = %#v", body, summary, metrics)
 	}
 
+	body, summary, metrics, err = service.SanitizeForwardBody(
+		json.RawMessage(`{"type":"image","file_id":"image-1","width":320,"height":240,"caption":"**架构图** {(@user/`+userID+`)}","caption_type":"markdown"}`),
+		map[string]string{"user/" + userID: "A*B"},
+		0,
+	)
+	if err != nil || summary != "[图片] 架构图 @A\\*B" || metrics.LeafCount != 1 || !strings.Contains(string(body), `"caption":"**架构图** @A\\*B"`) || strings.Contains(string(body), "{(@") {
+		t.Fatalf("image body = %s, summary = %q, metrics = %#v, err = %v", body, summary, metrics, err)
+	}
+
 	bundle, err := json.Marshal(forwardBundleBody{
 		Type: TypeForwardBundle,
 		Items: []forwardBundleItem{{

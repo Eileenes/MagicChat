@@ -78,10 +78,12 @@ type fileBody struct {
 }
 
 type imageBody struct {
-	Type   string `json:"type"`
-	FileID string `json:"file_id"`
-	Width  int    `json:"width,omitempty"`
-	Height int    `json:"height,omitempty"`
+	Type        string `json:"type"`
+	FileID      string `json:"file_id"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
+	Caption     string `json:"caption,omitempty"`
+	CaptionType string `json:"caption_type,omitempty"`
 }
 
 type voiceBody struct {

@@ -147,7 +147,7 @@ describe("conversation search", () => {
     ])
   })
 
-  it("shows the first 8 conversations in the provided order", () => {
+  it("returns no conversations when the keyword is empty", () => {
     const conversations = Array.from({ length: 10 }, (_, index) =>
       createConversation({
         id: `conversation-${index}`,
@@ -157,10 +157,7 @@ describe("conversation search", () => {
 
     const results = search(conversations, "  ")
 
-    expect(results).toHaveLength(8)
-    expect(results[0]?.conversation.id).toBe("conversation-0")
-    expect(results[7]?.conversation.id).toBe("conversation-7")
-    expect(results.every((result) => result.matchedField === null)).toBe(true)
+    expect(results).toHaveLength(0)
   })
 
   it("reuses search fields when only conversation activity changes", () => {

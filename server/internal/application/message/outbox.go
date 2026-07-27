@@ -40,11 +40,12 @@ type appMessageTopicSourcePayload struct {
 }
 
 type appMessagePayload struct {
-	Body      json.RawMessage `json:"body"`
-	CreatedAt time.Time       `json:"created_at"`
-	ID        string          `json:"id"`
-	Seq       int64           `json:"seq"`
-	Summary   string          `json:"summary"`
+	Body             json.RawMessage `json:"body"`
+	CreatedAt        time.Time       `json:"created_at"`
+	ID               string          `json:"id"`
+	ReplyToMessageID string          `json:"reply_to_message_id,omitempty"`
+	Seq              int64           `json:"seq"`
+	Summary          string          `json:"summary"`
 }
 
 type appMessageSenderPayload struct {
@@ -96,7 +97,7 @@ func createAppMessageEventOutbox(db *gorm.DB, access conversationaccess.Context,
 	}
 	payload := appMessageCreatedPayload{
 		Conversation: conversationPayload,
-		Message:      appMessagePayload{Body: message.Body, CreatedAt: message.CreatedAt, ID: message.ID, Seq: message.Seq, Summary: message.Summary},
+		Message:      appMessagePayload{Body: message.Body, CreatedAt: message.CreatedAt, ID: message.ID, ReplyToMessageID: optionalString(message.ReplyToMessageID), Seq: message.Seq, Summary: message.Summary},
 		Sender:       appMessageSenderPayload{Email: sender.Email, ID: sender.ID, Name: sender.Name, Nickname: sender.Nickname, Type: store.MessageSenderTypeUser},
 	}
 	result := make([]AppEvent, 0, len(appIDs))
@@ -112,6 +113,13 @@ func createAppMessageEventOutbox(db *gorm.DB, access conversationaccess.Context,
 		result = append(result, AppEvent{AppID: stored.AppID, Cursor: stored.ID, Event: stored.Event, Payload: stored.Payload})
 	}
 	return result, nil
+}
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // lockAndFilterActiveConversationApps serializes event creation with app

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
-import { useNavigate } from "react-router"
+import { matchPath, useLocation, useNavigate } from "react-router"
 import { toast } from "sonner"
 
 import {
@@ -75,6 +75,7 @@ const choiceSnapshotBatchSize = 100
 const maxReactionSnapshotCatchUpAttempts = 3
 
 export function ClientDataProvider({ children }: { children: ReactNode }) {
+  const location = useLocation()
   const navigate = useNavigate()
   const { setAuthenticated } = useAppInfo()
   const [bootstrapError, setBootstrapError] =
@@ -86,6 +87,14 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     Record<string, ClientConversationMessageState>
   >({})
   const [foregroundConversationId, setForegroundConversationId] = useState("")
+  const routeConversationId =
+    matchPath("/chat/:conversationId", location.pathname)?.params
+      .conversationId ?? ""
+  const includedConversationId = foregroundConversationId || routeConversationId
+  const includedConversationIdRef = useRef(includedConversationId)
+  useEffect(() => {
+    includedConversationIdRef.current = includedConversationId
+  }, [includedConversationId])
   const [contactApps, setContactApps] = useState<ContactApp[]>([])
   const [contactGroups, setContactGroups] = useState<ContactGroup[]>([])
   const [contacts, setContacts] = useState<ContactUser[]>([])
@@ -209,7 +218,13 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
   const refreshConversations = useCallback(async () => {
     try {
-      setConversations(orderConversations(await listClientConversations()))
+      setConversations(
+        orderConversations(
+          await listClientConversations(undefined, {
+            includeConversationId: includedConversationIdRef.current,
+          })
+        )
+      )
     } catch (error) {
       throw handleError(error, "加载会话列表失败")
     }
@@ -1281,7 +1296,9 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         await Promise.all([
           getCurrentClientUser(),
           listClientContacts(),
-          listClientConversations(),
+          listClientConversations(undefined, {
+            includeConversationId: includedConversationIdRef.current,
+          }),
           listClientProjects({ limit: 100 }),
         ])
 

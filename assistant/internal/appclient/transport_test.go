@@ -308,7 +308,7 @@ func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 		if noticeRequest.Method != methodMessageSend {
 			return
 		}
-		if err := conn.WriteJSON(envelope{V: protocolVersion, Kind: kindResponse, ReplyTo: noticeRequest.ID, OK: &ok, Payload: json.RawMessage(`{}`)}); err != nil {
+		if err := conn.WriteJSON(envelope{V: protocolVersion, Kind: kindResponse, ReplyTo: noticeRequest.ID, OK: &ok, Payload: testMessageSendResponse("notice-1")}); err != nil {
 			return
 		}
 
@@ -430,6 +430,8 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 			switch request.Method {
 			case methodConversationMessagesList:
 				payload = json.RawMessage(`{"messages":[]}`)
+			case methodMessageSend:
+				payload = testMessageSendResponse("sent-" + request.ID)
 			case methodConversationTopicCreate:
 				payload = json.RawMessage(`{"conversation":{"id":"topic-1","name":"第一条","type":"topic"},"created":true}`)
 			case methodEventsAck:
@@ -692,6 +694,8 @@ func TestClientAcknowledgesAcceptedCursorEvent(t *testing.T) {
 		switch message.Method {
 		case methodConversationMessagesList:
 			payload = json.RawMessage(`{"messages":[]}`)
+		case methodMessageSend:
+			payload = testMessageSendResponse("sent-" + message.ID)
 		case methodConversationTopicCreate:
 			payload = json.RawMessage(`{"conversation":{"id":"topic-1","name":"第一条","type":"topic"},"created":true}`)
 		case methodEventsAck:
@@ -754,6 +758,8 @@ func TestClientRoutesCursorEventsInArrivalOrder(t *testing.T) {
 				close(secondHistoryStarted)
 			}
 			payload = json.RawMessage(`{"messages":[]}`)
+		case methodMessageSend:
+			payload = testMessageSendResponse("sent-" + message.ID)
 		case methodConversationTopicCreate:
 			payload = json.RawMessage(`{"conversation":{"id":"topic-1","name":"第一条","type":"topic"},"created":true}`)
 		case methodEventsAck:
@@ -871,6 +877,7 @@ func TestClientReplayRetriesAcknowledgementWithoutReprocessingEvent(t *testing.T
 			payload = json.RawMessage(`{"conversation":{"id":"topic-1","name":"第一条","type":"topic"},"created":true}`)
 		case methodMessageSend:
 			replyCalls.Add(1)
+			payload = testMessageSendResponse("sent-" + message.ID)
 		case methodEventsAck:
 			if ackAttempts.Add(1) == 1 {
 				ok = false

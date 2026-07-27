@@ -322,6 +322,8 @@ export type FileMessageBodyResponse = {
 }
 
 export type ImageMessageBodyResponse = {
+  caption?: string
+  caption_type?: "text" | "markdown"
   file_id?: string
   height?: number
   type?: "image"
@@ -958,7 +960,11 @@ export type ClientFileMessageBody = {
   type: "file"
 }
 
+export type ImageCaptionType = "text" | "markdown"
+
 export type ClientImageMessageBody = {
+  caption?: string
+  captionType?: ImageCaptionType
   fileId: string
   height?: number
   type: "image"
@@ -1265,6 +1271,8 @@ export type SendConversationFileMessageInput = {
 }
 
 export type SendConversationImageMessageInput = {
+  caption?: string
+  captionType?: ImageCaptionType
   clientMessageId: string
   image: File
   replyToMessageId?: string

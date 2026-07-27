@@ -266,6 +266,7 @@ export const MessageBubble = React.memo(function MessageBubble({
         <MessageBodyRenderer
           body={message.body}
           currentUserId={currentUserId}
+          flushImage={flushImageBubble}
           mentionLabelResolver={mentionLabelResolver}
         />
       )}
@@ -1010,19 +1011,28 @@ function MessageAvatarProfile({
 type MessageBodyRendererProps = {
   body: ConversationPanelMessage["body"]
   currentUserId: string
+  flushImage?: boolean
   mentionLabelResolver: MentionLabelResolver
 }
 
 export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
   body,
   currentUserId,
+  flushImage = false,
   mentionLabelResolver,
 }: MessageBodyRendererProps) {
   switch (body.type) {
     case "file":
       return <MessageAttachment file={body} />
     case "image":
-      return <MessageImage image={body} />
+      return (
+        <ImageMessageBody
+          body={body}
+          currentUserId={currentUserId}
+          flush={flushImage}
+          mentionLabelResolver={mentionLabelResolver}
+        />
+      )
     case "voice":
       return <MessageVoice voice={body} />
     case "link":
@@ -1100,6 +1110,7 @@ function areMessageBodyRendererPropsEqual(
   return (
     previous.body === next.body &&
     previous.currentUserId === next.currentUserId &&
+    previous.flushImage === next.flushImage &&
     (previous.mentionLabelResolver === next.mentionLabelResolver ||
       !messageBodyUsesMentionLabels(next.body))
   )
@@ -1111,9 +1122,11 @@ function messageBodyUsesMentionLabels(
   if (
     body.type === "text" ||
     body.type === "markdown" ||
-    body.type === "choice"
+    body.type === "choice" ||
+    body.type === "image"
   ) {
-    return body.content.includes("{(@")
+    const content = body.type === "image" ? body.caption : body.content
+    return Boolean(content?.includes("{(@"))
   }
 
   if (body.type === "forward_bundle") {
@@ -1121,6 +1134,41 @@ function messageBodyUsesMentionLabels(
   }
 
   return false
+}
+
+function ImageMessageBody({
+  body,
+  currentUserId,
+  flush,
+  mentionLabelResolver,
+}: {
+  body: Extract<ConversationPanelMessage["body"], { type: "image" }>
+  currentUserId: string
+  flush: boolean
+  mentionLabelResolver: MentionLabelResolver
+}) {
+  return (
+    <div className="min-w-0">
+      <MessageImage image={body} />
+      {body.caption && (
+        <div className={cn("min-w-0 pt-2", flush && "px-3 pb-3")}>
+          {body.captionType === "markdown" ? (
+            <MessageMarkdown
+              content={body.caption}
+              currentUserId={currentUserId}
+              mentionLabelResolver={mentionLabelResolver}
+            />
+          ) : (
+            <TextMessageBody
+              content={body.caption}
+              currentUserId={currentUserId}
+              mentionLabelResolver={mentionLabelResolver}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ForwardBundleMessage({

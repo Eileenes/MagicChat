@@ -87,6 +87,48 @@ func TestServiceCreateAndListPreserveIdempotencyOutboxAndReply(t *testing.T) {
 	}
 }
 
+func TestServiceAppMessageCanReplyToVisibleMessage(t *testing.T) {
+	db := openMessageTestDB(t)
+	fixture := insertMessageTestFixture(t, db)
+	service := NewService(Dependencies{DB: db, Bodies: &messageBodyProcessorRecorder{}})
+
+	original, err := service.Create(context.Background(), CreateCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "user-instruction", Body: json.RawMessage(`{"type":"text","content":"请分析项目进展"}`),
+	})
+	if err != nil {
+		t.Fatalf("create original message: %v", err)
+	}
+	replyBody := json.RawMessage(`{"type":"markdown","content":"这个工作有点复杂"}`)
+	reply, err := service.CreateAsApp(context.Background(), CreateAsAppCommand{
+		AppID: fixture.app.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "app-quoted-reply", ReplyToMessageID: original.Message.ID, Body: replyBody,
+		Finalize: func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+			return body, "这个工作有点复杂", nil
+		},
+	})
+	if err != nil || !reply.Created || reply.Message.ReplyToMessageID != original.Message.ID {
+		t.Fatalf("create app quoted reply = %#v, err = %v", reply, err)
+	}
+	var stored store.Message
+	if err := db.First(&stored, "id = ?", reply.Message.ID).Error; err != nil {
+		t.Fatalf("load app quoted reply: %v", err)
+	}
+	if stored.ReplyToMessageID == nil || *stored.ReplyToMessageID != original.Message.ID {
+		t.Fatalf("stored reply_to_message_id = %v, want %s", stored.ReplyToMessageID, original.Message.ID)
+	}
+	_, err = service.CreateAsApp(context.Background(), CreateAsAppCommand{
+		AppID: fixture.app.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "invalid-app-quote", ReplyToMessageID: uuid.NewString(), Body: replyBody,
+		Finalize: func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+			return body, "invalid", nil
+		},
+	})
+	if ErrorCodeOf(err) != CodeInvalidRequest {
+		t.Fatalf("invalid app quote error = %v, want invalid_request", err)
+	}
+}
+
 func TestDirectAppMessagesRequireCurrentAccessWhileGroupMessagesUseMembership(t *testing.T) {
 	db := openMessageTestDB(t)
 	fixture := insertMessageTestFixture(t, db)
@@ -442,11 +484,45 @@ func TestServiceRevokeChoiceRewindsUnreadChoiceSequence(t *testing.T) {
 	}
 }
 
-func TestParseMessageMentionTargetsSupportsChoiceContent(t *testing.T) {
+func TestParseMessageMentionTargetsSupportsStructuredMessageContent(t *testing.T) {
 	userID := uuid.NewString()
-	targets := parseMessageMentionTargets(json.RawMessage(`{"type":"choice","content_type":"markdown","content":"{(@user/` + userID + `)} 请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`))
-	if len(targets) != 1 || targets[0].MemberType != store.ConversationMemberTypeUser || targets[0].MemberID != userID {
-		t.Fatalf("choice mention targets = %#v", targets)
+	for _, testCase := range []struct {
+		name string
+		body json.RawMessage
+	}{
+		{
+			name: "choice content",
+			body: json.RawMessage(`{"type":"choice","content_type":"markdown","content":"{(@user/` + userID + `)} 请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`),
+		},
+		{
+			name: "image text caption",
+			body: json.RawMessage(`{"type":"image","file_id":"image-1","caption":"请看 {(@user/` + userID + `)}","caption_type":"text"}`),
+		},
+		{
+			name: "image caption defaults to text",
+			body: json.RawMessage(`{"type":"image","file_id":"image-1","caption":"请看 {(@user/` + userID + `)}"}`),
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			targets := parseMessageMentionTargets(testCase.body)
+			if len(targets) != 1 || targets[0].MemberType != store.ConversationMemberTypeUser || targets[0].MemberID != userID {
+				t.Fatalf("mention targets = %#v", targets)
+			}
+		})
+	}
+}
+
+func TestCollectForwardMentionTargetsSupportsImageCaption(t *testing.T) {
+	userID := uuid.NewString()
+	targets := make(map[string]forwardMentionTarget)
+
+	collectForwardMentionTargets(json.RawMessage(
+		`{"type":"image","file_id":"image-1","caption":"请看 {(@user/`+userID+`)}","caption_type":"text"}`,
+	), targets, 0)
+
+	target, ok := targets[store.ConversationMemberTypeUser+"/"+userID]
+	if !ok || target.MemberType != store.ConversationMemberTypeUser || target.MemberID != userID {
+		t.Fatalf("forward mention targets = %#v", targets)
 	}
 }
 

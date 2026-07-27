@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import { ConversationSidebar } from "@/components/conversation/conversation-sidebar"
@@ -6,6 +13,90 @@ import { SidebarProvider } from "@/components/ui/sidebar"
 import type { ClientConversation, ClientUser } from "@/lib/client-data-api"
 
 describe("ConversationSidebar", () => {
+  it("filters conversations by type", async () => {
+    const user = userEvent.setup()
+    const conversations = [
+      createAppConversation({
+        id: "direct",
+        name: "联系人会话",
+        type: "direct",
+      }),
+      createAppConversation({
+        id: "app",
+        lastMessageSeq: 1,
+        name: "应用会话",
+        type: "app",
+        unreadCount: 1,
+      }),
+      createAppConversation({ id: "group", name: "群聊会话", type: "group" }),
+      createAppConversation({
+        id: "topic",
+        lastMessageAt: new Date().toISOString(),
+        lastMessageSeq: 1,
+        name: "话题会话",
+        topic: {
+          archived: false,
+          parentConversationId: "group",
+          parentConversationName: "群聊会话",
+          parentConversationType: "group",
+          participating: true,
+          sourceMessageId: "message-1",
+          sourceMessageSeq: 1,
+          sourceSender: {
+            avatar: "",
+            id: "user-2",
+            name: "成员",
+            type: "user",
+          },
+        },
+        type: "topic",
+        unreadCount: 1,
+      }),
+    ]
+    render(
+      <SidebarProvider>
+        <ConversationSidebar
+          activeConversationId=""
+          appsById={new Map()}
+          contactsById={new Map()}
+          conversations={conversations}
+          currentUser={createCurrentUser()}
+          drafts={{}}
+          onCreateGroup={vi.fn()}
+          onSelectConversation={vi.fn()}
+          onSetConversationPinned={vi.fn()}
+        />
+      </SidebarProvider>
+    )
+
+    expect(screen.getByText("联系人会话")).toBeInTheDocument()
+    expect(screen.getByText("应用会话")).toBeInTheDocument()
+    expect(screen.getByText("群聊会话")).toBeInTheDocument()
+    expect(screen.getByText("话题会话")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("tab", { name: "未读" }))
+    expect(screen.queryByText("联系人会话")).not.toBeInTheDocument()
+    expect(screen.getByText("应用会话")).toBeInTheDocument()
+    expect(screen.getByText("群聊会话")).toBeInTheDocument()
+    expect(screen.getByText("话题会话")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("tab", { name: "单聊" }))
+    expect(screen.getByText("联系人会话")).toBeInTheDocument()
+    expect(screen.getByText("应用会话")).toBeInTheDocument()
+    expect(screen.queryByText("群聊会话")).not.toBeInTheDocument()
+    expect(screen.queryByText("话题会话")).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("tab", { name: "群聊" }))
+    expect(screen.getByText("群聊会话")).toBeInTheDocument()
+    expect(screen.getByText("话题会话")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("tab", { name: "全部" }))
+    expect(screen.getByText("联系人会话")).toBeInTheDocument()
+    expect(screen.getByText("应用会话")).toBeInTheDocument()
+    expect(screen.getByText("群聊会话")).toBeInTheDocument()
+    expect(screen.getByText("话题会话")).toBeInTheDocument()
+  })
+
   it("omits the sender in direct chats and shows it in group chats", () => {
     const conversations = [
       createAppConversation({
@@ -71,6 +162,20 @@ describe("ConversationSidebar", () => {
         name: "系统会话",
         type: "group",
       }),
+      createTopicConversationForSidebar({
+        id: "app-topic",
+        lastMessageSummary: "应用话题消息",
+        parentConversationId: "app",
+        parentConversationName: "应用会话",
+        parentConversationType: "app",
+      }),
+      createTopicConversationForSidebar({
+        id: "group-topic",
+        lastMessageSummary: "群聊话题消息",
+        parentConversationId: "group-user",
+        parentConversationName: "用户群聊",
+        parentConversationType: "group",
+      }),
     ]
 
     render(
@@ -94,6 +199,9 @@ describe("ConversationSidebar", () => {
     expect(screen.getByText("应用消息")).toBeInTheDocument()
     expect(screen.getByText("小张：群聊消息")).toBeInTheDocument()
     expect(screen.getByText("系统：张三加入群聊")).toBeInTheDocument()
+    expect(screen.getByText("应用话题消息")).toBeInTheDocument()
+    expect(screen.queryByText("小张：应用话题消息")).not.toBeInTheDocument()
+    expect(screen.getByText("小张：群聊话题消息")).toBeInTheDocument()
   })
 
   it("keeps mention and draft preview priority", () => {
@@ -272,6 +380,62 @@ describe("ConversationSidebar", () => {
     expect(screen.queryByText("取消置顶")).not.toBeInTheDocument()
   })
 
+  it("does not show a pin action for topics", async () => {
+    const parent = createAppConversation({
+      avatar: "/parent.webp",
+      id: "parent",
+      name: "父对话",
+      type: "group",
+    })
+    const topic = createAppConversation({
+      id: "topic",
+      lastMessageAt: new Date().toISOString(),
+      name: "子话题",
+      topic: {
+        archived: false,
+        parentConversationId: parent.id,
+        parentConversationName: parent.name,
+        parentConversationType: "group",
+        participating: true,
+        sourceMessageId: "message-1",
+        sourceMessageSeq: 1,
+        sourceSender: {
+          avatar: "/sender.webp",
+          id: "user-2",
+          name: "成员",
+          type: "user",
+        },
+      },
+      type: "topic",
+    })
+    render(
+      <SidebarProvider>
+        <ConversationSidebar
+          activeConversationId=""
+          appsById={new Map()}
+          contactsById={new Map()}
+          conversations={[parent, topic]}
+          currentUser={createCurrentUser()}
+          drafts={{}}
+          onCreateGroup={vi.fn()}
+          onSelectConversation={vi.fn()}
+          onSetConversationPinned={vi.fn()}
+        />
+      </SidebarProvider>
+    )
+
+    const topicButton = screen.getByText("子话题").closest("button")!
+    const sourceAvatar = within(topicButton).getByLabelText("成员")
+    expect(
+      within(topicButton).queryByLabelText("父对话")
+    ).not.toBeInTheDocument()
+    expect(sourceAvatar.closest('[data-slot="avatar"]')).toHaveClass("size-8")
+
+    fireEvent.contextMenu(topicButton)
+    expect(await screen.findByText("消息免打扰")).toBeInTheDocument()
+    expect(screen.queryByText("置顶对话")).not.toBeInTheDocument()
+  })
+
   it("shows muted unread conversations as a dot and toggles mute", async () => {
     const onSetConversationMuted = vi.fn().mockResolvedValue(undefined)
     const conversation = createAppConversation({
@@ -376,4 +540,47 @@ function createCurrentUser(): ClientUser {
     phone: "",
     status: "active",
   }
+}
+
+function createTopicConversationForSidebar({
+  id,
+  lastMessageSummary,
+  parentConversationId,
+  parentConversationName,
+  parentConversationType,
+}: {
+  id: string
+  lastMessageSummary: string
+  parentConversationId: string
+  parentConversationName: string
+  parentConversationType: "direct" | "app" | "group"
+}) {
+  return createAppConversation({
+    id,
+    lastMessageAt: new Date().toISOString(),
+    lastMessageSender: {
+      id: "user-2",
+      name: "张三",
+      nickname: "小张",
+      type: "user",
+    },
+    lastMessageSummary,
+    name: `${parentConversationName}的话题`,
+    topic: {
+      archived: false,
+      parentConversationId,
+      parentConversationName,
+      parentConversationType,
+      participating: true,
+      sourceMessageId: `source-${id}`,
+      sourceMessageSeq: 1,
+      sourceSender: {
+        avatar: "",
+        id: "user-2",
+        name: "张三",
+        type: "user",
+      },
+    },
+    type: "topic",
+  })
 }

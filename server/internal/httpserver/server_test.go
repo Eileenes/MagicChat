@@ -3667,6 +3667,7 @@ func TestAppWebSocketMessageSendSupportsUserGroupAppAndTopicTargets(t *testing.T
 				"type":            "app",
 				"conversation_id": appConversationID,
 			},
+			"reply_to_message_id": userMessage["id"],
 			"message": map[string]any{
 				"type":    "text",
 				"content": "应用会话里的第二条",
@@ -3686,9 +3687,15 @@ func TestAppWebSocketMessageSendSupportsUserGroupAppAndTopicTargets(t *testing.T
 	if appMessage["seq"] != float64(2) {
 		t.Fatalf("app target message.seq = %v, want 2", appMessage["seq"])
 	}
+	if appMessage["reply_to_message_id"] != userMessage["id"] {
+		t.Fatalf("app target reply_to_message_id = %v, want %v", appMessage["reply_to_message_id"], userMessage["id"])
+	}
 	pushedAppMessage := readMessageCreatedEvent(t, userConn)
 	if pushedAppMessage["id"] != appMessage["id"] {
 		t.Fatalf("app target pushed id = %v, want %v", pushedAppMessage["id"], appMessage["id"])
+	}
+	if pushedAppMessage["reply_to_message_id"] != userMessage["id"] {
+		t.Fatalf("pushed app reply_to_message_id = %v, want %v", pushedAppMessage["reply_to_message_id"], userMessage["id"])
 	}
 
 	choiceResponse := sendAppRequest(t, appConn, realtime.Envelope{
@@ -3959,6 +3966,58 @@ func TestAppWebSocketTopicCreateGetAndCloseLifecycle(t *testing.T) {
 	allowedEntityReply, err = protocolServer.isTopicCreatedFromAuthorizationTrigger(topicID, parent.ID, uuid.NewString())
 	if err != nil || allowedEntityReply {
 		t.Fatalf("unrelated trigger topic authorization = %v, err = %v", allowedEntityReply, err)
+	}
+	quotedNoticeResponse := sendAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,
+		ID: "quoted-topic-notice", Method: appMethodMessageSend,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"target":              map[string]any{"type": "group", "conversation_id": parent.ID},
+			"reply_to_message_id": source.ID,
+			"message": map[string]any{
+				"type": "markdown", "content": "这个工作有点复杂，我会创建一个独立的话题来跟进。",
+			},
+		}),
+	})
+	quotedNoticePayload := requireAppSendMessageResponsePayload(t, quotedNoticeResponse)
+	quotedNotice := quotedNoticePayload["message"].(map[string]any)
+	quotedNoticeID := quotedNotice["id"].(string)
+	quotedTopicResponse := sendAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,
+		ID: "quoted-topic-create", Method: appMethodConversationTopicCreate,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"conversation_id": parent.ID, "source_message_id": quotedNoticeID,
+		}),
+	})
+	var quotedTopicPayload map[string]any
+	if err := json.Unmarshal(quotedTopicResponse.Payload, &quotedTopicPayload); err != nil {
+		t.Fatalf("unmarshal quoted topic response: %v", err)
+	}
+	quotedTopic := quotedTopicPayload["conversation"].(map[string]any)
+	quotedTopicID := quotedTopic["id"].(string)
+	if quotedTopic["name"] != source.Summary || quotedTopicPayload["source_message_id"] != quotedNoticeID {
+		t.Fatalf("quoted topic response = %#v", quotedTopicPayload)
+	}
+	allowedEntityReply, err = protocolServer.isTopicCreatedFromAuthorizationTrigger(quotedTopicID, parent.ID, source.ID)
+	if err != nil || !allowedEntityReply {
+		t.Fatalf("quoted topic authorization = %v, err = %v", allowedEntityReply, err)
+	}
+	quotedHistoryResponse := sendAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,
+		ID: "quoted-topic-history", Method: appMethodConversationMessagesList,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"conversation_id": quotedTopicID, "before_or_equal_seq": 1, "limit": 30,
+		}),
+	})
+	var quotedHistoryPayload map[string]any
+	if err := json.Unmarshal(quotedHistoryResponse.Payload, &quotedHistoryPayload); err != nil {
+		t.Fatalf("unmarshal quoted topic history: %v", err)
+	}
+	quotedSource := quotedHistoryPayload["topic"].(map[string]any)["source_message"].(map[string]any)
+	quotedOrigin := quotedSource["reply_to"].(map[string]any)
+	if quotedSource["id"] != quotedNoticeID || quotedSource["reply_to_message_id"] != source.ID ||
+		quotedOrigin["id"] != source.ID || quotedOrigin["summary"] != source.Summary ||
+		quotedOrigin["sender"].(map[string]any)["id"] != owner.ID {
+		t.Fatalf("quoted topic source context = %#v", quotedSource)
 	}
 	retried := sendAppRequest(t, appConn, realtime.Envelope{
 		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,

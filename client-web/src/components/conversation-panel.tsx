@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import {
   type ClientConversation,
   type ClientMessage,
+  type ImageCaptionType,
 } from "@/lib/client-data-api"
 import type { MentionLabelResolver } from "@/lib/message-mentions"
 import type { ConversationDraftMention } from "@/lib/conversation-drafts"
@@ -72,7 +73,11 @@ type ConversationPanelProps = {
     optionIds: string[]
   ) => Promise<void>
   onSendFile: (file: File) => Promise<ClientMessage | null>
-  onSendImage: (image: File) => Promise<ClientMessage | null>
+  onSendImage: (
+    image: File,
+    caption: string,
+    captionType: ImageCaptionType
+  ) => Promise<ClientMessage | null>
   onSendVoice: (voice: VoiceMessageRecording) => Promise<ClientMessage | null>
   onLoadBeforeMessages: () => void
   onOpenTopic?: (conversationId: string) => void

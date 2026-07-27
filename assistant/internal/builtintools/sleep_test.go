@@ -1209,7 +1209,7 @@ func TestReplyToolCallsMessageSendForCurrentConversation(t *testing.T) {
 		Requester:        requester,
 	})
 
-	_, err := callReply(ctx, json.RawMessage(`{"type":"image","content":"https://example.com/a.png"}`))
+	_, err := callReply(ctx, json.RawMessage(`{"type":"image","content":"https://example.com/a.png","caption":"**架构图**","caption_type":"markdown"}`))
 	if err != nil {
 		t.Fatalf("CallTool() error = %v", err)
 	}
@@ -1225,8 +1225,10 @@ func TestReplyToolCallsMessageSendForCurrentConversation(t *testing.T) {
 			ConversationID string `json:"conversation_id"`
 		} `json:"target"`
 		Message struct {
-			Type    string `json:"type"`
-			Content string `json:"content"`
+			Caption     string `json:"caption"`
+			CaptionType string `json:"caption_type"`
+			Type        string `json:"type"`
+			Content     string `json:"content"`
 		} `json:"message"`
 	}
 	if err := json.Unmarshal(requester.calls[0].payload, &payload); err != nil {
@@ -1235,7 +1237,8 @@ func TestReplyToolCallsMessageSendForCurrentConversation(t *testing.T) {
 	if payload.Target.Type != "app" || payload.Target.ConversationID != "conversation-1" {
 		t.Fatalf("target = %#v, want current app conversation", payload.Target)
 	}
-	if payload.Message.Type != "image" || payload.Message.Content != "https://example.com/a.png" {
+	if payload.Message.Type != "image" || payload.Message.Content != "https://example.com/a.png" ||
+		payload.Message.Caption != "**架构图**" || payload.Message.CaptionType != "markdown" {
 		t.Fatalf("message = %#v, want image URL", payload.Message)
 	}
 }

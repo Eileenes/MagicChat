@@ -76,6 +76,8 @@ const statusOptions: Array<{ label: string; value: ProjectTaskStatus }> = [
   { label: "已取消", value: "canceled" },
 ]
 
+const defaultTaskStatuses: ProjectTaskStatus[] = ["todo", "in_progress"]
+
 const priorityOptions: Array<{
   label: string
   value: ProjectTaskPriority
@@ -85,12 +87,12 @@ const priorityOptions: Array<{
   { label: "高", value: 3 },
 ]
 
-function createEmptyTaskFilters(): TaskFilters {
+function createDefaultTaskFilters(): TaskFilters {
   return {
     assigneeUserIds: [],
     keyword: "",
     priorities: [],
-    statuses: [],
+    statuses: [...defaultTaskStatuses],
   }
 }
 
@@ -131,11 +133,11 @@ export function ProjectTasksTab({
   const [fallbackActiveTask, setFallbackActiveTask] =
     React.useState<ProjectTask | null>(null)
   const [appliedFilters, setAppliedFilters] = React.useState<TaskFilters>(
-    createEmptyTaskFilters
+    createDefaultTaskFilters
   )
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [filters, setFilters] = React.useState<TaskFilters>(
-    createEmptyTaskFilters
+    createDefaultTaskFilters
   )
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(true)
@@ -245,9 +247,7 @@ export function ProjectTasksTab({
           { replace: true }
         )
         toast.error(
-          loadError instanceof Error
-            ? loadError.message
-            : "加载任务详情失败"
+          loadError instanceof Error ? loadError.message : "加载任务详情失败"
         )
       })
 

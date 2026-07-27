@@ -136,6 +136,8 @@ func parseMessageMentionTargets(body json.RawMessage) []messageMentionTarget {
 
 func messageMentionContent(body json.RawMessage) (string, bool) {
 	var envelope struct {
+		Caption     string `json:"caption"`
+		CaptionType string `json:"caption_type"`
 		Content     string `json:"content"`
 		ContentType string `json:"content_type"`
 		Type        string `json:"type"`
@@ -150,6 +152,16 @@ func messageMentionContent(body json.RawMessage) (string, bool) {
 			return "", false
 		}
 		return envelope.Content, true
+	}
+	if messageType == "image" {
+		contentType := strings.TrimSpace(envelope.CaptionType)
+		if contentType == "" {
+			contentType = "text"
+		}
+		if contentType != "text" && contentType != "markdown" {
+			return "", false
+		}
+		return envelope.Caption, true
 	}
 	if messageType != "text" && messageType != "markdown" {
 		return "", false

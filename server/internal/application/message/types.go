@@ -298,11 +298,12 @@ type ForwardTargetError struct {
 type FinalizeBody func(context.Context, json.RawMessage) (json.RawMessage, string, error)
 
 type CreateAsAppCommand struct {
-	AppID           string
-	Body            json.RawMessage
-	ClientMessageID string
-	ConversationID  string
-	Finalize        FinalizeBody
+	AppID            string
+	Body             json.RawMessage
+	ClientMessageID  string
+	ConversationID   string
+	Finalize         FinalizeBody
+	ReplyToMessageID string
 }
 
 type CreateDelegatedCommand struct {

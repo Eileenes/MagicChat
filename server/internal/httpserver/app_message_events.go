@@ -27,13 +27,14 @@ type appMessageConversationPayload struct {
 }
 
 type appMessagePayload struct {
-	Body        json.RawMessage          `json:"body"`
-	CreatedAt   time.Time                `json:"created_at"`
-	DelegatedBy *appMessageSenderPayload `json:"delegated_by,omitempty"`
-	ID          string                   `json:"id"`
-	Seq         int64                    `json:"seq"`
-	Sender      *appMessageSenderPayload `json:"sender,omitempty"`
-	Summary     string                   `json:"summary"`
+	Body             json.RawMessage          `json:"body"`
+	CreatedAt        time.Time                `json:"created_at"`
+	DelegatedBy      *appMessageSenderPayload `json:"delegated_by,omitempty"`
+	ID               string                   `json:"id"`
+	ReplyToMessageID string                   `json:"reply_to_message_id,omitempty"`
+	Seq              int64                    `json:"seq"`
+	Sender           *appMessageSenderPayload `json:"sender,omitempty"`
+	Summary          string                   `json:"summary"`
 }
 
 type appMessageSenderPayload struct {

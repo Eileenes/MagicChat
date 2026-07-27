@@ -76,8 +76,7 @@ type forwardMentionTarget struct {
 }
 
 type forwardBodyEnvelope struct {
-	Content string `json:"content"`
-	Type    string `json:"type"`
+	Type string `json:"type"`
 }
 
 type forwardTemporaryFileBody struct {
@@ -361,7 +360,11 @@ func collectForwardMentionTargets(body json.RawMessage, targets map[string]forwa
 		}
 		return
 	}
-	for _, match := range forwardMentionTokenPattern.FindAllStringSubmatch(envelope.Content, -1) {
+	content, ok := messageMentionContent(body)
+	if !ok {
+		return
+	}
+	for _, match := range forwardMentionTokenPattern.FindAllStringSubmatch(content, -1) {
 		if len(match) != 5 {
 			continue
 		}
