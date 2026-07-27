@@ -2890,7 +2890,7 @@
         },
         "/api/client/conversations": {
             "get": {
-                "description": "普通用户获取自己参与的最近 100 个会话。茉莉固定第一，其他置顶会话和未置顶会话分别按照最后消息时间倒序排列。",
+                "description": "普通用户获取最近 100 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。",
                 "produces": [
                     "application/json"
                 ],
@@ -2898,6 +2898,14 @@
                     "客户端会话"
                 ],
                 "summary": "列出当前用户会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "即使话题超过活跃时间，也包含这个当前正在查看的会话 ID",
+                        "name": "include_conversation_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -4462,7 +4470,7 @@
         },
         "/api/client/conversations/{conversation_id}/messages/images": {
             "post": {
-                "description": "普通用户上传 WebP 或 PNG 图片并发送为会话图片消息。PNG 会在服务端转换为 WebP，图片写入 temporary bucket，消息 body 只保存 file_id。",
+                "description": "普通用户上传 WebP 或 PNG 图片并发送为会话图片消息，可附带 text 或 markdown 图片说明。PNG 会在服务端转换为 WebP，图片写入 temporary bucket。",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -4487,6 +4495,24 @@
                         "name": "client_message_id",
                         "in": "formData",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "引用消息 ID",
+                        "name": "reply_to_message_id",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "图片说明，最多 5000 个字符，支持与文本消息相同的 @ token",
+                        "name": "caption",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "图片说明类型：text 或 markdown，默认 text",
+                        "name": "caption_type",
+                        "in": "formData"
                     },
                     {
                         "type": "file",

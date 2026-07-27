@@ -95,5 +95,6 @@ var (
 	ErrTopicNested             = errors.New("nested topic is not allowed")
 	ErrTopicArchived           = errors.New("topic is archived")
 	ErrTopicChanged            = errors.New("topic changed")
+	ErrTopicPinUnsupported     = errors.New("topic pin is unsupported")
 	ErrBuiltinAssistantPin     = errors.New("builtin assistant pin is immutable")
 )

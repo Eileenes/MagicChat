@@ -12,6 +12,7 @@ import (
 	conversationapp "app/internal/application/conversation"
 	fileapp "app/internal/application/file"
 	messageapp "app/internal/application/message"
+	messagecontentapp "app/internal/application/messagecontent"
 	"app/internal/appregistry"
 	"app/internal/realtime"
 	"app/internal/store"
@@ -1919,10 +1920,12 @@ type preparedAppSendMessageBody struct {
 }
 
 type appSendMessageBodyEnvelope struct {
-	Content string `json:"content"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	URL     string `json:"url"`
+	Caption     string `json:"caption"`
+	CaptionType string `json:"caption_type"`
+	Content     string `json:"content"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	URL         string `json:"url"`
 }
 
 func (s *Server) prepareAppSendMessageBody(ctx context.Context, raw json.RawMessage) (preparedAppSendMessageBody, error) {
@@ -1962,13 +1965,21 @@ func (s *Server) prepareAppSendMessageBodyForUser(ctx context.Context, userID st
 			Finalize: s.messageContentService().Finalize,
 		}, nil
 	case messageTypeImage:
-		body, err := s.createRemoteImageMessageBody(ctx, firstNonEmptyAppString(envelope.Content, envelope.URL))
+		caption, err := messagecontentapp.NormalizeImageCaption(envelope.Caption, envelope.CaptionType)
+		if err != nil {
+			return preparedAppSendMessageBody{}, newAppRequestFailure("invalid_request", err.Error())
+		}
+		summary, err := messagecontentapp.ImageMessageSummary(caption)
+		if err != nil {
+			return preparedAppSendMessageBody{}, newAppRequestFailure("invalid_request", "图片说明格式错误")
+		}
+		body, err := s.createRemoteImageMessageBody(ctx, firstNonEmptyAppString(envelope.Content, envelope.URL), caption)
 		if err != nil {
 			return preparedAppSendMessageBody{}, err
 		}
 		return preparedAppSendMessageBody{
 			Body:     body,
-			Finalize: staticMessageBodyFinalizer(imageMessageSummary()),
+			Finalize: staticMessageBodyFinalizer(summary),
 		}, nil
 	case messageTypeFile:
 		body, name, err := s.prepareAppSendFileMessageBody(ctx, envelope)

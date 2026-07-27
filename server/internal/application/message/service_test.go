@@ -484,11 +484,45 @@ func TestServiceRevokeChoiceRewindsUnreadChoiceSequence(t *testing.T) {
 	}
 }
 
-func TestParseMessageMentionTargetsSupportsChoiceContent(t *testing.T) {
+func TestParseMessageMentionTargetsSupportsStructuredMessageContent(t *testing.T) {
 	userID := uuid.NewString()
-	targets := parseMessageMentionTargets(json.RawMessage(`{"type":"choice","content_type":"markdown","content":"{(@user/` + userID + `)} 请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`))
-	if len(targets) != 1 || targets[0].MemberType != store.ConversationMemberTypeUser || targets[0].MemberID != userID {
-		t.Fatalf("choice mention targets = %#v", targets)
+	for _, testCase := range []struct {
+		name string
+		body json.RawMessage
+	}{
+		{
+			name: "choice content",
+			body: json.RawMessage(`{"type":"choice","content_type":"markdown","content":"{(@user/` + userID + `)} 请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`),
+		},
+		{
+			name: "image text caption",
+			body: json.RawMessage(`{"type":"image","file_id":"image-1","caption":"请看 {(@user/` + userID + `)}","caption_type":"text"}`),
+		},
+		{
+			name: "image caption defaults to text",
+			body: json.RawMessage(`{"type":"image","file_id":"image-1","caption":"请看 {(@user/` + userID + `)}"}`),
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			targets := parseMessageMentionTargets(testCase.body)
+			if len(targets) != 1 || targets[0].MemberType != store.ConversationMemberTypeUser || targets[0].MemberID != userID {
+				t.Fatalf("mention targets = %#v", targets)
+			}
+		})
+	}
+}
+
+func TestCollectForwardMentionTargetsSupportsImageCaption(t *testing.T) {
+	userID := uuid.NewString()
+	targets := make(map[string]forwardMentionTarget)
+
+	collectForwardMentionTargets(json.RawMessage(
+		`{"type":"image","file_id":"image-1","caption":"请看 {(@user/`+userID+`)}","caption_type":"text"}`,
+	), targets, 0)
+
+	target, ok := targets[store.ConversationMemberTypeUser+"/"+userID]
+	if !ok || target.MemberType != store.ConversationMemberTypeUser || target.MemberID != userID {
+		t.Fatalf("forward mention targets = %#v", targets)
 	}
 }
 

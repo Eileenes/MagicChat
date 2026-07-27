@@ -13,7 +13,10 @@ import {
   ConversationPanel,
   type ConversationPanelMessage,
 } from "@/components/conversation-panel"
-import type { ClientConversation } from "@/lib/client-data-api"
+import type {
+  ClientConversation,
+  ClientImageMessageBody,
+} from "@/lib/client-data-api"
 import {
   ClientDataContext,
   type ClientDataContextValue,
@@ -112,9 +115,22 @@ describe("conversation image copy", () => {
       expect(mocks.toastSuccess).toHaveBeenCalledWith("图片已复制")
     })
   })
+
+  it("renders a markdown caption below the image", async () => {
+    renderImageConversation({
+      caption: "**图片说明**",
+      captionType: "markdown",
+    })
+
+    await screen.findByRole("button", { name: "预览图片" })
+    const caption = screen.getByText("图片说明")
+    expect(caption.tagName).toBe("STRONG")
+  })
 })
 
-function renderImageConversation() {
+function renderImageConversation(
+  imageOverrides: Partial<ClientImageMessageBody> = {}
+) {
   return render(
     <MemoryRouter>
       <ClientDataContext.Provider value={createClientDataValue()}>
@@ -125,7 +141,7 @@ function renderImageConversation() {
           historyError={null}
           historyLoading={false}
           historyLoadingBefore={false}
-          messages={[createImageMessage()]}
+          messages={[createImageMessage(imageOverrides)]}
           onCancelReply={vi.fn()}
           onDraftChange={vi.fn()}
           onLoadBeforeMessages={vi.fn()}
@@ -155,7 +171,9 @@ async function openImageMessageActionMenu() {
   fireEvent.contextMenu(messageActionTrigger)
 }
 
-function createImageMessage(): ConversationPanelMessage {
+function createImageMessage(
+  imageOverrides: Partial<ClientImageMessageBody> = {}
+): ConversationPanelMessage {
   return {
     author: "Alice",
     avatar: "",
@@ -164,6 +182,7 @@ function createImageMessage(): ConversationPanelMessage {
       height: 120,
       type: "image",
       width: 160,
+      ...imageOverrides,
     },
     canRevoke: false,
     createdAt: "2026-07-17T10:00:00Z",

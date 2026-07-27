@@ -234,7 +234,8 @@ type Group struct {
 }
 
 type ListCommand struct {
-	AccountID string
+	AccountID             string
+	IncludeConversationID string
 }
 
 type ListResult struct {

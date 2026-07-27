@@ -66,6 +66,7 @@ const (
 	maxChoiceMessageOptions               = 20
 	maxChoiceMessageOptionIDRunes         = 64
 	maxChoiceMessageOptionLabelRunes      = 200
+	maxImageMessageCaptionRunes           = 5_000
 )
 
 var choiceMessageOptionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -191,6 +192,8 @@ type readHistoryInput struct {
 
 type messageInput struct {
 	AuthorizationRef string                     `json:"authorization_ref"`
+	Caption          string                     `json:"caption"`
+	CaptionType      string                     `json:"caption_type"`
 	ChartType        string                     `json:"chart_type"`
 	ContactID        string                     `json:"contact_id"`
 	Content          string                     `json:"content"`
@@ -239,6 +242,8 @@ type readFileURLsInput struct {
 
 type scopedMessagePayload struct {
 	AuthorizationRef string                     `json:"-"`
+	Caption          string                     `json:"caption,omitempty"`
+	CaptionType      string                     `json:"caption_type,omitempty"`
 	ChartType        string                     `json:"chart_type,omitempty"`
 	Content          string                     `json:"content,omitempty"`
 	ContentType      string                     `json:"content_type,omitempty"`
@@ -1241,6 +1246,9 @@ func parseMessageInput(input json.RawMessage, requireContact bool) (scopedMessag
 	if messageType == messageTypeFile {
 		return parseFileMessageInput(parsed)
 	}
+	if messageType == messageTypeImage {
+		return parseImageMessageInput(parsed)
+	}
 	if messageType == messageTypeCard {
 		return parseCardMessageInput(parsed)
 	}
@@ -1259,6 +1267,33 @@ func parseMessageInput(input json.RawMessage, requireContact bool) (scopedMessag
 		AuthorizationRef: strings.TrimSpace(parsed.AuthorizationRef),
 		Type:             messageType,
 		Content:          content,
+	}, nil
+}
+
+func parseImageMessageInput(parsed messageInput) (scopedMessagePayload, error) {
+	content := strings.TrimSpace(parsed.Content)
+	if content == "" {
+		return scopedMessagePayload{}, fmt.Errorf("content is required")
+	}
+	caption := strings.TrimSpace(parsed.Caption)
+	if len([]rune(caption)) > maxImageMessageCaptionRunes {
+		return scopedMessagePayload{}, fmt.Errorf("image caption must be at most 5000 characters")
+	}
+	captionType := strings.ToLower(strings.TrimSpace(parsed.CaptionType))
+	if caption == "" {
+		captionType = ""
+	} else if captionType == "" {
+		captionType = messageTypeText
+	} else if captionType != messageTypeText && captionType != messageTypeMarkdown {
+		return scopedMessagePayload{}, fmt.Errorf("image caption_type must be text or markdown")
+	}
+
+	return scopedMessagePayload{
+		AuthorizationRef: strings.TrimSpace(parsed.AuthorizationRef),
+		Caption:          caption,
+		CaptionType:      captionType,
+		Content:          content,
+		Type:             messageTypeImage,
 	}, nil
 }
 

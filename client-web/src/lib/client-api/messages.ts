@@ -712,6 +712,11 @@ export async function sendConversationImageMessage(
   if (input.replyToMessageId) {
     formData.set("reply_to_message_id", input.replyToMessageId)
   }
+  const caption = input.caption?.trim() ?? ""
+  if (caption) {
+    formData.set("caption", caption)
+    formData.set("caption_type", input.captionType ?? "text")
+  }
   formData.set("image", input.image)
 
   const response = await fetcher(
@@ -1148,7 +1153,14 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
   }
 
   if (body.type === "image") {
-    return "[图片]"
+    if (!body.caption) {
+      return "[图片]"
+    }
+    const caption =
+      body.captionType === "markdown"
+        ? formatMarkdownMessageSummary(body.caption)
+        : body.caption
+    return caption ? `[图片] ${caption}` : "[图片]"
   }
 
   if (body.type === "voice") {

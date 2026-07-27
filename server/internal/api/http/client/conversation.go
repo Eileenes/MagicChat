@@ -499,9 +499,10 @@ func (a *ConversationAPI) archiveTopic(c echo.Context) error {
 // list godoc
 //
 // @Summary 列出当前用户会话
-// @Description 普通用户获取自己参与的最近 100 个会话。茉莉固定第一，其他置顶会话和未置顶会话分别按照最后消息时间倒序排列。
+// @Description 普通用户获取最近 100 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。
 // @Tags 客户端会话
 // @Produce json
+// @Param include_conversation_id query string false "即使话题超过活跃时间，也包含这个当前正在查看的会话 ID"
 // @Success 200 {object} successEnvelope{data=listClientConversationsResponse}
 // @Failure 401 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
@@ -511,7 +512,9 @@ func (a *ConversationAPI) list(c echo.Context) error {
 	if !ok {
 		return writeFailure(c, 500, string(conversationapp.CodeInternal), "服务端错误")
 	}
-	result, err := a.conversations.List(c.Request().Context(), conversationapp.ListCommand{AccountID: current.ID})
+	result, err := a.conversations.List(c.Request().Context(), conversationapp.ListCommand{
+		AccountID: current.ID, IncludeConversationID: c.QueryParam("include_conversation_id"),
+	})
 	if err != nil {
 		return writeConversationError(c, err)
 	}

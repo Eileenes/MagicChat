@@ -46,8 +46,6 @@ const (
 
 	methodConversationMessagesList = "conversation.messages.list"
 	methodConversationTopicCreate  = "conversation.topic.create"
-	methodConversationTopicGet     = "conversation.topic.get"
-	methodConversationTopicClose   = "conversation.topic.close"
 	methodTemporaryFilesReadURLs   = "temporary_files.read_urls"
 	methodEventsAck                = "events.ack"
 
@@ -144,6 +142,8 @@ type messagePayload struct {
 }
 
 type messageBody struct {
+	Caption     string                     `json:"caption"`
+	CaptionType string                     `json:"caption_type"`
 	Content     string                     `json:"content"`
 	Description string                     `json:"description"`
 	DurationMS  int                        `json:"duration_ms"`
@@ -734,7 +734,6 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 			prepared.Scope.ConversationType = topic.Type
 			prepared.Scope.ParentConversationID = parentConversation.ID
 			prepared.Scope.ParentConversationType = parentConversation.Type
-			prepared.CloseTopicOnSessionFailure = true
 		}
 	}
 	sink := agent.OutputSinkFunc(func(ctx context.Context, content string) error {
@@ -1104,6 +1103,13 @@ func buildAgentMessageContent(body messageBody, fileURLs map[string]temporaryFil
 		return body.Content, nil
 	case "image":
 		content := fmt.Sprintf("用户发送了一张图片。\n文件 ID：%s", body.FileID)
+		if caption := strings.TrimSpace(body.Caption); caption != "" {
+			captionType := strings.TrimSpace(body.CaptionType)
+			if captionType == "" {
+				captionType = "text"
+			}
+			content += fmt.Sprintf("\n图片说明（%s）：%s", captionType, caption)
+		}
 		if readURL, ok := temporaryFileURLForBody(body, fileURLs); ok {
 			content += "\n临时访问地址：" + readURL.URL
 		} else {

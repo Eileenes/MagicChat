@@ -3,6 +3,7 @@ import { createContext, useContext } from "react"
 import {
   type ClientConversation,
   type ClientDataRequestError,
+  type ImageCaptionType,
   type MarkConversationReadOptions,
   type ClientMessage,
   type MessageReactionsUpdatedEvent,
@@ -34,6 +35,11 @@ export type ClientConversationMessageState = {
 
 export type SendConversationMessageOptions = {
   replyToMessageId?: string
+}
+
+export type SendConversationImageOptions = SendConversationMessageOptions & {
+  caption?: string
+  captionType?: ImageCaptionType
 }
 
 export type ClientDataContextValue = {
@@ -187,7 +193,7 @@ export type ClientDataContextValue = {
   sendConversationImage: (
     conversationId: string,
     image: File,
-    options?: SendConversationMessageOptions
+    options?: SendConversationImageOptions
   ) => Promise<ClientMessage | null>
   sendConversationVoice: (
     conversationId: string,

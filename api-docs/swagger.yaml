@@ -3628,7 +3628,12 @@ paths:
       - 客户端通讯录
   /api/client/conversations:
     get:
-      description: 普通用户获取自己参与的最近 100 个会话。茉莉固定第一，其他置顶会话和未置顶会话分别按照最后消息时间倒序排列。
+      description: 普通用户获取最近 100 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。
+      parameters:
+      - description: 即使话题超过活跃时间，也包含这个当前正在查看的会话 ID
+        in: query
+        name: include_conversation_id
+        type: string
       produces:
       - application/json
       responses:
@@ -4320,8 +4325,8 @@ paths:
     post:
       consumes:
       - multipart/form-data
-      description: 普通用户上传 WebP 或 PNG 图片并发送为会话图片消息。PNG 会在服务端转换为 WebP，图片写入 temporary
-        bucket，消息 body 只保存 file_id。
+      description: 普通用户上传 WebP 或 PNG 图片并发送为会话图片消息，可附带 text 或 markdown 图片说明。PNG 会在服务端转换为
+        WebP，图片写入 temporary bucket。
       parameters:
       - description: 会话 ID
         in: path
@@ -4332,6 +4337,18 @@ paths:
         in: formData
         name: client_message_id
         required: true
+        type: string
+      - description: 引用消息 ID
+        in: formData
+        name: reply_to_message_id
+        type: string
+      - description: 图片说明，最多 5000 个字符，支持与文本消息相同的 @ token
+        in: formData
+        name: caption
+        type: string
+      - description: 图片说明类型：text 或 markdown，默认 text
+        in: formData
+        name: caption_type
         type: string
       - description: WebP 或 PNG 图片
         in: formData

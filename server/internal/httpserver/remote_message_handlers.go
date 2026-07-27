@@ -15,6 +15,7 @@ import (
 	"time"
 
 	fileapp "app/internal/application/file"
+	messagecontentapp "app/internal/application/messagecontent"
 	"app/internal/media"
 )
 
@@ -35,7 +36,7 @@ type downloadedRemoteMessageFile struct {
 var validateRemoteMessageFetchURL = validateLinkFetchURL
 var remoteMessageFetchHTTPClient = newRemoteMessageFetchHTTPClient()
 
-func (s *Server) createRemoteImageMessageBody(ctx context.Context, rawURL string) (json.RawMessage, error) {
+func (s *Server) createRemoteImageMessageBody(ctx context.Context, rawURL string, caption messagecontentapp.ImageCaption) (json.RawMessage, error) {
 	remoteFile, err := downloadRemoteMessageFile(ctx, rawURL, maxRemoteMessageFileBytes)
 	if err != nil {
 		return nil, err
@@ -64,10 +65,12 @@ func (s *Server) createRemoteImageMessageBody(ctx context.Context, rawURL string
 		return nil, err
 	}
 	body, err := json.Marshal(imageMessageBody{
-		Type:   messageTypeImage,
-		FileID: temporaryFile.ID,
-		Width:  width,
-		Height: height,
+		Type:        messageTypeImage,
+		FileID:      temporaryFile.ID,
+		Width:       width,
+		Height:      height,
+		Caption:     caption.Content,
+		CaptionType: caption.ContentType,
 	})
 	if err != nil {
 		return nil, err

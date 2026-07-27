@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -83,8 +84,10 @@ func TestAppMessageSendConvertsImageURLToWebP(t *testing.T) {
 				"conversation_id": conversationID,
 			},
 			"message": map[string]any{
-				"type":    "image",
-				"content": sourceServer.URL + "/photo.png",
+				"type":         "image",
+				"content":      sourceServer.URL + "/photo.png",
+				"caption":      "**架构图**",
+				"caption_type": "markdown",
 			},
 		}),
 	})
@@ -97,6 +100,12 @@ func TestAppMessageSendConvertsImageURLToWebP(t *testing.T) {
 	fileID := body["file_id"].(string)
 	if body["width"] != float64(64) || body["height"] != float64(32) {
 		t.Fatalf("message.body dimensions = %vx%v, want 64x32", body["width"], body["height"])
+	}
+	if body["caption"] != "**架构图**" || body["caption_type"] != "markdown" {
+		t.Fatalf("message.body caption = %#v/%#v, want markdown caption", body["caption"], body["caption_type"])
+	}
+	if message["summary"] != "[图片] 架构图" {
+		t.Fatalf("message.summary = %v, want markdown caption summary", message["summary"])
 	}
 
 	var storedFile store.TemporaryFile
@@ -169,6 +178,7 @@ func TestClientCanSendConversationImageMessage(t *testing.T) {
 		"photo.webp",
 		content,
 		loginAsUser(t, server, alice.Email),
+		multipartImageMessageCaption{Content: "**现场照片**", ContentType: "markdown"},
 	)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("send image message status = %d, want 201: %#v", resp.StatusCode, body)
@@ -192,6 +202,9 @@ func TestClientCanSendConversationImageMessage(t *testing.T) {
 	}
 	if messageBody["height"] != float64(768) {
 		t.Fatalf("message.body.height = %#v, want 768", messageBody["height"])
+	}
+	if messageBody["caption"] != "**现场照片**" || messageBody["caption_type"] != "markdown" {
+		t.Fatalf("message.body caption = %#v/%#v, want markdown caption", messageBody["caption"], messageBody["caption_type"])
 	}
 	if _, ok := messageBody["name"]; ok {
 		t.Fatalf("message.body.name = %#v, want omitted", messageBody["name"])
@@ -218,14 +231,14 @@ func TestClientCanSendConversationImageMessage(t *testing.T) {
 	if err := db.First(&storedMessage, "id = ?", message["id"]).Error; err != nil {
 		t.Fatalf("find stored message: %v", err)
 	}
-	if storedMessage.Summary != "[图片]" {
+	if storedMessage.Summary != "[图片] 现场照片" {
 		t.Fatalf("stored message summary = %q", storedMessage.Summary)
 	}
 	var storedConversation store.Conversation
 	if err := db.First(&storedConversation, "id = ?", conversation.ID).Error; err != nil {
 		t.Fatalf("find stored conversation: %v", err)
 	}
-	if storedConversation.LastMessageSummary != "[图片]" {
+	if storedConversation.LastMessageSummary != "[图片] 现场照片" {
 		t.Fatalf("conversation last_message_summary = %q", storedConversation.LastMessageSummary)
 	}
 
@@ -234,7 +247,9 @@ func TestClientCanSendConversationImageMessage(t *testing.T) {
 	if pushedBody["type"] != "image" ||
 		pushedBody["file_id"] != fileID ||
 		pushedBody["width"] != float64(1024) ||
-		pushedBody["height"] != float64(768) {
+		pushedBody["height"] != float64(768) ||
+		pushedBody["caption"] != "**现场照片**" ||
+		pushedBody["caption_type"] != "markdown" {
 		t.Fatalf("pushed message body = %#v, want image body", pushedBody)
 	}
 	requireNoRealtimeEvent(t, bobConn)
@@ -677,17 +692,64 @@ func TestCreateConversationImageMessageRejectsLargeFile(t *testing.T) {
 	requireError(t, body, "request_too_large")
 }
 
-func postMultipartImageMessage(t *testing.T, server *httptest.Server, path string, clientMessageID string, filename string, content []byte, cookiesAndReplyTo ...any) (*http.Response, map[string]any) {
+func TestCreateConversationImageMessageRejectsInvalidCaption(t *testing.T) {
+	s3Server, _ := newFakeS3Server(t)
+	defer s3Server.Close()
+
+	server, db := newTemporaryFileTestRouter(t, s3Server.URL, "assets.example.test")
+	defer server.Close()
+
+	now := time.Date(2026, 7, 7, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+	cookie := loginAsUser(t, server, alice.Email)
+
+	for index, caption := range []multipartImageMessageCaption{
+		{Content: "图片说明", ContentType: "html"},
+		{Content: strings.Repeat("图", 5001), ContentType: "text"},
+	} {
+		resp, body := postMultipartImageMessage(
+			t,
+			server,
+			"/api/client/conversations/"+conversation.ID+"/messages/images",
+			fmt.Sprintf("invalid-caption-%d", index),
+			"image.webp",
+			testWebPVP8X(320, 240),
+			cookie,
+			caption,
+		)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("caption %#v status = %d, want 400: %#v", caption, resp.StatusCode, body)
+		}
+		requireError(t, body, "invalid_request")
+	}
+}
+
+type multipartImageMessageCaption struct {
+	Content     string
+	ContentType string
+}
+
+func postMultipartImageMessage(t *testing.T, server *httptest.Server, path string, clientMessageID string, filename string, content []byte, options ...any) (*http.Response, map[string]any) {
 	t.Helper()
 
 	var cookies []*http.Cookie
 	var replyToMessageID string
-	for _, value := range cookiesAndReplyTo {
+	var caption multipartImageMessageCaption
+	for _, value := range options {
 		switch typedValue := value.(type) {
 		case *http.Cookie:
 			cookies = append(cookies, typedValue)
 		case string:
 			replyToMessageID = typedValue
+		case multipartImageMessageCaption:
+			caption = typedValue
 		default:
 			t.Fatalf("unsupported multipart image message option %T", value)
 		}
@@ -701,6 +763,14 @@ func postMultipartImageMessage(t *testing.T, server *httptest.Server, path strin
 	if replyToMessageID != "" {
 		if err := writer.WriteField("reply_to_message_id", replyToMessageID); err != nil {
 			t.Fatalf("write reply_to_message_id: %v", err)
+		}
+	}
+	if caption.Content != "" {
+		if err := writer.WriteField("caption", caption.Content); err != nil {
+			t.Fatalf("write caption: %v", err)
+		}
+		if err := writer.WriteField("caption_type", caption.ContentType); err != nil {
+			t.Fatalf("write caption_type: %v", err)
 		}
 	}
 	part, err := writer.CreateFormFile("image", filename)

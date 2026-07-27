@@ -477,6 +477,7 @@ func TestShouldHandleIncomingMessageUsesConversationContextAndTriggerType(t *tes
 		{name: "app forwarded bundle", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "forward_bundle"}},
 		{name: "group text mention", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}, want: true},
 		{name: "group markdown uppercase mention", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "markdown", Content: "请处理 {(@app/" + strings.ToUpper(appID) + ")}"}, want: true},
+		{name: "group image caption mention", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "image", Caption: "请处理 {(@app/" + appID + ")}", CaptionType: "text", FileID: "image-1"}},
 		{name: "group text without mention", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "text", Content: "我们先讨论一下"}},
 		{name: "group voice", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "voice", FileID: "voice-1"}},
 		{name: "app topic text", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "app"}}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}, want: true},
@@ -484,6 +485,7 @@ func TestShouldHandleIncomingMessageUsesConversationContextAndTriggerType(t *tes
 		{name: "app topic image", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "app"}}, senderType: "user", body: messageBody{Type: "image", FileID: "image-1"}},
 		{name: "direct topic markdown", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "direct"}}, senderType: "user", body: messageBody{Type: "markdown", Content: "继续处理"}, want: true},
 		{name: "group topic mention", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}, want: true},
+		{name: "group topic image caption mention", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "image", Caption: "请处理 {(@app/" + appID + ")}", CaptionType: "text", FileID: "image-1"}},
 		{name: "group topic without mention", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}},
 		{name: "topic without parent falls back to mention", conversation: conversationPayload{Type: "topic"}, senderType: "user", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}, want: true},
 		{name: "topic without parent and without mention", conversation: conversationPayload{Type: "topic"}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}},
@@ -826,8 +828,10 @@ func TestHandleServerMessageIgnoresImageAndFileMessages(t *testing.T) {
 		{
 			name: "image",
 			body: map[string]any{
-				"type":    "image",
-				"file_id": "file-image-1",
+				"type":         "image",
+				"file_id":      "file-image-1",
+				"caption":      "请分析这张图",
+				"caption_type": "text",
 			},
 		},
 		{
@@ -862,6 +866,22 @@ func TestHandleServerMessageIgnoresImageAndFileMessages(t *testing.T) {
 				func(context.Context, envelope) error { return nil },
 			)
 		})
+	}
+}
+
+func TestBuildAgentMessageContentIncludesImageCaption(t *testing.T) {
+	content, err := buildAgentMessageContent(messageBody{
+		Type: "image", FileID: "image-1", Caption: "**架构图**", CaptionType: "markdown",
+	}, map[string]temporaryFileReadURLPayload{
+		"image-1": {FileID: "image-1", URL: "https://assets.example.test/image-1"},
+	})
+	if err != nil {
+		t.Fatalf("buildAgentMessageContent() error = %v", err)
+	}
+	for _, snippet := range []string{"图片说明（markdown）：**架构图**", "https://assets.example.test/image-1"} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("content = %q, want to contain %q", content, snippet)
+		}
 	}
 }
 

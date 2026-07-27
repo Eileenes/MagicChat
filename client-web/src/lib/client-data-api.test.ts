@@ -5,6 +5,7 @@ import {
   ClientDataRequestError,
   createGroupConversation,
   dismissConversation,
+  formatClientMessageBodySummary,
   getCurrentClientUser,
   listClientContacts,
   listClientConversations,
@@ -12,6 +13,7 @@ import {
   normalizeMessageCreatedEventPayload,
   normalizeConversationPinUpdatedEventPayload,
   normalizeConversationMuteUpdatedEventPayload,
+  normalizeClientMessageBody,
   restoreConversation,
   sendConversationFileMessage,
   sendConversationImageMessage,
@@ -769,6 +771,8 @@ describe("client data API", () => {
     await sendConversationImageMessage(
       "conversation-1",
       {
+        caption: "**图片说明**",
+        captionType: "markdown",
         clientMessageId: "client-image",
         image: new File(["image"], "photo.webp", { type: "image/webp" }),
         replyToMessageId: "message-quoted",
@@ -804,6 +808,29 @@ describe("client data API", () => {
     expect((imageBody as FormData).get("reply_to_message_id")).toBe(
       "message-quoted"
     )
+    expect((imageBody as FormData).get("caption")).toBe("**图片说明**")
+    expect((imageBody as FormData).get("caption_type")).toBe("markdown")
+  })
+
+  it("normalizes image captions and formats markdown summaries", () => {
+    const body = normalizeClientMessageBody({
+      caption: "  **图片说明**  ",
+      caption_type: "markdown",
+      file_id: "image-1",
+      height: 240,
+      type: "image",
+      width: 320,
+    })
+
+    expect(body).toEqual({
+      caption: "**图片说明**",
+      captionType: "markdown",
+      fileId: "image-1",
+      height: 240,
+      type: "image",
+      width: 320,
+    })
+    expect(formatClientMessageBodySummary(body)).toBe("[图片] 图片说明")
   })
 
   it("sends and normalizes card message messages", async () => {

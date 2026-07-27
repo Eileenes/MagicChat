@@ -4,6 +4,7 @@ import type { ClientConversation, ClientMessage } from "@/lib/client-data-api"
 import {
   compactConversationMessageState,
   createConversationMessageState,
+  isConversationTopicVisibleInList,
   mergeConversationMessages,
   orderConversations,
 } from "@/lib/client-data-state"
@@ -166,6 +167,109 @@ describe("orderConversations", () => {
       ]).map(({ id }) => id)
     ).toEqual(["assistant", "recent-pinned", "older-pinned", "newest-unpinned"])
   })
+
+  it("keeps topics under their parent and orders the group by topic activity", () => {
+    const now = Date.parse("2026-07-27T08:00:00Z")
+    const activeParent = createConversation(
+      "active-parent",
+      "group",
+      "2026-07-27"
+    )
+    activeParent.lastMessageAt = "2026-07-27T06:00:00Z"
+    const recentParent = createConversation(
+      "recent-parent",
+      "group",
+      "2026-07-27"
+    )
+    recentParent.lastMessageAt = "2026-07-27T07:53:00Z"
+    const newestTopic = createTopicConversation(
+      "newest-topic",
+      activeParent,
+      "2026-07-27T07:55:00Z"
+    )
+    const olderTopic = createTopicConversation(
+      "older-topic",
+      activeParent,
+      "2026-07-27T07:50:00Z"
+    )
+
+    expect(
+      orderConversations(
+        [recentParent, olderTopic, activeParent, newestTopic],
+        now
+      ).map(({ id }) => id)
+    ).toEqual(["active-parent", "newest-topic", "older-topic", "recent-parent"])
+  })
+
+  it("does not let a legacy topic pin move its parent group", () => {
+    const now = Date.parse("2026-07-27T08:00:00Z")
+    const oldParent = createConversation("old-parent", "group", "2026-07-27")
+    oldParent.lastMessageAt = "2026-07-27T07:30:00Z"
+    const recentParent = createConversation(
+      "recent-parent",
+      "group",
+      "2026-07-27"
+    )
+    recentParent.lastMessageAt = "2026-07-27T07:55:00Z"
+    const pinnedTopic = {
+      ...createTopicConversation(
+        "pinned-topic",
+        oldParent,
+        "2026-07-27T07:40:00Z"
+      ),
+      pinned: true,
+    }
+
+    expect(
+      orderConversations([oldParent, pinnedTopic, recentParent], now).map(
+        ({ id }) => id
+      )
+    ).toEqual(["recent-parent", "old-parent", "pinned-topic"])
+  })
+})
+
+describe("isConversationTopicVisibleInList", () => {
+  const now = Date.parse("2026-07-27T08:00:00Z")
+  const parent = createConversation("parent", "group", "2026-07-27")
+
+  it("hides inactive read topics but keeps unread and active topics", () => {
+    const stale = createTopicConversation(
+      "stale",
+      parent,
+      "2026-07-27T07:29:59Z"
+    )
+    const unread = { ...stale, id: "unread", lastMessageSeq: 2, unreadCount: 1 }
+
+    expect(isConversationTopicVisibleInList(stale, { now })).toBe(false)
+    expect(isConversationTopicVisibleInList(unread, { now })).toBe(true)
+    expect(
+      isConversationTopicVisibleInList(stale, {
+        activeConversationId: stale.id,
+        now,
+      })
+    ).toBe(true)
+  })
+
+  it("never shows archived or non-participating topics", () => {
+    const topic = createTopicConversation(
+      "topic",
+      parent,
+      "2026-07-27T07:55:00Z"
+    )
+
+    expect(
+      isConversationTopicVisibleInList({
+        ...topic,
+        topic: { ...topic.topic!, archived: true },
+      })
+    ).toBe(false)
+    expect(
+      isConversationTopicVisibleInList({
+        ...topic,
+        topic: { ...topic.topic!, participating: false },
+      })
+    ).toBe(false)
+  })
 })
 
 function createMessage(
@@ -211,6 +315,32 @@ function createConversation(
     type,
     unreadCount: 0,
     visibility: "private",
+  }
+}
+
+function createTopicConversation(
+  id: string,
+  parent: ClientConversation,
+  lastMessageAt: string
+): ClientConversation {
+  return {
+    ...createConversation(id, "topic", "2026-07-27"),
+    lastMessageAt,
+    topic: {
+      archived: false,
+      parentConversationId: parent.id,
+      parentConversationName: parent.name,
+      parentConversationType: parent.type === "topic" ? "group" : parent.type,
+      participating: true,
+      sourceMessageId: `source-${id}`,
+      sourceMessageSeq: 1,
+      sourceSender: {
+        avatar: "",
+        id: "user-1",
+        name: "User",
+        type: "user",
+      },
+    },
   }
 }
 

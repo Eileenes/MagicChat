@@ -335,6 +335,19 @@ func messageMentionContent(body json.RawMessage) (string, bool) {
 			return "", false
 		}
 		return value.Content, true
+	case messageTypeImage:
+		var value imageMessageBody
+		if json.Unmarshal(body, &value) != nil {
+			return "", false
+		}
+		contentType := strings.TrimSpace(value.CaptionType)
+		if contentType == "" {
+			contentType = messageTypeText
+		}
+		if contentType != messageTypeText && contentType != messageTypeMarkdown {
+			return "", false
+		}
+		return value.Caption, true
 	default:
 		return "", false
 	}

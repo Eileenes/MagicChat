@@ -415,6 +415,25 @@ function resolvePendingRequest(replyTo, envelope) {
 
 可发送的消息类型包括 `text`、`markdown`、`choice`、`link`、`card`、`chart`、`image` 和 `file`。不能发送 `entity_card`。图片和文件应提供可由 Server 拉取的 URL，整个 Envelope 仍受 1 MiB 限制。
 
+图片消息可附带 text 或 markdown 说明：
+
+```json
+{
+  "target": {
+    "type": "conversation",
+    "conversation_id": "会话 ID"
+  },
+  "message": {
+    "type": "image",
+    "content": "https://example.com/chart.png",
+    "caption": "**本周趋势图**",
+    "caption_type": "markdown"
+  }
+}
+```
+
+`caption` 可选，最多 5000 个字符；`caption_type` 可为 `text` 或 `markdown`，未填写时默认为 `text`。说明中可以使用与文本消息相同的精确 `@` token；转发图片时，这些 token 会被转换为普通显示文字，不会在目标会话中再次触发通知。
+
 发送选择消息仍使用 `message.send`，把 `message` 设置为 `choice` body：
 
 ```json

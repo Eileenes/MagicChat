@@ -107,7 +107,19 @@ func (s *Service) sanitizeForwardBody(
 		if json.Unmarshal(raw, &body) != nil || strings.TrimSpace(body.FileID) == "" {
 			return nil, "", messageapp.ForwardBodyMetrics{}, messageapp.ErrForwardUnsupportedMessage
 		}
-		return cloneRaw(raw), "[图片]", leaf, nil
+		caption, err := NormalizeImageCaption(body.Caption, body.CaptionType)
+		if err != nil {
+			return nil, "", messageapp.ForwardBodyMetrics{}, messageapp.ErrForwardUnsupportedMessage
+		}
+		caption.Content = replaceMentions(caption.Content, mentionLabels, caption.ContentType == TypeMarkdown)
+		body.Caption = caption.Content
+		body.CaptionType = caption.ContentType
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return nil, "", messageapp.ForwardBodyMetrics{}, err
+		}
+		summary, err := ImageMessageSummary(caption)
+		return encoded, summary, leaf, err
 	case TypeVoice:
 		var body voiceBody
 		if json.Unmarshal(raw, &body) != nil || strings.TrimSpace(body.FileID) == "" || body.DurationMS <= 0 {

@@ -22,8 +22,12 @@ func (s *Service) SetPinned(ctx context.Context, cmd SetPinCommand) (SetPinResul
 
 	changed := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := requireConversationPreferenceAccess(tx, conversationID, accountID); err != nil {
+		conversation, err := requireConversationPreferenceAccess(tx, conversationID, accountID)
+		if err != nil {
 			return err
+		}
+		if conversation.Kind == store.ConversationKindTopic {
+			return ErrTopicPinUnsupported
 		}
 		if conversationID == builtinAssistantConversationID(accountID) {
 			if !cmd.Pinned {
@@ -62,6 +66,8 @@ func (s *Service) SetPinned(ctx context.Context, cmd SetPinCommand) (SetPinResul
 			return SetPinResult{}, forbidden("无权访问会话", err)
 		case errors.Is(err, ErrBuiltinAssistantPin):
 			return SetPinResult{}, conflict("茉莉为默认置顶会话，不能取消置顶", err)
+		case errors.Is(err, ErrTopicPinUnsupported):
+			return SetPinResult{}, invalidRequest("话题不支持置顶", err)
 		default:
 			return SetPinResult{}, internalError(err)
 		}

@@ -317,29 +317,87 @@ export function getNewestMessageSeq(state: ClientConversationMessageState) {
 }
 
 const builtinAssistantAppId = "00000000-0000-0000-0000-000000000001"
+const topicConversationListActivityWindowMs = 30 * 60 * 1000
 
-export function orderConversations(conversations: ClientConversation[]) {
-  return [...conversations].sort((left, right) => {
-    const leftIsBuiltinAssistant = isBuiltinAssistantConversation(left)
-    const rightIsBuiltinAssistant = isBuiltinAssistantConversation(right)
-    if (leftIsBuiltinAssistant !== rightIsBuiltinAssistant) {
-      return leftIsBuiltinAssistant ? -1 : 1
+export function orderConversations(
+  conversations: ClientConversation[],
+  now = Date.now()
+) {
+  const parentConversations: ClientConversation[] = []
+  const orphanTopics: ClientConversation[] = []
+  const topicsByParentId = new Map<string, ClientConversation[]>()
+  const parentIds = new Set(
+    conversations
+      .filter((conversation) => conversation.type !== "topic")
+      .map((conversation) => conversation.id)
+  )
+
+  for (const conversation of conversations) {
+    if (conversation.type !== "topic") {
+      parentConversations.push(conversation)
+      continue
     }
-
-    const leftPinned = Boolean(left.pinned)
-    const rightPinned = Boolean(right.pinned)
-    if (leftPinned !== rightPinned) {
-      return leftPinned ? -1 : 1
+    const parentId = conversation.topic?.parentConversationId
+    if (!parentId || !parentIds.has(parentId)) {
+      orphanTopics.push(conversation)
+      continue
     }
+    const topics = topicsByParentId.get(parentId) ?? []
+    topics.push(conversation)
+    topicsByParentId.set(parentId, topics)
+  }
 
-    const leftActivity = getConversationActivityTimestamp(left)
-    const rightActivity = getConversationActivityTimestamp(right)
-    if (leftActivity !== rightActivity) {
-      return rightActivity - leftActivity
-    }
-
-    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+  parentConversations.sort((left, right) => {
+    const leftTopics = getActiveTopicChildren(
+      topicsByParentId.get(left.id) ?? [],
+      now
+    )
+    const rightTopics = getActiveTopicChildren(
+      topicsByParentId.get(right.id) ?? [],
+      now
+    )
+    return compareConversationGroups(left, leftTopics, right, rightTopics)
   })
+
+  const ordered: ClientConversation[] = []
+  for (const parent of parentConversations) {
+    ordered.push(parent)
+    const topics = topicsByParentId.get(parent.id) ?? []
+    topics.sort(compareTopicConversationItems)
+    ordered.push(...topics)
+  }
+
+  orphanTopics.sort(compareTopicConversationItems)
+  ordered.push(...orphanTopics)
+  return ordered
+}
+
+export function isConversationTopicVisibleInList(
+  conversation: ClientConversation,
+  options: { activeConversationId?: string; now?: number } = {}
+) {
+  if (conversation.type !== "topic") {
+    return true
+  }
+  if (!conversation.topic?.participating || conversation.topic.archived) {
+    return false
+  }
+  if (conversation.id === options.activeConversationId) {
+    return true
+  }
+  if (
+    conversation.unreadCount > 0 ||
+    conversation.lastMessageSeq > conversation.lastReadSeq
+  ) {
+    return true
+  }
+
+  const activityAt = getConversationActivityTimestamp(conversation)
+  return (
+    Number.isFinite(activityAt) &&
+    activityAt >=
+      (options.now ?? Date.now()) - topicConversationListActivityWindowMs
+  )
 }
 
 export function isBuiltinAssistantConversation(
@@ -359,6 +417,73 @@ function getConversationActivityTimestamp(conversation: ClientConversation) {
   )
 
   return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp
+}
+
+function getActiveTopicChildren(topics: ClientConversation[], now: number) {
+  return topics.filter((topic) =>
+    isConversationTopicVisibleInList(topic, { now })
+  )
+}
+
+function compareConversationGroups(
+  left: ClientConversation,
+  leftTopics: ClientConversation[],
+  right: ClientConversation,
+  rightTopics: ClientConversation[]
+) {
+  const leftIsBuiltinAssistant = isBuiltinAssistantConversation(left)
+  const rightIsBuiltinAssistant = isBuiltinAssistantConversation(right)
+  if (leftIsBuiltinAssistant !== rightIsBuiltinAssistant) {
+    return leftIsBuiltinAssistant ? -1 : 1
+  }
+
+  const leftPinned = Boolean(left.pinned)
+  const rightPinned = Boolean(right.pinned)
+  if (leftPinned !== rightPinned) {
+    return leftPinned ? -1 : 1
+  }
+
+  const leftActivity = getConversationGroupActivityTimestamp(left, leftTopics)
+  const rightActivity = getConversationGroupActivityTimestamp(
+    right,
+    rightTopics
+  )
+  if (leftActivity !== rightActivity) {
+    return rightActivity - leftActivity
+  }
+
+  return compareConversationIds(left, right)
+}
+
+function getConversationGroupActivityTimestamp(
+  parent: ClientConversation,
+  topics: ClientConversation[]
+) {
+  return topics.reduce(
+    (latest, topic) =>
+      Math.max(latest, getConversationActivityTimestamp(topic)),
+    getConversationActivityTimestamp(parent)
+  )
+}
+
+function compareTopicConversationItems(
+  left: ClientConversation,
+  right: ClientConversation
+) {
+  const leftActivity = getConversationActivityTimestamp(left)
+  const rightActivity = getConversationActivityTimestamp(right)
+  if (leftActivity !== rightActivity) {
+    return rightActivity - leftActivity
+  }
+
+  return compareConversationIds(left, right)
+}
+
+function compareConversationIds(
+  left: ClientConversation,
+  right: ClientConversation
+) {
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
 }
 
 export function getClientDataErrorMessage(

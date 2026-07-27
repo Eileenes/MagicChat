@@ -48,9 +48,14 @@ import type {
 } from "./types"
 
 export async function listClientConversations(
-  fetcher: ClientDataFetch = fetch
+  fetcher: ClientDataFetch = fetch,
+  options: { includeConversationId?: string } = {}
 ) {
-  const response = await fetcher("/api/client/conversations", {
+  const includeConversationId = options.includeConversationId?.trim()
+  const query = includeConversationId
+    ? `?include_conversation_id=${encodeURIComponent(includeConversationId)}`
+    : ""
+  const response = await fetcher(`/api/client/conversations${query}`, {
     credentials: "include",
     method: "GET",
   })

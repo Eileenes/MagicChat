@@ -11,6 +11,7 @@ import {
   createConversationTopic,
   forwardConversationMessages,
   type ClientConversation,
+  type ImageCaptionType,
   type ClientMessage,
   type ClientTopicSourceMessage,
   type ContactApp,
@@ -748,7 +749,11 @@ export function ChatPage() {
     return message
   }
 
-  async function sendImageMessage(image: File) {
+  async function sendImageMessage(
+    image: File,
+    caption: string,
+    captionType: ImageCaptionType
+  ) {
     if (!activeConversationId || activeMessageState?.sending) {
       return null
     }
@@ -756,6 +761,8 @@ export function ChatPage() {
     const sendingConversationId = activeConversationId
     const sendingReplyToMessageId = replyTarget?.id
     const message = await sendConversationImage(sendingConversationId, image, {
+      caption,
+      captionType,
       replyToMessageId: sendingReplyToMessageId,
     })
     if (message) {
