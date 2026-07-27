@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import { ConversationSidebar } from "@/components/conversation/conversation-sidebar"
@@ -6,6 +7,87 @@ import { SidebarProvider } from "@/components/ui/sidebar"
 import type { ClientConversation, ClientUser } from "@/lib/client-data-api"
 
 describe("ConversationSidebar", () => {
+  it("filters conversations by type", async () => {
+    const user = userEvent.setup()
+    const conversations = [
+      createAppConversation({
+        id: "direct",
+        name: "联系人会话",
+        type: "direct",
+      }),
+      createAppConversation({ id: "app", name: "应用会话", type: "app" }),
+      createAppConversation({ id: "group", name: "群聊会话", type: "group" }),
+      createAppConversation({
+        id: "topic",
+        name: "话题会话",
+        topic: {
+          archived: false,
+          parentConversationId: "group",
+          parentConversationName: "群聊会话",
+          parentConversationType: "group",
+          participating: true,
+          sourceMessageId: "message-1",
+          sourceMessageSeq: 1,
+          sourceSender: {
+            avatar: "",
+            id: "user-2",
+            name: "成员",
+            type: "user",
+          },
+        },
+        type: "topic",
+      }),
+    ]
+    const conversationDisplayNames = [
+      "联系人会话",
+      "应用会话",
+      "群聊会话",
+      "话题会话 - 群聊会话",
+    ]
+
+    render(
+      <SidebarProvider>
+        <ConversationSidebar
+          activeConversationId=""
+          appsById={new Map()}
+          contactsById={new Map()}
+          conversations={conversations}
+          currentUser={createCurrentUser()}
+          drafts={{}}
+          onCreateGroup={vi.fn()}
+          onSelectConversation={vi.fn()}
+          onSetConversationPinned={vi.fn()}
+        />
+      </SidebarProvider>
+    )
+
+    expect(screen.getByText("联系人会话")).toBeInTheDocument()
+    expect(screen.getByText("应用会话")).toBeInTheDocument()
+    expect(screen.getByText("群聊会话")).toBeInTheDocument()
+    expect(screen.getByText("话题会话 - 群聊会话")).toBeInTheDocument()
+
+    for (const [tab, visibleName] of [
+      ["单聊", "联系人会话"],
+      ["应用", "应用会话"],
+      ["群聊", "群聊会话"],
+      ["话题", "话题会话 - 群聊会话"],
+    ] as const) {
+      await user.click(screen.getByRole("tab", { name: tab }))
+      expect(screen.getByText(visibleName)).toBeInTheDocument()
+      for (const hiddenName of conversationDisplayNames.filter(
+        (name) => name !== visibleName
+      )) {
+        expect(screen.queryByText(hiddenName)).not.toBeInTheDocument()
+      }
+    }
+
+    await user.click(screen.getByRole("tab", { name: "全部" }))
+    expect(screen.getByText("联系人会话")).toBeInTheDocument()
+    expect(screen.getByText("应用会话")).toBeInTheDocument()
+    expect(screen.getByText("群聊会话")).toBeInTheDocument()
+    expect(screen.getByText("话题会话 - 群聊会话")).toBeInTheDocument()
+  })
+
   it("omits the sender in direct chats and shows it in group chats", () => {
     const conversations = [
       createAppConversation({

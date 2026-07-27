@@ -4,7 +4,7 @@ import { toast } from "sonner"
 
 import { ConversationListItemMenu } from "@/components/conversation-list-item-menu"
 import { ConversationAvatar } from "@/components/conversation/conversation-avatar"
-import { ConversationSearchPopover } from "@/components/conversation/conversation-search-popover"
+import { GlobalSearchCommand } from "@/components/global-search-command"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,11 +31,13 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatActivityTime } from "@/lib/activity-time"
 import type {
   ClientConversation,
   ClientUser,
   ContactApp,
+  ContactGroup,
   ContactUser,
 } from "@/lib/client-data-api"
 import { getConversationDisplayName } from "@/lib/conversation-avatar-presentation"
@@ -45,33 +47,52 @@ import {
 } from "@/lib/client-data-state"
 import { createConversationMentionLabelResolver } from "@/lib/conversation-mention-labels"
 import type { ConversationDrafts } from "@/lib/conversation-drafts"
+import type { DirectorySearchItem } from "@/lib/local-search"
 import {
   formatMentionTemplateText,
   type MentionLabelResolver,
 } from "@/lib/message-mentions"
 import { cn } from "@/lib/utils"
 
+const conversationFilterOptions = [
+  { label: "全部", value: "all" },
+  { label: "单聊", value: "direct" },
+  { label: "应用", value: "app" },
+  { label: "群聊", value: "group" },
+  { label: "话题", value: "topic" },
+] as const
+
+type ConversationFilter = (typeof conversationFilterOptions)[number]["value"]
+
 export function ConversationSidebar({
   activeConversationId,
   appsById,
+  contactApps = [],
+  contactGroups = [],
+  contacts = [],
   contactsById,
   conversations,
   currentUser,
   drafts,
   onCreateGroup,
   onDismissConversation,
+  onSelectDirectoryItem = noopSelectDirectoryItem,
   onSelectConversation,
   onSetConversationMuted,
   onSetConversationPinned,
 }: {
   activeConversationId: string
   appsById: ReadonlyMap<string, ContactApp>
+  contactApps?: ContactApp[]
+  contactGroups?: ContactGroup[]
+  contacts?: ContactUser[]
   contactsById: ReadonlyMap<string, ContactUser>
   conversations: ClientConversation[]
   currentUser: ClientUser
   drafts: ConversationDrafts
   onCreateGroup: () => void
   onDismissConversation?: (conversationId: string) => Promise<void>
+  onSelectDirectoryItem?: (item: DirectorySearchItem) => void
   onSelectConversation: (conversationId: string) => void
   onSetConversationMuted?: (
     conversationId: string,
@@ -82,12 +103,23 @@ export function ConversationSidebar({
     pinned: boolean
   ) => Promise<void>
 }) {
+  const [conversationFilter, setConversationFilter] =
+    React.useState<ConversationFilter>("all")
   const [pinningConversationId, setPinningConversationId] = React.useState("")
   const [mutingConversationId, setMutingConversationId] = React.useState("")
   const [dismissingConversationId, setDismissingConversationId] =
     React.useState("")
   const [dismissCandidate, setDismissCandidate] =
     React.useState<ClientConversation | null>(null)
+  const visibleConversations = React.useMemo(
+    () =>
+      conversationFilter === "all"
+        ? conversations
+        : conversations.filter(
+            (conversation) => conversation.type === conversationFilter
+          ),
+    [conversationFilter, conversations]
+  )
 
   async function handlePinnedChange(
     conversation: ClientConversation,
@@ -189,44 +221,65 @@ export function ConversationSidebar({
       <SidebarHeader className="gap-0 p-0">
         <div className="flex h-14 items-center justify-between px-4">
           <h1 className="text-base font-medium">消息</h1>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                aria-label="新建 Agent"
-                size="icon-sm"
-                title="新建 Agent"
-                type="button"
-                variant="ghost"
-              >
-                <Plus className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-32">
-              <DropdownMenuItem onSelect={onCreateGroup}>
-                发起群聊
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-1">
+            <GlobalSearchCommand
+              contactApps={contactApps}
+              contactGroups={contactGroups}
+              contacts={contacts}
+              conversations={conversations}
+              currentUserId={currentUser.id}
+              getConversationDescription={getSearchConversationDescription}
+              onSelectDirectoryItem={onSelectDirectoryItem}
+              onSelectConversation={onSelectConversation}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  aria-label="新建 Agent"
+                  size="icon-sm"
+                  title="新建 Agent"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Plus className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-32">
+                <DropdownMenuItem onSelect={onCreateGroup}>
+                  发起群聊
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         <div className="px-4 pb-3">
-          <ConversationSearchPopover
-            conversations={conversations}
-            currentUserId={currentUser.id}
-            getConversationDescription={getSearchConversationDescription}
-            onSelectConversation={onSelectConversation}
-          />
+          <Tabs
+            className="gap-0"
+            onValueChange={(value) =>
+              setConversationFilter(value as ConversationFilter)
+            }
+            value={conversationFilter}
+          >
+            <TabsList aria-label="会话类型" className="grid w-full grid-cols-5">
+              {conversationFilterOptions.map((option) => (
+                <TabsTrigger key={option.value} value={option.value}>
+                  {option.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </div>
       </SidebarHeader>
       <SidebarContent onContextMenu={handleConversationListContextMenu}>
         <SidebarMenu className="px-2 pb-3">
-          {conversations.length === 0 && (
+          {visibleConversations.length === 0 && (
             <SidebarMenuItem>
               <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                暂无会话
+                {getEmptyConversationFilterMessage(conversationFilter)}
               </div>
             </SidebarMenuItem>
           )}
-          {conversations.map((conversation) => {
+          {visibleConversations.map((conversation) => {
             const selected = conversation.id === activeConversationId
             const lastMessageTime = formatActivityTime(
               conversation.lastMessageAt ?? conversation.createdAt
@@ -376,6 +429,16 @@ export function ConversationSidebar({
       </AlertDialog>
     </Sidebar>
   )
+}
+
+function noopSelectDirectoryItem() {}
+
+function getEmptyConversationFilterMessage(filter: ConversationFilter) {
+  const label = conversationFilterOptions.find(
+    (option) => option.value === filter
+  )?.label
+
+  return filter === "all" ? "暂无会话" : `暂无${label ?? "会话"}`
 }
 
 function getConversationListDescription(

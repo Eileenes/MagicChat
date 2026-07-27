@@ -17,6 +17,7 @@ import {
   type ContactUser,
 } from "@/lib/client-data-api"
 import { getClientDataErrorMessage } from "@/lib/client-data-state"
+import type { DirectorySearchItem } from "@/lib/local-search"
 import { createClientMessageId } from "@/lib/message-id"
 import {
   clearLastConversationId,
@@ -72,6 +73,38 @@ type CreateTopicOperation = {
   message: ConversationPanelMessage
 }
 
+type DirectoryConversationActions = {
+  joinGroupConversation: (groupId: string) => Promise<ClientConversation>
+  openAppConversation: (appId: string) => Promise<ClientConversation>
+  openDirectConversation: (userId: string) => Promise<ClientConversation>
+  restoreConversation: (conversationId: string) => Promise<ClientConversation>
+}
+
+function openDirectoryItemConversation(
+  item: DirectorySearchItem,
+  actions: DirectoryConversationActions
+) {
+  if (item.type === "user") {
+    return actions.openDirectConversation(item.id)
+  }
+  if (item.type === "app") {
+    return actions.openAppConversation(item.id)
+  }
+  return item.joined
+    ? actions.restoreConversation(item.id)
+    : actions.joinGroupConversation(item.id)
+}
+
+function getDirectoryItemOpenError(item: DirectorySearchItem) {
+  if (item.type === "user") {
+    return "无法发起单聊"
+  }
+  if (item.type === "app") {
+    return "无法发起应用会话"
+  }
+  return item.joined ? "无法打开群聊" : "无法加入群聊"
+}
+
 function normalizeSingleLinkMessageURL(content: string) {
   const value = content.trim()
   if (!value || /\s/.test(value)) {
@@ -102,6 +135,7 @@ export function ChatPage() {
   const { conversationId } = useParams<{ conversationId?: string }>()
   const {
     contactApps,
+    contactGroups,
     contacts,
     conversations,
     compactConversationMessages,
@@ -115,6 +149,9 @@ export function ChatPage() {
     me,
     mergeIncomingConversationMessage,
     registerConversationMessageView,
+    joinGroupConversation,
+    openAppConversation,
+    openDirectConversation,
     respondToChoice,
     refreshConversations,
     revokeConversationMessage,
@@ -128,6 +165,7 @@ export function ChatPage() {
     setConversationMuted,
     setMessageReaction,
     setForegroundConversationId,
+    restoreConversation,
     updateMessageTopic,
   } = useClientData()
   const {
@@ -749,6 +787,22 @@ export function ChatPage() {
     navigate(`/chat/${encodeURIComponent(conversationId)}`, { replace: true })
   }
 
+  async function selectDirectoryItem(item: DirectorySearchItem) {
+    try {
+      const conversation = await openDirectoryItemConversation(item, {
+        joinGroupConversation,
+        openAppConversation,
+        openDirectConversation,
+        restoreConversation,
+      })
+      if (conversation) {
+        selectConversation(conversation.id)
+      }
+    } catch {
+      toast.error(getDirectoryItemOpenError(item))
+    }
+  }
+
   async function deleteConversation(conversationId: string) {
     await dismissConversation(conversationId)
     clearConversationDraft(conversationId)
@@ -808,12 +862,16 @@ export function ChatPage() {
       <ConversationSidebar
         activeConversationId={activeConversationId}
         appsById={contactAppsByLookup}
+        contactApps={contactApps}
+        contactGroups={contactGroups}
+        contacts={contacts}
         contactsById={contactsById}
         conversations={conversations}
         currentUser={me}
         drafts={drafts}
         onCreateGroup={() => setCreateGroupDialogOpen(true)}
         onDismissConversation={deleteConversation}
+        onSelectDirectoryItem={(item) => void selectDirectoryItem(item)}
         onSelectConversation={selectConversation}
         onSetConversationMuted={setConversationMuted}
         onSetConversationPinned={setConversationPinned}
