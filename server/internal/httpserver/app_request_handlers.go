@@ -1858,7 +1858,7 @@ func (s *Server) prepareAppSendMessageBodyForUser(ctx context.Context, userID st
 			Body:     body,
 			Finalize: contents.Finalize,
 		}, nil
-	case messageTypeText, messageTypeMarkdown, messageTypeLink, messageTypeCard, messageTypeChart:
+	case messageTypeText, messageTypeMarkdown, messageTypeLink, messageTypeCard, messageTypeChart, messageTypeChoice:
 		body, err := s.normalizeAppSendMessageBody(ctx, raw)
 		if err != nil {
 			return preparedAppSendMessageBody{}, err
@@ -2080,6 +2080,9 @@ func mapAppHistoryReadError(err error) error {
 func mapAppGroupConversationError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return newAppRequestFailure("not_found", "会话不存在")
+	}
+	if errors.Is(err, conversationapp.ErrAppInviteForbidden) {
+		return newAppRequestFailure("forbidden", "只有群主或管理员可以邀请应用加入群聊")
 	}
 	if errors.Is(err, errConversationAccessDenied) || errors.Is(err, conversationapp.ErrAccessDenied) {
 		return newAppRequestFailure("forbidden", "无权访问会话")

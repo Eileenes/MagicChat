@@ -34,6 +34,34 @@ describe("AddGroupMembersDialog", () => {
       ["app-1"]
     )
   })
+
+  it("blocks ordinary members from inviting apps but still lets them invite users", async () => {
+    const user = userEvent.setup()
+    const conversation = createGroupConversation("member")
+    const addGroupConversationMembers = vi.fn().mockResolvedValue(conversation)
+
+    render(
+      <ClientDataContext.Provider
+        value={createClientDataContextValue({ addGroupConversationMembers })}
+      >
+        <AddGroupMembersDialog conversation={conversation} />
+      </ClientDataContext.Provider>
+    )
+
+    await user.click(screen.getByRole("button", { name: "添加成员" }))
+    expect(
+      screen.queryByRole("tab", { name: "应用" })
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("checkbox", { name: "Bob" }))
+    await user.click(screen.getByRole("button", { name: "添加" }))
+
+    expect(addGroupConversationMembers).toHaveBeenCalledWith(
+      "conversation-group-1",
+      ["user-2"],
+      []
+    )
+  })
 })
 
 function createClientDataContextValue(
@@ -93,6 +121,8 @@ function createClientDataContextValue(
     projectsNextCursor: null,
     projectsRefreshing: false,
     addGroupConversationMembers: vi.fn(),
+    compactConversationMessages: vi.fn(),
+    registerConversationMessageView: vi.fn(() => vi.fn()),
     createGroupConversation: vi.fn(),
     createProject: vi.fn(),
     dismissConversation: vi.fn(),
@@ -102,6 +132,7 @@ function createClientDataContextValue(
     getConversationMessageState: vi.fn(),
     handleIncomingConversationMessage: vi.fn(),
     handleIncomingConversationMessageUpdate: vi.fn(),
+    handleIncomingMessageChoiceUpdate: vi.fn(),
     handleIncomingMessageReactionsUpdate: vi.fn(),
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
@@ -120,6 +151,7 @@ function createClientDataContextValue(
     refreshProjects: vi.fn(),
     removeConversation: vi.fn(),
     removeGroupConversationMember: vi.fn(),
+    respondToChoice: vi.fn(),
     revokeConversationMessage: vi.fn(),
     setMessageReaction: vi.fn(),
     sendConversationFile: vi.fn(),
@@ -132,6 +164,7 @@ function createClientDataContextValue(
     setGroupConversationPrivate: vi.fn(),
     setGroupConversationPublic: vi.fn(),
     syncLoadedConversationMessages: vi.fn(),
+    updateConversationLastChoiceSeq: vi.fn(),
     updateConversationLastMentionedSeq: vi.fn(),
     updateConversationLastMessage: vi.fn(),
     updateConversationPinned: vi.fn(),
@@ -170,7 +203,9 @@ function createPersonalProject(me: ClientUser) {
   }
 }
 
-function createGroupConversation(): ClientConversation {
+function createGroupConversation(
+  currentUserRole: "owner" | "admin" | "member" = "owner"
+): ClientConversation {
   return {
     avatar: "",
     createdAt: "2026-07-09T00:00:00Z",
@@ -180,6 +215,7 @@ function createGroupConversation(): ClientConversation {
     lastMessageSeq: 0,
     lastMessageSender: null,
     lastMessageSummary: "",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 1,
@@ -191,7 +227,7 @@ function createGroupConversation(): ClientConversation {
         name: "Alice",
         nickname: "",
         phone: "",
-        role: "owner",
+        role: currentUserRole,
         type: "user",
       },
     ],

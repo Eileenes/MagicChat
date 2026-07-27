@@ -107,6 +107,86 @@ describe("GroupConversationInfo", () => {
       )
     })
   })
+
+  it("sorts members by owner, admin, app, and regular member", () => {
+    const conversation = createGroupConversation()
+    conversation.memberCount = 5
+    conversation.members = [
+      {
+        avatar: "",
+        email: "alice@example.com",
+        id: "user-1",
+        name: "Alice",
+        nickname: "",
+        phone: "",
+        role: "member",
+        type: "user",
+      },
+      {
+        avatar: "",
+        email: "",
+        id: "app-1",
+        name: "Moli",
+        nickname: "",
+        phone: "",
+        role: "member",
+        type: "app",
+      },
+      {
+        avatar: "",
+        email: "admin@example.com",
+        id: "user-3",
+        name: "Admin",
+        nickname: "",
+        phone: "",
+        role: "admin",
+        type: "user",
+      },
+      {
+        avatar: "",
+        email: "owner@example.com",
+        id: "user-2",
+        name: "Owner",
+        nickname: "",
+        phone: "",
+        role: "owner",
+        type: "user",
+      },
+      {
+        avatar: "",
+        email: "bob@example.com",
+        id: "user-4",
+        name: "Bob",
+        nickname: "",
+        phone: "",
+        role: "member",
+        type: "user",
+      },
+    ]
+
+    render(
+      <MemoryRouter>
+        <ClientDataContext.Provider
+          value={createClientDataContextValue({
+            conversations: [conversation],
+            getConversation: vi.fn((conversationId: string) =>
+              conversationId === conversation.id ? conversation : null
+            ),
+          })}
+        >
+          <Sheet open>
+            <SheetContent showCloseButton={false}>
+              <GroupConversationInfo conversationId={conversation.id} />
+            </SheetContent>
+          </Sheet>
+        </ClientDataContext.Provider>
+      </MemoryRouter>
+    )
+
+    const memberList = screen.getByText("群成员（5）").nextElementSibling
+    expect(memberList).not.toBeNull()
+    expect(memberList).toHaveTextContent(/Owner.*Admin.*Moli.*Alice.*Bob/)
+  })
 })
 
 function createClientDataContextValue(
@@ -145,6 +225,8 @@ function createClientDataContextValue(
     projectsNextCursor: null,
     projectsRefreshing: false,
     addGroupConversationMembers: vi.fn(),
+    compactConversationMessages: vi.fn(),
+    registerConversationMessageView: vi.fn(() => vi.fn()),
     createGroupConversation: vi.fn(),
     createProject: vi.fn(),
     dismissConversation: vi.fn(),
@@ -156,6 +238,7 @@ function createClientDataContextValue(
     getConversationMessageState: vi.fn(),
     handleIncomingConversationMessage: vi.fn(),
     handleIncomingConversationMessageUpdate: vi.fn(),
+    handleIncomingMessageChoiceUpdate: vi.fn(),
     handleIncomingMessageReactionsUpdate: vi.fn(),
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
@@ -174,6 +257,7 @@ function createClientDataContextValue(
     refreshProjects: vi.fn(),
     removeConversation: vi.fn(),
     removeGroupConversationMember: vi.fn(),
+    respondToChoice: vi.fn(),
     revokeConversationMessage: vi.fn(),
     setMessageReaction: vi.fn(),
     sendConversationFile: vi.fn(),
@@ -186,6 +270,7 @@ function createClientDataContextValue(
     setGroupConversationPrivate: vi.fn(),
     setGroupConversationPublic: vi.fn(),
     syncLoadedConversationMessages: vi.fn(),
+    updateConversationLastChoiceSeq: vi.fn(),
     updateConversationLastMentionedSeq: vi.fn(),
     updateConversationLastMessage: vi.fn(),
     updateConversationPinned: vi.fn(),
@@ -234,6 +319,7 @@ function createGroupConversation(): ClientConversation {
     lastMessageSeq: 0,
     lastMessageSender: null,
     lastMessageSummary: "",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 2,
