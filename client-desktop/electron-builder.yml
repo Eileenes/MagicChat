@@ -1,0 +1,69 @@
+appId: com.magicchat.desktop
+productName: MagicChat
+artifactName: "MagicChat-${version}-${os}-${arch}.${ext}"
+asar: true
+electronDownload:
+  mirrorOptions:
+    mirror: https://npmmirror.com/mirrors/electron/
+afterPack: scripts/after-pack.mjs
+directories:
+  output: dist
+  buildResources: resources
+extraResources:
+  - from: public/logo.png
+    to: logo.png
+  - from: public/trayTemplate.png
+    to: trayTemplate.png
+files:
+  - out/**/*
+  - package.json
+extraMetadata:
+  description: MagicChat Desktop Stable OTA 构建
+protocols:
+  - name: MagicChat
+    schemes:
+      - magicchat
+publish:
+  provider: github
+  owner: ptonlix
+  repo: MagicChat
+  releaseType: release
+win:
+  icon: public/logo.png
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  signAndEditExecutable: true
+  verifyUpdateCodeSignature: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+mac:
+  icon: public/logo.png
+  hardenedRuntime: true
+  notarize: true
+  extendInfo:
+    NSAppTransportSecurity:
+      NSAllowsArbitraryLoads: false
+      NSAllowsLocalNetworking: false
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
+  minimumSystemVersion: "13.0"
+linux:
+  icon: public/logo.png
+  category: Network;Chat
+  maintainer: "MagicChat <support@magicchat.com>"
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+  desktop:
+    entry:
+      StartupWMClass: MagicChat
+      MimeType: x-scheme-handler/magicchat;

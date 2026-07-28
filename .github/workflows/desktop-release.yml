@@ -1,0 +1,188 @@
+name: Desktop Stable Release
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-stable-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.release.outputs.commit }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: 在安装依赖前验证 Annotated Tag
+        id: release
+        run: node client-desktop/scripts/prepare-release-worktree.mjs --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA" --github-output "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: client-desktop/pnpm-lock.yaml
+      - name: 安装依赖
+        working-directory: ${{ steps.release.outputs.desktop-directory }}
+        run: pnpm install --frozen-lockfile
+      - name: 执行平台无关质量门禁
+        working-directory: ${{ steps.release.outputs.desktop-directory }}
+        run: pnpm check && pnpm test && pnpm build && pnpm verify:build && pnpm verify:workflow
+
+  package:
+    needs: quality
+    env:
+      MAGICCHAT_RELEASE_CHANNEL: stable
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            platform: win
+            target: nsis
+            arch: x64
+          - runner: windows-11-arm
+            platform: win
+            target: nsis
+            arch: arm64
+          - runner: macos-15
+            platform: mac
+            target: dmg zip
+            arch: universal
+          - runner: ubuntu-24.04
+            platform: linux
+            target: AppImage deb
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            target: AppImage deb
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: 准备内部临时构建树
+        id: worktree
+        shell: bash
+        run: node client-desktop/scripts/prepare-release-worktree.mjs --tag "${{ needs.quality.outputs.tag }}" --commit "${{ needs.quality.outputs.commit }}" --github-output "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: client-desktop/pnpm-lock.yaml
+      - name: 安装依赖
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        run: pnpm install --frozen-lockfile
+      - name: 生成并校验生产构建
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        run: pnpm build && pnpm verify:build
+      - name: 生成 macOS 签名及公证制品
+        if: matrix.platform == 'mac'
+        shell: bash
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        env:
+          APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          DEBUG: electron-osx-sign*,electron-notarize*
+          NOTARY_API_KEY_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          : "${APPLE_API_ISSUER:?缺少 Repository Variable：APPLE_API_ISSUER}"
+          : "${APPLE_API_KEY_ID:?缺少 Repository Variable：APPLE_API_KEY_ID}"
+          : "${CSC_KEY_PASSWORD:?缺少 Repository Secret：MACOS_CERTIFICATE_PASSWORD}"
+          : "${CSC_LINK:?缺少 Repository Secret：MACOS_CERTIFICATE_P12_BASE64}"
+          : "${NOTARY_API_KEY_BASE64:?缺少 Repository Secret：MACOS_NOTARY_API_KEY_P8_BASE64}"
+
+          umask 077
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          trap 'rm -f "$api_key_path"' EXIT
+          printf '%s' "$NOTARY_API_KEY_BASE64" | base64 -D > "$api_key_path"
+          unset NOTARY_API_KEY_BASE64
+          export APPLE_API_KEY="$api_key_path"
+
+          pnpm exec electron-builder --mac dmg zip --universal --config electron-builder.yml --publish never
+      - name: 生成非 macOS Stable 制品
+        if: matrix.platform != 'mac'
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --${{ matrix.platform }} ${{ matrix.target }} --${{ matrix.arch }} --config electron-builder.yml --publish never
+      - name: 校验安装包真实版本与架构
+        working-directory: ${{ steps.worktree.outputs.desktop-directory }}
+        run: pnpm verify:package -- --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --tag "${{ needs.quality.outputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: magicchat-desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.exe
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.dmg
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.zip
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.AppImage
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.deb
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/*.blockmap
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/latest.yml
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/latest-mac.yml
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/latest-linux.yml
+            ${{ steps.worktree.outputs.desktop-directory }}/dist/latest-linux-arm64.yml
+          if-no-files-found: error
+
+  release:
+    needs: [quality, package]
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: client-desktop/pnpm-lock.yaml
+      - working-directory: client-desktop
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+      - name: 生成精确发布资产计划
+        working-directory: client-desktop
+        run: |
+          pnpm release:prepare-assets -- \
+            --tag "${{ needs.quality.outputs.tag }}" \
+            --commit "${{ needs.quality.outputs.commit }}" \
+            --output ../release-assets \
+            --input win:x64:../artifacts/magicchat-desktop-win-x64 \
+            --input win:arm64:../artifacts/magicchat-desktop-win-arm64 \
+            --input mac:universal:../artifacts/magicchat-desktop-mac-universal \
+            --input linux:x64:../artifacts/magicchat-desktop-linux-x64 \
+            --input linux:arm64:../artifacts/magicchat-desktop-linux-arm64
+      - name: 通过 Draft 事务发布并复核远端摘要
+        working-directory: client-desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm release:publish -- --plan ../release-assets/release-plan.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
