@@ -44,7 +44,7 @@ import {
 import { clientLogout } from "@/lib/client-auth"
 import { openHostSettings, setHostBadge, setHostTrayMessages } from "@/lib/desktop-host"
 import { selectUnreadTrayMessages } from "@/lib/tray-messages"
-import { getNotifiableUnreadCount } from "@/lib/conversation-notifications"
+import { getNotifiableUnreadCount, getTotalUnreadCount } from "@/lib/conversation-notifications"
 import { updateCurrentClientUser, uploadCurrentClientAvatar } from "@/lib/client-data-api"
 import type { ClientUser } from "@/lib/client-data-api"
 import { useClientData } from "@/lib/client-data-context"
@@ -67,17 +67,18 @@ type ThemeValue = (typeof themeItems)[number]["value"]
 
 export function AppLayout() {
   const { conversations, me, refreshMe } = useClientData()
-  const totalUnreadCount = getNotifiableUnreadCount(conversations)
+  const totalUnreadCount = getTotalUnreadCount(conversations)
+  const notifiableUnreadCount = getNotifiableUnreadCount(conversations)
   const hasUnreadMessages = totalUnreadCount > 0
   const trayMessages = useMemo(() => selectUnreadTrayMessages(conversations), [conversations])
   useEffect(() => {
-    setHostBadge(totalUnreadCount)
+    setHostBadge(notifiableUnreadCount)
     setHostTrayMessages(trayMessages)
     return () => {
       setHostBadge(0)
       setHostTrayMessages([])
     }
-  }, [totalUnreadCount, trayMessages])
+  }, [notifiableUnreadCount, trayMessages])
   const [notificationAnimation, setNotificationAnimation] = useState({
     active: false,
     unreadCount: totalUnreadCount,

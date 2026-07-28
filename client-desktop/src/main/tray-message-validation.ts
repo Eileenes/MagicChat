@@ -1,9 +1,10 @@
-import type { TrayMessage } from "@shared/bridge"
+import { MAX_TRAY_MESSAGES, type TrayMessage } from "@shared/bridge"
 
 export function parseTrayMessages(value: unknown): TrayMessage[] {
   if (!Array.isArray(value)) throw new Error("菜单栏消息无效")
+  if (value.length > MAX_TRAY_MESSAGES) throw new Error("菜单栏消息过多")
 
-  return value.map((item) => {
+  return Array.from(value, (item) => {
     if (!item || typeof item !== "object") throw new Error("菜单栏消息无效")
     const message = item as Record<string, unknown>
     return {

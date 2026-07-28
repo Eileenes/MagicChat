@@ -99,7 +99,7 @@ describe("ConversationSidebar", () => {
     )
   })
 
-  it("shows pinned and muted icons without an unread reminder for muted messages", () => {
+  it("shows unread reminders even when notifications are muted", () => {
     const conversation = createAppConversation()
     conversation.pinned = true
     conversation.notificationMuted = true
@@ -125,9 +125,8 @@ describe("ConversationSidebar", () => {
 
     expect(screen.getByLabelText("已置顶")).toBeInTheDocument()
     expect(screen.getByLabelText("消息免打扰已开启")).toBeInTheDocument()
-    expect(screen.queryByLabelText("有未读消息")).not.toBeInTheDocument()
-    expect(screen.queryByLabelText("6 条未读消息")).not.toBeInTheDocument()
-    expect(screen.queryByText("[有人 @ 我]")).not.toBeInTheDocument()
+    expect(screen.getByLabelText("6 条未读消息")).toBeInTheDocument()
+    expect(screen.getByText("[有人 @ 我]")).toBeInTheDocument()
   })
 
   it("shows the sender name before a group conversation message", () => {

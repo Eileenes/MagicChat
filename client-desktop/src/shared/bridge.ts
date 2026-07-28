@@ -9,6 +9,8 @@ import type {
 
 export const BRIDGE_VERSION = 1 as const
 
+export const MAX_TRAY_MESSAGES = 20
+
 export const IPC = {
   appInfo: "desktop:v1:app-info",
   appearanceThemeSet: "desktop:v1:appearance-theme-set",
