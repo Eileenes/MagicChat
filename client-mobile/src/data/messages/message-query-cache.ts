@@ -1,10 +1,19 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query"
 
-import type { ClientMessage, ClientMessageList } from "@/data/models"
+import type {
+  ClientMessage,
+  ClientMessageList,
+  MessageChoiceSnapshot,
+  MessageChoiceUpdatedEvent,
+} from "@/data/models"
 import type { ConversationMessagesChangedEvent } from "@/data/messages/message-events"
 import { messageManager } from "@/data/messages/message-manager"
 import { queryKeys, type AuthenticatedTarget } from "@/data/query"
-import { preserveNewerMessageReactionState } from "@/domain/messages/message-reactions"
+import {
+  applyMessageChoiceEvent,
+  applyMessageChoiceSnapshot,
+} from "@/domain/messages/message-choices"
+import { preserveNewerMessageState } from "@/domain/messages/message-reactions"
 
 type ConversationMessagesData = InfiniteData<
   ClientMessageList,
@@ -79,9 +88,90 @@ export function applyConversationMessagesChangedEvent(
         ? replaceLatestConversationPage(current, event.page)
         : { pageParams: [null], pages: [event.page] }
     }
+    if (event.type === "remove") {
+      return removeConversationMessages(current, event.messageIds)
+    }
+    if (event.type === "choice-snapshot") {
+      return applyChoiceSnapshotToConversationMessages(
+        current,
+        event.snapshot
+      )
+    }
+    if (event.type === "choice-event") {
+      return applyChoiceEventToConversationMessages(
+        current,
+        event.event,
+        target.userId
+      )
+    }
     if (!current || event.messages.length === 0) return current
     return upsertConversationMessages(current, event.messages)
   })
+}
+
+function applyChoiceSnapshotToConversationMessages(
+  current: ConversationMessagesData | undefined,
+  snapshot: MessageChoiceSnapshot
+) {
+  if (snapshot.status === "deleted") {
+    return removeConversationMessages(current, [snapshot.messageId])
+  }
+  return updateConversationMessage(current, snapshot.messageId, (message) =>
+    applyMessageChoiceSnapshot(message, snapshot) ?? message
+  )
+}
+
+function applyChoiceEventToConversationMessages(
+  current: ConversationMessagesData | undefined,
+  event: MessageChoiceUpdatedEvent,
+  currentUserId: string
+) {
+  return updateConversationMessage(current, event.messageId, (message) =>
+    applyMessageChoiceEvent(message, event, currentUserId)
+  )
+}
+
+function updateConversationMessage(
+  current: ConversationMessagesData | undefined,
+  messageId: string,
+  update: (message: ClientMessage) => ClientMessage
+) {
+  if (!current) return current
+  let changed = false
+  const pages = current.pages.map((page) => ({
+    ...page,
+    messages: page.messages.map((message) => {
+      if (message.id !== messageId) return message
+      const next = update(message)
+      if (next !== message) changed = true
+      return next
+    }),
+  }))
+  return changed ? { ...current, pages } : current
+}
+
+function removeConversationMessages(
+  current: ConversationMessagesData | undefined,
+  messageIds: string[]
+) {
+  if (!current || messageIds.length === 0) return current
+  const removed = new Set(messageIds)
+  let changed = false
+  const pages = current.pages.map((page) => {
+    const messages = page.messages.filter((message) => !removed.has(message.id))
+    if (messages.length === page.messages.length) return page
+    changed = true
+    return {
+      ...page,
+      messages,
+      page: {
+        ...page.page,
+        newestSeq: messages[0]?.seq ?? page.page.newestSeq,
+        oldestSeq: messages[messages.length - 1]?.seq ?? page.page.oldestSeq,
+      },
+    }
+  })
+  return changed ? { ...current, pages } : current
 }
 
 function compactConversationMessagesData(
@@ -108,7 +198,7 @@ function upsertConversationMessages(
       if (!update) return message
 
       found.add(message.id)
-      return preserveNewerMessageReactionState(message, update)
+      return preserveNewerMessageState(message, update)
     }),
   }))
   const latestPage = pages[0]
@@ -149,7 +239,7 @@ function replaceLatestConversationPage(
     const messages = latestPage.messages.map((message, index) => {
       const currentMessage = currentLatestPage.messages[index]
       return currentMessage
-        ? preserveNewerMessageReactionState(currentMessage, message)
+        ? preserveNewerMessageState(currentMessage, message)
         : message
     })
     return {
@@ -217,7 +307,7 @@ function mergeMessages(messages: ClientMessage[]) {
     messagesById.set(
       message.id,
       current
-        ? preserveNewerMessageReactionState(current, message)
+        ? preserveNewerMessageState(current, message)
         : message
     )
   }

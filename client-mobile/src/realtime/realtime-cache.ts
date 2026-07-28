@@ -11,6 +11,10 @@ import type {
 import { queryKeys, type AuthenticatedTarget } from "@/data/query"
 import { formatClientMessageBodySummary } from "@/domain/messages/message-presenter"
 import {
+  applyRealtimeMessageChoiceEvent,
+  synchronizeConversationMessageChoices,
+} from "@/realtime/choice-sync"
+import {
   applyRealtimeMessageReactionsEvent,
   synchronizeConversationMessageReactions,
 } from "@/realtime/reaction-sync"
@@ -66,6 +70,11 @@ export async function applyRealtimeEvent(
     return {}
   }
 
+  if (event === realtimeEvents.messageChoiceUpdated) {
+    await applyRealtimeMessageChoiceEvent(queryClient, server, payload)
+    return {}
+  }
+
   if (event === realtimeEvents.conversationRemoved) {
     const conversationId = normalizeConversationRemovedPayload(payload)
 
@@ -100,6 +109,27 @@ export async function applyRealtimeEvent(
                 lastMentionedSeq: Math.max(
                   conversation.lastMentionedSeq,
                   mentioned.lastMentionedSeq
+                ),
+              }
+            : conversation
+        )
+    )
+    return {}
+  }
+
+  if (event === realtimeEvents.conversationMemberChoiceReceived) {
+    const choice = normalizeConversationChoiceReceivedPayload(payload)
+
+    queryClient.setQueryData<ClientConversation[]>(
+      queryKeys.conversations(server),
+      (current) =>
+        current?.map((conversation) =>
+          conversation.id === choice.conversationId
+            ? {
+                ...conversation,
+                lastChoiceSeq: Math.max(
+                  conversation.lastChoiceSeq,
+                  choice.lastChoiceSeq
                 ),
               }
             : conversation
@@ -353,16 +383,28 @@ export async function synchronizeRealtimeData(
     loadedConversationQueries.flatMap(([queryKey, data]) => {
       const conversationId = getConversationIdFromMessageQueryKey(queryKey)
       const messageIds = data ? getLoadedMessageIds(data) : []
-      return conversationId && messageIds.length > 0
-        ? [
-            synchronizeConversationMessageReactions(
-              queryClient,
-              server,
-              conversationId,
-              messageIds
-            ),
-          ]
-        : []
+      if (!conversationId || messageIds.length === 0) return []
+
+      const operations: Promise<void>[] = [
+        synchronizeConversationMessageReactions(
+          queryClient,
+          server,
+          conversationId,
+          messageIds
+        ),
+      ]
+      const choiceMessageIds = data ? getLoadedChoiceMessageIds(data) : []
+      if (choiceMessageIds.length > 0) {
+        operations.push(
+          synchronizeConversationMessageChoices(
+            queryClient,
+            server,
+            conversationId,
+            choiceMessageIds
+          )
+        )
+      }
+      return operations
     })
   )
 }
@@ -464,6 +506,14 @@ function getLoadedMessageIds(data: MessageInfiniteData) {
   )
 }
 
+function getLoadedChoiceMessageIds(data: MessageInfiniteData) {
+  return data.pages.flatMap((page) =>
+    page.messages.flatMap((message) =>
+      message.body.type === "choice" ? [message.id] : []
+    )
+  )
+}
+
 function getNewestMessageSeq(data: MessageInfiniteData) {
   return data.pages.reduce(
     (newest, page) =>
@@ -517,6 +567,24 @@ function normalizeConversationMentionedPayload(payload: unknown) {
   return {
     conversationId: value.conversation_id,
     lastMentionedSeq: value.last_mentioned_seq,
+  }
+}
+
+function normalizeConversationChoiceReceivedPayload(payload: unknown) {
+  const value = asRecord(payload)
+  if (
+    !value ||
+    typeof value.conversation_id !== "string" ||
+    value.conversation_id.length === 0 ||
+    typeof value.last_choice_seq !== "number" ||
+    !Number.isSafeInteger(value.last_choice_seq) ||
+    value.last_choice_seq <= 0
+  ) {
+    throw new Error("实时选择消息提醒事件格式不正确")
+  }
+  return {
+    conversationId: value.conversation_id,
+    lastChoiceSeq: value.last_choice_seq,
   }
 }
 

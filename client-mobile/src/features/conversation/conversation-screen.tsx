@@ -29,6 +29,7 @@ import {
   useSendConversationTextMessage,
   useSendConversationVoiceMessage,
   useSetConversationMessageReaction,
+  useSubmitConversationMessageChoiceResponse,
 } from "@/data/message-hooks"
 import type {
   PreparedClientMessageUpload,
@@ -53,6 +54,7 @@ import {
   formatClientMessageBodySummary,
   type MessageMentionLabelResolver,
 } from "@/domain/messages/message-presenter"
+import { shouldShowMessageChoiceResponseCounts } from "@/domain/messages/message-choices"
 import {
   MessageComposer,
   type MessageComposerHandle,
@@ -176,6 +178,10 @@ export function ConversationScreen() {
     conversationId
   )
   const setReactionMutation = useSetConversationMessageReaction(
+    session,
+    conversationId
+  )
+  const submitChoiceMutation = useSubmitConversationMessageChoiceResponse(
     session,
     conversationId
   )
@@ -535,6 +541,21 @@ export function ConversationScreen() {
     }
   }
 
+  async function handleRespondChoice(
+    messageId: string,
+    optionIds: string[]
+  ) {
+    try {
+      await submitChoiceMutation.mutateAsync({ messageId, optionIds })
+    } catch (error: unknown) {
+      if (isUnauthorizedError(error)) {
+        void invalidateSession()
+        router.replace("/init")
+      }
+      throw error
+    }
+  }
+
   function clearReplyTargetAfterSend(replyToMessageId: string | undefined) {
     if (!replyToMessageId) return
     setReplyTarget((current) =>
@@ -738,6 +759,7 @@ export function ConversationScreen() {
           <>
             <MessageList
               canAddReaction={!topicArchived}
+              canRespondToChoice={conversation.canSend && !topicArchived}
               conversationId={conversation.id}
               currentUserId={currentUser.id}
               error={messagesQuery.error}
@@ -762,6 +784,7 @@ export function ConversationScreen() {
                 void resources.reload(fileId).catch(() => undefined)
               }
               onResourcePress={(fileId) => void handleResourcePress(fileId)}
+              onRespondChoice={handleRespondChoice}
               onSetReaction={handleSetReaction}
               onVoiceResourcePress={(fileId) =>
                 void handleVoiceResourcePress(fileId)
@@ -771,6 +794,9 @@ export function ConversationScreen() {
               resolveMentionLabel={resolveMentionLabel}
               resourceStates={resources.states}
               server={session}
+              showChoiceResponseCounts={
+                shouldShowMessageChoiceResponseCounts(conversation)
+              }
             />
             {topicArchived ? (
               <YStack bg="$background" items="center" p="$4">
@@ -780,7 +806,7 @@ export function ConversationScreen() {
               </YStack>
             ) : (
               <MessageComposer
-                disabled={isSending}
+                disabled={isSending || !conversation.canSend}
                 mentionCandidates={mentionCandidates}
                 onClearReply={() => setReplyTarget(null)}
                 onSend={handleSend}

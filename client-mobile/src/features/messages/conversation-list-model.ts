@@ -12,8 +12,8 @@ import {
 export type ConversationListItemModel = {
   conversation: ClientConversation
   description: string
-  hasUnreadMention: boolean
   lastMessageTime: string
+  unreadAlertLabel: "[选择]" | "[有人 @ 我]" | null
 }
 
 export function buildConversationListItems({
@@ -32,17 +32,24 @@ export function buildConversationListItems({
 
   return orderConversations(conversations)
     .map((conversation) => {
-      const description = formatConversationDescription(conversation, labels)
+      const messageDescription = formatConversationDescription(
+        conversation,
+        labels
+      )
+      const unreadAlertLabel = getConversationUnreadAlertLabel(conversation)
+      const description = formatConversationUnreadDescription(
+        messageDescription,
+        unreadAlertLabel
+      )
 
       return {
         conversation,
         description,
-        hasUnreadMention:
-          conversation.lastMentionedSeq > conversation.lastReadSeq,
         lastMessageTime: formatActivityTime(
           conversation.lastMessageAt ?? conversation.createdAt,
           now
         ),
+        unreadAlertLabel,
       }
     })
     .filter(
@@ -51,6 +58,30 @@ export function buildConversationListItems({
         conversation.name.toLocaleLowerCase().includes(normalizedKeyword) ||
         description.toLocaleLowerCase().includes(normalizedKeyword)
     )
+}
+
+export function formatConversationUnreadDescription(
+  description: string,
+  unreadAlertLabel: ConversationListItemModel["unreadAlertLabel"]
+) {
+  return unreadAlertLabel === "[选择]"
+    ? description.replace(/(^|：)\[选择\]\s*/, "$1")
+    : description
+}
+
+export function getConversationUnreadAlertLabel(
+  conversation: ClientConversation
+): ConversationListItemModel["unreadAlertLabel"] {
+  const hasUnreadChoice = conversation.lastChoiceSeq > conversation.lastReadSeq
+  const hasUnreadMention =
+    conversation.lastMentionedSeq > conversation.lastReadSeq
+  if (
+    hasUnreadChoice &&
+    conversation.lastChoiceSeq >= conversation.lastMentionedSeq
+  ) {
+    return "[选择]"
+  }
+  return hasUnreadMention ? "[有人 @ 我]" : null
 }
 
 export function formatUnreadCount(count: number) {

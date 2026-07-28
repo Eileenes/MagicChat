@@ -22,7 +22,7 @@ import type {
 } from "@/data/models"
 import type { ClientMessageUpload } from "@/data/message-upload"
 import { queryKeys, type AuthenticatedTarget } from "@/data/query"
-import { preserveNewerMessageReactionState } from "@/domain/messages/message-reactions"
+import { preserveNewerMessageState } from "@/domain/messages/message-reactions"
 
 const MESSAGE_PAGE_SIZE = 20
 const MESSAGE_REFRESH_INTERVAL_MS = 5_000
@@ -175,6 +175,21 @@ export function useSetConversationMessageReaction(
         conversationId,
         input.messageId,
         { reacted: input.reacted, text: input.text }
+      ),
+  })
+}
+
+export function useSubmitConversationMessageChoiceResponse(
+  server: AuthenticatedTarget,
+  conversationId: string
+) {
+  return useMutation({
+    mutationFn: (input: { messageId: string; optionIds: string[] }) =>
+      messageManager.submitChoice(
+        server,
+        conversationId,
+        input.messageId,
+        input.optionIds
       ),
   })
 }
@@ -394,7 +409,7 @@ function mergeMessages(messages: ClientMessage[]) {
     messagesById.set(
       message.id,
       current
-        ? preserveNewerMessageReactionState(current, message)
+        ? preserveNewerMessageState(current, message)
         : message
     )
   }
@@ -422,7 +437,7 @@ function preserveNewerMessageReactions(
       messages: page.messages.map((message) => {
         const previous = currentMessages.get(message.id)
         return previous
-          ? preserveNewerMessageReactionState(previous, message)
+          ? preserveNewerMessageState(previous, message)
           : message
       }),
     })),

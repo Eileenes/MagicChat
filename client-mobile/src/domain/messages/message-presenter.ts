@@ -3,6 +3,7 @@ import type {
   ClientConversation,
   ClientMessage,
   ClientMessageBody,
+  ClientMessageChoiceState,
   ClientMessageReaction,
   ClientUser,
 } from "@/data/models"
@@ -24,6 +25,7 @@ export type PresentedMessage = {
   avatar: string
   body: ClientMessageBody
   canRevoke: boolean
+  choice?: ClientMessageChoiceState
   createdAt: string
   delegatedByName: string
   id: string
@@ -102,6 +104,7 @@ export function buildPresentedMessages({
       ),
       body: message.body,
       canRevoke: canRevokeMessage(message, conversation, currentUser.id),
+      choice: message.choice,
       createdAt: message.createdAt,
       delegatedByName: message.delegatedBy?.name ?? "",
       id: message.id,
@@ -248,6 +251,13 @@ export function formatClientMessageBodySummary(
       formatMarkdownAsPlainText(body.content),
       resolveMentionLabel
     )
+  }
+  if (body.type === "choice") {
+    const content =
+      body.contentType === "markdown"
+        ? formatMarkdownAsPlainText(body.content)
+        : body.content
+    return `[选择] ${formatMentionTemplateText(content, resolveMentionLabel)}`
   }
   if (body.type === "link") return `[链接] ${body.title || body.url}`
   if (body.type === "card") return `[卡片] ${body.title}`

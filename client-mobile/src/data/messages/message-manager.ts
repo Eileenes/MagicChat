@@ -1,4 +1,5 @@
 import {
+  fetchConversationMessageChoiceSnapshots,
   fetchConversationMessageReactionSnapshots,
   forwardConversationMessages,
   markConversationRead,
@@ -8,11 +9,14 @@ import {
   sendConversationTextMessage,
   sendConversationVoiceMessage,
   setConversationMessageReaction,
+  submitConversationMessageChoiceResponse,
 } from "@/data/messages-api"
 import type {
   ClientMessage,
   ClientMessageList,
   ClientMessagePage,
+  MessageChoiceSnapshot,
+  MessageChoiceUpdatedEvent,
   MessageReactionsUpdatedEvent,
   MessageReactionSnapshot,
 } from "@/data/models"
@@ -20,6 +24,8 @@ import type { ClientMessageUpload } from "@/data/message-upload"
 import {
   getMessageSyncState,
   listMessageSyncStates,
+  persistMessageChoiceEvent,
+  persistMessageChoiceSnapshot,
   persistMessageReactionsEvent,
   persistMessageReactionSnapshot,
   persistRealtimeMessages,
@@ -29,6 +35,12 @@ import {
 } from "@/data/messages/message-cache-store"
 import { publishConversationMessagesChanged } from "@/data/messages/message-events"
 import {
+  applyChoiceMessageTombstone,
+  clearConversationMessageTombstones,
+  clearServerMessageTombstones,
+  recordChoiceMessageTombstone,
+} from "@/data/messages/message-tombstones"
+import {
   fetchAndPersistMessagesAfter,
   fetchConversationMessagePage,
   initializeConversationMessageSync,
@@ -37,9 +49,13 @@ import {
 } from "@/data/messages/message-repository"
 import type { AuthenticatedTarget, ServerTarget } from "@/data/query"
 import {
+  applyMessageChoiceEvent,
+  applyMessageChoiceSnapshot,
+} from "@/domain/messages/message-choices"
+import {
   applyMessageReactionsUpdate,
   applyMessageReactionSnapshot,
-  preserveNewerMessageReactionState,
+  preserveNewerMessageState,
 } from "@/domain/messages/message-reactions"
 import { formatClientMessageBodySummary } from "@/domain/messages/message-presenter"
 
@@ -62,11 +78,14 @@ const runtimePageState = new Map<string, ClientMessagePage>()
 const latestSynchronization = new Map<string, Promise<void>>()
 
 export const messageManager = {
+  applyChoiceEvent,
+  applyChoiceSnapshot,
   applyReactionEvent,
   applyReactionSnapshot,
   catchUpAfter,
   clearConversation,
   clearServer,
+  fetchChoiceSnapshots,
   fetchReactionSnapshots,
   forwardMessage,
   getSyncState: getMessageSyncState,
@@ -80,6 +99,7 @@ export const messageManager = {
   sendText,
   sendVoice,
   setReaction,
+  submitChoice,
   synchronizeLatest,
   updateMessageTopic,
   updateTopicSourcePreview,
@@ -96,14 +116,21 @@ async function readLatestPage(
     conversationId,
     limit
   ).catch(() => null)
-  if (cached) upsertRuntimeMessages(target, cached.messages)
+  const protectedCached = cached
+    ? applyMessageListTombstones(target, cached)
+    : null
+  if (protectedCached) upsertRuntimeMessages(target, protectedCached.messages)
   const messages = mergeMessages([
-    ...(cached?.messages ?? []),
+    ...(protectedCached?.messages ?? []),
     ...readRuntimeMessages(target, conversationId),
   ]).slice(0, limit)
 
-  return cached
-    ? { ...cached, messages, page: updatePageRange(cached.page, messages) }
+  return protectedCached
+    ? {
+        ...protectedCached,
+        messages,
+        page: updatePageRange(protectedCached.page, messages),
+      }
     : createRuntimePage(
         messages,
         limit,
@@ -123,11 +150,14 @@ async function loadMessagePage(
     return readLatestPage(target, conversationId, input.limit)
   }
 
-  const result = await fetchConversationMessagePage(
+  const result = applyMessageListTombstones(
     target,
-    conversationId,
-    input,
-    options
+    await fetchConversationMessagePage(
+      target,
+      conversationId,
+      input,
+      options
+    )
   )
   upsertRuntimeMessages(target, result.messages)
   const persisted = await loadCachedMessagePageBefore(
@@ -137,7 +167,7 @@ async function loadMessagePage(
     input.limit,
     result.page.hasMoreBefore
   ).catch(() => null)
-  return persisted ?? result
+  return persisted ? applyMessageListTombstones(target, persisted) : result
 }
 
 function synchronizeLatest(
@@ -154,7 +184,8 @@ function synchronizeLatest(
     conversationId,
     limit
   )
-    .then(async (result) => {
+    .then(async (rawResult) => {
+      const result = applyMessageListTombstones(target, rawResult)
       upsertRuntimeMessages(target, result.messages)
       runtimePageState.set(key, result.page)
       publishConversationMessagesChanged(target, conversationId, {
@@ -188,27 +219,31 @@ async function catchUpAfter(
     afterSeq,
     limit
   )
-  upsertRuntimeMessages(target, result.result.messages)
+  const protectedResult = applyMessageListTombstones(target, result.result)
+  upsertRuntimeMessages(target, protectedResult.messages)
   publishConversationMessagesChanged(target, conversationId, {
-    messages: result.result.messages,
+    messages: protectedResult.messages,
     type: "upsert",
   })
-  return result
+  return { ...result, result: protectedResult }
 }
 
 async function writeMessages(
   target: AuthenticatedTarget,
   messages: ClientMessage[]
 ) {
-  if (messages.length === 0) return
+  const protectedMessages = applyMessageTombstones(target, messages)
+  if (protectedMessages.length === 0) return
 
-  await persistRealtimeMessages(target, messages).catch(() => undefined)
-  upsertRuntimeMessages(target, messages)
+  await persistRealtimeMessages(target, protectedMessages).catch(
+    () => undefined
+  )
+  upsertRuntimeMessages(target, protectedMessages)
   for (const conversationId of new Set(
-    messages.map((message) => message.conversationId)
+    protectedMessages.map((message) => message.conversationId)
   )) {
     publishConversationMessagesChanged(target, conversationId, {
-      messages: messages.filter(
+      messages: protectedMessages.filter(
         (message) => message.conversationId === conversationId
       ),
       type: "upsert",
@@ -338,6 +373,90 @@ async function setReaction(
   )
   await applyReactionSnapshot(target, snapshot)
   return snapshot
+}
+
+async function submitChoice(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  messageId: string,
+  optionIds: string[]
+) {
+  const result = await submitConversationMessageChoiceResponse(
+    target.url,
+    conversationId,
+    messageId,
+    optionIds
+  )
+  await applyChoiceSnapshot(target, {
+    choice: result.choice,
+    conversationId: result.conversationId,
+    messageId: result.messageId,
+    status: "active",
+  })
+  return result
+}
+
+function fetchChoiceSnapshots(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  messageIds: string[]
+) {
+  return fetchConversationMessageChoiceSnapshots(
+    target.url,
+    conversationId,
+    messageIds
+  )
+}
+
+async function applyChoiceSnapshot(
+  target: AuthenticatedTarget,
+  snapshot: MessageChoiceSnapshot
+) {
+  recordChoiceMessageTombstone(target, snapshot)
+  await persistMessageChoiceSnapshot(target, snapshot).catch(() => undefined)
+  if (snapshot.status === "deleted") {
+    removeRuntimeMessage(
+      target,
+      snapshot.conversationId,
+      snapshot.messageId
+    )
+    publishConversationMessagesChanged(target, snapshot.conversationId, {
+      snapshot,
+      type: "choice-snapshot",
+    })
+    return
+  }
+
+  updateRuntimeMessage(
+    target,
+    snapshot.conversationId,
+    snapshot.messageId,
+    (current) => applyMessageChoiceSnapshot(current, snapshot) ?? current
+  )
+  // Runtime is updated for future page construction. Query subscribers apply
+  // the snapshot itself so messages outside the 3,000-item runtime window are
+  // updated too.
+  publishConversationMessagesChanged(target, snapshot.conversationId, {
+    snapshot,
+    type: "choice-snapshot",
+  })
+}
+
+async function applyChoiceEvent(
+  target: AuthenticatedTarget,
+  event: MessageChoiceUpdatedEvent
+) {
+  await persistMessageChoiceEvent(target, event).catch(() => undefined)
+  updateRuntimeMessage(
+    target,
+    event.conversationId,
+    event.messageId,
+    (current) => applyMessageChoiceEvent(current, event, target.userId)
+  )
+  publishConversationMessagesChanged(target, event.conversationId, {
+    event,
+    type: "choice-event",
+  })
 }
 
 async function fetchReactionSnapshots(
@@ -513,6 +632,7 @@ async function clearConversation(
   )
   runtimeMessages.delete(createRuntimeConversationKey(target, conversationId))
   runtimePageState.delete(createRuntimeConversationKey(target, conversationId))
+  clearConversationMessageTombstones(target, conversationId)
   publishConversationMessagesChanged(target, conversationId, { type: "clear" })
 }
 
@@ -528,20 +648,26 @@ async function clearServer(server: ServerTarget) {
     runtimeMessages.delete(key)
     runtimePageState.delete(key)
   }
+  clearServerMessageTombstones(server)
 }
 
 function upsertRuntimeMessages(
   target: AuthenticatedTarget,
   messages: ClientMessage[]
 ) {
-  for (const incoming of messages) {
-    const key = createRuntimeConversationKey(target, incoming.conversationId)
+  for (const candidate of messages) {
+    const incoming = applyChoiceMessageTombstone(target, candidate)
+    const key = createRuntimeConversationKey(target, candidate.conversationId)
+    if (!incoming) {
+      runtimeMessages.get(key)?.delete(candidate.id)
+      continue
+    }
     const conversation = runtimeMessages.get(key) ?? new Map()
     const current = conversation.get(incoming.id)
     conversation.set(
       incoming.id,
       current
-        ? preserveNewerMessageReactionState(current, incoming)
+        ? preserveNewerMessageState(current, incoming)
         : incoming
     )
     if (conversation.size > MAX_RUNTIME_MESSAGES_PER_CONVERSATION) {
@@ -556,6 +682,28 @@ function upsertRuntimeMessages(
       }
     }
     runtimeMessages.set(key, conversation)
+  }
+}
+
+function applyMessageTombstones(
+  target: AuthenticatedTarget,
+  messages: ClientMessage[]
+) {
+  return messages.flatMap((message) => {
+    const protectedMessage = applyChoiceMessageTombstone(target, message)
+    return protectedMessage ? [protectedMessage] : []
+  })
+}
+
+function applyMessageListTombstones(
+  target: AuthenticatedTarget,
+  list: ClientMessageList
+) {
+  const messages = applyMessageTombstones(target, list.messages)
+  return {
+    ...list,
+    messages,
+    page: updatePageRange(list.page, messages),
   }
 }
 
@@ -574,6 +722,16 @@ function updateRuntimeMessage(
   const next = update(message)
   conversation!.set(messageId, next)
   return next
+}
+
+function removeRuntimeMessage(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  messageId: string
+) {
+  return runtimeMessages
+    .get(createRuntimeConversationKey(target, conversationId))
+    ?.delete(messageId)
 }
 
 function readRuntimeMessages(
@@ -619,7 +777,7 @@ function mergeMessages(messages: ClientMessage[]) {
     byId.set(
       message.id,
       current
-        ? preserveNewerMessageReactionState(current, message)
+        ? preserveNewerMessageState(current, message)
         : message
     )
   }

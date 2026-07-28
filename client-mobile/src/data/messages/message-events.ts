@@ -1,9 +1,17 @@
-import type { ClientMessage, ClientMessageList } from "@/data/models"
+import type {
+  ClientMessage,
+  ClientMessageList,
+  MessageChoiceSnapshot,
+  MessageChoiceUpdatedEvent,
+} from "@/data/models"
 import type { AuthenticatedTarget } from "@/data/query"
 
 export type ConversationMessagesChangedEvent =
   | { page: ClientMessageList; type: "latest-page" }
   | { messages: ClientMessage[]; type: "upsert" }
+  | { messageIds: string[]; type: "remove" }
+  | { snapshot: MessageChoiceSnapshot; type: "choice-snapshot" }
+  | { event: MessageChoiceUpdatedEvent; type: "choice-event" }
   | { type: "clear" }
 
 type MessageListener = (event: ConversationMessagesChangedEvent) => void

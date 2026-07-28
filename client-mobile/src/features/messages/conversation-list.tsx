@@ -127,11 +127,11 @@ function ConversationListItem({
           meta={item.lastMessageTime}
           subtitle={item.description}
           subtitleLeading={
-            item.hasUnreadMention ? (
+            item.unreadAlertLabel ? (
               <SizableText color="$red10" fontWeight="600" size="$2">
-                [有人 @ 我]
+                {item.unreadAlertLabel}
               </SizableText>
-              ) : undefined
+            ) : undefined
           }
           subtitleTrailing={
             <ConversationPreferenceIndicators conversation={conversation} />

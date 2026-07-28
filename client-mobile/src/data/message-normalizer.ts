@@ -3,6 +3,7 @@ import type {
   ClientForwardableMessageBody,
   ClientMessage,
   ClientMessageBody,
+  ClientMessageChoiceState,
   ClientMessagePage,
   ClientMessageReaction,
   ClientMessageReactionUser,
@@ -10,6 +11,7 @@ import type {
   ClientSystemEventMessageBody,
   ClientSystemEventUserRef,
 } from "@/data/models"
+import { isMessageChoiceStateValidForBody } from "@/domain/messages/message-choices"
 
 const MAX_FORWARD_BUNDLE_DEPTH = 5
 const MAX_FORWARD_BUNDLE_ITEMS = 50
@@ -52,6 +54,13 @@ export function normalizeClientMessage(value: unknown): ClientMessage {
       type: senderType,
     },
     seq,
+  }
+  if (normalized.body.type === "choice") {
+    const choice = normalizeMessageChoiceState(message.choice)
+    if (!isMessageChoiceStateValidForBody(normalized.body, choice)) {
+      throw new ApiRequestError("选择消息状态与选项不匹配")
+    }
+    normalized.choice = choice
   }
   const delegatedBy = normalizeDelegatedBy(message.delegated_by)
   const replyTo = normalizeReplyTo(message.reply_to)
@@ -138,6 +147,50 @@ export function normalizeMessageReactionUsers(
     }
     return { id, name }
   })
+}
+
+export function normalizeMessageChoiceState(
+  value: unknown
+): ClientMessageChoiceState {
+  const choice = asRecord(value)
+  const myOptionIdsValue = choice?.my_option_ids
+  const myOptionIds = myOptionIdsValue === null ? [] : myOptionIdsValue
+  const responseCount = asNumber(choice?.response_count)
+  if (
+    !choice ||
+    !Number.isSafeInteger(responseCount) ||
+    (responseCount ?? -1) < 0 ||
+    !Array.isArray(myOptionIds) ||
+    !myOptionIds.every((id) => typeof id === "string" && id.length > 0) ||
+    new Set(myOptionIds).size !== myOptionIds.length ||
+    !Array.isArray(choice.options)
+  ) {
+    throw new ApiRequestError("选择消息状态响应格式不正确")
+  }
+
+  const options = choice.options.map((candidate) => {
+    const option = asRecord(candidate)
+    const id = asString(option?.id)
+    const optionResponseCount = asNumber(option?.response_count)
+    if (
+      !option ||
+      !id ||
+      !Number.isSafeInteger(optionResponseCount) ||
+      (optionResponseCount ?? -1) < 0
+    ) {
+      throw new ApiRequestError("选择消息状态响应格式不正确")
+    }
+    return { id, responseCount: optionResponseCount! }
+  })
+  if (new Set(options.map((option) => option.id)).size !== options.length) {
+    throw new ApiRequestError("选择消息状态响应格式不正确")
+  }
+
+  return {
+    myOptionIds: [...myOptionIds],
+    options,
+    responseCount: responseCount!,
+  }
 }
 
 function normalizeMessageTopic(
@@ -228,6 +281,43 @@ function normalizeMessageBody(
     const content = asString(body.content)
     if (content === undefined) throw new Error("invalid message body")
     return { content, type }
+  }
+
+  if (type === "choice") {
+    const content = asString(body.content)
+    const contentType = asString(body.content_type)
+    const selection = asString(body.selection)
+    const options = Array.isArray(body.options) ? body.options : null
+    if (
+      !content?.trim() ||
+      (contentType !== "text" && contentType !== "markdown") ||
+      (selection !== "single" && selection !== "multiple") ||
+      !options ||
+      options.length < 2 ||
+      options.length > 20
+    ) {
+      throw new Error("invalid message body")
+    }
+    const normalizedOptions = options.map((candidate) => {
+      const option = asRecord(candidate)
+      const id = asString(option?.id)
+      const label = asString(option?.label)
+      if (!option || !id || !label) throw new Error("invalid message body")
+      return { id, label }
+    })
+    if (
+      new Set(normalizedOptions.map((option) => option.id)).size !==
+      normalizedOptions.length
+    ) {
+      throw new Error("invalid message body")
+    }
+    return {
+      content,
+      contentType,
+      options: normalizedOptions,
+      selection,
+      type,
+    }
   }
 
   if (type === "link") {
@@ -477,7 +567,17 @@ function normalizeReplyTo(value: unknown): ClientMessageReplyTo | undefined {
 function isForwardableBody(
   body: ClientMessageBody
 ): body is ClientForwardableMessageBody {
-  return body.type !== "system_event" && body.type !== "revoked" && body.type !== "unsupported"
+  return (
+    body.type === "text" ||
+    body.type === "markdown" ||
+    body.type === "link" ||
+    body.type === "card" ||
+    body.type === "chart" ||
+    body.type === "file" ||
+    body.type === "image" ||
+    body.type === "voice" ||
+    body.type === "forward_bundle"
+  )
 }
 
 function normalizeSenderType(value: unknown): "user" | "app" | "system" {

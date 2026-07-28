@@ -4,13 +4,16 @@ import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-clie
 import {
   normalizeClientMessage,
   normalizeClientMessagePage,
+  normalizeMessageChoiceState,
   normalizeMessageReactions,
   normalizeReactionVersion,
 } from "@/data/message-normalizer"
 import type {
   ClientMessage,
   ClientMessageList,
+  MessageChoiceSnapshot,
   MessageReactionSnapshot,
+  SubmitChoiceResponseResult,
 } from "@/data/models"
 import type { ClientMessageUpload } from "@/data/message-upload"
 
@@ -70,6 +73,135 @@ export async function fetchConversationMessages(
     messages: data.messages.map(normalizeClientMessage),
     page: normalizeClientMessagePage(data.page),
   }
+}
+
+export async function submitConversationMessageChoiceResponse(
+  serverUrl: string,
+  conversationId: string,
+  messageId: string,
+  optionIds: string[],
+  options: ApiOptions = {}
+): Promise<SubmitChoiceResponseResult> {
+  const uniqueOptionIds = [...new Set(optionIds)]
+  if (
+    uniqueOptionIds.length === 0 ||
+    uniqueOptionIds.length !== optionIds.length ||
+    uniqueOptionIds.some((id) => id.length === 0)
+  ) {
+    throw new ApiRequestError("请选择有效选项")
+  }
+
+  const data = await createApiClient(serverUrl, options.fetcher).request<{
+    choice?: unknown
+    conversation_id?: unknown
+    created?: unknown
+    message_id?: unknown
+    response?: unknown
+  }>(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/choice-response`,
+    {
+      body: JSON.stringify({ option_ids: uniqueOptionIds }),
+      errorMessage: "提交选择失败",
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      signal: options.signal,
+    }
+  )
+
+  const response = asRecord(data?.response)
+  const responseOptionIds = response?.option_ids
+  if (
+    data?.conversation_id !== conversationId ||
+    data.message_id !== messageId ||
+    typeof data.created !== "boolean" ||
+    !response ||
+    !asString(response.id) ||
+    !asString(response.created_at) ||
+    !asString(response.user_id) ||
+    !Array.isArray(responseOptionIds) ||
+    !responseOptionIds.every(
+      (optionId) => typeof optionId === "string" && optionId.length > 0
+    )
+  ) {
+    throw new ApiRequestError("提交选择响应格式不正确")
+  }
+
+  return {
+    choice: normalizeMessageChoiceState(data.choice),
+    conversationId,
+    created: data.created,
+    messageId,
+    response: {
+      createdAt: asString(response.created_at)!,
+      id: asString(response.id)!,
+      optionIds: [...responseOptionIds],
+      userId: asString(response.user_id)!,
+    },
+  }
+}
+
+export async function fetchConversationMessageChoiceSnapshots(
+  serverUrl: string,
+  conversationId: string,
+  messageIds: string[],
+  options: ApiOptions = {}
+): Promise<MessageChoiceSnapshot[]> {
+  const uniqueMessageIds = [...new Set(messageIds)]
+  if (uniqueMessageIds.length === 0 || uniqueMessageIds.length > 100) {
+    throw new ApiRequestError("选择消息快照请求格式不正确")
+  }
+
+  const data = await createApiClient(serverUrl, options.fetcher).request<{
+    conversation_id?: unknown
+    snapshots?: unknown
+  }>(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/choices/query`,
+    {
+      body: JSON.stringify({ message_ids: uniqueMessageIds }),
+      errorMessage: "同步选择状态失败",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: options.signal,
+    }
+  )
+  if (
+    data?.conversation_id !== conversationId ||
+    !Array.isArray(data.snapshots)
+  ) {
+    throw new ApiRequestError("选择状态快照响应格式不正确")
+  }
+
+  const snapshots = data.snapshots.map((candidate) => {
+    const snapshot = asRecord(candidate)
+    const messageId = asString(snapshot?.message_id)
+    const status = asString(snapshot?.status)
+    if (
+      !snapshot ||
+      !messageId ||
+      (status !== "active" && status !== "deleted" && status !== "revoked") ||
+      (status === "active" && !snapshot.choice)
+    ) {
+      throw new ApiRequestError("选择状态快照响应格式不正确")
+    }
+    return {
+      choice:
+        status === "active"
+          ? normalizeMessageChoiceState(snapshot.choice)
+          : null,
+      conversationId,
+      messageId,
+      status,
+    } satisfies MessageChoiceSnapshot
+  })
+  if (
+    snapshots.length !== uniqueMessageIds.length ||
+    snapshots.some(
+      (snapshot, index) => snapshot.messageId !== uniqueMessageIds[index]
+    )
+  ) {
+    throw new ApiRequestError("选择状态快照响应格式不正确")
+  }
+  return snapshots
 }
 
 export async function setConversationMessageReaction(

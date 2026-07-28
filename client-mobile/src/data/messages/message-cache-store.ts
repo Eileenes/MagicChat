@@ -3,15 +3,22 @@ import type { SQLiteDatabase } from "expo-sqlite"
 import type {
   ClientMessage,
   ClientMessageList,
+  MessageChoiceSnapshot,
+  MessageChoiceUpdatedEvent,
   MessageReactionsUpdatedEvent,
   MessageReactionSnapshot,
 } from "@/data/models"
 import { getMessageCacheDatabase } from "@/data/messages/message-cache-database"
+import { applyChoiceMessageTombstone } from "@/data/messages/message-tombstones"
 import type { AuthenticatedTarget, ServerTarget } from "@/data/query"
+import {
+  applyMessageChoiceEvent,
+  applyMessageChoiceSnapshot,
+} from "@/domain/messages/message-choices"
 import {
   applyMessageReactionsUpdate,
   applyMessageReactionSnapshot,
-  preserveNewerMessageReactionState,
+  preserveNewerMessageState,
 } from "@/domain/messages/message-reactions"
 
 const MAX_MESSAGES_PER_CONVERSATION = 3_000
@@ -245,6 +252,38 @@ export async function persistMessageReactionSnapshot(
   )
 }
 
+export async function persistMessageChoiceSnapshot(
+  target: AuthenticatedTarget,
+  snapshot: MessageChoiceSnapshot
+) {
+  if (snapshot.status === "deleted") {
+    await removePersistedMessage(
+      target,
+      snapshot.conversationId,
+      snapshot.messageId
+    )
+    return
+  }
+  await updatePersistedMessage(
+    target,
+    snapshot.conversationId,
+    snapshot.messageId,
+    (message) => applyMessageChoiceSnapshot(message, snapshot) ?? message
+  )
+}
+
+export async function persistMessageChoiceEvent(
+  target: AuthenticatedTarget,
+  event: MessageChoiceUpdatedEvent
+) {
+  await updatePersistedMessage(
+    target,
+    event.conversationId,
+    event.messageId,
+    (message) => applyMessageChoiceEvent(message, event, target.userId)
+  )
+}
+
 export async function persistMessageReactionsEvent(
   target: AuthenticatedTarget,
   event: MessageReactionsUpdatedEvent
@@ -387,7 +426,10 @@ async function upsertMessages(
   const serverKey = createMessageServerKey(target)
   const cachedAt = Date.now()
 
-  for (const incoming of messages) {
+  for (const candidate of messages) {
+    const incoming = applyChoiceMessageTombstone(target, candidate)
+    if (!incoming) continue
+
     const existing = await database.getFirstAsync<CachedMessageRow>(
       `SELECT payload_json,
               LENGTH(CAST(payload_json AS BLOB)) AS payload_bytes
@@ -401,7 +443,7 @@ async function upsertMessages(
     )
     const current = parseCachedMessage(existing?.payload_json)
     const message = current
-      ? preserveNewerMessageReactionState(current, incoming)
+      ? preserveNewerMessageState(current, incoming)
       : incoming
     const payload = JSON.stringify(message)
 
@@ -487,6 +529,56 @@ export async function updatePersistedMessage(
       0,
       payload,
       -(row?.payload_bytes ?? 0)
+    )
+  })
+}
+
+export async function removePersistedMessage(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  messageId: string
+) {
+  const database = await getMessageCacheDatabase()
+  if (!database) return
+
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    const serverKey = createMessageServerKey(target)
+    const row = await transaction.getFirstAsync<CachedMessageRow>(
+      `SELECT payload_json,
+              LENGTH(CAST(payload_json AS BLOB)) AS payload_bytes
+         FROM cached_messages
+        WHERE server_key = ? AND user_id = ? AND conversation_id = ?
+          AND message_id = ?`,
+      serverKey,
+      target.userId,
+      conversationId,
+      messageId
+    )
+    if (!row) return
+
+    await transaction.runAsync(
+      `DELETE FROM cached_messages
+        WHERE server_key = ? AND user_id = ? AND conversation_id = ?
+          AND message_id = ?`,
+      serverKey,
+      target.userId,
+      conversationId,
+      messageId
+    )
+    await updateCacheStatsByDelta(
+      transaction,
+      target,
+      conversationId,
+      -1,
+      -row.payload_bytes
+    )
+    await transaction.runAsync(
+      `DELETE FROM message_cache_stats
+        WHERE server_key = ? AND user_id = ? AND conversation_id = ?
+          AND message_count = 0`,
+      serverKey,
+      target.userId,
+      conversationId
     )
   })
 }
