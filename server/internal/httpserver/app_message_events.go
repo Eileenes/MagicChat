@@ -21,9 +21,10 @@ type appMessageCreatedPayload struct {
 }
 
 type appMessageConversationPayload struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	CreatedByAppID string `json:"created_by_app_id,omitempty"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Type           string `json:"type"`
 }
 
 type appMessagePayload struct {

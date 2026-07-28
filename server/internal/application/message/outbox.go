@@ -21,11 +21,12 @@ type appMessageCreatedPayload struct {
 }
 
 type appMessageConversationPayload struct {
-	ID     string                           `json:"id"`
-	Name   string                           `json:"name"`
-	Parent *appMessageConversationReference `json:"parent,omitempty"`
-	Source *appMessageTopicSourcePayload    `json:"source_message,omitempty"`
-	Type   string                           `json:"type"`
+	CreatedByAppID string                           `json:"created_by_app_id,omitempty"`
+	ID             string                           `json:"id"`
+	Name           string                           `json:"name"`
+	Parent         *appMessageConversationReference `json:"parent,omitempty"`
+	Source         *appMessageTopicSourcePayload    `json:"source_message,omitempty"`
+	Type           string                           `json:"type"`
 }
 
 type appMessageConversationReference struct {
@@ -90,6 +91,9 @@ func createAppMessageEventOutbox(db *gorm.DB, access conversationaccess.Context,
 	}
 	conversationPayload := appMessageConversationPayload{ID: conversation.ID, Name: conversation.Name, Type: conversation.Kind}
 	if access.IsTopic() && access.ParentConversation != nil && access.Topic != nil {
+		if access.Topic.CreatedByAppID != nil {
+			conversationPayload.CreatedByAppID = *access.Topic.CreatedByAppID
+		}
 		conversationPayload.Parent = &appMessageConversationReference{
 			ID: access.ParentConversation.ID, Name: access.ParentConversation.Name, Type: access.ParentConversation.Kind,
 		}

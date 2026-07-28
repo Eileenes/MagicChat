@@ -121,10 +121,11 @@ type messageCreatedPayload struct {
 }
 
 type conversationPayload struct {
-	ID     string                        `json:"id"`
-	Name   string                        `json:"name"`
-	Parent *conversationReferencePayload `json:"parent,omitempty"`
-	Type   string                        `json:"type"`
+	CreatedByAppID string                        `json:"created_by_app_id,omitempty"`
+	ID             string                        `json:"id"`
+	Name           string                        `json:"name"`
+	Parent         *conversationReferencePayload `json:"parent,omitempty"`
+	Type           string                        `json:"type"`
 }
 
 type conversationReferencePayload struct {
@@ -1051,6 +1052,11 @@ func shouldHandleIncomingMessage(appID string, payload messageCreatedPayload, bo
 		switch parentType {
 		case "app", "direct":
 			return isAgentTriggerMessageType(body.Type)
+		case "group":
+			if strings.TrimSpace(appID) != "" && strings.EqualFold(strings.TrimSpace(payload.Conversation.CreatedByAppID), strings.TrimSpace(appID)) {
+				return isAgentTriggerMessageType(body.Type)
+			}
+			return messageDirectlyMentionsApp(appID, body)
 		default:
 			return messageDirectlyMentionsApp(appID, body)
 		}
