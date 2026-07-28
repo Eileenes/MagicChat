@@ -3,6 +3,7 @@ import path from "node:path"
 import { net, protocol } from "electron"
 import type { ServerProfiles } from "@main/server-profiles"
 import type { SessionController } from "@main/session-controller"
+import { isAllowedDesktopMediaPath } from "@shared/media-resource-path"
 
 const mimeTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -77,8 +78,8 @@ export function installLocalProtocol(
       if (url.hostname !== "asset") return new Response("Not found", { status: 404 })
       const segments = url.pathname.split("/").filter(Boolean)
       const serverId = decodeURIComponent(segments.shift() ?? "")
-      const apiPath = `/${segments.join("/")}`
-      if (!/^[a-zA-Z0-9_-]+$/.test(serverId) || !apiPath.startsWith("/api/client/")) {
+      const resourcePath = `/${segments.join("/")}`
+      if (!/^[a-zA-Z0-9_-]+$/.test(serverId) || !isAllowedDesktopMediaPath(resourcePath)) {
         return new Response("Forbidden", { status: 403 })
       }
       const profile = profiles.require(serverId)
@@ -89,7 +90,7 @@ export function installLocalProtocol(
       }
       const upstream = await sessions
         .for(profile)
-        .fetch(`${profile.normalizedUrl}${apiPath}${url.search}`, {
+        .fetch(`${profile.normalizedUrl}${resourcePath}${url.search}`, {
           credentials: "include",
           headers,
         })
