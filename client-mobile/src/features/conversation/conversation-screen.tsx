@@ -801,17 +801,19 @@ export function ConversationScreen() {
         open={topicArchiveDialogOpen}
         saving={archiveTopicMutation.isPending}
       />
-      <ForwardMessageSheet
-        conversations={conversations}
-        onAnimationComplete={(open) => {
-          if (!open) setForwardMessage(null)
-        }}
-        onForward={handleForwardMessage}
-        onRequestClose={requestForwardSheetClose}
-        open={forwardSheetOpen && forwardMessage !== null}
-        server={session}
-        source={forwardMessage}
-      />
+      {forwardMessage ? (
+        <ForwardMessageSheet
+          conversations={conversations}
+          onAnimationComplete={(open) => {
+            if (!open) setForwardMessage(null)
+          }}
+          onForward={handleForwardMessage}
+          onRequestClose={requestForwardSheetClose}
+          open={forwardSheetOpen}
+          server={session}
+          source={forwardMessage}
+        />
+      ) : null}
     </YStack>
   )
 }

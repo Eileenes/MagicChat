@@ -5,20 +5,16 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query"
-import { useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
 import {
-  fetchConversationMessages,
-  forwardConversationMessages,
-  markConversationRead,
-  revokeConversationMessage,
-  sendConversationFileMessage,
-  sendConversationImageMessage,
-  sendConversationTextMessage,
-  sendConversationVoiceMessage,
-  setConversationMessageReaction,
-} from "@/data/messages-api"
-import { updateCachedMessageReactionSnapshot } from "@/data/message-reaction-cache"
+  messageManager,
+  subscribeConversationMessages,
+} from "@/data/messages"
+import {
+  applyConversationMessagesChangedEvent,
+  compactConversationMessagesQuery,
+} from "@/data/messages/message-query-cache"
 import type {
   ClientConversation,
   ClientMessage,
@@ -26,7 +22,6 @@ import type {
 } from "@/data/models"
 import type { ClientMessageUpload } from "@/data/message-upload"
 import { queryKeys, type AuthenticatedTarget } from "@/data/query"
-import { updateCachedTopicSourcePreview } from "@/data/topic-cache"
 import { preserveNewerMessageReactionState } from "@/domain/messages/message-reactions"
 
 const MESSAGE_PAGE_SIZE = 20
@@ -36,6 +31,13 @@ export function useConversationMessages(
   server: AuthenticatedTarget,
   conversationId: string
 ) {
+  const queryClient = useQueryClient()
+  const queryKey = useMemo(
+    () => queryKeys.conversationMessages(server, conversationId),
+    [conversationId, server]
+  )
+  const [synchronizationError, setSynchronizationError] =
+    useState<Error | null>(null)
   const query = useInfiniteQuery<
     ClientMessageList,
     Error,
@@ -48,8 +50,8 @@ export function useConversationMessages(
       lastPage.page.hasMoreBefore ? lastPage.page.oldestSeq : undefined,
     initialPageParam: null as number | null,
     queryFn: ({ pageParam, signal }) =>
-      fetchConversationMessages(
-        server.url,
+      messageManager.loadMessagePage(
+        server,
         conversationId,
         {
           beforeSeq: pageParam ?? undefined,
@@ -57,8 +59,8 @@ export function useConversationMessages(
         },
         { signal }
       ),
-    queryKey: queryKeys.conversationMessages(server, conversationId),
-    refetchInterval: MESSAGE_REFRESH_INTERVAL_MS,
+    queryKey,
+    staleTime: Infinity,
     structuralSharing: (current, incoming) =>
       preserveNewerMessageReactions(
         current as
@@ -67,19 +69,79 @@ export function useConversationMessages(
         incoming as InfiniteData<ClientMessageList, number | null>
       ),
   })
+
+  useEffect(
+    () =>
+      subscribeConversationMessages(server, conversationId, (event) => {
+        applyConversationMessagesChangedEvent(
+          queryClient,
+          server,
+          conversationId,
+          event
+        )
+      }),
+    [conversationId, queryClient, queryKey, server]
+  )
+
+  useEffect(
+    () => () => {
+      compactConversationMessagesQuery(
+        queryClient,
+        server,
+        conversationId
+      )
+    },
+    [conversationId, queryClient, server]
+  )
+
+  useEffect(() => {
+    if (!conversationId) return
+
+    let active = true
+    const synchronize = () => {
+      void messageManager
+        .synchronizeLatest(server, conversationId, MESSAGE_PAGE_SIZE)
+        .then(() => {
+          if (active) setSynchronizationError(null)
+        })
+        .catch((error: unknown) => {
+          if (active) {
+            setSynchronizationError(
+              error instanceof Error ? error : new Error("加载消息失败")
+            )
+          }
+        })
+    }
+
+    synchronize()
+    const interval = setInterval(synchronize, MESSAGE_REFRESH_INTERVAL_MS)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [conversationId, server])
+
+  const refetch = useCallback(async () => {
+    await messageManager.synchronizeLatest(
+      server,
+      conversationId,
+      MESSAGE_PAGE_SIZE
+    )
+  }, [conversationId, server])
+
   const messages = useMemo(
     () => mergeMessages(query.data?.pages.flatMap((page) => page.messages) ?? []),
     [query.data?.pages]
   )
 
   return {
-    error: query.error,
+    error: synchronizationError ?? query.error,
     fetchOlder: query.fetchNextPage,
     hasOlder: query.hasNextPage,
     isFetchingOlder: query.isFetchingNextPage,
     isLoading: query.isLoading,
     messages,
-    refetch: query.refetch,
+    refetch,
   }
 }
 
@@ -94,8 +156,7 @@ export function useSendConversationTextMessage(
       clientMessageId: string
       content: string
       replyToMessageId?: string
-    }) =>
-      sendConversationTextMessage(server.url, conversationId, input)
+    }) => messageManager.sendText(server, conversationId, input)
   )
 }
 
@@ -103,23 +164,18 @@ export function useSetConversationMessageReaction(
   server: AuthenticatedTarget,
   conversationId: string
 ) {
-  const queryClient = useQueryClient()
-
   return useMutation({
     mutationFn: (input: {
       messageId: string
       reacted: boolean
       text: string
     }) =>
-      setConversationMessageReaction(
-        server.url,
+      messageManager.setReaction(
+        server,
         conversationId,
         input.messageId,
         { reacted: input.reacted, text: input.text }
       ),
-    onSuccess: (snapshot) => {
-      updateCachedMessageReactionSnapshot(queryClient, server, snapshot)
-    },
   })
 }
 
@@ -134,8 +190,7 @@ export function useSendConversationFileMessage(
       clientMessageId: string
       file: ClientMessageUpload
       replyToMessageId?: string
-    }) =>
-      sendConversationFileMessage(server.url, conversationId, input)
+    }) => messageManager.sendFile(server, conversationId, input)
   )
 }
 
@@ -150,8 +205,7 @@ export function useSendConversationImageMessage(
       clientMessageId: string
       image: ClientMessageUpload
       replyToMessageId?: string
-    }) =>
-      sendConversationImageMessage(server.url, conversationId, input)
+    }) => messageManager.sendImage(server, conversationId, input)
   )
 }
 
@@ -167,7 +221,7 @@ export function useSendConversationVoiceMessage(
       durationMS: number
       replyToMessageId?: string
       voice: ClientMessageUpload
-    }) => sendConversationVoiceMessage(server.url, conversationId, input)
+    }) => messageManager.sendVoice(server, conversationId, input)
   )
 }
 
@@ -179,14 +233,10 @@ export function useRevokeConversationMessage(
 
   return useMutation({
     mutationFn: (messageId: string) =>
-      revokeConversationMessage(server.url, conversationId, messageId),
+      messageManager.revokeMessage(server, conversationId, messageId),
     onSuccess: ({ message, systemMessage }) => {
-      queryClient.setQueryData<InfiniteData<ClientMessageList, number | null>>(
-        queryKeys.conversationMessages(server, conversationId),
-        (current) => upsertMessages(current, [message, systemMessage])
-      )
-      updateCachedTopicSourcePreview(queryClient, server, message)
-      updateCachedTopicSourcePreview(queryClient, server, systemMessage)
+      persistTopicSourcePreview(queryClient, server, message)
+      persistTopicSourcePreview(queryClient, server, systemMessage)
       void queryClient.invalidateQueries({
         queryKey: queryKeys.conversations(server),
       })
@@ -206,12 +256,12 @@ export function useForwardConversationMessage(
       messageId: string
       targetConversationIds: string[]
     }) =>
-      forwardConversationMessages(
-        server.url,
+      messageManager.forwardMessage(
+        server,
         sourceConversationId,
         {
           clientForwardId: input.clientForwardId,
-          messageIds: [input.messageId],
+          messageId: input.messageId,
           targetConversationIds: input.targetConversationIds,
         }
       ),
@@ -219,14 +269,8 @@ export function useForwardConversationMessage(
       for (const target of result.results) {
         if (target.status !== "sent") continue
 
-        queryClient.setQueryData<
-          InfiniteData<ClientMessageList, number | null>
-        >(
-          queryKeys.conversationMessages(server, target.conversationId),
-          (current) => upsertMessages(current, target.messages)
-        )
         for (const message of target.messages) {
-          updateCachedTopicSourcePreview(queryClient, server, message)
+          persistTopicSourcePreview(queryClient, server, message)
         }
       }
       void queryClient.invalidateQueries({
@@ -246,15 +290,32 @@ function useSendConversationMessageMutation<TInput>(
   return useMutation({
     mutationFn: sendMessage,
     onSuccess: (message) => {
-      queryClient.setQueryData<InfiniteData<ClientMessageList, number | null>>(
-        queryKeys.conversationMessages(server, conversationId),
-        (current) => upsertMessages(current, [message])
-      )
-      updateCachedTopicSourcePreview(queryClient, server, message)
+      persistTopicSourcePreview(queryClient, server, message)
       void queryClient.invalidateQueries({
         queryKey: queryKeys.conversations(server),
       })
     },
+  })
+}
+
+function persistTopicSourcePreview(
+  queryClient: ReturnType<typeof useQueryClient>,
+  target: AuthenticatedTarget,
+  message: ClientMessage
+) {
+  const topic = queryClient
+    .getQueryData<ClientConversation[]>(queryKeys.conversations(target))
+    ?.find(
+      (conversation) =>
+        conversation.id === message.conversationId &&
+        conversation.type === "topic"
+    )?.topic
+  if (!topic) return
+
+  void messageManager.updateTopicSourcePreview(target, {
+    message,
+    parentConversationId: topic.parentConversationId,
+    sourceMessageId: topic.sourceMessageId,
   })
 }
 
@@ -266,7 +327,7 @@ export function useMarkConversationRead(
 
   return useMutation({
     mutationFn: (upToSeq: number) =>
-      markConversationRead(server.url, conversationId, upToSeq),
+      messageManager.markRead(server, conversationId, upToSeq),
     onMutate: (upToSeq) => {
       void queryClient.cancelQueries({
         exact: true,
@@ -367,44 +428,4 @@ function preserveNewerMessageReactions(
     })),
   }
   return replaceEqualDeep(current, merged)
-}
-
-function upsertMessages(
-  current: InfiniteData<ClientMessageList, number | null> | undefined,
-  messages: ClientMessage[]
-) {
-  if (!current || current.pages.length === 0 || messages.length === 0) {
-    return current
-  }
-
-  const updates = new Map(messages.map((message) => [message.id, message]))
-  const found = new Set<string>()
-  const pages = current.pages.map((page) => ({
-    ...page,
-    messages: page.messages.map((message) => {
-      const update = updates.get(message.id)
-      if (!update) return message
-
-      found.add(message.id)
-      return update
-    }),
-  }))
-  const missing = messages.filter((message) => !found.has(message.id))
-  const newestSeq = messages.reduce(
-    (currentNewest, message) => Math.max(currentNewest, message.seq),
-    pages[0]?.page.newestSeq ?? 0
-  )
-
-  return {
-    ...current,
-    pages: pages.map((page, index) =>
-      index === 0
-        ? {
-            ...page,
-            messages: mergeMessages([...page.messages, ...missing]),
-            page: { ...page.page, newestSeq },
-          }
-        : page
-    ),
-  }
 }

@@ -18,6 +18,7 @@ export function ConversationList({
   items,
   onConversationLongPress,
   onConversationPress,
+  onConversationPressIn,
   onRefresh,
   server,
 }: {
@@ -27,6 +28,7 @@ export function ConversationList({
   items: ConversationListItemModel[]
   onConversationLongPress: (item: ConversationListItemModel) => void
   onConversationPress: (conversationId: string) => void
+  onConversationPressIn: (conversationId: string) => void
   onRefresh: () => void
   server: ServerTarget
 }) {
@@ -60,6 +62,7 @@ export function ConversationList({
           item={item}
           onLongPress={() => onConversationLongPress(item)}
           onPress={() => onConversationPress(item.conversation.id)}
+          onPressIn={() => onConversationPressIn(item.conversation.id)}
           server={server}
         />
       )}
@@ -73,11 +76,13 @@ function ConversationListItem({
   item,
   onLongPress,
   onPress,
+  onPressIn,
   server,
 }: {
   item: ConversationListItemModel
   onLongPress: () => void
   onPress: () => void
+  onPressIn: () => void
   server: ServerTarget
 }) {
   const { conversation } = item
@@ -113,6 +118,7 @@ function ConversationListItem({
       onPress={handlePress}
       onPressIn={() => {
         didLongPressRef.current = false
+        onPressIn()
       }}
       pressStyle={{ bg: "$backgroundPress" }}
       size="$4"

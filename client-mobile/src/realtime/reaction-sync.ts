@@ -1,10 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query"
 
-import {
-  applyCachedMessageReactionsUpdate,
-  updateCachedMessageReactionSnapshot,
-} from "@/data/message-reaction-cache"
-import { fetchConversationMessageReactionSnapshots } from "@/data/messages-api"
+import { messageManager } from "@/data/messages"
 import {
   normalizeMessageReactionUsers,
   normalizeReactionVersion,
@@ -21,7 +17,7 @@ export async function applyRealtimeMessageReactionsEvent(
   payload: unknown
 ) {
   const event = normalizeMessageReactionsUpdatedPayload(payload)
-  const status = applyCachedMessageReactionsUpdate(queryClient, server, event)
+  const status = await messageManager.applyReactionEvent(server, event)
 
   if (status === "gap") {
     await synchronizeConversationMessageReactions(
@@ -59,8 +55,8 @@ export async function synchronizeConversationMessageReactions(
       attempt < MAX_REACTION_SNAPSHOT_CATCH_UP_ATTEMPTS;
       attempt += 1
     ) {
-      const snapshots = await fetchConversationMessageReactionSnapshots(
-        server.url,
+      const snapshots = await messageManager.fetchReactionSnapshots(
+        server,
         conversationId,
         pending
       )
@@ -68,7 +64,7 @@ export async function synchronizeConversationMessageReactions(
 
       for (const snapshot of snapshots) {
         versions.set(snapshot.messageId, snapshot.reactionVersion)
-        updateCachedMessageReactionSnapshot(queryClient, server, snapshot)
+        await messageManager.applyReactionSnapshot(server, snapshot)
       }
 
       pending = pending.filter(

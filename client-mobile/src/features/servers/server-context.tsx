@@ -9,6 +9,7 @@ import {
 } from "react"
 
 import { removeServerResourceCache } from "@/data/resources"
+import { messageManager } from "@/data/messages"
 import {
   isValidServerUrl,
   normalizeServerUrl,
@@ -147,7 +148,12 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
       }
 
       const server = servers.find((candidate) => candidate.id === id)
-      if (server) void removeServerResourceCache(server)
+      if (server) {
+        void Promise.all([
+          removeServerResourceCache(server),
+          messageManager.clearServer(server),
+        ]).catch(() => undefined)
+      }
 
       setCustomServers((current) =>
         current.filter((candidate) => candidate.id !== id)
@@ -195,7 +201,10 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
       )
 
       if (existingServer.url !== server.url) {
-        void removeServerResourceCache(existingServer)
+        void Promise.all([
+          removeServerResourceCache(existingServer),
+          messageManager.clearServer(existingServer),
+        ]).catch(() => undefined)
       }
 
       return { server, status: "updated" }

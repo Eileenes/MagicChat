@@ -13,6 +13,7 @@ import {
   setConversationPinned as setConversationPinnedRequest,
 } from "@/data/conversations-api"
 import type { ClientContacts, ClientConversation } from "@/data/models"
+import { messageManager } from "@/data/messages"
 import { queryKeys, type AuthenticatedTarget } from "@/data/query"
 
 export type OpenEntityConversationInput = {
@@ -143,7 +144,8 @@ export function useDismissConversation(target: AuthenticatedTarget) {
   return useMutation({
     mutationFn: (conversationId: string) =>
       dismissConversationRequest(target.url, conversationId),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      await messageManager.clearConversation(target, result.conversationId)
       queryClient.setQueryData<ClientConversation[]>(
         queryKeys.conversations(target),
         (current) =>

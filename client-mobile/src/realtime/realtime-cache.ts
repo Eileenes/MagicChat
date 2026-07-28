@@ -1,7 +1,7 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query"
 
-import { fetchConversationMessages } from "@/data/messages-api"
 import { normalizeClientMessage } from "@/data/message-normalizer"
+import { messageManager } from "@/data/messages"
 import type {
   ClientConversation,
   ClientMessage,
@@ -9,12 +9,7 @@ import type {
   ClientTopicDetail,
 } from "@/data/models"
 import { queryKeys, type AuthenticatedTarget } from "@/data/query"
-import {
-  updateCachedMessageTopic,
-  updateCachedTopicSourcePreview,
-} from "@/data/topic-cache"
 import { formatClientMessageBodySummary } from "@/domain/messages/message-presenter"
-import { preserveNewerMessageReactionState } from "@/domain/messages/message-reactions"
 import {
   applyRealtimeMessageReactionsEvent,
   synchronizeConversationMessageReactions,
@@ -24,7 +19,6 @@ import { realtimeEvents } from "@/realtime/realtime-protocol"
 type MessageInfiniteData = InfiniteData<ClientMessageList, number | null>
 
 const CATCH_UP_PAGE_SIZE = 20
-const MAX_CATCH_UP_PAGES = 100
 
 export async function applyRealtimeEvent(
   queryClient: QueryClient,
@@ -38,17 +32,8 @@ export async function applyRealtimeEvent(
     event === realtimeEvents.messageUpdated
   ) {
     const message = normalizeMessageEventPayload(payload)
-    const queryKey = queryKeys.conversationMessages(
-      server,
-      message.conversationId
-    )
-
-    queryClient.setQueryData<MessageInfiniteData>(queryKey, (current) =>
-      event === realtimeEvents.messageCreated
-        ? appendMessages(current, [message])
-        : updateMessage(current, message)
-    )
-    updateCachedTopicSourcePreview(queryClient, server, message)
+    await messageManager.writeMessages(server, [message])
+    await persistTopicSourcePreview(queryClient, server, message)
 
     if (
       event === realtimeEvents.messageCreated &&
@@ -98,6 +83,7 @@ export async function applyRealtimeEvent(
       exact: true,
       queryKey: queryKeys.conversationMessages(server, conversationId),
     })
+    await messageManager.clearConversation(server, conversationId)
     return {}
   }
 
@@ -162,7 +148,7 @@ export async function applyRealtimeEvent(
   ) {
     const topic = normalizeTopicEventPayload(payload)
 
-    updateCachedMessageTopic(queryClient, server, topic)
+    await messageManager.updateMessageTopic(server, topic)
     queryClient.setQueryData<ClientTopicDetail>(
       queryKeys.conversationTopic(server, topic.conversationId),
       (current) =>
@@ -256,58 +242,135 @@ function invalidateConversations(
   )
 }
 
+function persistTopicSourcePreview(
+  queryClient: QueryClient,
+  target: AuthenticatedTarget,
+  message: ClientMessage
+) {
+  const topic = queryClient
+    .getQueryData<ClientConversation[]>(queryKeys.conversations(target))
+    ?.find(
+      (conversation) =>
+        conversation.id === message.conversationId &&
+        conversation.type === "topic"
+    )?.topic
+  if (!topic) return Promise.resolve()
+
+  return messageManager.updateTopicSourcePreview(target, {
+    message,
+    parentConversationId: topic.parentConversationId,
+    sourceMessageId: topic.sourceMessageId,
+  })
+}
+
 export async function synchronizeRealtimeData(
   queryClient: QueryClient,
-  server: AuthenticatedTarget
+  server: AuthenticatedTarget,
+  options: { activeConversationId?: string } = {}
 ) {
+  await queryClient.invalidateQueries(
+    {
+      exact: true,
+      queryKey: queryKeys.conversations(server),
+    },
+    { cancelRefetch: false }
+  )
+
+  const conversations =
+    queryClient.getQueryData<ClientConversation[]>(
+      queryKeys.conversations(server)
+    ) ?? []
+  const conversationById = new Map(
+    conversations.map((conversation) => [conversation.id, conversation])
+  )
+  const syncStates = await messageManager.listSyncStates(server).catch(
+    () => []
+  )
+  const syncStateConversationIds = new Set(
+    syncStates.map((state) => state.conversationId)
+  )
+  const prioritizedStates = [...syncStates].sort((left, right) =>
+    compareCatchUpPriority(
+      left.conversationId,
+      right.conversationId,
+      conversationById,
+      options.activeConversationId
+    )
+  )
+
+  for (const state of prioritizedStates) {
+    const conversation = conversationById.get(state.conversationId)
+    const isActive = state.conversationId === options.activeConversationId
+    if (!conversation && !isActive) continue
+
+    if (state.httpSyncedThroughSeq === 0) {
+      await messageManager.synchronizeLatest(
+        server,
+        state.conversationId,
+        CATCH_UP_PAGE_SIZE
+      )
+      continue
+    }
+
+    if (
+      isActive ||
+      (conversation?.lastMessageSeq ?? 0) > state.httpSyncedThroughSeq
+    ) {
+      await catchUpConversationMessages(
+        server,
+        state.conversationId,
+        state.httpSyncedThroughSeq
+      )
+    }
+  }
+
   const loadedConversationQueries =
     queryClient.getQueriesData<MessageInfiniteData>({
       queryKey: [...queryKeys.authenticated(server), "conversation"],
     })
 
-  await Promise.all([
-    queryClient.invalidateQueries(
-      {
-        exact: true,
-        queryKey: queryKeys.conversations(server),
-      },
-      { cancelRefetch: false }
-    ),
-    ...loadedConversationQueries.flatMap(([queryKey, data]) => {
-      const conversationId = getConversationIdFromMessageQueryKey(queryKey)
-      const newestSeq = data ? getNewestMessageSeq(data) : 0
-      if (!conversationId || !data) return []
+  for (const [queryKey, data] of loadedConversationQueries) {
+    const conversationId = getConversationIdFromMessageQueryKey(queryKey)
+    if (
+      !conversationId ||
+      !data ||
+      syncStateConversationIds.has(conversationId)
+    ) {
+      continue
+    }
 
-      const messageIds = getLoadedMessageIds(data)
-      return [
-        ...(newestSeq > 0
-          ? [
-              catchUpConversationMessages(
-                queryClient,
-                server,
-                conversationId,
-                newestSeq
-              ),
-            ]
-          : []),
-        ...(messageIds.length > 0
-          ? [
-              synchronizeConversationMessageReactions(
-                queryClient,
-                server,
-                conversationId,
-                messageIds
-              ),
-            ]
-          : []),
-      ]
-    }),
-  ])
+    const newestSeq = getNewestMessageSeq(data)
+    if (newestSeq > 0) {
+      await catchUpConversationMessages(
+        server,
+        conversationId,
+        newestSeq
+      )
+    }
+  }
+
+  await Promise.all(
+    loadedConversationQueries.flatMap(([queryKey, data]) => {
+      const conversationId = getConversationIdFromMessageQueryKey(queryKey)
+      const messageIds = data ? getLoadedMessageIds(data) : []
+      return conversationId && messageIds.length > 0
+        ? [
+            synchronizeConversationMessageReactions(
+              queryClient,
+              server,
+              conversationId,
+              messageIds
+            ),
+          ]
+        : []
+    })
+  )
 }
 
 export async function refreshClientDataOnForeground(
   queryClient: QueryClient,
-  server: AuthenticatedTarget
+  server: AuthenticatedTarget,
+  options: { activeConversationId?: string } = {}
 ) {
   await Promise.all([
     queryClient.invalidateQueries(
@@ -331,140 +394,84 @@ export async function refreshClientDataOnForeground(
       },
       { cancelRefetch: false }
     ),
-    synchronizeRealtimeData(queryClient, server),
+    synchronizeRealtimeData(queryClient, server, options),
   ])
 }
 
 async function catchUpConversationMessages(
-  queryClient: QueryClient,
   server: AuthenticatedTarget,
   conversationId: string,
   initialAfterSeq: number
 ) {
   let afterSeq = initialAfterSeq
 
-  for (let pageIndex = 0; pageIndex < MAX_CATCH_UP_PAGES; pageIndex += 1) {
-    const result = await fetchConversationMessages(
-      server.url,
+  for (let pageIndex = 0; ; pageIndex += 1) {
+    const { committedSeq, result } = await messageManager.catchUpAfter(
+      server,
       conversationId,
-      { afterSeq, limit: CATCH_UP_PAGE_SIZE }
+      afterSeq,
+      CATCH_UP_PAGE_SIZE
     )
-
-    if (result.messages.length > 0) {
-      queryClient.setQueryData<MessageInfiniteData>(
-        queryKeys.conversationMessages(server, conversationId),
-        (current) => appendMessages(current, result.messages)
-      )
-    }
 
     if (!result.page.hasMoreAfter) {
       return
     }
 
-    const nextAfterSeq = result.messages.reduce(
-      (newest, message) => Math.max(newest, message.seq),
-      afterSeq
-    )
-    if (nextAfterSeq <= afterSeq) {
-      break
+    if (committedSeq <= afterSeq) {
+      throw new Error("消息增量同步游标没有向前推进")
     }
-    afterSeq = nextAfterSeq
-  }
+    afterSeq = committedSeq
 
-  // An unusually large gap is cheaper and safer to reload than to leave a
-  // partially synchronized cache behind.
-  await queryClient.invalidateQueries({
-    exact: true,
-    queryKey: queryKeys.conversationMessages(server, conversationId),
-  })
-}
-
-function appendMessages(
-  current: MessageInfiniteData | undefined,
-  incoming: ClientMessage[]
-) {
-  if (!current || current.pages.length === 0 || incoming.length === 0) {
-    return current
-  }
-
-  const incomingIds = new Set(incoming.map((message) => message.id))
-  const pages = current.pages.map((page) => ({
-    ...page,
-    messages: page.messages.filter((message) => !incomingIds.has(message.id)),
-  }))
-  const firstPage = pages[0]
-  const messages = mergeMessages([...firstPage.messages, ...incoming])
-
-  pages[0] = {
-    ...firstPage,
-    messages,
-    page: {
-      ...firstPage.page,
-      hasMoreAfter: false,
-      newestSeq: Math.max(
-        firstPage.page.newestSeq,
-        ...incoming.map((message) => message.seq)
-      ),
-    },
-  }
-
-  return { ...current, pages }
-}
-
-function updateMessage(
-  current: MessageInfiniteData | undefined,
-  incoming: ClientMessage
-) {
-  if (!current) {
-    return current
-  }
-
-  let found = false
-  const pages = current.pages.map((page) => ({
-    ...page,
-    messages: page.messages.map((message) => {
-      if (message.id !== incoming.id) {
-        return message
-      }
-
-      found = true
-      return preserveNewerMessageReactionState(message, incoming)
-    }),
-  }))
-
-  return found ? { ...current, pages } : current
-}
-
-function mergeMessages(messages: ClientMessage[]) {
-  const messagesById = new Map<string, ClientMessage>()
-  for (const message of messages) {
-    const current = messagesById.get(message.id)
-    messagesById.set(
-      message.id,
-      current
-        ? preserveNewerMessageReactionState(current, message)
-        : message
-    )
-  }
-
-  return Array.from(messagesById.values()).sort(
-    (left, right) => right.seq - left.seq
-  )
-}
-
-function getNewestMessageSeq(data: MessageInfiniteData) {
-  let newestSeq = 0
-  for (const page of data.pages) {
-    for (const message of page.messages) {
-      newestSeq = Math.max(newestSeq, message.seq)
+    if (pageIndex > 0 && pageIndex % 10 === 0) {
+      await yieldToEventLoop()
     }
   }
-  return newestSeq
+}
+
+function compareCatchUpPriority(
+  leftId: string,
+  rightId: string,
+  conversations: ReadonlyMap<string, ClientConversation>,
+  activeConversationId: string | undefined
+) {
+  const left = conversations.get(leftId)
+  const right = conversations.get(rightId)
+  const leftPriority = catchUpPriority(leftId, left, activeConversationId)
+  const rightPriority = catchUpPriority(rightId, right, activeConversationId)
+  return rightPriority - leftPriority
+}
+
+function catchUpPriority(
+  conversationId: string,
+  conversation: ClientConversation | undefined,
+  activeConversationId: string | undefined
+) {
+  const active = conversationId === activeConversationId ? 1e16 : 0
+  const unread = (conversation?.unreadCount ?? 0) > 0 ? 1e15 : 0
+  const recent = conversation?.lastMessageAt
+    ? Date.parse(conversation.lastMessageAt)
+    : 0
+  return active + unread + (Number.isFinite(recent) ? recent : 0)
+}
+
+function yieldToEventLoop() {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0))
 }
 
 function getLoadedMessageIds(data: MessageInfiniteData) {
   return data.pages.flatMap((page) =>
     page.messages.map((message) => message.id)
+  )
+}
+
+function getNewestMessageSeq(data: MessageInfiniteData) {
+  return data.pages.reduce(
+    (newest, page) =>
+      page.messages.reduce(
+        (pageNewest, message) => Math.max(pageNewest, message.seq),
+        newest
+      ),
+    0
   )
 }
 

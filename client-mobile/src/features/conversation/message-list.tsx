@@ -167,10 +167,6 @@ export function MessageList({
     scheduleScrollToLatest(listRef, pendingScrollRef, true)
   }
 
-  if (isLoading) {
-    return <ContentState loading message="正在加载消息" />
-  }
-
   if (error && messages.length === 0) {
     return (
       <ContentState message={error.message} tone="error">

@@ -73,7 +73,7 @@ export type MessageComposerHandle = {
 
 const COMPOSER_CONTROL_HEIGHT = 38
 const COMPOSER_INPUT_GAP = 8
-const COMPOSER_INPUT_HORIZONTAL_PADDING = 8
+const COMPOSER_INPUT_HORIZONTAL_PADDING = "$3"
 const COMPOSER_LINE_HEIGHT = 22
 const COMPOSER_MAX_LINES = 4
 const COMPOSER_MAX_CONTROL_HEIGHT =
@@ -122,7 +122,6 @@ export const MessageComposer = forwardRef<
   const uploadInFlightRef = useRef(false)
   const voiceUploadInFlightRef = useRef(false)
   const voiceRecordingRef = useRef<PreparedClientVoiceMessage | null>(null)
-  const inputVoiceGestureRef = useRef(false)
   const mountedRef = useRef(true)
   const [content, setContent] = useState("")
   const [inputHeight, setInputHeight] = useState(COMPOSER_CONTROL_HEIGHT)
@@ -459,34 +458,6 @@ export const MessageComposer = forwardRef<
     void voiceRecorder.stopRecording()
   }
 
-  function handleInputPress() {
-    if (inputVoiceGestureRef.current) {
-      inputVoiceGestureRef.current = false
-      return
-    }
-    if (interactionDisabled) return
-
-    setAccessoryMode(null)
-    setMentionPickerOpen(false)
-    focusInputAfterRender()
-  }
-
-  function handleInputLongPress() {
-    if (interactionDisabled || contentRef.current.trim()) return
-
-    inputVoiceGestureRef.current = true
-    setAccessoryMode(null)
-    setMentionPickerOpen(false)
-    inputRef.current?.blur()
-    Keyboard.dismiss()
-    void voiceRecorder.startRecording()
-  }
-
-  function handleInputPressOut() {
-    if (!inputVoiceGestureRef.current) return
-    void voiceRecorder.stopRecording()
-  }
-
   async function handleVoiceConfirm() {
     const recording = voiceRecorder.recording
     if (!recording || disabled) return
@@ -570,7 +541,7 @@ export const MessageComposer = forwardRef<
                     onContentSizeChange={handleInputContentSizeChange}
                     onFocus={() => setAccessoryMode(null)}
                     onSelectionChange={handleSelectionChange}
-                    placeholder="发消息 或 按住说话"
+                    placeholder="发消息"
                     placeholderTextColor="$gray9"
                     px={COMPOSER_INPUT_HORIZONTAL_PADDING}
                     py={inputVerticalPadding}
@@ -585,21 +556,6 @@ export const MessageComposer = forwardRef<
                     width="100%"
                   />
                 )}
-                {content.trim().length === 0 ? (
-                  <Pressable
-                    accessibilityHint="短按输入文字，长按录制语音"
-                    accessibilityLabel="发消息 或 按住说话"
-                    delayLongPress={400}
-                    disabled={disabled || preparingUpload}
-                    onLongPress={handleInputLongPress}
-                    onPress={handleInputPress}
-                    onPressIn={() => {
-                      inputVoiceGestureRef.current = false
-                    }}
-                    onPressOut={handleInputPressOut}
-                    style={styles.inputGestureTarget}
-                  />
-                ) : null}
               </>
             )}
           </YStack>
@@ -734,9 +690,6 @@ function VoiceRecordButton({
 }
 
 const styles = StyleSheet.create({
-  inputGestureTarget: {
-    ...StyleSheet.absoluteFill,
-  },
   voicePressTarget: {
     flex: 1,
   },
