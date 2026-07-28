@@ -6,8 +6,18 @@ body,
 }
 .desktop-frame {
   height: 100%;
+  position: relative;
   background: var(--background);
   color: var(--foreground);
+}
+.desktop-titlebar-drag-region {
+  -webkit-app-region: drag;
+  height: 40px;
+  left: 0;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 50;
 }
 .desktop-icon-button {
   -webkit-app-region: no-drag;

@@ -43,7 +43,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { clientLogout } from "@/lib/client-auth"
 import { openHostSettings, setHostBadge, setHostTrayMessages } from "@/lib/desktop-host"
-import { selectLatestTrayMessages } from "@/lib/tray-messages"
+import { selectUnreadTrayMessages } from "@/lib/tray-messages"
+import { getNotifiableUnreadCount } from "@/lib/conversation-notifications"
 import { updateCurrentClientUser, uploadCurrentClientAvatar } from "@/lib/client-data-api"
 import type { ClientUser } from "@/lib/client-data-api"
 import { useClientData } from "@/lib/client-data-context"
@@ -66,12 +67,9 @@ type ThemeValue = (typeof themeItems)[number]["value"]
 
 export function AppLayout() {
   const { conversations, me, refreshMe } = useClientData()
-  const totalUnreadCount = conversations.reduce(
-    (total, conversation) => total + conversation.unreadCount,
-    0,
-  )
+  const totalUnreadCount = getNotifiableUnreadCount(conversations)
   const hasUnreadMessages = totalUnreadCount > 0
-  const trayMessages = useMemo(() => selectLatestTrayMessages(conversations), [conversations])
+  const trayMessages = useMemo(() => selectUnreadTrayMessages(conversations), [conversations])
   useEffect(() => {
     setHostBadge(totalUnreadCount)
     setHostTrayMessages(trayMessages)
@@ -105,7 +103,7 @@ export function AppLayout() {
   }
 
   return (
-    <div className="app-green-shell flex h-svh min-h-0 text-foreground">
+    <div className="app-green-shell flex h-svh min-h-0 pt-10 text-foreground">
       <aside className="brand-sidebar flex w-14 shrink-0 flex-col items-center border-r py-3">
         <UserAvatarMenu user={me} refreshMe={refreshMe} />
         <nav aria-label="主导航" className="flex flex-1 flex-col gap-2">

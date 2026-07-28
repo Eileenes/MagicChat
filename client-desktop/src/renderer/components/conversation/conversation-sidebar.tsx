@@ -96,6 +96,7 @@ export function ConversationSidebar({
   function getSearchConversationDescription(conversation: ClientConversation) {
     return getConversationListDescription(
       conversation,
+      currentUser.id,
       createConversationMentionLabelResolver({
         appsById,
         contactsById,
@@ -114,11 +115,16 @@ export function ConversationSidebar({
       conversation,
       currentUser,
     })
-    const hasUnreadMention = conversation.lastMentionedSeq > conversation.lastReadSeq
+    const hasUnreadMention =
+      !conversation.notificationMuted && conversation.lastMentionedSeq > conversation.lastReadSeq
     const preview = getConversationListPreview({
       draftText: conversation.topic?.archived ? undefined : drafts[conversation.id]?.text,
       hasUnreadMention,
-      messageDescription: getConversationListDescription(conversation, mentionLabelResolver),
+      messageDescription: getConversationListDescription(
+        conversation,
+        currentUser.id,
+        mentionLabelResolver,
+      ),
       selected,
     })
 
@@ -249,11 +255,40 @@ export function ConversationSidebar({
 
 function getConversationListDescription(
   conversation: ClientConversation,
+  currentUserId: string,
   mentionLabelResolver: MentionLabelResolver,
 ) {
   const summary = conversation.lastMessageSummary.trim()
 
-  return summary ? formatMentionTemplateText(summary, mentionLabelResolver) : "暂无消息"
+  if (!summary) {
+    return "暂无消息"
+  }
+
+  const description = formatMentionTemplateText(summary, mentionLabelResolver)
+  const showsSender =
+    conversation.type === "group" ||
+    (conversation.type === "topic" && conversation.topic?.parentConversationType === "group")
+  if (!showsSender) {
+    return description
+  }
+
+  const senderName = getLastMessageSenderName(conversation, currentUserId)
+  return senderName ? `${senderName}：${description}` : description
+}
+
+function getLastMessageSenderName(conversation: ClientConversation, currentUserId: string) {
+  const sender = conversation.lastMessageSender
+  if (!sender) {
+    return ""
+  }
+  if (sender.type === "system") {
+    return "系统"
+  }
+  if (sender.type === "user" && sender.id === currentUserId) {
+    return "我"
+  }
+
+  return sender.nickname.trim() || sender.name.trim()
 }
 
 function getConversationListPreview({
@@ -302,13 +337,9 @@ function ConversationListAvatar({ conversation }: { conversation: ClientConversa
         conversation={conversation}
         sourceAvatarClassName="size-5"
       />
-      {conversation.unreadCount > 0 && (
+      {conversation.unreadCount > 0 && !conversation.notificationMuted && (
         <span className="absolute top-0 right-0 z-10 translate-x-1/3 -translate-y-1/3">
-          {conversation.notificationMuted ? (
-            <span aria-label="有未读消息" className="block size-2 rounded-full bg-rose-700" />
-          ) : (
-            <ConversationUnreadBadge count={conversation.unreadCount} />
-          )}
+          <ConversationUnreadBadge count={conversation.unreadCount} />
         </span>
       )}
     </div>

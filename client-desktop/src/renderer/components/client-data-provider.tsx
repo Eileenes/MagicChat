@@ -52,7 +52,7 @@ import {
   type ClientProjectDetail,
   type ClientProjectSummary,
 } from "@/lib/project-data-api"
-import { Button } from "@/components/ui/button"
+import { ClientDataErrorPage } from "@/components/client-data-error-page"
 import { ClientLoadingPage } from "@/components/client-loading-page"
 import { useConversationActions } from "@/hooks/use-conversation-actions"
 import { useConversationSenders } from "@/hooks/use-conversation-senders"
@@ -346,6 +346,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
           lastMessageAt: message.createdAt,
           lastMessageId: message.id,
           lastMessageSeq: message.seq,
+          lastMessageSender: getConversationLastMessageSender(conversation, message),
           lastMessageSummary: getMessageSummary(message),
           unreadCount: shouldIncrementUnread
             ? conversation.unreadCount + 1
@@ -1231,22 +1232,28 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   return <ClientDataContext.Provider value={value}>{children}</ClientDataContext.Provider>
 }
 
+function getConversationLastMessageSender(
+  conversation: ClientConversation,
+  message: ClientMessage,
+): ClientConversation["lastMessageSender"] {
+  if (message.sender.type === "system") {
+    return { id: "", name: "系统", nickname: "", type: "system" }
+  }
+
+  const member = conversation.members?.find(
+    (candidate) => candidate.type === message.sender.type && candidate.id === message.sender.id,
+  )
+
+  return {
+    id: message.sender.id,
+    name: member?.name ?? "",
+    nickname: member?.nickname ?? "",
+    type: message.sender.type,
+  }
+}
+
 function wait(ms: number) {
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms)
   })
-}
-
-function ClientDataErrorPage({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex h-svh items-center justify-center bg-background px-4 text-foreground">
-      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-        <h1 className="text-base font-medium">工作区加载失败</h1>
-        <p className="text-sm text-muted-foreground">{message}</p>
-        <Button onClick={onRetry} type="button" variant="outline">
-          重试
-        </Button>
-      </div>
-    </div>
-  )
 }

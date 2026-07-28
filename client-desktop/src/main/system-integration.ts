@@ -86,11 +86,11 @@ export class SystemIntegration {
             ...presentTrayMessage(message, privacy),
             click: () => void this.openTrayMessage(message).catch(() => this.windows.show()),
           }))
-        : [{ enabled: false, label: "暂无最新消息" }]
+        : [{ enabled: false, label: "暂无未读消息" }]
 
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
-        { enabled: false, label: "最新消息" },
+        { enabled: false, label: "未读消息" },
         ...messageItems,
         { type: "separator" },
         { label: "打开即应", click: () => this.windows.show() },

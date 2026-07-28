@@ -2,6 +2,7 @@ import { useContext, useEffect, useMemo, useRef } from "react"
 
 import { useAppInfo } from "@/lib/app-info-context"
 import { ClientDataContext } from "@/lib/client-data-context"
+import { getNotifiableUnreadCount } from "@/lib/conversation-notifications"
 
 type ClientDocumentTitleProps = {
   disableMessageAlert?: boolean
@@ -27,7 +28,7 @@ export function ClientDocumentTitle({
       return 0
     }
 
-    return conversations.reduce((total, conversation) => total + conversation.unreadCount, 0)
+    return getNotifiableUnreadCount(conversations)
   }, [conversations, disableMessageAlert])
   const hasMessageAlert = unreadCount > 0
   const pageTitle = title ? `${title} - ${appName}` : appName
