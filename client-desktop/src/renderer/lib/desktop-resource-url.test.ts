@@ -25,19 +25,28 @@ describe("Desktop 资源地址", () => {
     )
   })
 
-  it("使用 Desktop 自带的内置头像和助手图标", () => {
+  it("通过当前服务器加载内置头像和助手图标", () => {
     expect(resolveDesktopResourceUrl(profile, "/assets/avatars/builtin/17.webp")).toBe(
-      "/assets/avatars/builtin/17.webp",
+      "magicchat-media://asset/server-1/assets/avatars/builtin/17.webp",
     )
     expect(
       resolveDesktopResourceUrl(
         profile,
         "https://chat.example.test/assets/avatars/builtin/64.webp",
       ),
-    ).toBe("/assets/avatars/builtin/64.webp")
+    ).toBe("magicchat-media://asset/server-1/assets/avatars/builtin/64.webp")
     expect(resolveDesktopResourceUrl(profile, "/assets/apps/assistant.webp")).toBe(
-      "/assets/apps/assistant.webp",
+      "magicchat-media://asset/server-1/assets/apps/assistant.webp",
     )
+  })
+
+  it("开发环境的本地 HTTP Server 也通过媒体协议加载内置资源", () => {
+    expect(
+      resolveDesktopResourceUrl(
+        { ...profile, normalizedUrl: "http://localhost:20080" },
+        "/assets/avatars/builtin/01.webp",
+      ),
+    ).toBe("magicchat-media://asset/server-1/assets/avatars/builtin/01.webp")
   })
 
   it("拒绝非客户端路径和外部明文 HTTP", () => {
