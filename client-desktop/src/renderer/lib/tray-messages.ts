@@ -1,19 +1,19 @@
 import type { ClientConversation } from "@/lib/client-data-api"
 import type { TrayMessageInput } from "@/lib/desktop-host"
 
-const maximumTrayMessages = 5
 const maximumConversationNameLength = 16
 const maximumMessageSummaryLength = 24
 
-export function selectLatestTrayMessages(
+export function selectUnreadTrayMessages(
   conversations: ReadonlyArray<ClientConversation>,
 ): TrayMessageInput[] {
   return conversations
-    .filter((conversation) => conversation.lastMessageAt !== null)
+    .filter((conversation) => conversation.unreadCount > 0 && !conversation.notificationMuted)
     .toSorted(
-      (left, right) => Date.parse(right.lastMessageAt ?? "") - Date.parse(left.lastMessageAt ?? ""),
+      (left, right) =>
+        Date.parse(right.lastMessageAt ?? right.createdAt) -
+        Date.parse(left.lastMessageAt ?? left.createdAt),
     )
-    .slice(0, maximumTrayMessages)
     .map((conversation) => ({
       conversationId: conversation.id,
       name: singleLine(conversation.name, maximumConversationNameLength) || "未命名会话",

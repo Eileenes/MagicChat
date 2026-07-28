@@ -92,6 +92,7 @@ export type ConversationResponse = {
   last_message_at?: string | null
   last_message_id?: string | null
   last_message_seq?: number
+  last_message_sender?: ConversationLastMessageSenderResponse | null
   last_message_summary?: string
   last_mentioned_seq?: number
   last_read_seq?: number
@@ -105,6 +106,13 @@ export type ConversationResponse = {
   topic?: ConversationTopicMetadataResponse | null
   unread_count?: number
   visibility?: string
+}
+
+export type ConversationLastMessageSenderResponse = {
+  id?: string
+  name?: string
+  nickname?: string
+  type?: string
 }
 
 export type ConversationTopicMetadataResponse = {
@@ -695,6 +703,7 @@ export type ClientConversation = {
   lastMessageAt: string | null
   lastMessageId: string | null
   lastMessageSeq: number
+  lastMessageSender?: ClientConversationLastMessageSender | null
   lastMessageSummary: string
   lastMentionedSeq: number
   lastReadSeq: number
@@ -708,6 +717,13 @@ export type ClientConversation = {
   topic?: ClientConversationTopic
   unreadCount: number
   visibility: "private" | "public"
+}
+
+export type ClientConversationLastMessageSender = {
+  id: string
+  name: string
+  nickname: string
+  type: "user" | "app" | "system"
 }
 
 export type ClientConversationTopic = {

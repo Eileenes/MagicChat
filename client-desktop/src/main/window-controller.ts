@@ -1,4 +1,10 @@
-import { app, BrowserWindow, shell, type Event } from "electron"
+import {
+  app,
+  BrowserWindow,
+  shell,
+  type BrowserWindowConstructorOptions,
+  type Event,
+} from "electron"
 import { ConfigStore } from "@main/config-store"
 import { Diagnostics } from "@main/diagnostics"
 import { resolveWindowCloseAction } from "@main/window-close-policy"
@@ -23,6 +29,7 @@ export class WindowController {
       icon: this.iconPath,
       minHeight: 560,
       minWidth: 760,
+      ...getMainWindowTitleBarOptions(process.platform),
       show: false,
       title: "即应",
       webPreferences: {
@@ -74,7 +81,15 @@ export class WindowController {
   }
 
   setThemeBackground(dark: boolean): void {
-    this.current()?.setBackgroundColor(dark ? "#09090b" : "#ffffff")
+    const window = this.current()
+    window?.setBackgroundColor(dark ? "#09090b" : "#ffffff")
+    if (window && process.platform !== "darwin") {
+      window.setTitleBarOverlay({
+        color: "#00000000",
+        height: 40,
+        symbolColor: dark ? "#fafafa" : "#18181b",
+      })
+    }
   }
 
   send(channel: string, payload?: unknown): void {
@@ -118,6 +133,29 @@ export class WindowController {
     event.preventDefault()
     if (action === "hide") this.mainWindow?.hide()
     else app.quit()
+  }
+}
+
+export function getMainWindowTitleBarOptions(
+  platform: NodeJS.Platform,
+): Pick<
+  BrowserWindowConstructorOptions,
+  "titleBarOverlay" | "titleBarStyle" | "trafficLightPosition"
+> {
+  if (platform === "darwin") {
+    return {
+      titleBarStyle: "hiddenInset",
+      trafficLightPosition: { x: 14, y: 13 },
+    }
+  }
+
+  return {
+    titleBarOverlay: {
+      color: "#00000000",
+      height: 40,
+      symbolColor: "#18181b",
+    },
+    titleBarStyle: "hidden",
   }
 }
 

@@ -120,6 +120,22 @@ describe("ClientMessageNotificationSync", () => {
     expect(playMessageNotificationSound).not.toHaveBeenCalled()
     expect(showHostMessageNotification).toHaveBeenCalledOnce()
   })
+
+  it("does not cap host notifications for ordinary conversations", () => {
+    const messageCount = 12
+    conversations = Array.from({ length: messageCount }, (_, index) =>
+      createConversation({ id: `conversation-${index + 1}` }),
+    )
+    renderNotificationSync()
+
+    act(() => {
+      for (let index = 1; index <= messageCount; index += 1) {
+        callbacks.get("message.created")?.(createMessageEvent(false, index))
+      }
+    })
+
+    expect(showHostMessageNotification).toHaveBeenCalledTimes(messageCount)
+  })
 })
 
 function renderNotificationSync() {
@@ -130,14 +146,14 @@ function renderNotificationSync() {
   )
 }
 
-function createMessageEvent(notificationMuted: boolean) {
+function createMessageEvent(notificationMuted: boolean, index = 1) {
   return {
     message: {
       body: { content: "新消息", type: "text" },
-      client_message_id: "client-message-1",
-      conversation_id: "conversation-1",
+      client_message_id: `client-message-${index}`,
+      conversation_id: `conversation-${index}`,
       created_at: "2026-07-27T00:00:00Z",
-      id: "message-1",
+      id: `message-${index}`,
       sender: { id: "user-2", type: "user" },
       seq: 1,
     },

@@ -8,12 +8,7 @@ import {
   type IpcMainInvokeEvent,
 } from "electron"
 import type { AuthenticatedTarget, ClientRequest } from "@shared/client-contract"
-import {
-  IPC,
-  type DesktopThemeSource,
-  type NotificationInput,
-  type TrayMessage,
-} from "@shared/bridge"
+import { IPC, type DesktopThemeSource, type NotificationInput } from "@shared/bridge"
 import { AuthController } from "@main/auth-controller"
 import { ConfigStore } from "@main/config-store"
 import { CredentialStore } from "@main/credential-store"
@@ -30,6 +25,7 @@ import { UpdaterService } from "@main/updater-service"
 import { assertTrustedIpcSender } from "@main/ipc-security"
 import { parseDesktopSettingsPatch } from "@main/settings-validation"
 import { registerRuntimeDiagnosticsIpc } from "@main/runtime-diagnostics-ipc"
+import { parseTrayMessages } from "@main/tray-message-validation"
 
 export type IpcDependencies = {
   auth: AuthController
@@ -79,7 +75,7 @@ export function registerIpc(deps: IpcDependencies): () => void {
   )
   register(IPC.badgeSet, (_event, count) => deps.system.setBadge(asCount(count)))
   register(IPC.trayMessagesSet, (_event, messages) =>
-    deps.system.setTrayMessages(trayMessages(messages)),
+    deps.system.setTrayMessages(parseTrayMessages(messages)),
   )
   register(IPC.clipboardWriteText, (_event, value) =>
     clipboard.writeText(asString(value, 1024 * 1024)),
@@ -279,21 +275,6 @@ function asClipboardPng(value: unknown): Uint8Array {
 function asCount(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("角标数量无效")
   return Math.max(0, Math.min(9999, Math.trunc(value)))
-}
-
-function trayMessages(value: unknown): TrayMessage[] {
-  if (!Array.isArray(value) || value.length > 5) throw new Error("菜单栏消息无效")
-  return value.map((item) => {
-    if (!item || typeof item !== "object") throw new Error("菜单栏消息无效")
-    const message = item as Record<string, unknown>
-    return {
-      conversationId: asId(message.conversationId),
-      name: asString(message.name, 80),
-      serverId: asId(message.serverId),
-      summary: asString(message.summary, 160),
-      unreadCount: asCount(message.unreadCount),
-    }
-  })
 }
 
 function notificationInput(value: unknown): NotificationInput {

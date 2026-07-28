@@ -99,11 +99,12 @@ describe("ConversationSidebar", () => {
     )
   })
 
-  it("shows pinned and muted icons and uses a dot for muted unread messages", () => {
+  it("shows pinned and muted icons without an unread reminder for muted messages", () => {
     const conversation = createAppConversation()
     conversation.pinned = true
     conversation.notificationMuted = true
     conversation.unreadCount = 6
+    conversation.lastMentionedSeq = 2
 
     render(
       <SidebarProvider>
@@ -124,8 +125,41 @@ describe("ConversationSidebar", () => {
 
     expect(screen.getByLabelText("已置顶")).toBeInTheDocument()
     expect(screen.getByLabelText("消息免打扰已开启")).toBeInTheDocument()
-    expect(screen.getByLabelText("有未读消息")).toBeInTheDocument()
+    expect(screen.queryByLabelText("有未读消息")).not.toBeInTheDocument()
     expect(screen.queryByLabelText("6 条未读消息")).not.toBeInTheDocument()
+    expect(screen.queryByText("[有人 @ 我]")).not.toBeInTheDocument()
+  })
+
+  it("shows the sender name before a group conversation message", () => {
+    const conversation = createAppConversation()
+    conversation.type = "group"
+    conversation.name = "产品讨论组"
+    conversation.lastMessageSummary = "方案已经更新"
+    conversation.lastMessageSender = {
+      id: "user-2",
+      name: "张三",
+      nickname: "小张",
+      type: "user",
+    }
+
+    render(
+      <SidebarProvider>
+        <ConversationSidebar
+          activeConversationId=""
+          appsById={new Map()}
+          contactsById={new Map()}
+          conversations={[conversation]}
+          currentUser={createCurrentUser()}
+          drafts={{}}
+          onCreateGroup={vi.fn()}
+          onSelectConversation={vi.fn()}
+          onSetConversationMuted={vi.fn()}
+          onSetConversationPinned={vi.fn()}
+        />
+      </SidebarProvider>,
+    )
+
+    expect(screen.getByText("小张：方案已经更新")).toBeInTheDocument()
   })
 })
 

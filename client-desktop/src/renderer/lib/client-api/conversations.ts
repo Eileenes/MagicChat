@@ -630,6 +630,12 @@ function normalizeConversation(conversation: ConversationResponse | undefined): 
     visibility: normalizeVisibility(conversation.visibility),
   }
 
+  if (conversation.last_message_sender !== undefined) {
+    normalizedConversation.lastMessageSender = normalizeConversationLastMessageSender(
+      conversation.last_message_sender,
+    )
+  }
+
   if (typeof conversation.notification_muted === "boolean") {
     normalizedConversation.notificationMuted = conversation.notification_muted
   }
@@ -672,6 +678,21 @@ function normalizeConversation(conversation: ConversationResponse | undefined): 
   }
 
   return normalizedConversation
+}
+
+function normalizeConversationLastMessageSender(
+  sender: ConversationResponse["last_message_sender"],
+): ClientConversation["lastMessageSender"] {
+  if (!sender) {
+    return null
+  }
+
+  return {
+    id: sender.id ?? "",
+    name: sender.name ?? "",
+    nickname: sender.nickname ?? "",
+    type: sender.type === "app" || sender.type === "system" ? sender.type : "user",
+  }
 }
 
 function normalizeConversationProject(

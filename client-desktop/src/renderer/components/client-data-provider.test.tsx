@@ -85,6 +85,75 @@ describe("ClientDataProvider", () => {
     expect(conversationRequestCount).toBe(2)
   })
 
+  it("shows the workspace error page and recovers after retrying", async () => {
+    vi.useFakeTimers()
+    let shouldFail = true
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (shouldFail) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                code: "workspace_unavailable",
+                message: "暂时无法连接到工作区服务",
+              },
+              success: false,
+            }),
+            {
+              headers: { "Content-Type": "application/json" },
+              status: 503,
+            },
+          ),
+        )
+      }
+
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(jsonResponse(createConversationsResponse([])))
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <div>工作区内容</div>
+        </ClientDataProvider>
+      </MemoryRouter>,
+    )
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    expect(screen.getByRole("heading", { name: "工作区加载失败" })).toBeVisible()
+    expect(screen.getByRole("alert")).toHaveTextContent("暂时无法连接到工作区服务")
+    expect(screen.getByRole("complementary", { name: "连接检查" })).toBeVisible()
+    expect(screen.getByAltText("即应")).toBeVisible()
+
+    shouldFail = false
+    screen.getByRole("button", { name: "重新加载" }).click()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    expect(screen.getByText("工作区内容")).toBeVisible()
+  })
+
   it("removes an archived topic from the conversation list immediately", async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -173,6 +242,45 @@ describe("ClientDataProvider", () => {
     })
 
     expect(screen.getByTestId("mute-state")).toHaveTextContent("muted")
+  })
+
+  it("updates a group conversation sender from an incoming realtime message", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(
+          jsonResponse(createConversationsResponse([createGroupConversationResponse()])),
+        )
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <GroupRealtimeMessageProbe />
+        </ClientDataProvider>
+      </MemoryRouter>,
+    )
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    expect(screen.getByTestId("group-preview")).toHaveTextContent("无发送者：")
+    act(() => screen.getByRole("button", { name: "receive group message" }).click())
+    expect(screen.getByTestId("group-preview")).toHaveTextContent("小张：方案已经更新")
   })
 
   it("recovers exact reactions for version gaps and loaded-conversation sync", async () => {
@@ -336,6 +444,37 @@ function ConversationMuteProbe() {
   )
 }
 
+function GroupRealtimeMessageProbe() {
+  const { conversations, handleIncomingConversationMessage } = useClientData()
+  const conversation = conversations[0]
+  const sender = conversation?.lastMessageSender
+
+  return (
+    <>
+      <button
+        aria-label="receive group message"
+        onClick={() =>
+          handleIncomingConversationMessage({
+            body: { content: "方案已经更新", type: "text" },
+            clientMessageId: "client-message-live-1",
+            conversationId: "group-1",
+            createdAt: "2026-07-28T01:00:00Z",
+            id: "message-live-1",
+            reactionVersion: 0,
+            reactions: [],
+            sender: { id: "user-2", type: "user" },
+            seq: 1,
+          })
+        }
+        type="button"
+      />
+      <div data-testid="group-preview">
+        {sender?.nickname || sender?.name || "无发送者"}：{conversation?.lastMessageSummary}
+      </div>
+    </>
+  )
+}
+
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: {
@@ -471,6 +610,25 @@ function createConversationResponse(id: string) {
     id,
     name: id,
     type: "direct",
+  }
+}
+
+function createGroupConversationResponse() {
+  return {
+    created_at: "2026-07-09T00:00:00Z",
+    id: "group-1",
+    member_count: 2,
+    members: [
+      {
+        email: "alice@example.com",
+        id: "user-2",
+        name: "张三",
+        nickname: "小张",
+        type: "user",
+      },
+    ],
+    name: "产品讨论组",
+    type: "group",
   }
 }
 

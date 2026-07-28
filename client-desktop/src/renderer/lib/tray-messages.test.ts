@@ -1,31 +1,47 @@
 import { describe, expect, it } from "vitest"
 
 import type { ClientConversation } from "@/lib/client-data-api"
-import { selectLatestTrayMessages } from "@/lib/tray-messages"
+import { selectUnreadTrayMessages } from "@/lib/tray-messages"
 
-describe("selectLatestTrayMessages", () => {
-  it("按最新消息时间排序并最多返回五条", () => {
-    const conversations = Array.from({ length: 7 }, (_, index) =>
+describe("selectUnreadTrayMessages", () => {
+  it("按最新消息时间返回全部非免打扰未读会话", () => {
+    const conversations = Array.from({ length: 8 }, (_, index) =>
       conversation(`conversation-${index}`, `2026-07-23T0${index}:00:00Z`),
     )
+    conversations[7].notificationMuted = true
 
-    expect(selectLatestTrayMessages(conversations).map((item) => item.conversationId)).toEqual([
+    expect(selectUnreadTrayMessages(conversations).map((item) => item.conversationId)).toEqual([
       "conversation-6",
       "conversation-5",
       "conversation-4",
       "conversation-3",
       "conversation-2",
+      "conversation-1",
+      "conversation-0",
     ])
   })
 
-  it("忽略没有消息的会话并压缩换行", () => {
+  it("忽略消息免打扰会话", () => {
+    const muted = conversation("muted", "2026-07-23T09:00:00Z")
+    muted.notificationMuted = true
+    muted.unreadCount = 8
+    const ordinary = conversation("ordinary", "2026-07-23T08:00:00Z")
+
+    expect(selectUnreadTrayMessages([muted, ordinary]).map((item) => item.conversationId)).toEqual([
+      "ordinary",
+    ])
+  })
+
+  it("忽略没有未读消息的会话并压缩换行", () => {
     const empty = conversation("empty", null)
+    const read = conversation("read", "2026-07-23T09:00:00Z")
+    read.unreadCount = 0
     const latest = conversation("latest", "2026-07-23T08:00:00Z")
     latest.name = " 产品\n讨论组 "
     latest.lastMessageSummary = "   "
     latest.unreadCount = 3
 
-    expect(selectLatestTrayMessages([empty, latest])).toEqual([
+    expect(selectUnreadTrayMessages([empty, read, latest])).toEqual([
       {
         conversationId: "latest",
         name: "产品 讨论组",
@@ -40,7 +56,7 @@ describe("selectLatestTrayMessages", () => {
     latest.name = "会话名称".repeat(10)
     latest.lastMessageSummary = "最新消息".repeat(10)
 
-    const [message] = selectLatestTrayMessages([latest])
+    const [message] = selectUnreadTrayMessages([latest])
 
     expect(message.name).toBe("会话名称会话名称会话名称会话名…")
     expect(Array.from(message.name)).toHaveLength(16)
@@ -63,7 +79,7 @@ function conversation(id: string, lastMessageAt: string | null): ClientConversat
     memberCount: 2,
     name: id,
     type: "direct",
-    unreadCount: 0,
+    unreadCount: lastMessageAt ? 1 : 0,
     visibility: "private",
   }
 }

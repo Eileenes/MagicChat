@@ -43,6 +43,7 @@ export function DesktopRoot() {
   return (
     <ThemeProvider>
       <div className="desktop-frame">
+        <div aria-hidden="true" className="desktop-titlebar-drag-region" />
         <div className="desktop-content">
           <DesktopRootContent />
         </div>
@@ -199,9 +200,9 @@ function DesktopHostedApp({
         void window.desktop.badge.set(count)
       },
       setTrayMessages: (messages) => {
-        void window.desktop.tray.setMessages(
-          messages.map((message) => ({ ...message, serverId: profile.id })),
-        )
+        void window.desktop.tray
+          .setMessages(messages.map((message) => ({ ...message, serverId: profile.id })))
+          .catch(() => undefined)
       },
       showMessageNotification: (input) => {
         void window.desktop.notifications.show({ ...input, target, workspace: profile.displayName })
