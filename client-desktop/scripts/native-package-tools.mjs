@@ -165,7 +165,6 @@ export async function verifyMacPackage({
   }
   return {
     architectures: ["x86_64", "arm64"],
-    notarized: false,
     platform: "mac",
     signed: true,
     teamId: expectedTeamId,
@@ -226,6 +225,14 @@ async function verifyMacApplication(
   if (!signatureDetails.includes(`TeamIdentifier=${expectedTeamId}`)) {
     throw new Error(`macOS 应用签名 Team ID 不是 ${expectedTeamId}`)
   }
+  await executeCommand("/usr/bin/xcrun", ["stapler", "validate", application])
+  await executeCommand("/usr/sbin/spctl", [
+    "--assess",
+    "--type",
+    "execute",
+    "--verbose=4",
+    application,
+  ])
 }
 
 async function packagedVersion(asarPath) {
