@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,49 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+func TestTopicConversationListActivityFilterOmitsEmptyUUIDComparison(t *testing.T) {
+	db := openConversationTestDB(t)
+	cutoff := time.Date(2026, 7, 28, 1, 0, 0, 0, time.UTC)
+
+	var conversations []store.Conversation
+	emptyQuery := applyTopicConversationListActivityFilter(
+		db.Session(&gorm.Session{DryRun: true}).Model(&store.Conversation{}),
+		cutoff,
+		"",
+	).Find(&conversations)
+	if emptyQuery.Error != nil {
+		t.Fatalf("build empty include query: %v", emptyQuery.Error)
+	}
+	if sql := emptyQuery.Statement.SQL.String(); strings.Contains(sql, "conversations.id =") {
+		t.Fatalf("empty include query contains UUID comparison: %s", sql)
+	}
+
+	includeID := uuid.NewString()
+	includedQuery := applyTopicConversationListActivityFilter(
+		db.Session(&gorm.Session{DryRun: true}).Model(&store.Conversation{}),
+		cutoff,
+		includeID,
+	).Find(&conversations)
+	if includedQuery.Error != nil {
+		t.Fatalf("build included query: %v", includedQuery.Error)
+	}
+	if sql := includedQuery.Statement.SQL.String(); !strings.Contains(sql, "conversations.id =") {
+		t.Fatalf("included query is missing UUID comparison: %s", sql)
+	}
+}
+
+func TestListRejectsInvalidIncludedConversationID(t *testing.T) {
+	db := openConversationTestDB(t)
+	service := NewService(Dependencies{DB: db})
+
+	_, err := service.List(context.Background(), ListCommand{
+		AccountID: uuid.NewString(), IncludeConversationID: "not-a-uuid",
+	})
+	if ErrorCodeOf(err) != CodeInvalidRequest {
+		t.Fatalf("list error = %v, code = %s", err, ErrorCodeOf(err))
+	}
+}
 
 func TestListGroupsActiveTopicsUnderTheirParent(t *testing.T) {
 	db := openConversationTestDB(t)

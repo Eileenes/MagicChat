@@ -25,6 +25,13 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	db := s.db.WithContext(ctx)
 	accountID := strings.TrimSpace(cmd.AccountID)
 	includeConversationID := strings.TrimSpace(cmd.IncludeConversationID)
+	if includeConversationID != "" {
+		normalizedID, err := normalizeConversationID(includeConversationID)
+		if err != nil {
+			return ListResult{}, invalidRequest(err.Error(), err)
+		}
+		includeConversationID = normalizedID
+	}
 	assistantID := builtinAssistantConversationID(accountID)
 	assistant, hasAssistant, err := s.ensureBuiltinAssistantConversation(db, accountID)
 	if err != nil {
@@ -62,7 +69,7 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 
 	topicActivityCutoff := s.now().UTC().Add(-topicConversationListActivityWindow)
 	var topicGroups []topicConversationListGroup
-	if err := db.Model(&store.Conversation{}).
+	topicGroupQuery := db.Model(&store.Conversation{}).
 		Select("ct.parent_conversation_id AS parent_conversation_id").
 		Joins("JOIN conversation_topic_participants ctp ON ctp.conversation_id = conversations.id").
 		Joins("JOIN conversation_topics ct ON ct.conversation_id = conversations.id").
@@ -74,8 +81,9 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 		Where("ct.source_message_seq >= CASE WHEN parent_cm.history_visible_from_seq < 1 THEN 1 ELSE parent_cm.history_visible_from_seq END").
 		Where("ct.archived_at IS NULL").
 		Where("conversations.status = ? AND parent_conversations.status = ?", store.ConversationStatusActive, store.ConversationStatusActive).
-		Where("cup.hidden_through_seq IS NULL OR conversations.last_message_seq > cup.hidden_through_seq").
-		Where("(COALESCE(conversations.last_message_at, conversations.created_at) >= ? OR conversations.last_message_seq > ctp.last_read_seq OR conversations.id = ?)", topicActivityCutoff, includeConversationID).
+		Where("cup.hidden_through_seq IS NULL OR conversations.last_message_seq > cup.hidden_through_seq")
+	topicGroupQuery = applyTopicConversationListActivityFilter(topicGroupQuery, topicActivityCutoff, includeConversationID)
+	if err := topicGroupQuery.
 		Group("ct.parent_conversation_id").
 		Order("MAX(COALESCE(conversations.last_message_at, conversations.created_at)) DESC").
 		Order("ct.parent_conversation_id ASC").
@@ -131,7 +139,7 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	}
 	var topicConversations []store.Conversation
 	if len(candidateParentIDs) > 0 {
-		if err := db.Model(&store.Conversation{}).
+		topicQuery := db.Model(&store.Conversation{}).
 			Joins("JOIN conversation_topic_participants ctp ON ctp.conversation_id = conversations.id").
 			Joins("JOIN conversation_topics ct ON ct.conversation_id = conversations.id").
 			Joins("JOIN conversations parent_conversations ON parent_conversations.id = ct.parent_conversation_id").
@@ -143,9 +151,9 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 			Where("ct.archived_at IS NULL").
 			Where("ct.parent_conversation_id IN ?", candidateParentIDs).
 			Where("conversations.status = ? AND parent_conversations.status = ?", store.ConversationStatusActive, store.ConversationStatusActive).
-			Where("cup.hidden_through_seq IS NULL OR conversations.last_message_seq > cup.hidden_through_seq").
-			Where("(COALESCE(conversations.last_message_at, conversations.created_at) >= ? OR conversations.last_message_seq > ctp.last_read_seq OR conversations.id = ?)", topicActivityCutoff, includeConversationID).
-			Find(&topicConversations).Error; err != nil {
+			Where("cup.hidden_through_seq IS NULL OR conversations.last_message_seq > cup.hidden_through_seq")
+		topicQuery = applyTopicConversationListActivityFilter(topicQuery, topicActivityCutoff, includeConversationID)
+		if err := topicQuery.Find(&topicConversations).Error; err != nil {
 			return ListResult{}, internalError(err)
 		}
 	}
@@ -297,6 +305,13 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 		appendItem(conversation)
 	}
 	return result, nil
+}
+
+func applyTopicConversationListActivityFilter(db *gorm.DB, cutoff time.Time, includeConversationID string) *gorm.DB {
+	if includeConversationID == "" {
+		return db.Where("(COALESCE(conversations.last_message_at, conversations.created_at) >= ? OR conversations.last_message_seq > ctp.last_read_seq)", cutoff)
+	}
+	return db.Where("(COALESCE(conversations.last_message_at, conversations.created_at) >= ? OR conversations.last_message_seq > ctp.last_read_seq OR conversations.id = ?)", cutoff, includeConversationID)
 }
 
 func conversationListActivityAt(conversation store.Conversation) time.Time {
