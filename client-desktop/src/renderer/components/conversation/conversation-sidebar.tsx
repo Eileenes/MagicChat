@@ -115,8 +115,7 @@ export function ConversationSidebar({
       conversation,
       currentUser,
     })
-    const hasUnreadMention =
-      !conversation.notificationMuted && conversation.lastMentionedSeq > conversation.lastReadSeq
+    const hasUnreadMention = conversation.lastMentionedSeq > conversation.lastReadSeq
     const preview = getConversationListPreview({
       draftText: conversation.topic?.archived ? undefined : drafts[conversation.id]?.text,
       hasUnreadMention,
@@ -337,7 +336,7 @@ function ConversationListAvatar({ conversation }: { conversation: ClientConversa
         conversation={conversation}
         sourceAvatarClassName="size-5"
       />
-      {conversation.unreadCount > 0 && !conversation.notificationMuted && (
+      {conversation.unreadCount > 0 && (
         <span className="absolute top-0 right-0 z-10 translate-x-1/3 -translate-y-1/3">
           <ConversationUnreadBadge count={conversation.unreadCount} />
         </span>

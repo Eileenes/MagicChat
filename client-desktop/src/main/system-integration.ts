@@ -15,6 +15,7 @@ import { ConfigStore } from "@main/config-store"
 import { presentTrayMessage } from "@main/tray-message-presentation"
 import { formatUnreadBadge } from "@main/unread-badge"
 import { WindowController } from "@main/window-controller"
+import { MAX_TRAY_MESSAGES } from "@shared/bridge"
 import type { TrayMessage } from "@shared/bridge"
 import type { DesktopThemeSource } from "@shared/bridge"
 
@@ -69,7 +70,7 @@ export class SystemIntegration {
   }
 
   setTrayMessages(messages: ReadonlyArray<TrayMessage>): void {
-    this.trayMessages = messages
+    this.trayMessages = messages.slice(0, MAX_TRAY_MESSAGES)
     this.refreshTrayMenu()
   }
 
@@ -100,6 +101,7 @@ export class SystemIntegration {
   }
 
   private async openTrayMessage(message: TrayMessage): Promise<void> {
+    if (!this.store.server(message.serverId)) throw new Error("目标服务器不存在")
     await this.store.setSettings({ selectedServerId: message.serverId })
     await this.windows.verifyAndNavigate(`/chat/${encodeURIComponent(message.conversationId)}`)
   }

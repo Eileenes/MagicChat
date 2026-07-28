@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { getNotifiableUnreadCount } from "@/lib/conversation-notifications"
+import { getNotifiableUnreadCount, getTotalUnreadCount } from "@/lib/conversation-notifications"
 import type { ClientConversation } from "@/lib/client-data-api"
 
 describe("getNotifiableUnreadCount", () => {
@@ -11,6 +11,17 @@ describe("getNotifiableUnreadCount", () => {
         conversation({ notificationMuted: true, unreadCount: 8 }),
       ]),
     ).toBe(3)
+  })
+})
+
+describe("getTotalUnreadCount", () => {
+  it("汇总所有会话的未读消息，包括免打扰会话", () => {
+    expect(
+      getTotalUnreadCount([
+        conversation({ unreadCount: 3 }),
+        conversation({ notificationMuted: true, unreadCount: 8 }),
+      ]),
+    ).toBe(11)
   })
 })
 

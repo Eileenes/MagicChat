@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { ClientConversation } from "@/lib/client-data-api"
 import { selectUnreadTrayMessages } from "@/lib/tray-messages"
+import { MAX_TRAY_MESSAGES } from "@shared/bridge"
 
 describe("selectUnreadTrayMessages", () => {
   it("按最新消息时间返回全部非免打扰未读会话", () => {
@@ -62,6 +63,20 @@ describe("selectUnreadTrayMessages", () => {
     expect(Array.from(message.name)).toHaveLength(16)
     expect(message.summary).toBe("最新消息最新消息最新消息最新消息最新消息最新消…")
     expect(Array.from(message.summary)).toHaveLength(24)
+  })
+
+  it("只返回最新的固定数量会话", () => {
+    const conversations = Array.from({ length: MAX_TRAY_MESSAGES + 5 }, (_, index) =>
+      conversation(
+        `conversation-${index}`,
+        `2026-07-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+      ),
+    )
+
+    expect(selectUnreadTrayMessages(conversations)).toHaveLength(MAX_TRAY_MESSAGES)
+    expect(selectUnreadTrayMessages(conversations)[0].conversationId).toBe(
+      `conversation-${MAX_TRAY_MESSAGES + 4}`,
+    )
   })
 })
 

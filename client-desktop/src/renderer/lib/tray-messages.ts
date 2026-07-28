@@ -1,5 +1,6 @@
 import type { ClientConversation } from "@/lib/client-data-api"
 import type { TrayMessageInput } from "@/lib/desktop-host"
+import { MAX_TRAY_MESSAGES } from "@shared/bridge"
 
 const maximumConversationNameLength = 16
 const maximumMessageSummaryLength = 24
@@ -14,6 +15,7 @@ export function selectUnreadTrayMessages(
         Date.parse(right.lastMessageAt ?? right.createdAt) -
         Date.parse(left.lastMessageAt ?? left.createdAt),
     )
+    .slice(0, MAX_TRAY_MESSAGES)
     .map((conversation) => ({
       conversationId: conversation.id,
       name: singleLine(conversation.name, maximumConversationNameLength) || "未命名会话",
