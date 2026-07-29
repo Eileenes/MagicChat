@@ -24,6 +24,7 @@ import (
 	messageapp "app/internal/application/message"
 	messagecontentapp "app/internal/application/messagecontent"
 	projectapp "app/internal/application/project"
+	searchapp "app/internal/application/search"
 	settingsapp "app/internal/application/settings"
 	taskapp "app/internal/application/task"
 	"app/internal/application/usermanagement"
@@ -31,6 +32,7 @@ import (
 	externalauthinfra "app/internal/infrastructure/externalauth"
 	"app/internal/infrastructure/filestorage"
 	mailinfra "app/internal/infrastructure/mail"
+	searchinfra "app/internal/infrastructure/search"
 	"app/internal/realtime"
 	"app/internal/store"
 
@@ -67,6 +69,8 @@ type Server struct {
 	messages            *messageapp.Service
 	messageContents     *messagecontentapp.Service
 	clientMessages      *clientapi.MessageAPI
+	searches            *searchapp.Service
+	clientSearch        *clientapi.SearchAPI
 	settings            *settingsapp.Service
 	clientInfo          *clientapi.InfoAPI
 	adminSettings       *adminapi.SettingsAPI
@@ -208,6 +212,12 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		},
 	})
 	server.clientMessages = clientapi.NewMessageAPI(server.messages, server.files)
+	server.searches = searchapp.NewService(searchapp.Dependencies{
+		Backend:       searchinfra.NewPostgresMessageBackend(db),
+		Conversations: server.conversations,
+		Messages:      server.messages,
+	})
+	server.clientSearch = clientapi.NewSearchAPI(server.searches)
 
 	router := echo.New()
 	router.HideBanner = true
@@ -236,6 +246,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientConversations.RegisterRoutes(client)
 	server.clientContacts.RegisterRoutes(client)
 	server.clientMessages.RegisterRoutes(client)
+	server.clientSearch.RegisterRoutes(client)
 	client.GET("/ws", server.clientWebSocket)
 
 	admin := router.Group("/api/admin", server.adminAuthAPI.RequireSession)

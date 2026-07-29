@@ -1332,6 +1332,73 @@ definitions:
       topic:
         $ref: '#/definitions/client.messageTopicResponse'
     type: object
+  client.messageSearchConversationResponse:
+    properties:
+      avatar:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      type:
+        type: string
+    type: object
+  client.messageSearchItemResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/client.messageSearchConversationResponse'
+      message:
+        $ref: '#/definitions/client.messageSearchMessageResponse'
+    type: object
+  client.messageSearchMessageResponse:
+    properties:
+      body:
+        type: object
+      choice:
+        $ref: '#/definitions/client.messageChoiceStateResponse'
+      client_message_id:
+        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
+        type: string
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      delegated_by:
+        $ref: '#/definitions/client.messageDelegatedByResponse'
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      reaction_version:
+        type: integer
+      reactions:
+        items:
+          $ref: '#/definitions/client.messageReactionResponse'
+        type: array
+      reply_to:
+        $ref: '#/definitions/client.messageReplyToResponse'
+      reply_to_message_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      revoked_at:
+        format: date-time
+        type: string
+      revoked_by_user_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      sender:
+        $ref: '#/definitions/client.messageSenderResponse'
+      sender_name:
+        type: string
+      seq:
+        example: 13
+        type: integer
+      summary:
+        type: string
+      topic:
+        $ref: '#/definitions/client.messageTopicResponse'
+    type: object
   client.messageSenderResponse:
     properties:
       id:
@@ -1550,6 +1617,13 @@ definitions:
         $ref: '#/definitions/client.messageResponse'
       system_message:
         $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.searchMessagesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/client.messageSearchItemResponse'
+        type: array
     type: object
   client.setConversationMuteResponse:
     properties:
@@ -6324,6 +6398,62 @@ paths:
       summary: 更新项目任务
       tags:
       - 客户端任务
+  /api/client/search/messages:
+    get:
+      description: 在滚动最近一年内搜索当前用户有权查看的聊天记录。keyword 必填，其他过滤条件可选，按消息时间倒序最多返回 10 条。
+      parameters:
+      - description: 消息关键词，至少 2 个字符
+        in: query
+        name: keyword
+        required: true
+        type: string
+      - description: 发送者 ID
+        in: query
+        name: sender_id
+        type: string
+      - description: 会话 ID
+        in: query
+        name: conversation_id
+        type: string
+      - description: 开始时间，RFC3339，必须在最近一年内
+        in: query
+        name: from
+        type: string
+      - description: 结束时间，RFC3339，必须在最近一年内
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.searchMessagesResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 搜索聊天记录
+      tags:
+      - 客户端搜索
   /api/client/temporary-files:
     post:
       consumes:

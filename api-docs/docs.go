@@ -7256,6 +7256,95 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/search/messages": {
+            "get": {
+                "description": "在滚动最近一年内搜索当前用户有权查看的聊天记录。keyword 必填，其他过滤条件可选，按消息时间倒序最多返回 10 条。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端搜索"
+                ],
+                "summary": "搜索聊天记录",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "消息关键词，至少 2 个字符",
+                        "name": "keyword",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "发送者 ID",
+                        "name": "sender_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间，RFC3339，必须在最近一年内",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间，RFC3339，必须在最近一年内",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.searchMessagesResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/temporary-files": {
             "post": {
                 "security": [
@@ -9405,6 +9494,104 @@ const docTemplate = `{
                 }
             }
         },
+        "client.messageSearchConversationResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.messageSearchItemResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/client.messageSearchConversationResponse"
+                },
+                "message": {
+                    "$ref": "#/definitions/client.messageSearchMessageResponse"
+                }
+            }
+        },
+        "client.messageSearchMessageResponse": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "object"
+                },
+                "choice": {
+                    "$ref": "#/definitions/client.messageChoiceStateResponse"
+                },
+                "client_message_id": {
+                    "type": "string",
+                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
+                },
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "delegated_by": {
+                    "$ref": "#/definitions/client.messageDelegatedByResponse"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "reaction_version": {
+                    "type": "integer"
+                },
+                "reactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageReactionResponse"
+                    }
+                },
+                "reply_to": {
+                    "$ref": "#/definitions/client.messageReplyToResponse"
+                },
+                "reply_to_message_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "revoked_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "revoked_by_user_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "sender": {
+                    "$ref": "#/definitions/client.messageSenderResponse"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "seq": {
+                    "type": "integer",
+                    "example": 13
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "topic": {
+                    "$ref": "#/definitions/client.messageTopicResponse"
+                }
+            }
+        },
         "client.messageSenderResponse": {
             "type": "object",
             "properties": {
@@ -9735,6 +9922,17 @@ const docTemplate = `{
                 },
                 "system_message": {
                     "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.searchMessagesResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageSearchItemResponse"
+                    }
                 }
             }
         },

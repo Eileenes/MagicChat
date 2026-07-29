@@ -243,6 +243,71 @@ describe("ClientDataProvider", () => {
     expect(screen.getByTestId("cached-message-count")).toHaveTextContent("1")
   })
 
+  it("keeps realtime messages out of a focused history window", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(
+          jsonResponse(
+            createConversationsResponse([
+              createConversationResponse("conversation-1"),
+            ])
+          )
+        )
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      if (
+        url ===
+        "/api/client/conversations/conversation-1/messages?limit=20&before_seq=11"
+      ) {
+        return Promise.resolve(
+          jsonResponse(createMessagePageResponse(1, 10, false, true))
+        )
+      }
+      if (
+        url ===
+        "/api/client/conversations/conversation-1/messages?limit=20&after_seq=10"
+      ) {
+        return Promise.resolve(
+          jsonResponse(createMessagePageResponse(11, 20, true, true))
+        )
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <FocusedHistoryProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    await act(async () => {
+      screen.getByRole("button", { name: "focus history" }).click()
+    })
+
+    expect(screen.getByTestId("focused-history-state")).toHaveTextContent(
+      "history:20:0"
+    )
+    act(() => screen.getByRole("button", { name: "receive latest" }).click())
+    expect(screen.getByTestId("focused-history-state")).toHaveTextContent(
+      "history:20:1"
+    )
+  })
+
   it("updates a parent topic preview without caching an unopened topic", async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -461,6 +526,44 @@ function IncomingMessageCacheProbe() {
         type="button"
       />
       <div data-testid="cached-message-count">{messageCount}</div>
+    </>
+  )
+}
+
+function FocusedHistoryProbe() {
+  const {
+    focusConversationMessage,
+    getConversationMessageState,
+    handleIncomingConversationMessage,
+  } = useClientData()
+  const state = getConversationMessageState("conversation-1")
+
+  return (
+    <>
+      <button
+        aria-label="focus history"
+        onClick={() =>
+          void focusConversationMessage("conversation-1", {
+            messageId: "message-10",
+            seq: 10,
+          })
+        }
+        type="button"
+      />
+      <button
+        aria-label="receive latest"
+        onClick={() =>
+          handleIncomingConversationMessage(
+            createProbeMessage("message-21", "conversation-1", 21),
+            { activeConversationId: "conversation-1", visible: true }
+          )
+        }
+        type="button"
+      />
+      <div data-testid="focused-history-state">
+        {state.viewMode}:{state.messages.length}:
+        {state.pendingLatestMessageCount}
+      </div>
     </>
   )
 }
@@ -687,6 +790,40 @@ function createMessagesResponse() {
         limit: 20,
         newest_seq: 1,
         oldest_seq: 1,
+      },
+    },
+    success: true,
+  }
+}
+
+function createMessagePageResponse(
+  firstSeq: number,
+  lastSeq: number,
+  hasMoreBefore: boolean,
+  hasMoreAfter: boolean
+) {
+  return {
+    data: {
+      messages: Array.from({ length: lastSeq - firstSeq + 1 }, (_, index) => {
+        const seq = firstSeq + index
+        return {
+          body: { content: `message-${seq}`, type: "text" },
+          client_message_id: `client-message-${seq}`,
+          conversation_id: "conversation-1",
+          created_at: `2026-07-21T00:00:${String(seq).padStart(2, "0")}Z`,
+          id: `message-${seq}`,
+          reaction_version: 0,
+          reactions: [],
+          sender: { id: "user-2", type: "user" },
+          seq,
+        }
+      }),
+      page: {
+        has_more_after: hasMoreAfter,
+        has_more_before: hasMoreBefore,
+        limit: 20,
+        newest_seq: lastSeq,
+        oldest_seq: firstSeq,
       },
     },
     success: true,

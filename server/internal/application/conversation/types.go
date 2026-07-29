@@ -109,6 +109,13 @@ type Item struct {
 	Visibility         string
 }
 
+type SearchSummary struct {
+	Avatar string
+	ID     string
+	Name   string
+	Type   string
+}
+
 type TopicMetadata struct {
 	Archived               bool
 	ParentConversationID   string

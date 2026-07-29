@@ -20,7 +20,10 @@ import { isAcceptedImageMessageMimeType } from "@/lib/image-message"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
 import { ConversationPanelComposer } from "@/components/conversation/conversation-panel-composer"
 import { ConversationPanelHeader } from "@/components/conversation/conversation-panel-header"
-import { ConversationPanelHistory } from "@/components/conversation/conversation-panel-history"
+import {
+  ConversationPanelHistory,
+  type ConversationHistoryNavigation,
+} from "@/components/conversation/conversation-panel-history"
 import { MessageSelectionToolbar } from "@/components/conversation/message-selection-toolbar"
 
 export type {
@@ -47,6 +50,7 @@ type ConversationPanelProps = {
   historyError: string | null
   historyLoading: boolean
   historyLoadingBefore: boolean
+  historyNavigation?: ConversationHistoryNavigation
   historyHeader?: React.ReactNode
   headerActions?: React.ReactNode
   mentionLabelResolver?: MentionLabelResolver
@@ -102,6 +106,7 @@ export function ConversationPanel({
   historyError,
   historyLoading,
   historyLoadingBefore,
+  historyNavigation,
   historyHeader,
   headerActions,
   mentionLabelResolver = fallbackMentionLabelResolver,
@@ -297,6 +302,7 @@ export function ConversationPanel({
             error={historyError}
             loading={historyLoading}
             loadingBefore={historyLoadingBefore}
+            navigation={historyNavigation}
             header={historyHeader}
             currentUserId={currentUserId}
             mentionLabelResolver={mentionLabelResolver}

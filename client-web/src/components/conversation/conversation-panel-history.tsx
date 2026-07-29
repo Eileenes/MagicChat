@@ -17,6 +17,8 @@ import {
 } from "@/components/conversation/conversation-message"
 import { formatConversationMessageTime } from "@/lib/conversation-message-presenter"
 import { conversationMessageRetentionLimit } from "@/lib/client-data-state"
+import type { ClientConversationMessageFocus } from "@/lib/client-data-context"
+import { cn } from "@/lib/utils"
 import type {
   ConversationPanelMentionTarget,
   ConversationPanelMessage,
@@ -48,6 +50,7 @@ export const ConversationPanelHistory = React.memo(
     onSetMessageReaction,
     onRespondToChoice,
     onToggleMessageSelection,
+    navigation,
   }: {
     canReply?: boolean
     conversation: ClientConversation
@@ -79,6 +82,7 @@ export const ConversationPanelHistory = React.memo(
       optionIds: string[]
     ) => Promise<void>
     onToggleMessageSelection?: (message: ConversationPanelMessage) => void
+    navigation?: ConversationHistoryNavigation
   }) {
     const viewportRef = React.useRef<HTMLDivElement | null>(null)
     const contentResizeObserverRef = React.useRef<ResizeObserver | null>(null)
@@ -89,6 +93,9 @@ export const ConversationPanelHistory = React.memo(
     const previousMessagesLengthRef = React.useRef(0)
     const beforeLoadSnapshotRef = React.useRef<ScrollSnapshot | null>(null)
     const previousLoadingBeforeRef = React.useRef(loadingBefore)
+    const previousLoadingAfterRef = React.useRef(
+      navigation?.loadingAfter ?? false
+    )
     const historyLoadStartFirstMessageIdRef = React.useRef<string | null>(
       loadingBefore ? (messages[0]?.id ?? null) : null
     )
@@ -97,6 +104,9 @@ export const ConversationPanelHistory = React.memo(
     const [viewportNearBottom, setViewportNearBottom] = React.useState(true)
     const [pendingNewMessageCount, setPendingNewMessageCount] =
       React.useState(0)
+    const [highlightedMessageId, setHighlightedMessageId] = React.useState("")
+    const handledFocusRequestKeyRef = React.useRef(0)
+    const highlightTimeoutRef = React.useRef<number | null>(null)
 
     React.useEffect(() => {
       onCompactMessagesRef.current = onCompactMessages
@@ -110,6 +120,9 @@ export const ConversationPanelHistory = React.memo(
     React.useEffect(
       () => () => {
         onCompactMessagesRef.current()
+        if (highlightTimeoutRef.current !== null) {
+          window.clearTimeout(highlightTimeoutRef.current)
+        }
       },
       []
     )
@@ -197,6 +210,9 @@ export const ConversationPanelHistory = React.memo(
       const previousLastMessageId = previousLastMessageIdRef.current
       const previousMessagesLength = previousMessagesLengthRef.current
       const changedConversation = previousConversationId !== conversation.id
+      const loadingAfter = navigation?.loadingAfter ?? false
+      const completedLoadingAfter =
+        previousLoadingAfterRef.current && !loadingAfter
 
       if (changedConversation) {
         scrollToBottom(viewport)
@@ -222,6 +238,7 @@ export const ConversationPanelHistory = React.memo(
         }
 
         if (
+          !completedLoadingAfter &&
           lastMessageId &&
           previousLastMessageId !== lastMessageId &&
           messages.length >= previousMessagesLength
@@ -232,15 +249,16 @@ export const ConversationPanelHistory = React.memo(
             previousMessagesLength
           )
           const shouldFollowLatest =
-            nearBottomRef.current ||
-            appendedMessages.some((message) => message.role === "me")
+            navigation?.viewMode !== "history" &&
+            (nearBottomRef.current ||
+              appendedMessages.some((message) => message.role === "me"))
 
           if (shouldFollowLatest) {
             scrollToBottom(viewport)
             nearBottomRef.current = true
             setViewportNearBottom(true)
             setPendingNewMessageCount(0)
-          } else {
+          } else if (navigation?.viewMode !== "history") {
             const incomingMessageCount = appendedMessages.filter(
               (message) => message.role !== "me"
             ).length
@@ -257,7 +275,46 @@ export const ConversationPanelHistory = React.memo(
       previousFirstMessageIdRef.current = firstMessageId
       previousLastMessageIdRef.current = lastMessageId
       previousMessagesLengthRef.current = messages.length
-    }, [conversation.id, messages])
+      previousLoadingAfterRef.current = loadingAfter
+    }, [
+      conversation.id,
+      messages,
+      navigation?.loadingAfter,
+      navigation?.viewMode,
+    ])
+
+    React.useLayoutEffect(() => {
+      const focus = navigation?.focus
+      const onFocusHandled = navigation?.onFocusHandled
+      const viewport = viewportRef.current
+      if (
+        !focus ||
+        !onFocusHandled ||
+        !viewport ||
+        handledFocusRequestKeyRef.current === focus.requestKey
+      ) {
+        return
+      }
+      const target = findMessageElement(viewport, focus.messageId)
+      if (!target) {
+        return
+      }
+
+      handledFocusRequestKeyRef.current = focus.requestKey
+      target.scrollIntoView({ block: "center" })
+      onFocusHandled(focus.requestKey)
+      nearBottomRef.current = false
+      setViewportNearBottom(false)
+      setPendingNewMessageCount(0)
+      setHighlightedMessageId(focus.messageId)
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current)
+      }
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedMessageId("")
+        highlightTimeoutRef.current = null
+      }, searchResultHighlightDurationMs)
+    }, [messages, navigation?.focus, navigation?.onFocusHandled])
 
     function handleViewportScroll(event: React.UIEvent<HTMLDivElement>) {
       const viewport = event.currentTarget
@@ -271,6 +328,16 @@ export const ConversationPanelHistory = React.memo(
         setPendingNewMessageCount((currentCount) =>
           currentCount === 0 ? currentCount : 0
         )
+      }
+
+      if (
+        navigation?.viewMode === "history" &&
+        nearBottom &&
+        !navigation.loadingAfter
+      ) {
+        nearBottomRef.current = false
+        setViewportNearBottom(false)
+        navigation.onLoadAfterMessages()
       }
 
       if (loadingBefore) {
@@ -296,6 +363,10 @@ export const ConversationPanelHistory = React.memo(
     }
 
     function handleJumpToLatest() {
+      if (navigation?.viewMode === "history") {
+        navigation.onReturnToLatest()
+        return
+      }
       const viewport = viewportRef.current
       if (!viewport) {
         return
@@ -432,49 +503,63 @@ export const ConversationPanelHistory = React.memo(
                     {formatConversationMessageTime(message.createdAt)}
                   </div>
                 )}
-                {message.role === "system" ? (
-                  <SystemMessageBadge
-                    currentUserId={currentUserId}
-                    mentionLabelResolver={mentionLabelResolver}
-                    message={message}
-                  />
-                ) : (
-                  <MessageBubble
-                    canReply={canReply}
-                    message={message}
-                    conversation={conversation}
-                    currentUserId={currentUserId}
-                    mentionLabelResolver={mentionLabelResolver}
-                    onForward={
-                      isMessageForwardable(message)
-                        ? onForwardMessage
-                        : undefined
-                    }
-                    onCreateTopic={onCreateTopic}
-                    onInsertMention={onInsertMention}
-                    onOpenTopic={onOpenTopic}
-                    onMultiSelect={
-                      isMessageForwardable(message)
-                        ? onStartMessageSelection
-                        : undefined
-                    }
-                    onReply={onReplyToMessage}
-                    onRevoke={onRevokeMessage}
-                    onSetReaction={onSetMessageReaction}
-                    onRespondToChoice={onRespondToChoice}
-                    onToggleSelected={onToggleMessageSelection}
-                    selectable={isMessageForwardable(message)}
-                    selected={messageSelection?.selectedMessageIds.has(
-                      message.id
-                    )}
-                    selectionMode={messageSelection?.active}
-                  />
-                )}
+                <div
+                  className={cn(
+                    "rounded-md transition-[background-color,box-shadow] duration-500",
+                    highlightedMessageId === message.id &&
+                      "bg-teal-500/10 ring-2 ring-teal-500/30"
+                  )}
+                >
+                  {message.role === "system" ? (
+                    <SystemMessageBadge
+                      currentUserId={currentUserId}
+                      mentionLabelResolver={mentionLabelResolver}
+                      message={message}
+                    />
+                  ) : (
+                    <MessageBubble
+                      canReply={canReply}
+                      message={message}
+                      conversation={conversation}
+                      currentUserId={currentUserId}
+                      mentionLabelResolver={mentionLabelResolver}
+                      onForward={
+                        isMessageForwardable(message)
+                          ? onForwardMessage
+                          : undefined
+                      }
+                      onCreateTopic={onCreateTopic}
+                      onInsertMention={onInsertMention}
+                      onOpenTopic={onOpenTopic}
+                      onMultiSelect={
+                        isMessageForwardable(message)
+                          ? onStartMessageSelection
+                          : undefined
+                      }
+                      onReply={onReplyToMessage}
+                      onRevoke={onRevokeMessage}
+                      onSetReaction={onSetMessageReaction}
+                      onRespondToChoice={onRespondToChoice}
+                      onToggleSelected={onToggleMessageSelection}
+                      selectable={isMessageForwardable(message)}
+                      selected={messageSelection?.selectedMessageIds.has(
+                        message.id
+                      )}
+                      selectionMode={messageSelection?.active}
+                    />
+                  )}
+                </div>
               </React.Fragment>
             ))}
+            {navigation?.loadingAfter && (
+              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                <LoaderCircle className="size-3.5 animate-spin" />
+                <span>正在加载更新消息</span>
+              </div>
+            )}
           </div>
         </ScrollArea>
-        {pendingNewMessageCount > 0 && (
+        {(pendingNewMessageCount > 0 || navigation?.viewMode === "history") && (
           <Button
             className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full shadow-md"
             onClick={handleJumpToLatest}
@@ -483,13 +568,27 @@ export const ConversationPanelHistory = React.memo(
             variant="secondary"
           >
             <ArrowDown className="size-4" />
-            {pendingNewMessageCount} 条新消息
+            {navigation?.viewMode === "history"
+              ? navigation.pendingLatestMessageCount > 0
+                ? `${navigation.pendingLatestMessageCount} 条新消息`
+                : "回到最新消息"
+              : `${pendingNewMessageCount} 条新消息`}
           </Button>
         )}
       </div>
     )
   }
 )
+
+export type ConversationHistoryNavigation = {
+  focus: ClientConversationMessageFocus | null
+  loadingAfter: boolean
+  onFocusHandled: (requestKey: number) => void
+  onLoadAfterMessages: () => void
+  onReturnToLatest: () => void
+  pendingLatestMessageCount: number
+  viewMode: "latest" | "history"
+}
 
 function isMessageAvailable(message: ConversationPanelMessage) {
   return message.body.type !== "revoked" && message.body.type !== "unsupported"
@@ -501,6 +600,7 @@ function isMessageForwardable(message: ConversationPanelMessage) {
 
 const messageTimeMarkerThresholdMs = 60 * 60 * 1000
 const historyRetentionMs = 3 * 60 * 1000
+const searchResultHighlightDurationMs = 3_000
 
 function noop() {}
 
@@ -576,11 +676,18 @@ function getMessageTop(
     return null
   }
 
-  const messageElement = Array.from(
-    viewport.querySelectorAll<HTMLElement>("[data-conversation-message-id]")
-  ).find((element) => element.dataset.conversationMessageId === messageId)
+  const messageElement = findMessageElement(viewport, messageId)
 
   return messageElement?.getBoundingClientRect().top ?? null
+}
+
+function findMessageElement(
+  viewport: HTMLDivElement,
+  messageId: string
+): HTMLElement | undefined {
+  return Array.from(
+    viewport.querySelectorAll<HTMLElement>("[data-conversation-message-id]")
+  ).find((element) => element.dataset.conversationMessageId === messageId)
 }
 
 function getAppendedMessages(

@@ -229,8 +229,10 @@ function createClientDataContextValue(
     registerConversationMessageView: vi.fn(() => vi.fn()),
     createGroupConversation: vi.fn(),
     createProject: vi.fn(),
+    consumeConversationMessageFocus: vi.fn(),
     dismissConversation: vi.fn(),
     ensureConversationMessages: vi.fn(),
+    focusConversationMessage: vi.fn(),
     dissolveGroupConversation: vi.fn(),
     getConversation: vi.fn((conversationId: string) =>
       conversationId === conversation.id ? conversation : null
@@ -242,6 +244,7 @@ function createClientDataContextValue(
     handleIncomingMessageReactionsUpdate: vi.fn(),
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
+    loadAfterConversationMessages: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
     loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
@@ -257,6 +260,7 @@ function createClientDataContextValue(
     refreshProjects: vi.fn(),
     removeConversation: vi.fn(),
     removeGroupConversationMember: vi.fn(),
+    returnToLatestConversationMessages: vi.fn(),
     respondToChoice: vi.fn(),
     revokeConversationMessage: vi.fn(),
     setMessageReaction: vi.fn(),

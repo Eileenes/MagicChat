@@ -10,9 +10,11 @@ import { useMessageSelection } from "@/hooks/use-message-selection"
 import {
   createConversationTopic,
   forwardConversationMessages,
+  getConversationTopic,
   type ClientConversation,
   type ImageCaptionType,
   type ClientMessage,
+  type ClientMessageSearchResult,
   type ClientTopicSourceMessage,
   type ContactApp,
   type ContactUser,
@@ -140,11 +142,14 @@ export function ChatPage() {
     contacts,
     conversations,
     compactConversationMessages,
+    consumeConversationMessageFocus,
     createGroupConversation,
     dismissConversation,
     ensureConversationMessages,
+    focusConversationMessage,
     getConversation,
     getConversationMessageState,
+    loadAfterConversationMessages,
     loadBeforeConversationMessages,
     markConversationRead,
     me,
@@ -167,6 +172,7 @@ export function ChatPage() {
     setMessageReaction,
     setForegroundConversationId,
     restoreConversation,
+    returnToLatestConversationMessages,
     updateMessageTopic,
   } = useClientData()
   const {
@@ -261,6 +267,31 @@ export function ChatPage() {
     activeMessageState &&
     !activeMessageState.loaded &&
     !activeMessageState.error
+  )
+  const activeHistoryNavigation = React.useMemo(
+    () =>
+      activeMessageState
+        ? {
+            focus: activeMessageState.focus,
+            loadingAfter: activeMessageState.loadingAfter,
+            onFocusHandled: (requestKey: number) =>
+              consumeConversationMessageFocus(activeConversationId, requestKey),
+            onLoadAfterMessages: () =>
+              loadAfterConversationMessages(activeConversationId),
+            onReturnToLatest: () =>
+              returnToLatestConversationMessages(activeConversationId),
+            pendingLatestMessageCount:
+              activeMessageState.pendingLatestMessageCount,
+            viewMode: activeMessageState.viewMode,
+          }
+        : undefined,
+    [
+      activeConversationId,
+      activeMessageState,
+      consumeConversationMessageFocus,
+      loadAfterConversationMessages,
+      returnToLatestConversationMessages,
+    ]
   )
   const activeConversationReadOnlyReason =
     activeConversation?.canSend === false && !activeConversation.topic?.archived
@@ -439,7 +470,11 @@ export function ChatPage() {
   }, [activeConversationId, ensureConversationMessages])
 
   React.useEffect(() => {
-    if (!activeConversationId || !activeConversationHasUnreadProgress) {
+    if (
+      !activeConversationId ||
+      !activeConversationHasUnreadProgress ||
+      activeMessageState?.viewMode === "history"
+    ) {
       return
     }
 
@@ -467,6 +502,7 @@ export function ChatPage() {
   }, [
     activeConversationId,
     activeConversationHasUnreadProgress,
+    activeMessageState?.viewMode,
     markConversationRead,
   ])
 
@@ -810,6 +846,49 @@ export function ChatPage() {
     }
   }
 
+  async function selectMessageSearchResult(result: ClientMessageSearchResult) {
+    try {
+      const existing = getConversation(result.conversation.id)
+      if (result.conversation.type === "topic") {
+        if (existing && !existing.topic?.archived) {
+          selectConversation(existing.id)
+          await focusConversationMessage(existing.id, {
+            messageId: result.message.id,
+            seq: result.message.seq,
+          })
+          return
+        }
+        const detail = await getConversationTopic(result.conversation.id)
+        if (!getConversation(detail.parentConversation.id)) {
+          await restoreConversation(detail.parentConversation.id)
+        }
+        selectConversation(detail.parentConversation.id)
+        openTopicDrawer(detail.conversation.id)
+        await focusConversationMessage(detail.conversation.id, {
+          messageId: result.message.id,
+          seq: result.message.seq,
+        })
+        return
+      }
+      if (existing) {
+        selectConversation(existing.id)
+        await focusConversationMessage(existing.id, {
+          messageId: result.message.id,
+          seq: result.message.seq,
+        })
+        return
+      }
+      const conversation = await restoreConversation(result.conversation.id)
+      selectConversation(conversation.id)
+      await focusConversationMessage(conversation.id, {
+        messageId: result.message.id,
+        seq: result.message.seq,
+      })
+    } catch (error) {
+      toast.error(getClientDataErrorMessage(error, "无法打开搜索结果"))
+    }
+  }
+
   async function deleteConversation(conversationId: string) {
     await dismissConversation(conversationId)
     clearConversationDraft(conversationId)
@@ -880,6 +959,9 @@ export function ChatPage() {
         onDismissConversation={deleteConversation}
         onSelectDirectoryItem={(item) => void selectDirectoryItem(item)}
         onSelectConversation={selectConversation}
+        onSelectMessageResult={(result) =>
+          void selectMessageSearchResult(result)
+        }
         onSetConversationMuted={setConversationMuted}
         onSetConversationPinned={setConversationPinned}
       />
@@ -894,6 +976,7 @@ export function ChatPage() {
         historyError={activeMessageState?.error ?? null}
         historyLoading={historyLoading}
         historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
+        historyNavigation={activeHistoryNavigation}
         historyHeader={activeHistoryHeader}
         headerActions={
           activeConversation?.type === "topic" &&

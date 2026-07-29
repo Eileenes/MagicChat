@@ -25,12 +25,22 @@ import type { VoiceMessageRecording } from "@/lib/voice-message"
 
 export type ClientConversationMessageState = {
   error: string | null
+  focus: ClientConversationMessageFocus | null
   loaded: boolean
   loading: boolean
+  loadingAfter: boolean
   loadingBefore: boolean
+  latestKnownSeq: number
   messages: ClientMessage[]
   page: ClientMessagePage | null
+  pendingLatestMessageCount: number
   sending: boolean
+  viewMode: "latest" | "history"
+}
+
+export type ClientConversationMessageFocus = {
+  messageId: string
+  requestKey: number
 }
 
 export type SendConversationMessageOptions = {
@@ -81,11 +91,21 @@ export type ClientDataContextValue = {
   compactConversationMessages: (conversationId: string) => void
   registerConversationMessageView: (conversationId: string) => () => void
   ensureConversationMessages: (conversationId: string) => void
+  focusConversationMessage: (
+    conversationId: string,
+    target: { messageId: string; seq: number }
+  ) => Promise<void>
+  consumeConversationMessageFocus: (
+    conversationId: string,
+    requestKey: number
+  ) => void
   getConversation: (conversationId: string) => ClientConversation | null
   getConversationMessageState: (
     conversationId: string
   ) => ClientConversationMessageState
   loadBeforeConversationMessages: (conversationId: string) => void
+  loadAfterConversationMessages: (conversationId: string) => void
+  returnToLatestConversationMessages: (conversationId: string) => void
   markConversationRead: (
     conversationId: string,
     options?: MarkConversationReadOptions
