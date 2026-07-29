@@ -1,4 +1,12 @@
-import { LoaderCircle, Mic, RotateCcw, Square } from "lucide-react"
+import * as React from "react"
+import {
+  AudioLines,
+  LoaderCircle,
+  Mic,
+  RotateCcw,
+  Send,
+  Square,
+} from "lucide-react"
 
 import { VoiceRecordingPanel } from "@/components/conversation/conversation-voice-recorder"
 import { Button } from "@/components/ui/button"
@@ -11,26 +19,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import { useVoiceRecording } from "@/hooks/use-voice-recording"
 import type { ClientMessage } from "@/lib/client-data-api"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
 
-type SendVoiceMessageDialogProps = {
-  conversationName: string
-  onConfirm: (voice: VoiceMessageRecording) => Promise<ClientMessage | null>
+type VoiceInputDialogProps = {
+  onSendText: (text: string) => void
+  onSendVoice: (voice: VoiceMessageRecording) => Promise<ClientMessage | null>
   onOpenChange: (open: boolean) => void
   open: boolean
   sending: boolean
 }
 
-export function SendVoiceMessageDialog({
-  conversationName,
-  onConfirm,
+export function VoiceInputDialog({
+  onSendText,
+  onSendVoice,
   onOpenChange,
   open,
   sending,
-}: SendVoiceMessageDialogProps) {
+}: VoiceInputDialogProps) {
+  const [transcript, setTranscript] = React.useState("")
   const recording = useVoiceRecording()
+  const canChooseSendMethod = recording.status === "recorded"
 
   function handleOpenChange(nextOpen: boolean) {
     if (sending) {
@@ -40,29 +51,50 @@ export function SendVoiceMessageDialog({
     onOpenChange(nextOpen)
 
     if (!nextOpen) {
+      setTranscript("")
       recording.resetRecording()
     }
   }
 
-  async function handleConfirm() {
-    if (!recording.recording || recording.status !== "recorded" || sending) {
+  function handleStartRecording() {
+    setTranscript("")
+    void recording.startRecording()
+  }
+
+  async function handleSendVoice() {
+    if (!recording.recording || !canChooseSendMethod || sending) {
       return
     }
 
-    const message = await onConfirm(recording.recording)
+    const message = await onSendVoice(recording.recording)
     if (message) {
       onOpenChange(false)
+      setTranscript("")
       recording.resetRecording()
     }
+  }
+
+  function handleSendText() {
+    if (!canChooseSendMethod || !transcript.trim() || sending) {
+      return
+    }
+
+    onSendText(transcript.trim())
+    onOpenChange(false)
+    setTranscript("")
+    recording.resetRecording()
   }
 
   return (
     <Dialog onOpenChange={handleOpenChange} open={open}>
-      <DialogContent className="gap-5 sm:max-w-md">
+      <DialogContent
+        className="gap-5 sm:max-w-lg"
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
         <DialogHeader>
-          <DialogTitle className="text-base">发送语音消息</DialogTitle>
+          <DialogTitle className="text-base">语音输入</DialogTitle>
           <DialogDescription className="sr-only">
-            录制并发送语音消息到当前会话
+            录制并发送语音或文字消息
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
@@ -74,12 +106,28 @@ export function SendVoiceMessageDialog({
           {recording.error && (
             <p className="text-sm text-destructive">{recording.error}</p>
           )}
-          <p className="min-w-0 text-sm text-muted-foreground">
-            将要发送到{" "}
-            <span className="font-medium text-foreground">
-              {conversationName}
-            </span>
-          </p>
+          {recording.status !== "idle" && (
+            <div className="grid gap-2">
+              <label
+                className="text-sm font-medium"
+                htmlFor="voice-input-transcript"
+              >
+                文字内容
+              </label>
+              <Textarea
+                id="voice-input-transcript"
+                className="max-h-48 min-h-28 resize-none"
+                disabled={!canChooseSendMethod || sending}
+                onChange={(event) => setTranscript(event.target.value)}
+                placeholder={
+                  canChooseSendMethod
+                    ? "转写服务接入后，识别结果会显示在这里；现在可以手动填写"
+                    : "录音完成后，识别文字会显示在这里"
+                }
+                value={transcript}
+              />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <DialogClose asChild>
@@ -88,10 +136,7 @@ export function SendVoiceMessageDialog({
             </Button>
           </DialogClose>
           {recording.status === "idle" && (
-            <Button
-              onClick={() => void recording.startRecording()}
-              type="button"
-            >
+            <Button onClick={handleStartRecording} type="button">
               <Mic />
               开始录音
             </Button>
@@ -118,11 +163,11 @@ export function SendVoiceMessageDialog({
               正在生成
             </Button>
           )}
-          {recording.status === "recorded" && (
+          {canChooseSendMethod && (
             <>
               <Button
                 disabled={sending}
-                onClick={() => void recording.startRecording()}
+                onClick={handleStartRecording}
                 type="button"
                 variant="outline"
               >
@@ -131,11 +176,24 @@ export function SendVoiceMessageDialog({
               </Button>
               <Button
                 disabled={!recording.recording || sending}
-                onClick={() => void handleConfirm()}
+                onClick={() => void handleSendVoice()}
+                type="button"
+                variant="outline"
+              >
+                {sending ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <AudioLines />
+                )}
+                发送语音
+              </Button>
+              <Button
+                disabled={!transcript.trim() || sending}
+                onClick={handleSendText}
                 type="button"
               >
-                {sending && <LoaderCircle className="animate-spin" />}
-                发送
+                <Send />
+                发送文本
               </Button>
             </>
           )}
