@@ -203,6 +203,7 @@ const ws = new WebSocket(process.env.MAGICCHAT_APP_WS_URL, {
   "id": "话题会话 ID",
   "name": "发布计划",
   "type": "topic",
+  "created_by_app_id": "创建话题的应用 ID（由应用创建时提供）",
   "parent": {
     "id": "父会话 ID",
     "name": "产品讨论组",
@@ -214,6 +215,8 @@ const ws = new WebSocket(process.env.MAGICCHAT_APP_WS_URL, {
   }
 }
 ```
+
+`created_by_app_id` 仅在话题由应用创建时出现，应用可以据此区分自己创建的话题和其他话题。
 
 ### 3.2 `topic.closed`
 

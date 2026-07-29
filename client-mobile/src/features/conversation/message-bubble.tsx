@@ -14,6 +14,7 @@ import type { EntityReference } from "@/domain/entities/entity-profile"
 import type { ServerTarget } from "@/data/query"
 import type { ResourceLoadState } from "@/data/resources"
 import { MessageBody } from "@/features/conversation/message-body"
+import { MessageChoice } from "@/features/conversation/message-choice"
 import { MessageReactionChips } from "@/features/conversation/message-reactions"
 import { TopicReplyPreview } from "@/features/conversation/topic-reply-preview"
 import {
@@ -26,6 +27,7 @@ export function MessageBubble({
   currentUserId,
   message,
   canAddReaction,
+  canRespondToChoice,
   onAvatarLongPress,
   onAvatarPress,
   onImagePress,
@@ -33,13 +35,16 @@ export function MessageBubble({
   onOpenTopic,
   onResourceError,
   onResourcePress,
+  onRespondChoice,
   onSetReaction,
   onVoiceResourcePress,
   resolveMentionLabel,
   resourceStates,
   server,
+  showChoiceResponseCounts,
 }: {
   canAddReaction: boolean
+  canRespondToChoice: boolean
   currentUserId: string
   message: PresentedMessage
   onAvatarLongPress?: (sender: EntityReference) => void
@@ -49,6 +54,7 @@ export function MessageBubble({
   onOpenTopic: (conversationId: string) => void
   onResourceError: (fileId: string) => void
   onResourcePress: (fileId: string) => void
+  onRespondChoice?: (messageId: string, optionIds: string[]) => Promise<void>
   onSetReaction?: (
     messageId: string,
     text: string,
@@ -58,6 +64,7 @@ export function MessageBubble({
   resolveMentionLabel: MessageMentionLabelResolver
   resourceStates: ReadonlyMap<string, ResourceLoadState>
   server: ServerTarget
+  showChoiceResponseCounts: boolean
 }) {
   const didLongPressAvatarRef = useRef(false)
   const [bubblePressed, setBubblePressed] = useState(false)
@@ -94,7 +101,8 @@ export function MessageBubble({
     message.body.type === "chart" ||
     message.body.type === "forward_bundle" ||
     message.body.type === "link" ||
-    message.body.type === "card"
+    message.body.type === "card" ||
+    message.body.type === "choice"
   const avatar = sender ? (
     <Button
       aria-label={`查看${fromMe ? "我的" : message.author}资料`}
@@ -212,18 +220,36 @@ export function MessageBubble({
                 </Paragraph>
               </YStack>
             ) : null}
-            <MessageBody
-              body={message.body}
-              currentUserId={currentUserId}
-              onImagePress={onImagePress}
-              onMentionPress={onMentionPress}
-              onResourceError={onResourceError}
-              onResourcePress={onResourcePress}
-              onVoiceResourcePress={onVoiceResourcePress}
-              resolveMentionLabel={resolveMentionLabel}
-              resourceStates={resourceStates}
-              serverUrl={server.url}
-            />
+            {message.body.type === "choice" ? (
+              <MessageChoice
+                body={message.body}
+                canRespond={canRespondToChoice}
+                choice={message.choice}
+                currentUserId={currentUserId}
+                onMentionPress={onMentionPress}
+                onRespond={
+                  onRespondChoice
+                    ? (optionIds) => onRespondChoice(message.id, optionIds)
+                    : undefined
+                }
+                resolveMentionLabel={resolveMentionLabel}
+                serverUrl={server.url}
+                showResponseCounts={showChoiceResponseCounts}
+              />
+            ) : (
+              <MessageBody
+                body={message.body}
+                currentUserId={currentUserId}
+                onImagePress={onImagePress}
+                onMentionPress={onMentionPress}
+                onResourceError={onResourceError}
+                onResourcePress={onResourcePress}
+                onVoiceResourcePress={onVoiceResourcePress}
+                resolveMentionLabel={resolveMentionLabel}
+                resourceStates={resourceStates}
+                serverUrl={server.url}
+              />
+            )}
             {message.reactions.length > 0 ? (
               <YStack
                 mb={flushImageBubble ? "$2" : undefined}

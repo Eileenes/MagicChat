@@ -2,12 +2,11 @@ import { QueryClientProvider, useQueryClient } from "@tanstack/react-query"
 import { BlurView } from "expo-blur"
 import { Check, Search, X } from "lucide-react-native"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Keyboard, Pressable, StyleSheet } from "react-native"
+import { FlatList, Keyboard, Pressable, StyleSheet } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import {
   Avatar,
   ListItem,
-  ScrollView,
   Sheet,
   SizableText,
   Spinner,
@@ -253,81 +252,78 @@ export function ForwardMessageSheet({
             </YStack>
 
             <YStack flex={1} minH={0} overflow="hidden">
-              <ScrollView flex={1} keyboardShouldPersistTaps="handled">
-                <YStack px="$2" pb="$3">
-                  {visibleConversations.map((conversation) => {
-                    const selected = selectedConversationIds.has(
-                      conversation.id
-                    )
-                    return (
-                      <Pressable
-                        accessibilityLabel={`选择会话 ${conversation.name}`}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ selected }}
-                        disabled={submitting}
-                        key={conversation.id}
-                        onPress={() => toggleConversation(conversation.id)}
-                      >
-                        {({ pressed }) => (
-                          <ListItem
-                            accessible={false}
-                            bg={
-                              selected
-                                ? pressed
-                                  ? "$color5"
-                                  : "$color4"
-                                : pressed
-                                  ? "$backgroundPress"
-                                  : "transparent"
-                            }
-                            icon={
-                              <ConversationAvatar
-                                conversation={conversation}
-                                server={server}
-                                surroundingBackground={
-                                  selected
-                                    ? pressed
-                                      ? "$color5"
-                                      : "$color4"
-                                    : pressed
-                                      ? "$backgroundPress"
-                                      : "$background"
-                                }
-                              />
-                            }
-                            iconAfter={
-                              <XStack
-                                items="center"
-                                justify="center"
-                                width={24}
-                              >
-                                {selected ? (
-                                  <ThemedIcon icon={Check} size={18} />
-                                ) : null}
-                              </XStack>
-                            }
-                            pointerEvents="none"
-                            size="$4"
-                            title={
-                              <ListItemContent
-                                subtitle={conversationTypeLabel(
-                                  conversation.type
-                                )}
-                                title={conversation.name}
-                              />
-                            }
-                          />
-                        )}
-                      </Pressable>
-                    )
-                  })}
-                  {visibleConversations.length === 0 ? (
-                    <SizableText color="$color10" py="$8" text="center">
-                      没有匹配的会话
-                    </SizableText>
-                  ) : null}
-                </YStack>
-              </ScrollView>
+              <FlatList
+                contentContainerStyle={styles.conversationListContent}
+                data={visibleConversations}
+                keyboardShouldPersistTaps="handled"
+                keyExtractor={(conversation) => conversation.id}
+                ListEmptyComponent={
+                  <SizableText color="$color10" py="$8" text="center">
+                    没有匹配的会话
+                  </SizableText>
+                }
+                renderItem={({ item: conversation }) => {
+                  const selected = selectedConversationIds.has(conversation.id)
+                  return (
+                    <Pressable
+                      accessibilityLabel={`选择会话 ${conversation.name}`}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ selected }}
+                      disabled={submitting}
+                      onPress={() => toggleConversation(conversation.id)}
+                    >
+                      {({ pressed }) => (
+                        <ListItem
+                          accessible={false}
+                          bg={
+                            selected
+                              ? pressed
+                                ? "$color5"
+                                : "$color4"
+                              : pressed
+                                ? "$backgroundPress"
+                                : "transparent"
+                          }
+                          icon={
+                            <ConversationAvatar
+                              conversation={conversation}
+                              server={server}
+                              surroundingBackground={
+                                selected
+                                  ? pressed
+                                    ? "$color5"
+                                    : "$color4"
+                                  : pressed
+                                    ? "$backgroundPress"
+                                    : "$background"
+                              }
+                            />
+                          }
+                          iconAfter={
+                            <XStack items="center" justify="center" width={24}>
+                              {selected ? (
+                                <ThemedIcon icon={Check} size={18} />
+                              ) : null}
+                            </XStack>
+                          }
+                          pointerEvents="none"
+                          size="$4"
+                          title={
+                            <ListItemContent
+                              subtitle={conversationTypeLabel(
+                                conversation.type
+                              )}
+                              title={conversation.name}
+                            />
+                          }
+                        />
+                      )}
+                    </Pressable>
+                  )
+                }}
+                showsVerticalScrollIndicator={false}
+                style={styles.conversationList}
+              />
             </YStack>
 
             <XStack bg="$background" px="$4" pt="$2" shrink={0}>
@@ -386,3 +382,13 @@ function conversationTypeLabel(type: ClientConversation["type"]) {
   if (type === "topic") return "话题"
   return "私聊"
 }
+
+const styles = StyleSheet.create({
+  conversationList: {
+    flex: 1,
+  },
+  conversationListContent: {
+    paddingBottom: 12,
+    paddingHorizontal: 8,
+  },
+})

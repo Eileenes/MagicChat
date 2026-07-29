@@ -48,13 +48,14 @@ func TestTopicMessageAutomaticallyJoinsSenderAndExplicitMentions(t *testing.T) {
 	}
 	sourceID := uuid.NewString()
 	sourceSenderID := fixture.user.ID
+	createdByAppID := fixture.app.ID
 	if err := db.Create(&store.ConversationTopic{
 		ConversationID: topic.ID, ParentConversationID: parent.ID,
 		SourceMessageID: sourceID, SourceMessageSeq: 1,
 		SourceMessageBody:    json.RawMessage(`{"type":"text","content":"source"}`),
 		SourceMessageSummary: "source", SourceSenderType: store.MessageSenderTypeUser,
 		SourceSenderID: &sourceSenderID, SourceSenderName: fixture.user.Name,
-		SourceMessageCreatedAt: now, CreatedByUserID: fixture.user.ID,
+		SourceMessageCreatedAt: now, CreatedByUserID: fixture.user.ID, CreatedByAppID: &createdByAppID,
 		CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("create topic metadata: %v", err)
@@ -104,8 +105,9 @@ func TestTopicMessageAutomaticallyJoinsSenderAndExplicitMentions(t *testing.T) {
 	}
 	var payload struct {
 		Conversation struct {
-			ID     string `json:"id"`
-			Parent *struct {
+			CreatedByAppID string `json:"created_by_app_id"`
+			ID             string `json:"id"`
+			Parent         *struct {
 				ID string `json:"id"`
 			} `json:"parent"`
 			Source *struct {
@@ -117,7 +119,7 @@ func TestTopicMessageAutomaticallyJoinsSenderAndExplicitMentions(t *testing.T) {
 	if err := json.Unmarshal(events.events[0].Payload, &payload); err != nil {
 		t.Fatalf("unmarshal app event: %v", err)
 	}
-	if payload.Conversation.ID != topic.ID || payload.Conversation.Type != store.ConversationKindTopic || payload.Conversation.Parent == nil || payload.Conversation.Parent.ID != parent.ID || payload.Conversation.Source == nil || payload.Conversation.Source.ID != sourceID {
+	if payload.Conversation.CreatedByAppID != fixture.app.ID || payload.Conversation.ID != topic.ID || payload.Conversation.Type != store.ConversationKindTopic || payload.Conversation.Parent == nil || payload.Conversation.Parent.ID != parent.ID || payload.Conversation.Source == nil || payload.Conversation.Source.ID != sourceID {
 		t.Fatalf("topic app payload = %#v", payload)
 	}
 }

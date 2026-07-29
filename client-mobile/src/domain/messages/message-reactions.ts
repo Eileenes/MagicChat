@@ -3,23 +3,34 @@ import type {
   MessageReactionsUpdatedEvent,
   MessageReactionSnapshot,
 } from "@/data/models"
+import { preserveNewerMessageChoiceState } from "@/domain/messages/message-choices"
 
 export type ReactionUpdateResult = {
   message: ClientMessage
   status: "applied" | "gap" | "stale"
 }
 
-export function preserveNewerMessageReactionState(
+export function preserveNewerMessageState(
   current: ClientMessage,
   incoming: ClientMessage
 ) {
-  return current.reactionVersion > incoming.reactionVersion
+  if (current.body.type === "revoked") {
+    return incoming.body.type === "revoked"
+      ? { ...incoming, choice: undefined, reactions: [] }
+      : current
+  }
+  if (incoming.body.type === "revoked") {
+    return { ...incoming, choice: undefined, reactions: [] }
+  }
+
+  const message = current.reactionVersion > incoming.reactionVersion
     ? {
         ...incoming,
         reactionVersion: current.reactionVersion,
         reactions: current.reactions,
       }
     : incoming
+  return preserveNewerMessageChoiceState(current, message)
 }
 
 export function applyMessageReactionSnapshot(

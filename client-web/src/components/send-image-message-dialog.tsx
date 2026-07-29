@@ -273,18 +273,16 @@ export function SendImageMessageDialog({
   }
 
   function handleCaptionSelect(event: React.SyntheticEvent<HTMLInputElement>) {
+    const input = event.currentTarget
+    const value = input.value
+    const cursor = input.selectionStart ?? value.length
+
     setCaptionMentionState((currentState) => ({
       image,
       mentions: currentState.image === image ? currentState.mentions : [],
       selectedIndex: 0,
       trigger:
-        mentionCandidates.length > 0
-          ? getMentionTrigger(
-              event.currentTarget.value,
-              event.currentTarget.selectionStart ??
-                event.currentTarget.value.length
-            )
-          : null,
+        mentionCandidates.length > 0 ? getMentionTrigger(value, cursor) : null,
     }))
   }
 

@@ -42,12 +42,14 @@ type ConversationTopicResponse = {
 
 type ConversationResponse = {
   avatar?: string
+  can_send?: boolean
   created_at?: string
   id?: string
   last_message_at?: string | null
   last_message_id?: string | null
   last_message_seq?: number
   last_message_summary?: string
+  last_choice_seq?: number
   last_mentioned_seq?: number
   last_read_seq?: number
   member_count?: number
@@ -303,12 +305,14 @@ function normalizeConversation(
 
   const normalized: ClientConversation = {
     avatar: conversation.avatar ?? "",
+    canSend: conversation.can_send !== false,
     createdAt: conversation.created_at,
     id: conversation.id,
     lastMessageAt: conversation.last_message_at ?? null,
     lastMessageId: conversation.last_message_id ?? null,
     lastMessageSeq: conversation.last_message_seq ?? 0,
     lastMessageSummary: conversation.last_message_summary ?? "",
+    lastChoiceSeq: conversation.last_choice_seq ?? 0,
     lastMentionedSeq: conversation.last_mentioned_seq ?? 0,
     lastReadSeq: conversation.last_read_seq ?? 0,
     memberCount: conversation.member_count ?? 0,

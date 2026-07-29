@@ -34,6 +34,7 @@ import type { ResourceLoadState } from "@/data/resources"
 
 export function MessageList({
   canAddReaction,
+  canRespondToChoice,
   conversationId,
   currentUserId,
   error,
@@ -50,6 +51,7 @@ export function MessageList({
   onRefresh,
   onResourceError,
   onResourcePress,
+  onRespondChoice,
   onSetReaction,
   onVoiceResourcePress,
   onMentionPress,
@@ -57,8 +59,10 @@ export function MessageList({
   resolveMentionLabel,
   resourceStates,
   server,
+  showChoiceResponseCounts,
 }: {
   canAddReaction: boolean
+  canRespondToChoice: boolean
   conversationId: string
   currentUserId: string
   error: Error | null
@@ -75,6 +79,7 @@ export function MessageList({
   onRefresh: () => void
   onResourceError: (fileId: string) => void
   onResourcePress: (fileId: string) => void
+  onRespondChoice?: (messageId: string, optionIds: string[]) => Promise<void>
   onSetReaction?: (
     messageId: string,
     text: string,
@@ -86,6 +91,7 @@ export function MessageList({
   resolveMentionLabel: MessageMentionLabelResolver
   resourceStates: ReadonlyMap<string, ResourceLoadState>
   server: ServerTarget
+  showChoiceResponseCounts: boolean
 }) {
   const theme = useTheme()
   const listItems = useMemo(() => buildMessageListItems(messages), [messages])
@@ -167,10 +173,6 @@ export function MessageList({
     scheduleScrollToLatest(listRef, pendingScrollRef, true)
   }
 
-  if (isLoading) {
-    return <ContentState loading message="正在加载消息" />
-  }
-
   if (error && messages.length === 0) {
     return (
       <ContentState message={error.message} tone="error">
@@ -237,6 +239,7 @@ export function MessageList({
           ) : (
             <MessageBubble
               canAddReaction={canAddReaction}
+              canRespondToChoice={canRespondToChoice}
               currentUserId={currentUserId}
               message={item.message}
               onAvatarLongPress={onAvatarLongPress}
@@ -246,11 +249,13 @@ export function MessageList({
               onOpenTopic={onOpenTopic}
               onResourceError={onResourceError}
               onResourcePress={onResourcePress}
+              onRespondChoice={onRespondChoice}
               onSetReaction={onSetReaction}
               onVoiceResourcePress={onVoiceResourcePress}
               resolveMentionLabel={resolveMentionLabel}
               resourceStates={resourceStates}
               server={server}
+              showChoiceResponseCounts={showChoiceResponseCounts}
             />
           )
         }

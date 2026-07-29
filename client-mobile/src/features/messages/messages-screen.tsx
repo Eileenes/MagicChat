@@ -1,5 +1,6 @@
+import { useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "expo-router"
-import { useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useToastController } from "tamagui"
 
 import type { AppToastTone } from "@/components/feedback/app-toast"
@@ -10,6 +11,7 @@ import {
   useSetConversationPinned,
 } from "@/data/conversation-hooks"
 import type { ClientConversation } from "@/data/models"
+import { hydrateConversationMessagesQuery } from "@/data/messages"
 import { useAuthenticatedSession } from "@/features/auth/auth-context"
 import {
   ConversationActionSheet,
@@ -24,14 +26,45 @@ import { DismissConversationDialog } from "@/features/messages/dismiss-conversat
 import { useClientData } from "@/providers/client-data-provider"
 import { buildConversationHref } from "@/navigation/conversations"
 
+const MESSAGE_PAGE_SIZE = 20
+const PREWARM_CONVERSATION_COUNT = 30
+
 export function MessagesScreen() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const toast = useToastController()
   const session = useAuthenticatedSession()
   const pinMutation = useSetConversationPinned(session)
   const muteMutation = useSetConversationMuted(session)
   const dismissMutation = useDismissConversation(session)
   const pendingDismissCandidateRef = useRef<ClientConversation | null>(null)
+  const conversationPreparationRef = useRef(
+    new Map<string, Promise<boolean>>()
+  )
+  const prepareConversationMessages = useCallback(
+    (conversationId: string) => {
+      const current = conversationPreparationRef.current.get(conversationId)
+      if (current) return current
+
+      const preparation = hydrateConversationMessagesQuery(
+        queryClient,
+        session,
+        conversationId,
+        MESSAGE_PAGE_SIZE
+      ).catch(() => false)
+      conversationPreparationRef.current.set(conversationId, preparation)
+      void preparation.finally(() => {
+        if (
+          conversationPreparationRef.current.get(conversationId) ===
+          preparation
+        ) {
+          conversationPreparationRef.current.delete(conversationId)
+        }
+      })
+      return preparation
+    },
+    [queryClient, session]
+  )
   const [actionItem, setActionItem] =
     useState<ConversationListItemModel | null>(null)
   const [actionSheetOpen, setActionSheetOpen] = useState(false)
@@ -54,12 +87,23 @@ export function MessagesScreen() {
     [contacts, conversations]
   )
 
+  useEffect(() => {
+    for (const item of items.slice(0, PREWARM_CONVERSATION_COUNT)) {
+      void prepareConversationMessages(item.conversation.id)
+    }
+  }, [items, prepareConversationMessages])
+
   function handleRefresh() {
     void refreshConversations().catch(() => undefined)
   }
 
   function handleConversationPress(conversationId: string) {
+    void prepareConversationMessages(conversationId)
     router.push(buildConversationHref(conversationId))
+  }
+
+  function handleConversationPressIn(conversationId: string) {
+    void prepareConversationMessages(conversationId)
   }
 
   function handleConversationLongPress(item: ConversationListItemModel) {
@@ -159,6 +203,7 @@ export function MessagesScreen() {
           items={items}
           onConversationLongPress={handleConversationLongPress}
           onConversationPress={handleConversationPress}
+          onConversationPressIn={handleConversationPressIn}
           onRefresh={handleRefresh}
           server={session}
         />

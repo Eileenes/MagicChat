@@ -121,12 +121,14 @@ export type ClientConversationTopic = {
 
 export type ClientConversation = {
   avatar: string
+  canSend: boolean
   createdAt: string
   id: string
   lastMessageAt: string | null
   lastMessageId: string | null
   lastMessageSeq: number
   lastMessageSummary: string
+  lastChoiceSeq: number
   lastMentionedSeq: number
   lastReadSeq: number
   memberCount: number
@@ -202,6 +204,43 @@ export type MessageReactionsUpdatedEvent = {
   reactions: Omit<ClientMessageReaction, "reactedByMe">[]
 }
 
+export type ClientMessageChoiceState = {
+  myOptionIds: string[]
+  options: {
+    id: string
+    responseCount: number
+  }[]
+  responseCount: number
+}
+
+export type MessageChoiceSnapshot = {
+  choice: ClientMessageChoiceState | null
+  conversationId: string
+  messageId: string
+  status: "active" | "deleted" | "revoked"
+}
+
+export type SubmitChoiceResponseResult = {
+  choice: ClientMessageChoiceState
+  conversationId: string
+  created: boolean
+  messageId: string
+  response: {
+    createdAt: string
+    id: string
+    optionIds: string[]
+    userId: string
+  }
+}
+
+export type MessageChoiceUpdatedEvent = {
+  actorOptionIds: string[]
+  actorUserId: string
+  choice: ClientMessageChoiceState
+  conversationId: string
+  messageId: string
+}
+
 export type ClientTextMessageBody = {
   content: string
   type: "text"
@@ -210,6 +249,17 @@ export type ClientTextMessageBody = {
 export type ClientMarkdownMessageBody = {
   content: string
   type: "markdown"
+}
+
+export type ClientChoiceMessageBody = {
+  content: string
+  contentType: "text" | "markdown"
+  options: {
+    id: string
+    label: string
+  }[]
+  selection: "single" | "multiple"
+  type: "choice"
 }
 
 export type ClientLinkMessageBody = {
@@ -322,6 +372,7 @@ export type ClientSystemEventMessageBody =
 
 export type ClientMessageBody =
   | ClientForwardableMessageBody
+  | ClientChoiceMessageBody
   | ClientSystemEventMessageBody
   | { type: "revoked" }
   | { type: "unsupported" }
@@ -329,6 +380,7 @@ export type ClientMessageBody =
 export type ClientMessage = {
   body: ClientMessageBody
   clientMessageId: string
+  choice?: ClientMessageChoiceState
   conversationId: string
   createdAt: string
   delegatedBy?: {
