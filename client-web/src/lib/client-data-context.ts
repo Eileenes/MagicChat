@@ -180,6 +180,10 @@ export type ClientDataContextValue = {
     conversationId: string,
     name: string
   ) => Promise<ClientConversation>
+  updateGroupConversationAnnouncement: (
+    conversationId: string,
+    announcement: string
+  ) => Promise<ClientConversation>
   refreshConversations: () => Promise<void>
   refreshContacts: () => Promise<void>
   refreshMe: () => Promise<void>

@@ -16,7 +16,7 @@ type revokeConversationMessageResponse struct {
 // revoke godoc
 //
 // @Summary 撤回会话消息
-// @Description 普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息只返回元信息，并创建一条系统消息。
+// @Description 普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息不返回 body；仅当用户撤回本人发送的 text/markdown 消息时返回 editable_body，并创建一条系统消息。
 // @Tags 客户端消息
 // @Produce json
 // @Param conversation_id path string true "会话 ID"

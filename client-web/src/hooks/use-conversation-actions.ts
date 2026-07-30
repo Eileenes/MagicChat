@@ -18,6 +18,7 @@ import {
   setGroupConversationPrivate as setGroupConversationPrivateRequest,
   setGroupConversationPublic as setGroupConversationPublicRequest,
   updateGroupConversationName as updateGroupConversationNameRequest,
+  updateGroupConversationAnnouncement as updateGroupConversationAnnouncementRequest,
   uploadGroupConversationAvatar as uploadGroupConversationAvatarRequest,
 } from "@/lib/client-data-api"
 import type {
@@ -208,7 +209,8 @@ export function useConversationActions({
   const applyGroupConversationAction = useCallback(
     async (
       action: () => Promise<GroupConversationActionResult>,
-      fallbackMessage: string
+      fallbackMessage: string,
+      refreshRelatedContacts = true
     ) => {
       try {
         const result = await action()
@@ -219,7 +221,9 @@ export function useConversationActions({
             updateList: false,
           })
         }
-        await refreshContacts()
+        if (refreshRelatedContacts) {
+          await refreshContacts()
+        }
         return result.conversation
       } catch (error) {
         throw handleError(error, fallbackMessage)
@@ -265,6 +269,19 @@ export function useConversationActions({
       applyGroupConversationAction(
         () => updateGroupConversationNameRequest(conversationId, { name }),
         "修改群聊名称失败"
+      ),
+    [applyGroupConversationAction]
+  )
+
+  const updateGroupConversationAnnouncement = useCallback(
+    async (conversationId: string, announcement: string) =>
+      applyGroupConversationAction(
+        () =>
+          updateGroupConversationAnnouncementRequest(conversationId, {
+            announcement,
+          }),
+        "修改群公告失败",
+        false
       ),
     [applyGroupConversationAction]
   )
@@ -370,6 +387,7 @@ export function useConversationActions({
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   }
 }

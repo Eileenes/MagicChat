@@ -1,3 +1,4 @@
+import * as React from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
@@ -6,6 +7,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   ConversationPanel,
   type ConversationPanelMessage,
+  type ConversationPanelReplyTarget,
 } from "@/components/conversation-panel"
 import type { ClientConversation } from "@/lib/client-data-api"
 import {
@@ -14,6 +16,57 @@ import {
 } from "@/lib/client-data-context"
 
 describe("ConversationPanel", () => {
+  it("shows a non-empty announcement only for a group conversation", () => {
+    const props = {
+      currentUserId: "user-1",
+      draft: "",
+      historyError: null,
+      historyLoading: false,
+      historyLoadingBefore: false,
+      messages: [],
+      onCancelReply: vi.fn(),
+      onDraftChange: vi.fn(),
+      onLoadBeforeMessages: vi.fn(),
+      onReplyToMessage: vi.fn(),
+      onRevokeMessage: vi.fn(),
+      onRichTextModeChange: vi.fn(),
+      onSendFile: async () => null,
+      onSendImage: async () => null,
+      onSendMessage: vi.fn(),
+      onSendVoice: async () => null,
+      replyTarget: null,
+      richTextMode: false,
+      sending: false,
+    }
+    const group = {
+      ...createConversation("group-1"),
+      announcement: "群公告内容",
+      type: "group" as const,
+    }
+    const { rerender } = render(
+      <MemoryRouter>
+        <ClientDataContext.Provider value={createClientDataValue()}>
+          <ConversationPanel {...props} conversation={group} />
+        </ClientDataContext.Provider>
+      </MemoryRouter>
+    )
+    expect(screen.getByRole("region", { name: "群公告" })).toHaveTextContent(
+      "群公告内容"
+    )
+
+    rerender(
+      <MemoryRouter>
+        <ClientDataContext.Provider value={createClientDataValue()}>
+          <ConversationPanel
+            {...props}
+            conversation={{ ...group, type: "direct" }}
+          />
+        </ClientDataContext.Provider>
+      </MemoryRouter>
+    )
+    expect(screen.queryByRole("region", { name: "群公告" })).toBeNull()
+  })
+
   it("treats a history header as the first message instead of showing an empty state", () => {
     render(
       <ConversationPanel
@@ -250,6 +303,75 @@ describe("ConversationPanel", () => {
     await waitFor(() => expect(composer).toHaveFocus())
   })
 
+  it.each([
+    {
+      content: "重新发送普通文字",
+      expectedPlaceholder: "输入消息",
+      type: "text" as const,
+    },
+    {
+      content: "**重新发送 Markdown**",
+      expectedPlaceholder: "输入 Markdown 消息",
+      type: "markdown" as const,
+    },
+  ])(
+    "restores an own revoked $type message to the matching composer mode",
+    async ({ content, expectedPlaceholder, type }) => {
+      const user = userEvent.setup()
+      renderReeditRevokedMessage({ content, role: "me", type })
+
+      const reedit = screen.getByRole("button", { name: "重新编辑" })
+      expect(reedit.parentElement).toHaveTextContent("重新编辑已撤回的消息")
+      expect(reedit).toHaveClass(
+        "cursor-pointer",
+        "text-sky-500",
+        "hover:text-sky-600"
+      )
+
+      await user.click(reedit)
+
+      const composer = screen.getByDisplayValue(content)
+      expect(composer).toHaveAttribute("placeholder", expectedPlaceholder)
+      expect(screen.queryByTestId("conversation-reply-preview")).toBeNull()
+      await waitFor(() => {
+        expect(composer).toHaveFocus()
+        expect((composer as HTMLTextAreaElement).selectionStart).toBe(
+          content.length
+        )
+        expect((composer as HTMLTextAreaElement).selectionEnd).toBe(
+          content.length
+        )
+      })
+    }
+  )
+
+  it("does not offer re-editing for another user's revoked message", () => {
+    renderReeditRevokedMessage({
+      content: "不应恢复的文字",
+      role: "other",
+      type: "text",
+    })
+
+    expect(
+      screen.queryByRole("button", { name: "重新编辑" })
+    ).not.toBeInTheDocument()
+    expect(screen.getByText("该消息已被撤回")).toBeInTheDocument()
+  })
+
+  it("does not offer re-editing while another message is being sent", () => {
+    renderReeditRevokedMessage({
+      content: "发送完成前不应恢复的文字",
+      role: "me",
+      sending: true,
+      type: "text",
+    })
+
+    expect(
+      screen.queryByRole("button", { name: "重新编辑" })
+    ).not.toBeInTheDocument()
+    expect(screen.getByText("该消息已被撤回")).toBeInTheDocument()
+  })
+
   it("does not send when Enter belongs to an IME interaction", () => {
     const onSendMessage = vi.fn()
 
@@ -384,6 +506,98 @@ function createConversation(id: string): ClientConversation {
     unreadCount: 0,
     visibility: "private",
   }
+}
+
+function renderReeditRevokedMessage({
+  content,
+  role,
+  sending = false,
+  type,
+}: {
+  content: string
+  role: "me" | "other"
+  sending?: boolean
+  type: "markdown" | "text"
+}) {
+  return render(
+    <MemoryRouter>
+      <ClientDataContext.Provider value={createClientDataValue()}>
+        <ReeditRevokedMessageHarness
+          content={content}
+          role={role}
+          sending={sending}
+          type={type}
+        />
+      </ClientDataContext.Provider>
+    </MemoryRouter>
+  )
+}
+
+function ReeditRevokedMessageHarness({
+  content,
+  role,
+  sending,
+  type,
+}: {
+  content: string
+  role: "me" | "other"
+  sending: boolean
+  type: "markdown" | "text"
+}) {
+  const [draft, setDraft] = React.useState("现有草稿")
+  const [replyTarget, setReplyTarget] =
+    React.useState<ConversationPanelReplyTarget | null>({
+      author: "李四",
+      id: "message-reply",
+      summary: "上一条消息",
+    })
+  const [richTextMode, setRichTextMode] = React.useState(type === "text")
+
+  return (
+    <ConversationPanel
+      conversation={createConversation("conversation-1")}
+      currentUserId="user-1"
+      draft={draft}
+      historyError={null}
+      historyLoading={false}
+      historyLoadingBefore={false}
+      messages={[
+        {
+          author: role === "me" ? "我" : "李四",
+          avatar: "",
+          body: {
+            editableBody: { content, type },
+            type: "revoked",
+          },
+          canRevoke: false,
+          createdAt: "2026-07-30T10:00:00Z",
+          delegatedByName: "",
+          id: "message-revoked",
+          mentionTarget: null,
+          reactionVersion: 0,
+          reactions: [],
+          role,
+          senderAppId: null,
+          senderAppProfile: null,
+          senderUserId: role === "me" ? "user-1" : "user-2",
+          time: "10:00",
+        },
+      ]}
+      onCancelReply={() => setReplyTarget(null)}
+      onDraftChange={(nextDraft) => setDraft(nextDraft)}
+      onLoadBeforeMessages={vi.fn()}
+      onReplyToMessage={vi.fn()}
+      onRevokeMessage={vi.fn()}
+      onRichTextModeChange={setRichTextMode}
+      onSendFile={async () => null}
+      onSendImage={async () => null}
+      onSendVoice={async () => null}
+      onSendMessage={vi.fn()}
+      replyTarget={replyTarget}
+      richTextMode={richTextMode}
+      sending={sending}
+    />
+  )
 }
 
 function createAppPanelMessage({

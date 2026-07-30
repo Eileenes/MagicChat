@@ -55,7 +55,7 @@ func (s *Service) LoadSearchMessages(ctx context.Context, accountID string, mess
 		if len(visible) == 0 {
 			continue
 		}
-		converted, err := newMessagesForUser(db, visible, visibleFromSeq)
+		converted, err := newMessagesForUser(db, visible, visibleFromSeq, accountID)
 		if err != nil {
 			return nil, err
 		}

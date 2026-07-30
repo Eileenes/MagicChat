@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -55,7 +56,7 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	if err != nil {
 		return ListResult{}, internalError(err)
 	}
-	messages, err := newMessagesForUser(db, stored, visibleFromSeq)
+	messages, err := newMessagesForUser(db, stored, visibleFromSeq, cmd.AccountID)
 	if err != nil {
 		return ListResult{}, internalError(err)
 	}
@@ -142,11 +143,12 @@ func loadRecentTopicReplies(db *gorm.DB, conversationID string) ([]MessageTopicR
 	return replies, nil
 }
 
-func newMessagesForUser(db *gorm.DB, values []store.Message, visibleFromSeq int64) ([]Message, error) {
+func newMessagesForUser(db *gorm.DB, values []store.Message, visibleFromSeq int64, userID string) ([]Message, error) {
 	result := make([]Message, len(values))
 	replyIDs := make([]string, 0, len(values))
 	for index, value := range values {
 		result[index] = newMessage(value)
+		result[index].EditableBody = editableRevokedMessageBody(value, userID)
 		if value.RevokedAt == nil && value.ReplyToMessageID != nil {
 			replyIDs = append(replyIDs, *value.ReplyToMessageID)
 		}
@@ -356,6 +358,7 @@ func newMessage(value store.Message) Message {
 
 func newMessageForUser(db *gorm.DB, value store.Message, userID string) (Message, error) {
 	result := newMessage(value)
+	result.EditableBody = editableRevokedMessageBody(value, userID)
 	if value.RevokedAt != nil || value.ReplyToMessageID == nil {
 		return result, nil
 	}
@@ -380,6 +383,29 @@ func newMessageForUser(db *gorm.DB, value store.Message, userID string) (Message
 		Seq: quoted.Seq, Summary: summary,
 	}
 	return result, nil
+}
+
+func editableRevokedMessageBody(value store.Message, userID string) json.RawMessage {
+	if value.RevokedAt == nil ||
+		value.RevokedByUserID == nil ||
+		*value.RevokedByUserID != userID ||
+		value.SenderType != store.MessageSenderTypeUser ||
+		value.SenderID == nil ||
+		*value.SenderID != userID {
+		return nil
+	}
+
+	var envelope struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(value.Body, &envelope); err != nil {
+		return nil
+	}
+	if envelope.Type != "text" && envelope.Type != "markdown" {
+		return nil
+	}
+
+	return append(json.RawMessage(nil), value.Body...)
 }
 
 func findVisibleReplyToMessageForUser(db *gorm.DB, conversationID, messageID, userID string) (store.Message, bool, error) {

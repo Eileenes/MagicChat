@@ -88,6 +88,7 @@ export type ContactGroupAvatarMemberResponse = {
 }
 
 export type ConversationResponse = {
+  announcement?: string
   avatar?: string
   can_send?: boolean
   created_at?: string
@@ -415,6 +416,13 @@ export type GroupNameUpdatedSystemEventBodyResponse = {
   type?: "system_event"
 }
 
+export type GroupAnnouncementUpdatedSystemEventBodyResponse = {
+  actor?: SystemEventUserRefResponse
+  announcement?: string
+  event?: "group_announcement_updated"
+  type?: "system_event"
+}
+
 export type MessageRevokedSystemEventBodyResponse = {
   actor?: SystemEventUserRefResponse
   event?: "message_revoked"
@@ -445,6 +453,7 @@ export type MessageBodyResponse =
   | GroupMemberLeftSystemEventBodyResponse
   | GroupMemberRemovedSystemEventBodyResponse
   | GroupNameUpdatedSystemEventBodyResponse
+  | GroupAnnouncementUpdatedSystemEventBodyResponse
   | MessageRevokedSystemEventBodyResponse
   | TopicClosedSystemEventBodyResponse
 
@@ -455,6 +464,7 @@ export type MessageResponse = {
   conversation_id?: string
   created_at?: string
   delegated_by?: MessageDelegatedByResponse | null
+  editable_body?: TextMessageBodyResponse | MarkdownMessageBodyResponse
   id?: string
   reply_to?: MessageReplyToResponse | null
   reply_to_message_id?: string
@@ -727,6 +737,7 @@ export type ClientContacts = {
 }
 
 export type ClientConversation = {
+  announcement?: string
   avatar: string
   canSend?: boolean
   createdAt: string
@@ -1006,6 +1017,7 @@ export type ClientForwardBundleMessageBody = {
 }
 
 export type ClientRevokedMessageBody = {
+  editableBody?: ClientTextMessageBody | ClientMarkdownMessageBody
   type: "revoked"
 }
 
@@ -1064,6 +1076,13 @@ export type ClientGroupNameUpdatedSystemEventBody = {
   type: "system_event"
 }
 
+export type ClientGroupAnnouncementUpdatedSystemEventBody = {
+  actor: ClientSystemEventUserRef
+  announcement: string
+  event: "group_announcement_updated"
+  type: "system_event"
+}
+
 export type ClientMessageRevokedSystemEventBody = {
   actor: ClientSystemEventUserRef
   event: "message_revoked"
@@ -1096,6 +1115,7 @@ export type ClientMessageBody =
   | ClientGroupMemberLeftSystemEventBody
   | ClientGroupMemberRemovedSystemEventBody
   | ClientGroupNameUpdatedSystemEventBody
+  | ClientGroupAnnouncementUpdatedSystemEventBody
   | ClientMessageRevokedSystemEventBody
   | ClientTopicClosedSystemEventBody
 
@@ -1337,6 +1357,10 @@ export type AddGroupConversationMembersInput = {
 
 export type UpdateGroupConversationNameInput = {
   name: string
+}
+
+export type UpdateGroupConversationAnnouncementInput = {
+  announcement: string
 }
 
 export type AddGroupConversationMembersResult = {

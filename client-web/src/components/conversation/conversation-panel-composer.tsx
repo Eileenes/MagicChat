@@ -133,6 +133,17 @@ export const ConversationPanelComposer = React.forwardRef<
         textareaRef.current?.focus()
       })
     },
+    focusAtEnd() {
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current
+        if (!textarea) {
+          return
+        }
+
+        textarea.focus()
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+      })
+    },
     insertMention(target) {
       insertMentionTarget(target)
     },

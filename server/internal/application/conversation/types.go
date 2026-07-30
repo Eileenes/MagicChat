@@ -8,16 +8,17 @@ import (
 )
 
 const (
-	MaxGroupMembers      = 500
-	MaxGroupNameLength   = 120
-	MaxGroupProjects     = 100
-	MaxClientListItems   = 100
-	MaxAvatarUploadBytes = 1 * 1024 * 1024
-	AvatarContentType    = "image/webp"
-	MemberTypeUser       = "user"
-	MemberTypeApp        = "app"
-	VisibilityPublic     = "public"
-	VisibilityPrivate    = "private"
+	MaxGroupMembers            = 500
+	MaxGroupNameLength         = 120
+	MaxGroupAnnouncementLength = 200
+	MaxGroupProjects           = 100
+	MaxClientListItems         = 100
+	MaxAvatarUploadBytes       = 1 * 1024 * 1024
+	AvatarContentType          = "image/webp"
+	MemberTypeUser             = "user"
+	MemberTypeApp              = "app"
+	VisibilityPublic           = "public"
+	VisibilityPrivate          = "private"
 )
 
 type Identity struct {
@@ -85,6 +86,7 @@ type Project struct {
 }
 
 type Item struct {
+	Announcement       string
 	Avatar             string
 	CanSend            bool
 	CreatedAt          time.Time
@@ -218,6 +220,7 @@ type ConversationMuteEvent struct {
 }
 
 type Group struct {
+	Announcement       string
 	Avatar             string
 	CreatedAt          time.Time
 	CreatedByUserID    string
@@ -367,6 +370,12 @@ type UpdateNameCommand struct {
 	Name           string
 }
 
+type UpdateAnnouncementCommand struct {
+	Actor          Actor
+	Announcement   string
+	ConversationID string
+}
+
 type UpdateVisibilityCommand struct {
 	Actor          Actor
 	ConversationID string
@@ -437,6 +446,7 @@ type ClientService interface {
 	AddMembers(context.Context, AddMembersCommand) (ConversationMutationResult, error)
 	RemoveMember(context.Context, RemoveMemberCommand) (ConversationMutationResult, error)
 	UpdateName(context.Context, UpdateNameCommand) (ConversationMutationResult, error)
+	UpdateAnnouncement(context.Context, UpdateAnnouncementCommand) (ConversationMutationResult, error)
 	UpdateVisibility(context.Context, UpdateVisibilityCommand) (ConversationMutationResult, error)
 	Join(context.Context, JoinCommand) (ConversationMutationResult, error)
 	Leave(context.Context, LeaveCommand) (LeaveResult, error)

@@ -147,6 +147,7 @@ type messageResponse struct {
 	ConversationID   string                      `json:"conversation_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	CreatedAt        time.Time                   `json:"created_at" format:"date-time"`
 	DelegatedBy      *messageDelegatedByResponse `json:"delegated_by,omitempty"`
+	EditableBody     json.RawMessage             `json:"editable_body,omitempty" swaggertype:"object"`
 	ID               string                      `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyToMessageID string                      `json:"reply_to_message_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyTo          *messageReplyToResponse     `json:"reply_to,omitempty"`
@@ -323,7 +324,7 @@ func newClientMessageResponse(value messageapp.Message) messageResponse {
 	reactions := newMessageReactionResponses(value.Reactions)
 	result := messageResponse{
 		ClientMessageID: value.ClientMessageID, Body: value.Body, ConversationID: value.ConversationID,
-		CreatedAt: value.CreatedAt, ID: value.ID, ReplyToMessageID: value.ReplyToMessageID,
+		CreatedAt: value.CreatedAt, EditableBody: value.EditableBody, ID: value.ID, ReplyToMessageID: value.ReplyToMessageID,
 		ReactionVersion: value.ReactionVersion, Reactions: reactions,
 		RevokedAt: value.RevokedAt, RevokedByUserID: value.RevokedByUserID,
 		Sender: messageSenderResponse{ID: value.Sender.ID, Type: value.Sender.Type}, Seq: value.Seq,

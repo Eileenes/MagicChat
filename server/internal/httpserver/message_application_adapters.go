@@ -90,6 +90,7 @@ func legacyMessageResponse(value messageapp.Message) messageResponse {
 		Body:             value.Body,
 		ConversationID:   value.ConversationID,
 		CreatedAt:        value.CreatedAt,
+		EditableBody:     value.EditableBody,
 		ID:               value.ID,
 		ReplyToMessageID: value.ReplyToMessageID,
 		ReactionVersion:  value.ReactionVersion,

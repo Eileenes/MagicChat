@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -61,6 +62,7 @@ type appGroupIdentityResponse struct {
 }
 
 type appGroupDetailResponse struct {
+	Announcement   string                   `json:"announcement"`
 	Avatar         string                   `json:"avatar"`
 	CreatedAt      string                   `json:"created_at"`
 	CreatedBy      appGroupIdentityResponse `json:"created_by"`
@@ -116,8 +118,22 @@ type appSetGroupMemberRoleRequest struct {
 }
 
 type appUpdateGroupRequest struct {
-	ConversationID string `json:"conversation_id"`
-	Name           string `json:"name"`
+	Announcement   appGroupUpdateString `json:"announcement"`
+	ConversationID string               `json:"conversation_id"`
+	Name           appGroupUpdateString `json:"name"`
+}
+
+type appGroupUpdateString struct {
+	Present bool
+	Value   string
+}
+
+func (value *appGroupUpdateString) UnmarshalJSON(raw []byte) error {
+	value.Present = true
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return errors.New("字符串字段不能为 null")
+	}
+	return json.Unmarshal(raw, &value.Value)
 }
 
 type appDissolveGroupRequest struct {
@@ -349,9 +365,20 @@ func (s *Server) handleAppUpdateGroup(appID string, request realtime.Envelope) (
 	if err := json.Unmarshal(request.Payload, &req); err != nil {
 		return appGroupMutationResponse{}, newAppRequestFailure("invalid_request", "请求格式错误")
 	}
-	result, err := s.conversations.UpdateGroupNameAsApplication(context.Background(), conversationapp.UpdateGroupNameAsApplicationCommand{
-		AppID: appID, ConversationID: req.ConversationID, Name: req.Name,
-	})
+	if req.Name.Present == req.Announcement.Present {
+		return appGroupMutationResponse{}, newAppRequestFailure("invalid_request", "每次必须且只能修改群名称或群公告")
+	}
+	var result conversationapp.ApplicationGroupMutationResult
+	var err error
+	if req.Name.Present {
+		result, err = s.conversations.UpdateGroupNameAsApplication(context.Background(), conversationapp.UpdateGroupNameAsApplicationCommand{
+			AppID: appID, ConversationID: req.ConversationID, Name: req.Name.Value,
+		})
+	} else {
+		result, err = s.conversations.UpdateGroupAnnouncementAsApplication(context.Background(), conversationapp.UpdateGroupAnnouncementAsApplicationCommand{
+			Announcement: req.Announcement.Value, AppID: appID, ConversationID: req.ConversationID,
+		})
+	}
 	if err != nil {
 		return appGroupMutationResponse{}, mapConversationApplicationErrorForApp(err)
 	}
@@ -381,7 +408,7 @@ func newAppGroupIdentityResponse(value conversationapp.ApplicationGroupIdentity)
 
 func newAppGroupDetailResponse(value conversationapp.ApplicationGroupDetail) appGroupDetailResponse {
 	return appGroupDetailResponse{
-		Avatar: value.Avatar, CreatedAt: value.CreatedAt.UTC().Format(time.RFC3339Nano),
+		Announcement: value.Announcement, Avatar: value.Avatar, CreatedAt: value.CreatedAt.UTC().Format(time.RFC3339Nano),
 		CreatedBy: newAppGroupIdentityResponse(value.CreatedBy), CurrentAppRole: value.CurrentAppRole,
 		ID: value.ID, MemberCount: value.MemberCount, Name: value.Name,
 		Owner: newAppGroupIdentityResponse(value.Owner), PostingPolicy: value.PostingPolicy,

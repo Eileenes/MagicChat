@@ -3267,6 +3267,89 @@
                 }
             }
         },
+        "/api/client/conversations/groups/{conversation_id}/announcement": {
+            "patch": {
+                "description": "群主或管理员修改 active 群聊公告。内容会去除首尾空白，最多 200 个 Unicode 字符；空内容会清空公告。修改后生成系统消息。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "修改群公告",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "群公告",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.updateGroupConversationAnnouncementRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/conversations/groups/{conversation_id}/join": {
             "post": {
                 "description": "普通用户加入 active 公开群，并生成系统消息。",
@@ -5103,7 +5186,7 @@
         },
         "/api/client/conversations/{conversation_id}/messages/{message_id}/revoke": {
             "post": {
-                "description": "普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息只返回元信息，并创建一条系统消息。",
+                "description": "普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息不返回 body；仅当用户撤回本人发送的 text/markdown 消息时返回 editable_body，并创建一条系统消息。",
                 "produces": [
                     "application/json"
                 ],
@@ -8410,6 +8493,10 @@
         "client.conversationListItemResponse": {
             "type": "object",
             "properties": {
+                "announcement": {
+                    "type": "string",
+                    "example": "本周五 18:00 发布，请及时更新任务状态。"
+                },
                 "avatar": {
                     "type": "string",
                     "example": "/assets/avatars/builtin/07.webp"
@@ -8946,6 +9033,10 @@
         "client.groupConversationResponse": {
             "type": "object",
             "properties": {
+                "announcement": {
+                    "type": "string",
+                    "example": "本周五 18:00 发布，请及时更新任务状态。"
+                },
                 "avatar": {
                     "type": "string",
                     "example": "/assets/avatars/groups/07.webp"
@@ -9447,6 +9538,9 @@
                 "delegated_by": {
                     "$ref": "#/definitions/client.messageDelegatedByResponse"
                 },
+                "editable_body": {
+                    "type": "object"
+                },
                 "id": {
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
@@ -9538,6 +9632,9 @@
                 },
                 "delegated_by": {
                     "$ref": "#/definitions/client.messageDelegatedByResponse"
+                },
+                "editable_body": {
+                    "type": "object"
                 },
                 "id": {
                     "type": "string",
@@ -10223,6 +10320,18 @@
                 },
                 "visibility": {
                     "type": "string"
+                }
+            }
+        },
+        "client.updateGroupConversationAnnouncementRequest": {
+            "type": "object",
+            "required": [
+                "announcement"
+            ],
+            "properties": {
+                "announcement": {
+                    "type": "string",
+                    "example": "本周五 18:00 发布，请及时更新任务状态。"
                 }
             }
         },

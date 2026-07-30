@@ -2,7 +2,6 @@ import * as React from "react"
 import { Bot, MessagesSquare } from "lucide-react"
 import { toast } from "sonner"
 import { getAvatarInitial } from "@/lib/avatar"
-import { copyTemporaryImageToClipboard } from "@/lib/image-clipboard"
 import { cn } from "@/lib/utils"
 import {
   formatClientMessageBodySummary,
@@ -15,6 +14,7 @@ import {
   parseMentionTemplate,
   type MentionLabelResolver,
 } from "@/lib/message-mentions"
+import { getImageThumbnailFrame } from "@/lib/image-message-thumbnail"
 import { AppProfilePopover } from "@/components/app-profile-popover"
 import { MessageAttachment } from "@/components/message-attachment"
 import { MessageImage } from "@/components/message-image"
@@ -95,6 +95,7 @@ type MessageBubbleProps = {
   onForward?: (message: ConversationPanelMessage) => void
   onCreateTopic?: (message: ConversationPanelMessage) => void
   onMultiSelect?: (message: ConversationPanelMessage) => void
+  onReeditRevoked?: (message: ConversationPanelMessage) => void
   onReply?: (message: ConversationPanelMessage) => void
   onOpenTopic?: (conversationId: string) => void
   onRevoke?: (message: ConversationPanelMessage) => void
@@ -123,6 +124,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   onForward,
   onCreateTopic,
   onMultiSelect,
+  onReeditRevoked,
   onReply,
   onOpenTopic,
   onRevoke,
@@ -207,7 +209,8 @@ export const MessageBubble = React.memo(function MessageBubble({
     message.body.type === "image" && !message.replyTo && !message.topic
   const messageActionOptions: MessageActionOptions = {
     canRevoke: Boolean(onRevoke) && message.canRevoke,
-    copyDisabled: message.body.type !== "image" && !copyText,
+    copyDisabled: !copyText,
+    hideCopy: message.body.type === "image",
     onCopy: handleCopyMessage,
     onCreateTopic:
       onCreateTopic && !message.topic
@@ -268,6 +271,11 @@ export const MessageBubble = React.memo(function MessageBubble({
           currentUserId={currentUserId}
           flushImage={flushImageBubble}
           mentionLabelResolver={mentionLabelResolver}
+          onReeditRevoked={
+            fromMe && !selectionMode && onReeditRevoked
+              ? () => onReeditRevoked(message)
+              : undefined
+          }
         />
       )}
       {!selectionMode && message.reactions.length > 0 && (
@@ -432,6 +440,7 @@ function areMessageBubblePropsEqual(
     previous.onCreateTopic === next.onCreateTopic &&
     previous.onInsertMention === next.onInsertMention &&
     previous.onMultiSelect === next.onMultiSelect &&
+    previous.onReeditRevoked === next.onReeditRevoked &&
     previous.onReply === next.onReply &&
     previous.canReply === next.canReply &&
     previous.onOpenTopic === next.onOpenTopic &&
@@ -578,16 +587,6 @@ async function copyMessageToClipboard(
   messageElement: HTMLElement | null,
   mentionLabelResolver: MentionLabelResolver
 ) {
-  if (message.body.type === "image") {
-    try {
-      await copyTemporaryImageToClipboard(message.body.fileId)
-      toast.success("图片已复制")
-    } catch {
-      toast.error("图片复制失败")
-    }
-    return
-  }
-
   const text =
     (selectedText.trim()
       ? selectedText
@@ -1013,6 +1012,7 @@ type MessageBodyRendererProps = {
   currentUserId: string
   flushImage?: boolean
   mentionLabelResolver: MentionLabelResolver
+  onReeditRevoked?: () => void
 }
 
 export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
@@ -1020,6 +1020,7 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
   currentUserId,
   flushImage = false,
   mentionLabelResolver,
+  onReeditRevoked,
 }: MessageBodyRendererProps) {
   switch (body.type) {
     case "file":
@@ -1095,7 +1096,20 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
         />
       )
     case "revoked":
-      return <span className="text-muted-foreground">该消息已被撤回</span>
+      return body.editableBody && onReeditRevoked ? (
+        <span className="text-muted-foreground">
+          <button
+            className="cursor-pointer p-0 font-medium text-sky-500 transition-colors hover:text-sky-600 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none"
+            onClick={onReeditRevoked}
+            type="button"
+          >
+            重新编辑
+          </button>
+          已撤回的消息
+        </span>
+      ) : (
+        <span className="text-muted-foreground">该消息已被撤回</span>
+      )
     case "unsupported":
       return <span className="text-muted-foreground">暂不支持查看该消息</span>
     case "system_event":
@@ -1111,6 +1125,7 @@ function areMessageBodyRendererPropsEqual(
     previous.body === next.body &&
     previous.currentUserId === next.currentUserId &&
     previous.flushImage === next.flushImage &&
+    previous.onReeditRevoked === next.onReeditRevoked &&
     (previous.mentionLabelResolver === next.mentionLabelResolver ||
       !messageBodyUsesMentionLabels(next.body))
   )
@@ -1147,8 +1162,14 @@ function ImageMessageBody({
   flush: boolean
   mentionLabelResolver: MentionLabelResolver
 }) {
+  const thumbnailFrame = getImageThumbnailFrame(body)
+
   return (
-    <div className="min-w-0">
+    <div
+      className="max-w-[65vw] min-w-0"
+      data-slot="image-message-body"
+      style={{ width: thumbnailFrame.width }}
+    >
       <MessageImage image={body} />
       {body.caption && (
         <div className={cn("min-w-0 pt-2", flush && "px-3 pb-3")}>

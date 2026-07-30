@@ -45,6 +45,7 @@ export const ConversationPanelHistory = React.memo(
     onStartMessageSelection,
     onInsertMention,
     onOpenTopic,
+    onReeditRevokedMessage,
     onReplyToMessage,
     onRevokeMessage,
     onSetMessageReaction,
@@ -70,6 +71,7 @@ export const ConversationPanelHistory = React.memo(
     onStartMessageSelection?: (message: ConversationPanelMessage) => void
     onInsertMention: (target: ConversationPanelMentionTarget) => void
     onOpenTopic?: (conversationId: string) => void
+    onReeditRevokedMessage?: (message: ConversationPanelMessage) => void
     onReplyToMessage: (message: ConversationPanelMessage) => void
     onRevokeMessage?: (message: ConversationPanelMessage) => void
     onSetMessageReaction?: (
@@ -536,6 +538,7 @@ export const ConversationPanelHistory = React.memo(
                           ? onStartMessageSelection
                           : undefined
                       }
+                      onReeditRevoked={onReeditRevokedMessage}
                       onReply={onReplyToMessage}
                       onRevoke={onRevokeMessage}
                       onSetReaction={onSetMessageReaction}

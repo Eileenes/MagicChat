@@ -71,6 +71,14 @@ func normalizeGroupName(raw string) (string, error) {
 	return name, nil
 }
 
+func normalizeGroupAnnouncement(raw string) (string, error) {
+	announcement := strings.TrimSpace(raw)
+	if len([]rune(announcement)) > MaxGroupAnnouncementLength {
+		return "", errors.New("群公告不能超过 200 个字符")
+	}
+	return announcement, nil
+}
+
 func normalizeMemberIDs(rawIDs []string, creatorID string) ([]string, error) {
 	parsedCreatorID, err := uuid.Parse(creatorID)
 	if err != nil {
@@ -500,7 +508,8 @@ func newItem(conversation store.Conversation, currentUserID string, members []st
 		name = "群聊"
 	}
 	return Item{
-		Avatar: avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
+		Announcement: conversation.Announcement,
+		Avatar:       avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
 		LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
 		LastMentionedSeq: lastMentionedSeq, LastChoiceSeq: lastChoiceSeq, LastReadSeq: lastReadSeq,
@@ -589,7 +598,8 @@ func newGroup(conversation store.Conversation, candidates []memberCandidate, cur
 		lastReadSeq = conversation.LastMessageSeq
 	}
 	return Group{
-		Avatar: conversation.Avatar, CreatedAt: conversation.CreatedAt, CreatedByUserID: conversation.CreatedByUserID,
+		Announcement: conversation.Announcement,
+		Avatar:       conversation.Avatar, CreatedAt: conversation.CreatedAt, CreatedByUserID: conversation.CreatedByUserID,
 		ID: conversation.ID, LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
 		LastReadSeq: lastReadSeq, MemberCount: len(members), Members: members, Name: conversation.Name,

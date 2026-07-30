@@ -5861,6 +5861,10 @@ func TestRevokeOwnConversationMessageMarksOriginalAndCreatesSystemMessage(t *tes
 	if _, ok := revokedMessage["body"]; ok {
 		t.Fatalf("revoked message body = %#v, want omitted", revokedMessage["body"])
 	}
+	editableBody := revokedMessage["editable_body"].(map[string]any)
+	if editableBody["type"] != "text" || editableBody["content"] != "这条消息稍后撤回" {
+		t.Fatalf("revoked message editable_body = %#v, want original text body", editableBody)
+	}
 	if revokedMessage["revoked_at"] == "" || revokedMessage["revoked_at"] == nil {
 		t.Fatalf("revoked_at = %#v, want set", revokedMessage["revoked_at"])
 	}
@@ -5912,6 +5916,9 @@ func TestRevokeOwnConversationMessageMarksOriginalAndCreatesSystemMessage(t *tes
 	if _, ok := updatedEventMessage["body"]; ok {
 		t.Fatalf("updated event body = %#v, want omitted", updatedEventMessage["body"])
 	}
+	if _, ok := updatedEventMessage["editable_body"]; ok {
+		t.Fatalf("updated event editable_body = %#v, want omitted for other user", updatedEventMessage["editable_body"])
+	}
 	createdEventMessage := readMessageCreatedEvent(t, bobConn)
 	if createdEventMessage["id"] != storedSystemMessage.ID {
 		t.Fatalf("created event message id = %v, want %s", createdEventMessage["id"], storedSystemMessage.ID)
@@ -5931,6 +5938,10 @@ func TestRevokeOwnConversationMessageMarksOriginalAndCreatesSystemMessage(t *tes
 	}
 	if _, ok := historyOriginal["body"]; ok {
 		t.Fatalf("history original body = %#v, want omitted", historyOriginal["body"])
+	}
+	historyEditableBody := historyOriginal["editable_body"].(map[string]any)
+	if historyEditableBody["type"] != "text" || historyEditableBody["content"] != "这条消息稍后撤回" {
+		t.Fatalf("history editable_body = %#v, want original text body", historyEditableBody)
 	}
 	if historyOriginal["revoked_by_user_id"] != alice.ID {
 		t.Fatalf("history revoked_by_user_id = %v, want %s", historyOriginal["revoked_by_user_id"], alice.ID)
@@ -5974,6 +5985,9 @@ func TestGroupAdminCanRevokeAnotherMembersMessage(t *testing.T) {
 	revokedMessage := data["message"].(map[string]any)
 	if revokedMessage["revoked_by_user_id"] != bob.ID {
 		t.Fatalf("revoked_by_user_id = %v, want %s", revokedMessage["revoked_by_user_id"], bob.ID)
+	}
+	if _, ok := revokedMessage["editable_body"]; ok {
+		t.Fatalf("editable_body = %#v, want omitted when an admin revokes another member's message", revokedMessage["editable_body"])
 	}
 	systemMessage := data["system_message"].(map[string]any)
 	systemBody := systemMessage["body"].(map[string]any)
@@ -6875,6 +6889,7 @@ func TestGeneratedSwaggerSpecIsServed(t *testing.T) {
 		"/api/client/me",
 		"/api/client/contacts/users",
 		"/api/client/conversations/groups",
+		"/api/client/conversations/groups/{conversation_id}/announcement",
 		"/api/client/info",
 	} {
 		if _, ok := paths[path]; !ok {
@@ -9649,6 +9664,126 @@ func TestClientGroupVisibilityRejectsNonOwner(t *testing.T) {
 			t.Fatalf("%s status = %d, want 403, body = %#v", suffix, resp.StatusCode, body)
 		}
 		requireError(t, body, "forbidden")
+	}
+}
+
+func TestUpdateGroupConversationAnnouncementCreatesSystemMessageAndCanClear(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	alice := insertTestUser(t, db, "announcement-owner@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "announcement-member@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+	ownerCookie := loginAsUser(t, server, alice.Email)
+
+	resp, body := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/announcement", map[string]any{
+		"announcement": "  本周五发布 🚀  ",
+	}, ownerCookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	data := requireSuccess(t, body)
+	updatedConversation := data["conversation"].(map[string]any)
+	createdMessage := data["message"].(map[string]any)
+	if updatedConversation["announcement"] != "本周五发布 🚀" {
+		t.Fatalf("conversation.announcement = %v", updatedConversation["announcement"])
+	}
+	if updatedConversation["last_message_summary"] != "Alice 更新了群公告" {
+		t.Fatalf("last_message_summary = %v", updatedConversation["last_message_summary"])
+	}
+	if createdMessage["seq"] != float64(1) {
+		t.Fatalf("message.seq = %v", createdMessage["seq"])
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "conversation_id = ? AND seq = ?", conversation.ID, int64(1)).Error; err != nil {
+		t.Fatalf("find announcement system message: %v", err)
+	}
+	requireSystemEventActorBody(t, storedMessage.Body, "group_announcement_updated", alice.ID, "Alice")
+	var systemBody map[string]any
+	if err := json.Unmarshal(storedMessage.Body, &systemBody); err != nil {
+		t.Fatalf("unmarshal system body: %v", err)
+	}
+	if systemBody["announcement"] != "本周五发布 🚀" {
+		t.Fatalf("body.announcement = %v", systemBody["announcement"])
+	}
+
+	clearResp, clearBody := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/announcement", map[string]any{
+		"announcement": " \n ",
+	}, ownerCookie)
+	if clearResp.StatusCode != http.StatusOK {
+		t.Fatalf("clear status = %d, want 200, body = %#v", clearResp.StatusCode, clearBody)
+	}
+	cleared := requireSuccess(t, clearBody)
+	if cleared["conversation"].(map[string]any)["announcement"] != "" {
+		t.Fatalf("cleared conversation = %#v", cleared["conversation"])
+	}
+	if cleared["conversation"].(map[string]any)["last_message_summary"] != "Alice 清空了群公告" {
+		t.Fatalf("clear conversation = %#v", cleared["conversation"])
+	}
+
+	memberResp, memberBody := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/announcement", map[string]any{
+		"announcement": "成员不能修改",
+	}, loginAsUser(t, server, bob.Email))
+	if memberResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("member status = %d, want 403, body = %#v", memberResp.StatusCode, memberBody)
+	}
+	requireError(t, memberBody, "forbidden")
+
+	tooLongResp, tooLongBody := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/announcement", map[string]any{
+		"announcement": strings.Repeat("群", 201),
+	}, ownerCookie)
+	if tooLongResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("too long status = %d, want 400, body = %#v", tooLongResp.StatusCode, tooLongBody)
+	}
+	requireError(t, tooLongBody, "invalid_request")
+}
+
+func TestUpdateGroupConversationAnnouncementRejectsMissingOrNullField(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	owner := insertTestUser(t, db, "announcement-field-owner@example.com", "Alice", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: owner.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{owner.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+	if err := db.Model(&store.Conversation{}).Where("id = ?", conversation.ID).
+		Update("announcement", "保留公告").Error; err != nil {
+		t.Fatalf("seed announcement: %v", err)
+	}
+	cookie := loginAsUser(t, server, owner.Email)
+
+	for name, requestBody := range map[string]map[string]any{
+		"missing": {},
+		"null":    {"announcement": nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, body := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/announcement", requestBody, cookie)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400, body = %#v", resp.StatusCode, body)
+			}
+			requireError(t, body, "invalid_request")
+
+			var stored store.Conversation
+			if err := db.First(&stored, "id = ?", conversation.ID).Error; err != nil {
+				t.Fatalf("load conversation: %v", err)
+			}
+			if stored.Announcement != "保留公告" {
+				t.Fatalf("announcement = %q, want preserved value", stored.Announcement)
+			}
+		})
 	}
 }
 

@@ -62,6 +62,7 @@ export type ConversationPanelReplyTarget = ConversationDraftReplyTarget
 
 export type ConversationPanelComposerHandle = {
   focus: () => void
+  focusAtEnd: () => void
   insertMention: (target: ConversationPanelMentionTarget) => void
   openDroppedFile: (file: File) => void
 }

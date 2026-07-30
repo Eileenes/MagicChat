@@ -41,6 +41,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00026_add_conversation_user_preferences.sql",
 		"00027_add_message_choices.sql",
 		"00028_add_message_search_indexes.sql",
+		"00029_add_group_announcements.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -48,6 +49,22 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	for index, match := range matches {
 		if got := filepath.Base(match); got != want[index] {
 			t.Fatalf("migration file %d = %q, want %q", index, got, want[index])
+		}
+	}
+}
+
+func TestGroupAnnouncementsMigration(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00029_add_group_announcements.sql")
+	if err != nil {
+		t.Fatalf("read group announcements migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"add column announcement text not null default ''",
+		"drop column announcement",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("group announcements migration missing %q", required)
 		}
 	}
 }

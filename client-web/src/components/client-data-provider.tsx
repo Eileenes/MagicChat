@@ -1154,6 +1154,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   } = useConversationActions({
     conversations,
@@ -1385,6 +1386,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     updateConversationMuted,
     updateMessageTopic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   }
 

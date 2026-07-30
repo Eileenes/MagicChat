@@ -346,7 +346,7 @@ ws.on("message", (raw) => {
 | 话题 | `conversation.topic.close` | 关闭当前应用创建的话题。 |
 | 群聊 | `group_conversations.create` | 创建应用担任群主的群聊。 |
 | 群聊 | `group_conversations.get` | 查询群聊详情。 |
-| 群聊 | `group_conversations.update` | 修改群名称。 |
+| 群聊 | `group_conversations.update` | 修改群名称或群公告。 |
 | 群聊 | `group_conversations.dissolve` | 解散群聊。 |
 | 群聊 | `group_conversations.members.list` | 查询群成员。 |
 | 群聊 | `group_conversations.members.add` | 添加群成员。 |
@@ -624,19 +624,24 @@ function resolvePendingRequest(replyTo, envelope) {
 {"conversation_id":"群聊 ID"}
 ```
 
-响应的 `conversation` 包含群名称、状态、群主、创建者、成员数量、当前应用角色和创建时间等信息。
+响应的 `conversation` 包含群名称、群公告、状态、群主、创建者、成员数量、当前应用角色和创建时间等信息。
 
 ### 4.13 `group_conversations.update`
 
-修改群名称。
+修改群名称或群公告。每次请求只能修改其中一个字段。
 
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
 | `conversation_id` | 是 | 群聊 UUID。 |
-| `name` | 是 | 新名称，最多 120 个字符。 |
+| `name` | 与 `announcement` 二选一 | 新名称，最多 120 个字符。 |
+| `announcement` | 与 `name` 二选一 | 群公告，去除首尾空白后最多 200 个 Unicode 字符；空字符串表示清空。 |
 
 ```json
 {"conversation_id":"群聊 ID","name":"新版项目讨论组"}
+```
+
+```json
+{"conversation_id":"群聊 ID","announcement":"本周五 18:00 发布"}
 ```
 
 应用必须是群主或管理员。响应包含更新后的 `conversation` 和可能产生的系统 `message`。

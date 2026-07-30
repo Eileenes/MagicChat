@@ -594,6 +594,9 @@ definitions:
     type: object
   client.conversationListItemResponse:
     properties:
+      announcement:
+        example: 本周五 18:00 发布，请及时更新任务状态。
+        type: string
       avatar:
         example: /assets/avatars/builtin/07.webp
         type: string
@@ -963,6 +966,9 @@ definitions:
     type: object
   client.groupConversationResponse:
     properties:
+      announcement:
+        example: 本周五 18:00 发布，请及时更新任务状态。
+        type: string
       avatar:
         example: /assets/avatars/groups/07.webp
         type: string
@@ -1304,6 +1310,8 @@ definitions:
         type: string
       delegated_by:
         $ref: '#/definitions/client.messageDelegatedByResponse'
+      editable_body:
+        type: object
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
@@ -1367,6 +1375,8 @@ definitions:
         type: string
       delegated_by:
         $ref: '#/definitions/client.messageDelegatedByResponse'
+      editable_body:
+        type: object
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
@@ -1821,6 +1831,14 @@ definitions:
         type: array
       visibility:
         type: string
+    type: object
+  client.updateGroupConversationAnnouncementRequest:
+    properties:
+      announcement:
+        example: 本周五 18:00 发布，请及时更新任务状态。
+        type: string
+    required:
+    - announcement
     type: object
   client.updateGroupConversationAvatarResponse:
     properties:
@@ -4186,7 +4204,8 @@ paths:
       - 客户端消息
   /api/client/conversations/{conversation_id}/messages/{message_id}/revoke:
     post:
-      description: 普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息只返回元信息，并创建一条系统消息。
+      description: 普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息不返回 body；仅当用户撤回本人发送的 text/markdown
+        消息时返回 editable_body，并创建一条系统消息。
       parameters:
       - description: 会话 ID
         in: path
@@ -5180,6 +5199,58 @@ paths:
       security:
       - UserSession: []
       summary: 解散群聊
+      tags:
+      - 客户端会话
+  /api/client/conversations/groups/{conversation_id}/announcement:
+    patch:
+      consumes:
+      - application/json
+      description: 群主或管理员修改 active 群聊公告。内容会去除首尾空白，最多 200 个 Unicode 字符；空内容会清空公告。修改后生成系统消息。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 群公告
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.updateGroupConversationAnnouncementRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 修改群公告
       tags:
       - 客户端会话
   /api/client/conversations/groups/{conversation_id}/join:
