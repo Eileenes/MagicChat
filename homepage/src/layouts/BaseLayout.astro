@@ -1,0 +1,114 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description: string;
+  pathname?: string;
+  image?: string;
+  type?: 'website' | 'article';
+  schema?: Record<string, unknown> | Array<Record<string, unknown>>;
+}
+
+const {
+  title,
+  description,
+  pathname = '/',
+  image = '/favicon.webp',
+  type = 'website',
+  schema,
+} = Astro.props;
+
+const siteOrigin = Astro.site ?? Astro.url.origin;
+const baseUrl = new URL(import.meta.env.BASE_URL, siteOrigin);
+const canonical = new URL(pathname.replace(/^\//, ''), baseUrl);
+const socialImage = new URL(image.replace(/^\//, ''), baseUrl);
+const gaId = import.meta.env.PUBLIC_GA_ID?.trim();
+const hasValidGaId = Boolean(gaId && /^G-[A-Z0-9]+$/.test(gaId));
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="theme-color" content="#f2f3ed" />
+    <meta name="color-scheme" content="light" />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="zh-CN" href={canonical} />
+    <link rel="alternate" hreflang="x-default" href={canonical} />
+    <link rel="icon" type="image/webp" href={`${import.meta.env.BASE_URL}favicon.webp`} />
+
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content="即应" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={socialImage} />
+    <meta property="og:image:alt" content="即应产品标志" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage} />
+    <script is:inline>document.documentElement.classList.add('js');</script>
+
+    {schema && <script is:inline type="application/ld+json" set:html={JSON.stringify(schema)} />}
+
+    {hasValidGaId && (
+      <>
+        <script is:inline define:vars={{ gaId }}>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          window.gtag = gtag;
+          gtag('consent', 'default', { analytics_storage: 'denied' });
+          if (localStorage.getItem('jiying-analytics-consent') === 'granted') {
+            gtag('consent', 'update', { analytics_storage: 'granted' });
+          }
+          gtag('js', new Date());
+          gtag('config', gaId, { anonymize_ip: true });
+        </script>
+        <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} />
+      </>
+    )}
+  </head>
+  <body data-ga-enabled={hasValidGaId ? 'true' : 'false'}>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <slot />
+
+    {hasValidGaId && (
+      <aside class="consent" data-consent hidden aria-label="网站分析设置">
+        <p>我们使用匿名访问数据改进即应官网。你可以接受或暂不启用。</p>
+        <div>
+          <button type="button" class="button button-secondary button-compact" data-consent-reject>暂不启用</button>
+          <button type="button" class="button button-primary button-compact" data-consent-accept>允许分析</button>
+        </div>
+      </aside>
+    )}
+
+    {hasValidGaId && (
+      <script is:inline>
+        (() => {
+          const consent = document.querySelector('[data-consent]');
+          if (!consent || localStorage.getItem('jiying-analytics-consent')) return;
+          consent.hidden = false;
+
+          const save = (value) => {
+            localStorage.setItem('jiying-analytics-consent', value);
+            if (value === 'granted' && window.gtag) {
+              window.gtag('consent', 'update', { analytics_storage: 'granted' });
+            }
+            consent.hidden = true;
+          };
+
+          consent.querySelector('[data-consent-accept]')?.addEventListener('click', () => save('granted'));
+          consent.querySelector('[data-consent-reject]')?.addEventListener('click', () => save('denied'));
+        })();
+      </script>
+    )}
+  </body>
+</html>
