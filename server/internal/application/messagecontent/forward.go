@@ -211,13 +211,11 @@ func escapeMarkdown(content string) string {
 
 func cloneRaw(raw json.RawMessage) json.RawMessage { return append(json.RawMessage(nil), raw...) }
 
-func voiceSummary(durationMS int, transcript string) string {
-	totalSeconds := (durationMS + 999) / 1000
-	summary := fmt.Sprintf("[语音] %02d:%02d", totalSeconds/60, totalSeconds%60)
+func voiceSummary(_ int, transcript string) string {
 	if transcript = strings.TrimSpace(transcript); transcript != "" {
-		return summary + " - " + transcript
+		return "[语音] " + transcript
 	}
-	return summary
+	return "[语音]"
 }
 
 func forwardSummary(items []forwardBundleItem) string {

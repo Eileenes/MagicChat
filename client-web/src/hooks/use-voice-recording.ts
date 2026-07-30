@@ -201,7 +201,7 @@ export function useVoiceRecording(options: UseVoiceRecordingOptions = {}) {
     if (recorder.state !== "inactive") recorder.stop()
   }
 
-  function finishRecording(delayMS = 1_000) {
+  function finishRecording(delayMS = 500) {
     clearMaxDurationTimeout()
 
     const recorder = mediaRecorderRef.current
