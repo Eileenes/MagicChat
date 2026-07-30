@@ -145,6 +145,29 @@ func TestThirdPartyApplicationOwnsAndManagesGroup(t *testing.T) {
 		t.Fatalf("group update = %#v, err = %v", updated, err)
 	}
 
+	announcementResponse := sendAppRequest(t, conn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest, ID: "app-group-announcement-update",
+		Method: appMethodGroupConversationsUpdate,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"conversation_id": conversationID, "announcement": "  应用发布公告 🚀  ",
+		}),
+	})
+	var announcementUpdated appGroupMutationResponse
+	if err := json.Unmarshal(announcementResponse.Payload, &announcementUpdated); err != nil ||
+		announcementUpdated.Conversation.Announcement != "应用发布公告 🚀" || announcementUpdated.Message == nil ||
+		announcementUpdated.Message.Summary != "Group Operator 更新了群公告" {
+		t.Fatalf("announcement update = %#v, err = %v", announcementUpdated, err)
+	}
+
+	nullAnnouncementResponse := sendRawAppRequest(t, conn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest, ID: "app-group-announcement-null",
+		Method: appMethodGroupConversationsUpdate,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"conversation_id": conversationID, "announcement": nil,
+		}),
+	})
+	requireAppErrorResponse(t, nullAnnouncementResponse, "invalid_request")
+
 	sendResponse := sendAppRequest(t, conn, realtime.Envelope{
 		V: realtime.ProtocolVersion, Kind: realtime.KindRequest, ID: "app-group-message",
 		Method: appMethodMessageSend,
@@ -176,7 +199,8 @@ func TestThirdPartyApplicationOwnsAndManagesGroup(t *testing.T) {
 		Payload: mustMarshalPayloadForTest(t, map[string]any{"conversation_id": conversationID}),
 	})
 	var got appGetGroupResponse
-	if err := json.Unmarshal(getResponse.Payload, &got); err != nil || got.Conversation.Name != "应用管理群" {
+	if err := json.Unmarshal(getResponse.Payload, &got); err != nil || got.Conversation.Name != "应用管理群" ||
+		got.Conversation.Announcement != "应用发布公告 🚀" {
 		t.Fatalf("group get = %#v, err = %v", got, err)
 	}
 

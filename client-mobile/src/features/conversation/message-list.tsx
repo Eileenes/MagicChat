@@ -1,5 +1,5 @@
 import { ArrowDown } from "lucide-react-native"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   FlatList,
   RefreshControl,
@@ -7,7 +7,14 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native"
-import { Button, Spinner, useTheme, XStack, YStack } from "tamagui"
+import {
+  Button,
+  SizableText,
+  Spinner,
+  useTheme,
+  XStack,
+  YStack,
+} from "tamagui"
 
 import { ContentState } from "@/components/feedback/content-state"
 import { AppButton } from "@/components/forms/app-button"
@@ -18,18 +25,23 @@ import type {
   MessageMentionLabelResolver,
   PresentedMessage,
 } from "@/domain/messages/message-presenter"
+import {
+  formatMessageTimeMarker,
+  shouldShowMessageTimeMarker,
+} from "@/domain/messages/message-presenter"
 import type { ServerTarget } from "@/data/query"
 import type { ResourceLoadState } from "@/data/resources"
 
 export function MessageList({
   canAddReaction,
+  canRespondToChoice,
   conversationId,
   currentUserId,
   error,
   hasOlder,
   isFetchingOlder,
   isLoading,
-  isRefreshing,
+  isPullRefreshing,
   messages,
   onAvatarPress,
   onAvatarLongPress,
@@ -39,6 +51,7 @@ export function MessageList({
   onRefresh,
   onResourceError,
   onResourcePress,
+  onRespondChoice,
   onSetReaction,
   onVoiceResourcePress,
   onMentionPress,
@@ -46,15 +59,17 @@ export function MessageList({
   resolveMentionLabel,
   resourceStates,
   server,
+  showChoiceResponseCounts,
 }: {
   canAddReaction: boolean
+  canRespondToChoice: boolean
   conversationId: string
   currentUserId: string
   error: Error | null
   hasOlder: boolean
   isFetchingOlder: boolean
   isLoading: boolean
-  isRefreshing: boolean
+  isPullRefreshing: boolean
   messages: PresentedMessage[]
   onAvatarLongPress?: (sender: EntityReference) => void
   onAvatarPress: (sender: EntityReference) => void
@@ -64,6 +79,7 @@ export function MessageList({
   onRefresh: () => void
   onResourceError: (fileId: string) => void
   onResourcePress: (fileId: string) => void
+  onRespondChoice?: (messageId: string, optionIds: string[]) => Promise<void>
   onSetReaction?: (
     messageId: string,
     text: string,
@@ -75,9 +91,11 @@ export function MessageList({
   resolveMentionLabel: MessageMentionLabelResolver
   resourceStates: ReadonlyMap<string, ResourceLoadState>
   server: ServerTarget
+  showChoiceResponseCounts: boolean
 }) {
   const theme = useTheme()
-  const listRef = useRef<FlatList<PresentedMessage>>(null)
+  const listItems = useMemo(() => buildMessageListItems(messages), [messages])
+  const listRef = useRef<FlatList<MessageListItem>>(null)
   const nearBottomRef = useRef(true)
   const initializedMessagesRef = useRef(false)
   const previousConversationIdRef = useRef("")
@@ -155,10 +173,6 @@ export function MessageList({
     scheduleScrollToLatest(listRef, pendingScrollRef, true)
   }
 
-  if (isLoading) {
-    return <ContentState loading message="正在加载消息" />
-  }
-
   if (error && messages.length === 0) {
     return (
       <ContentState message={error.message} tone="error">
@@ -186,25 +200,20 @@ export function MessageList({
       <FlatList
         ref={listRef}
         contentContainerStyle={styles.content}
-        data={messages}
+        data={listItems}
         inverted
-        ItemSeparatorComponent={() => <YStack height="$4" />}
+        ItemSeparatorComponent={() => <YStack height="$1" />}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.key}
         ListFooterComponent={
-          hasOlder || isFetchingOlder ? (
-            <YStack items="center" pb="$3">
-              <Button
-                disabled={isFetchingOlder}
-                icon={isFetchingOlder ? <Spinner /> : undefined}
-                onPress={onLoadOlder}
-                size="$3"
-                variant="outlined"
-              >
-                {isFetchingOlder ? "正在加载" : "加载更早消息"}
-              </Button>
-            </YStack>
+          isFetchingOlder ? (
+            <XStack gap="$2" items="center" justify="center" pb="$3" py="$2">
+              <Spinner size="small" />
+              <SizableText color="$color10" size="$2">
+                正在加载
+              </SizableText>
+            </XStack>
           ) : null
         }
         maintainVisibleContentPosition={{
@@ -220,29 +229,36 @@ export function MessageList({
           <RefreshControl
             colors={[String(theme.color10.val)]}
             onRefresh={onRefresh}
-            refreshing={isRefreshing}
+            refreshing={isPullRefreshing}
             tintColor={String(theme.color10.val)}
           />
         }
-        renderItem={({ item }) => (
-          <MessageBubble
-            canAddReaction={canAddReaction}
-            currentUserId={currentUserId}
-            message={item}
-            onAvatarLongPress={onAvatarLongPress}
-            onAvatarPress={onAvatarPress}
-            onImagePress={onImagePress}
-            onMentionPress={onMentionPress}
-            onOpenTopic={onOpenTopic}
-            onResourceError={onResourceError}
-            onResourcePress={onResourcePress}
-            onSetReaction={onSetReaction}
-            onVoiceResourcePress={onVoiceResourcePress}
-            resolveMentionLabel={resolveMentionLabel}
-            resourceStates={resourceStates}
-            server={server}
-          />
-        )}
+        renderItem={({ item }) =>
+          item.type === "time" ? (
+            <MessageTimeMarker createdAt={item.createdAt} />
+          ) : (
+            <MessageBubble
+              canAddReaction={canAddReaction}
+              canRespondToChoice={canRespondToChoice}
+              currentUserId={currentUserId}
+              message={item.message}
+              onAvatarLongPress={onAvatarLongPress}
+              onAvatarPress={onAvatarPress}
+              onImagePress={onImagePress}
+              onMentionPress={onMentionPress}
+              onOpenTopic={onOpenTopic}
+              onResourceError={onResourceError}
+              onResourcePress={onResourcePress}
+              onRespondChoice={onRespondChoice}
+              onSetReaction={onSetReaction}
+              onVoiceResourcePress={onVoiceResourcePress}
+              resolveMentionLabel={resolveMentionLabel}
+              resourceStates={resourceStates}
+              server={server}
+              showChoiceResponseCounts={showChoiceResponseCounts}
+            />
+          )
+        }
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         style={styles.list}
@@ -268,8 +284,58 @@ type PendingScroll = {
   animated: boolean
 }
 
+type MessageListItem =
+  | {
+      key: string
+      message: PresentedMessage
+      type: "message"
+    }
+  | {
+      createdAt: string
+      key: string
+      type: "time"
+    }
+
+function buildMessageListItems(messages: PresentedMessage[]): MessageListItem[] {
+  const items: MessageListItem[] = []
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+    if (!message) continue
+
+    items.push({ key: `message:${message.id}`, message, type: "message" })
+
+    const olderMessage = messages[index + 1]
+    if (
+      olderMessage &&
+      shouldShowMessageTimeMarker(olderMessage.createdAt, message.createdAt)
+    ) {
+      items.push({
+        createdAt: message.createdAt,
+        key: `time:${olderMessage.id}:${message.id}`,
+        type: "time",
+      })
+    }
+  }
+
+  return items
+}
+
+function MessageTimeMarker({ createdAt }: { createdAt: string }) {
+  const label = formatMessageTimeMarker(createdAt)
+  if (!label) return null
+
+  return (
+    <XStack justify="center">
+      <SizableText color="$color10" size="$2">
+        {label}
+      </SizableText>
+    </XStack>
+  )
+}
+
 function scheduleScrollToLatest(
-  listRef: React.RefObject<FlatList<PresentedMessage> | null>,
+  listRef: React.RefObject<FlatList<MessageListItem> | null>,
   pendingScrollRef: React.MutableRefObject<PendingScroll | null>,
   animated: boolean
 ) {
@@ -278,7 +344,7 @@ function scheduleScrollToLatest(
 }
 
 function performPendingScroll(
-  listRef: React.RefObject<FlatList<PresentedMessage> | null>,
+  listRef: React.RefObject<FlatList<MessageListItem> | null>,
   pendingScrollRef: React.MutableRefObject<PendingScroll | null>
 ) {
   const list = listRef.current

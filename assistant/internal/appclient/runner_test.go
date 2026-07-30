@@ -263,7 +263,7 @@ func TestConversationAgentRunnerKeepsSequenceWatermarkAfterIdleCleanup(t *testin
 	}
 }
 
-func TestConversationAgentRunnerIdleRetirementClosesTopic(t *testing.T) {
+func TestConversationAgentRunnerIdleRetirementKeepsTopicOpen(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	requester := newRunnerTopicRequester()
@@ -282,22 +282,16 @@ func TestConversationAgentRunnerIdleRetirementClosesTopic(t *testing.T) {
 		return nil
 	}), assistantAgent, prepared)
 	waitForSignal(t, output, "topic response")
-
-	select {
-	case closed := <-requester.closed:
-		if closed.ConversationID != "topic-1" || closed.ExpectedLastMessageSeq != 1 {
-			t.Fatalf("closed topic request = %#v", closed)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("idle topic was not closed")
-	}
 	waitForRunnerJobRemoved(t, runner, "topic-1")
+	if methods := requester.requestMethods(); len(methods) != 0 {
+		t.Fatalf("idle retirement sent server requests: %v", methods)
+	}
 }
 
-func TestConversationAgentRunnerNewMessageCancelsIdleRetirementWithoutReplacingSession(t *testing.T) {
+func TestConversationAgentRunnerNewMessageRecreatesSessionAfterIdleRetirement(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	requester := newCancelableRetirementRequester()
+	requester := newRunnerTopicRequester()
 	runner := newConversationAgentRunner(ctx, conversationAgentRunnerOptions{
 		IdleTimeout: 15 * time.Millisecond,
 		MaxSessions: 2,
@@ -322,30 +316,27 @@ func TestConversationAgentRunnerNewMessageCancelsIdleRetirementWithoutReplacingS
 	if output := waitForString(t, outputs, "first topic response"); output != "完成-1" {
 		t.Fatalf("first output = %q", output)
 	}
-	waitForSignal(t, requester.getStarted, "idle retirement request")
-
 	runner.mu.Lock()
 	originalJob := runner.jobs["topic-1"]
+	runner.mu.Unlock()
+	waitForRunnerJobRemoved(t, runner, "topic-1")
+	runner.mu.Lock()
 	runner.idleTimeout = time.Hour
 	runner.mu.Unlock()
 	second := preparedTopicRun("topic-1", "topic-message-2", 2, "第二条", "user-1", "auth_2", requester)
 	runner.Start(ctx, "topic-1", sink, assistantAgent, second)
-	waitForSignal(t, requester.getCanceled, "idle retirement cancellation")
 	if output := waitForString(t, outputs, "second topic response"); output != "完成-2" {
 		t.Fatalf("second output = %q", output)
 	}
 
 	runner.mu.Lock()
 	currentJob := runner.jobs["topic-1"]
-	retiring := currentJob != nil && currentJob.retiring
 	runner.mu.Unlock()
-	if currentJob != originalJob || retiring {
-		t.Fatalf("topic job after recovery = %p retiring=%v, want original %p active", currentJob, retiring, originalJob)
+	if currentJob == nil || currentJob == originalJob {
+		t.Fatalf("topic job after idle retirement = %p, want a new job distinct from %p", currentJob, originalJob)
 	}
-	select {
-	case closed := <-requester.closed:
-		t.Fatalf("resumed topic was closed: %#v", closed)
-	default:
+	if methods := requester.requestMethods(); len(methods) != 0 {
+		t.Fatalf("session recreation sent server requests: %v", methods)
 	}
 }
 
@@ -384,7 +375,7 @@ func TestConversationAgentRunnerRoutesModelFailureToParentConversation(t *testin
 	}
 }
 
-func TestConversationAgentRunnerCapacityFailureClosesNewTopicAndRepliesToParent(t *testing.T) {
+func TestConversationAgentRunnerCapacityFailureKeepsNewTopicOpenAndRepliesToParent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runner := newConversationAgentRunner(ctx, conversationAgentRunnerOptions{
@@ -406,7 +397,6 @@ func TestConversationAgentRunnerCapacityFailureClosesNewTopicAndRepliesToParent(
 	topicOutputs := make(chan string, 1)
 	parentOutputs := make(chan string, 1)
 	second := preparedTopicRun("topic-rejected", "rejected-message", 1, "新任务", "user-2", "auth_2", requester)
-	second.CloseTopicOnSessionFailure = true
 	second.ErrorSink = agent.OutputSinkFunc(func(_ context.Context, content string) error {
 		parentOutputs <- content
 		return nil
@@ -416,7 +406,7 @@ func TestConversationAgentRunnerCapacityFailureClosesNewTopicAndRepliesToParent(
 		return nil
 	}), assistantAgent, second)
 	if !accepted {
-		t.Fatal("capacity rejection was not handled after notifying the parent and closing the topic")
+		t.Fatal("capacity rejection was not handled after notifying the parent")
 	}
 	if output := waitForString(t, parentOutputs, "capacity error in parent"); output != agent.ModelErrorFallback {
 		t.Fatalf("parent output = %q, want model fallback", output)
@@ -426,13 +416,8 @@ func TestConversationAgentRunnerCapacityFailureClosesNewTopicAndRepliesToParent(
 		t.Fatalf("capacity error was sent to topic: %q", output)
 	default:
 	}
-	select {
-	case closed := <-requester.closed:
-		if closed.ConversationID != "topic-rejected" || closed.ExpectedLastMessageSeq != 1 {
-			t.Fatalf("closed rejected topic = %#v", closed)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("capacity-rejected topic was left open")
+	if methods := requester.requestMethods(); len(methods) != 0 {
+		t.Fatalf("capacity rejection sent server requests: %v", methods)
 	}
 	runner.mu.Lock()
 	_, busyExists := runner.jobs["topic-busy"]
@@ -474,15 +459,10 @@ func TestConversationAgentRunnerEvictsLeastRecentlyUsedIdleTopicAtCapacity(t *te
 
 	runner.Start(ctx, "topic-third", sink, assistantAgent, preparedTopicRun("topic-third", "topic-third-message", 1, "开始", "user-1", "auth_1", requester))
 	waitForSignal(t, outputs, "third topic response")
-	select {
-	case closed := <-requester.closed:
-		if closed.ConversationID != "topic-old" {
-			t.Fatalf("evicted topic = %q, want topic-old", closed.ConversationID)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("capacity eviction did not close an idle topic")
-	}
 	waitForRunnerJobRemoved(t, runner, "topic-old")
+	if methods := requester.requestMethods(); len(methods) != 0 {
+		t.Fatalf("capacity eviction sent server requests: %v", methods)
+	}
 	runner.mu.Lock()
 	_, oldExists := runner.jobs["topic-old"]
 	_, newExists := runner.jobs["topic-new"]
@@ -732,11 +712,6 @@ func TestConversationAgentRunnerTopicClosedEventCancelsSession(t *testing.T) {
 	}
 }
 
-type runnerTopicCloseRequest struct {
-	ConversationID         string
-	ExpectedLastMessageSeq int64
-}
-
 type runnerProjectRunAs struct {
 	AuthorizationConversationID string `json:"authorization_conversation_id"`
 	ID                          string `json:"id"`
@@ -745,51 +720,12 @@ type runnerProjectRunAs struct {
 
 type runnerTopicRequester struct {
 	mu       sync.Mutex
-	closed   chan runnerTopicCloseRequest
+	methods  []string
 	projects []runnerProjectRunAs
 }
 
-type cancelableRetirementRequester struct {
-	closed      chan runnerTopicCloseRequest
-	getCanceled chan struct{}
-	getStarted  chan struct{}
-	cancelOnce  sync.Once
-	startOnce   sync.Once
-}
-
-func newCancelableRetirementRequester() *cancelableRetirementRequester {
-	return &cancelableRetirementRequester{
-		closed: make(chan runnerTopicCloseRequest, 1), getCanceled: make(chan struct{}), getStarted: make(chan struct{}),
-	}
-}
-
-func (r *cancelableRetirementRequester) Request(ctx context.Context, method string, payload any) (json.RawMessage, error) {
-	switch method {
-	case methodConversationTopicGet:
-		r.startOnce.Do(func() { close(r.getStarted) })
-		<-ctx.Done()
-		r.cancelOnce.Do(func() { close(r.getCanceled) })
-		return nil, ctx.Err()
-	case methodConversationTopicClose:
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			return nil, err
-		}
-		var request topicMutationRequestPayload
-		if err := json.Unmarshal(raw, &request); err != nil {
-			return nil, err
-		}
-		r.closed <- runnerTopicCloseRequest{
-			ConversationID: request.ConversationID, ExpectedLastMessageSeq: request.ExpectedLastMessageSeq,
-		}
-		return json.RawMessage(`{"archived":true}`), nil
-	default:
-		return nil, fmt.Errorf("unexpected requester method %q", method)
-	}
-}
-
 func newRunnerTopicRequester() *runnerTopicRequester {
-	return &runnerTopicRequester{closed: make(chan runnerTopicCloseRequest, 8)}
+	return &runnerTopicRequester{}
 }
 
 func (r *runnerTopicRequester) Request(_ context.Context, method string, payload any) (json.RawMessage, error) {
@@ -797,25 +733,10 @@ func (r *runnerTopicRequester) Request(_ context.Context, method string, payload
 	if err != nil {
 		return nil, err
 	}
+	r.mu.Lock()
+	r.methods = append(r.methods, method)
+	r.mu.Unlock()
 	switch method {
-	case methodConversationTopicGet:
-		var request topicMutationRequestPayload
-		if err := json.Unmarshal(rawPayload, &request); err != nil {
-			return nil, err
-		}
-		return json.Marshal(topicMutationResponsePayload{
-			Conversation:   conversationPayload{ID: request.ConversationID, Type: "topic"},
-			LastMessageSeq: 1,
-		})
-	case methodConversationTopicClose:
-		var request topicMutationRequestPayload
-		if err := json.Unmarshal(rawPayload, &request); err != nil {
-			return nil, err
-		}
-		r.closed <- runnerTopicCloseRequest{
-			ConversationID: request.ConversationID, ExpectedLastMessageSeq: request.ExpectedLastMessageSeq,
-		}
-		return json.RawMessage(`{"archived":true}`), nil
 	case "projects.list":
 		var request struct {
 			RunAs runnerProjectRunAs `json:"runas"`
@@ -830,6 +751,12 @@ func (r *runnerTopicRequester) Request(_ context.Context, method string, payload
 	default:
 		return nil, fmt.Errorf("unexpected requester method %q", method)
 	}
+}
+
+func (r *runnerTopicRequester) requestMethods() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.methods...)
 }
 
 func (r *runnerTopicRequester) projectCalls() []runnerProjectRunAs {

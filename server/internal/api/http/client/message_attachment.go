@@ -15,6 +15,7 @@ import (
 
 	fileapp "app/internal/application/file"
 	messageapp "app/internal/application/message"
+	messagecontentapp "app/internal/application/messagecontent"
 	"app/internal/media"
 
 	"github.com/labstack/echo/v4"
@@ -29,11 +30,11 @@ const (
 	maxImageMessageRequestBytes = maxImageMessageUploadBytes + 1*1024*1024
 	maxImageMessageDimension    = 1920
 
-	maxVoiceMessageDurationMS   = 60_000
-	maxVoiceMessageUploadBytes  = 1 * 1024 * 1024
-	maxVoiceMessageRequestBytes = maxVoiceMessageUploadBytes + 512*1024
-	voiceMessageContentType     = "audio/webm"
-	voiceMessageDemoTranscript  = "这是一段语音消息的演示转写文字"
+	maxVoiceMessageDurationMS       = 60_000
+	maxVoiceMessageUploadBytes      = 1 * 1024 * 1024
+	maxVoiceMessageRequestBytes     = maxVoiceMessageUploadBytes + 512*1024
+	maxVoiceMessageTranscriptLength = 5_000
+	voiceMessageContentType         = "audio/webm"
 )
 
 var (
@@ -50,10 +51,12 @@ type fileMessageBody struct {
 }
 
 type imageMessageBody struct {
-	Type   string `json:"type"`
-	FileID string `json:"file_id"`
-	Width  int    `json:"width,omitempty"`
-	Height int    `json:"height,omitempty"`
+	Type        string `json:"type"`
+	FileID      string `json:"file_id"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
+	Caption     string `json:"caption,omitempty"`
+	CaptionType string `json:"caption_type,omitempty"`
 }
 
 type voiceMessageBody struct {
@@ -145,12 +148,15 @@ func (a *MessageAPI) createFile(c echo.Context) error {
 // createImage godoc
 //
 // @Summary 发送图片消息
-// @Description 普通用户上传 WebP 或 PNG 图片并发送为会话图片消息。PNG 会在服务端转换为 WebP，图片写入 temporary bucket，消息 body 只保存 file_id。
+// @Description 普通用户上传 WebP 或 PNG 图片并发送为会话图片消息，可附带 text 或 markdown 图片说明。PNG 会在服务端转换为 WebP，图片写入 temporary bucket。
 // @Tags 客户端消息
 // @Accept multipart/form-data
 // @Produce json
 // @Param conversation_id path string true "会话 ID"
 // @Param client_message_id formData string true "客户端消息 ID"
+// @Param reply_to_message_id formData string false "引用消息 ID"
+// @Param caption formData string false "图片说明，最多 5000 个字符，支持与文本消息相同的 @ token"
+// @Param caption_type formData string false "图片说明类型：text 或 markdown，默认 text"
 // @Param image formData file true "WebP 或 PNG 图片"
 // @Success 200 {object} successEnvelope{data=createMessageResponse}
 // @Success 201 {object} successEnvelope{data=createMessageResponse}
@@ -172,6 +178,14 @@ func (a *MessageAPI) createImage(c echo.Context) error {
 	}
 	clientMessageID := c.FormValue("client_message_id")
 	replyToMessageID := c.FormValue("reply_to_message_id")
+	caption, err := messagecontentapp.NormalizeImageCaption(c.FormValue("caption"), c.FormValue("caption_type"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	summary, err := messagecontentapp.ImageMessageSummary(caption)
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "图片说明格式错误")
+	}
 	if handled, err := a.prepareAttachmentUpload(c, current.ID, conversationID, clientMessageID, replyToMessageID); handled || err != nil {
 		return err
 	}
@@ -228,13 +242,16 @@ func (a *MessageAPI) createImage(c echo.Context) error {
 	if err != nil {
 		return writeMessageFileError(c, err)
 	}
-	body, err := json.Marshal(imageMessageBody{Type: "image", FileID: temporary.ID, Width: width, Height: height})
+	body, err := json.Marshal(imageMessageBody{
+		Type: "image", FileID: temporary.ID, Width: width, Height: height,
+		Caption: caption.Content, CaptionType: caption.ContentType,
+	})
 	if err != nil {
 		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
 	}
 	return a.createPreparedAttachment(c, messageapp.CreatePreparedCommand{
 		AccountID: current.ID, Body: body, ClientMessageID: clientMessageID,
-		ConversationID: conversationID, ReplyToMessageID: replyToMessageID, Summary: "[图片]",
+		ConversationID: conversationID, ReplyToMessageID: replyToMessageID, Summary: summary,
 	})
 }
 
@@ -249,6 +266,7 @@ func (a *MessageAPI) createImage(c echo.Context) error {
 // @Param client_message_id formData string true "客户端消息 ID"
 // @Param reply_to_message_id formData string false "引用消息 ID"
 // @Param duration_ms formData int true "语音时长（毫秒，最大 60000）"
+// @Param transcript formData string false "语音识别文字，最多 5000 个字符"
 // @Param voice formData file true "WebM/Opus 语音文件"
 // @Success 200 {object} successEnvelope{data=createMessageResponse}
 // @Success 201 {object} successEnvelope{data=createMessageResponse}
@@ -277,6 +295,10 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 	}
 	clientMessageID := c.FormValue("client_message_id")
 	replyToMessageID := c.FormValue("reply_to_message_id")
+	transcript, err := normalizeVoiceMessageTranscript(c.FormValue("transcript"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
 	if handled, err := a.prepareAttachmentUpload(c, current.ID, conversationID, clientMessageID, replyToMessageID); handled || err != nil {
 		return err
 	}
@@ -321,7 +343,7 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 	}
 	body, err := json.Marshal(voiceMessageBody{
 		Type: "voice", FileID: temporary.ID, DurationMS: durationMS, SizeBytes: temporary.SizeBytes,
-		ContentType: voiceMessageContentType, Transcript: voiceMessageDemoTranscript,
+		ContentType: voiceMessageContentType, Transcript: transcript,
 	})
 	if err != nil {
 		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
@@ -329,7 +351,7 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 	return a.createPreparedAttachment(c, messageapp.CreatePreparedCommand{
 		AccountID: current.ID, Body: body, ClientMessageID: clientMessageID,
 		ConversationID: conversationID, ReplyToMessageID: replyToMessageID,
-		Summary: voiceMessageSummary(durationMS, voiceMessageDemoTranscript),
+		Summary: voiceMessageSummary(durationMS, transcript),
 	})
 }
 
@@ -400,6 +422,14 @@ func normalizeVoiceMessageDuration(raw string) (int, error) {
 		return 0, errors.New("语音时长不能超过 60 秒")
 	}
 	return duration, nil
+}
+
+func normalizeVoiceMessageTranscript(raw string) (string, error) {
+	transcript := strings.TrimSpace(raw)
+	if len([]rune(transcript)) > maxVoiceMessageTranscriptLength {
+		return "", errors.New("语音转写不能超过 5000 个字符")
+	}
+	return transcript, nil
 }
 
 func readVoiceMessageUpload(reader io.Reader) ([]byte, error) {

@@ -2,6 +2,8 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,130 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+func TestServiceUpdatesAndClearsGroupAnnouncement(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 30, 6, 0, 0, 0, time.UTC)
+	owner := insertConversationTestUser(t, db, "owner-announcement@example.com", "Owner", now)
+	member := insertConversationTestUser(t, db, "admin-announcement@example.com", "Admin", now)
+	notifications := &conversationNotificationRecorder{db: db}
+	service := NewService(Dependencies{DB: db, Notifications: notifications, Now: func() time.Time { return now }})
+
+	created, err := service.CreateGroup(context.Background(), CreateGroupCommand{
+		Actor: actorFromTestUser(owner), Name: "Announcement group", MemberIDs: []string{member.ID},
+	})
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if created.Conversation.Announcement != "" {
+		t.Fatalf("new group announcement = %q", created.Conversation.Announcement)
+	}
+
+	now = now.Add(time.Minute)
+	updated, err := service.UpdateAnnouncement(context.Background(), UpdateAnnouncementCommand{
+		Actor: actorFromTestUser(owner), Announcement: "  本周五发布 🚀  ", ConversationID: created.Conversation.ID,
+	})
+	if err != nil {
+		t.Fatalf("update announcement: %v", err)
+	}
+	if updated.Conversation.Announcement != "本周五发布 🚀" || updated.Message == nil {
+		t.Fatalf("updated = %#v", updated)
+	}
+	if updated.Message.Summary != "Owner 更新了群公告" {
+		t.Fatalf("summary = %q", updated.Message.Summary)
+	}
+	var body groupAnnouncementUpdatedSystemEventBody
+	if err := json.Unmarshal(updated.Message.Body, &body); err != nil {
+		t.Fatalf("decode system event: %v", err)
+	}
+	if body.Event != systemEventGroupAnnouncementUpdated || body.Announcement != "本周五发布 🚀" || body.Actor.ID != owner.ID {
+		t.Fatalf("body = %#v", body)
+	}
+
+	unchanged, err := service.UpdateAnnouncement(context.Background(), UpdateAnnouncementCommand{
+		Actor: actorFromTestUser(owner), Announcement: "本周五发布 🚀", ConversationID: created.Conversation.ID,
+	})
+	if err != nil || unchanged.Message != nil {
+		t.Fatalf("unchanged = %#v, err = %v", unchanged, err)
+	}
+
+	if err := db.Model(&store.ConversationMember{}).Where(
+		"conversation_id = ? AND member_type = ? AND member_id = ?", created.Conversation.ID, store.ConversationMemberTypeUser, member.ID,
+	).Update("role", store.ConversationMemberRoleAdmin).Error; err != nil {
+		t.Fatalf("promote admin: %v", err)
+	}
+	now = now.Add(time.Minute)
+	adminUpdated, err := service.UpdateAnnouncement(context.Background(), UpdateAnnouncementCommand{
+		Actor: actorFromTestUser(member), Announcement: "管理员公告", ConversationID: created.Conversation.ID,
+	})
+	if err != nil || adminUpdated.Conversation.Announcement != "管理员公告" {
+		t.Fatalf("admin update = %#v, err = %v", adminUpdated, err)
+	}
+
+	now = now.Add(time.Minute)
+	cleared, err := service.UpdateAnnouncement(context.Background(), UpdateAnnouncementCommand{
+		Actor: actorFromTestUser(owner), Announcement: " \n\t ", ConversationID: created.Conversation.ID,
+	})
+	if err != nil || cleared.Conversation.Announcement != "" || cleared.Message == nil {
+		t.Fatalf("cleared = %#v, err = %v", cleared, err)
+	}
+	if cleared.Message.Summary != "Owner 清空了群公告" {
+		t.Fatalf("clear summary = %q", cleared.Message.Summary)
+	}
+	if notifications.messages != 4 {
+		t.Fatalf("published messages = %d, want 4", notifications.messages)
+	}
+	recipients := make(map[string]struct{}, len(notifications.lastMessageUserIDs))
+	for _, userID := range notifications.lastMessageUserIDs {
+		recipients[userID] = struct{}{}
+	}
+	if _, ownerNotified := recipients[owner.ID]; !ownerNotified {
+		t.Fatalf("owner missing from realtime recipients: %v", notifications.lastMessageUserIDs)
+	}
+	if _, memberNotified := recipients[member.ID]; !memberNotified {
+		t.Fatalf("member missing from realtime recipients: %v", notifications.lastMessageUserIDs)
+	}
+}
+
+func TestServiceRejectsInvalidGroupAnnouncementUpdates(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 30, 7, 0, 0, 0, time.UTC)
+	owner := insertConversationTestUser(t, db, "owner-invalid-announcement@example.com", "Owner", now)
+	member := insertConversationTestUser(t, db, "member-invalid-announcement@example.com", "Member", now)
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
+	group, err := service.CreateGroup(context.Background(), CreateGroupCommand{
+		Actor: actorFromTestUser(owner), Name: "Announcement permissions", MemberIDs: []string{member.ID},
+	})
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+
+	if _, err := service.UpdateAnnouncement(context.Background(), UpdateAnnouncementCommand{
+		Actor: actorFromTestUser(member), Announcement: "无权修改", ConversationID: group.Conversation.ID,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("member error = %v", err)
+	}
+	if _, err := service.UpdateAnnouncement(context.Background(), UpdateAnnouncementCommand{
+		Actor: actorFromTestUser(owner), Announcement: strings.Repeat("群", 201), ConversationID: group.Conversation.ID,
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "群公告不能超过 200 个字符" {
+		t.Fatalf("length error = %v", err)
+	}
+	if accepted, err := service.UpdateAnnouncement(context.Background(), UpdateAnnouncementCommand{
+		Actor: actorFromTestUser(owner), Announcement: strings.Repeat("群", 200), ConversationID: group.Conversation.ID,
+	}); err != nil || accepted.Conversation.Announcement != strings.Repeat("群", 200) {
+		t.Fatalf("200 unicode chars = %#v, err = %v", accepted, err)
+	}
+
+	direct, err := service.CreateDirect(context.Background(), CreateDirectCommand{Actor: actorFromTestUser(owner), UserID: member.ID})
+	if err != nil {
+		t.Fatalf("create direct: %v", err)
+	}
+	if _, err := service.UpdateAnnouncement(context.Background(), UpdateAnnouncementCommand{
+		Actor: actorFromTestUser(owner), Announcement: "私聊公告", ConversationID: direct.Conversation.ID,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("direct error = %v", err)
+	}
+}
 
 func TestServiceGroupLifecyclePublishesAfterCommit(t *testing.T) {
 	db := openConversationTestDB(t)
@@ -33,6 +159,9 @@ func TestServiceGroupLifecyclePublishesAfterCommit(t *testing.T) {
 	}
 	if created.Conversation.Name != "Release group" || created.Message == nil || created.Message.Seq != 1 {
 		t.Fatalf("created = %#v", created)
+	}
+	if sender := created.Conversation.LastMessageSender; sender == nil || sender.Type != store.MessageSenderTypeSystem || sender.Name != "系统" {
+		t.Fatalf("created last message sender = %#v", sender)
 	}
 	if notifications.messages != 1 || !notifications.sawCommittedMessage {
 		t.Fatalf("notifications = %#v", notifications)
@@ -244,16 +373,99 @@ func TestServiceUsesInvitingUsersAppAccessForGroupMembers(t *testing.T) {
 	}
 }
 
+func TestServiceOnlyGroupManagersCanInviteApplications(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 24, 1, 0, 0, 0, time.UTC)
+	owner := insertConversationTestUser(t, db, "invite-owner@example.com", "Owner", now)
+	admin := insertConversationTestUser(t, db, "invite-admin@example.com", "Admin", now)
+	member := insertConversationTestUser(t, db, "invite-member@example.com", "Member", now)
+	userInvitee := insertConversationTestUser(t, db, "user-invitee@example.com", "User Invitee", now)
+	mixedInvitee := insertConversationTestUser(t, db, "mixed-invitee@example.com", "Mixed Invitee", now)
+	ownerID := owner.ID
+	ownerApp := store.App{
+		ID: uuid.NewString(), Name: "Owner App", CreatorUserID: &ownerID, Enabled: true,
+		Visibility: store.AppVisibilityPublic, ConnectionSecret: "owner-app", CreatedAt: now, UpdatedAt: now,
+	}
+	adminApp := store.App{
+		ID: uuid.NewString(), Name: "Admin App", CreatorUserID: &ownerID, Enabled: true,
+		Visibility: store.AppVisibilityPublic, ConnectionSecret: "admin-app", CreatedAt: now, UpdatedAt: now,
+	}
+	deniedApp := store.App{
+		ID: uuid.NewString(), Name: "Denied App", CreatorUserID: &ownerID, Enabled: true,
+		Visibility: store.AppVisibilityPublic, ConnectionSecret: "denied-app", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&[]store.App{ownerApp, adminApp, deniedApp}).Error; err != nil {
+		t.Fatalf("create apps: %v", err)
+	}
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
+	created, err := service.CreateGroup(context.Background(), CreateGroupCommand{
+		Actor: actorFromTestUser(owner), Name: "Application invite permissions",
+		MemberIDs: []string{admin.ID, member.ID},
+	})
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := db.Model(&store.ConversationMember{}).
+		Where("conversation_id = ? AND member_type = ? AND member_id = ?", created.Conversation.ID, store.ConversationMemberTypeUser, admin.ID).
+		Update("role", store.ConversationMemberRoleAdmin).Error; err != nil {
+		t.Fatalf("promote admin: %v", err)
+	}
+
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(member), ConversationID: created.Conversation.ID, MemberIDs: []string{userInvitee.ID},
+	}); err != nil {
+		t.Fatalf("ordinary member adds user: %v", err)
+	}
+
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(member), ConversationID: created.Conversation.ID,
+		MemberIDs: []string{mixedInvitee.ID}, AppIDs: []string{deniedApp.ID},
+	}); ErrorCodeOf(err) != CodeForbidden || ErrorMessage(err) != "只有群主或管理员可以邀请应用加入群聊" {
+		t.Fatalf("ordinary member mixed invite error = %v", err)
+	}
+	for _, candidate := range []struct {
+		memberType string
+		memberID   string
+	}{{store.ConversationMemberTypeUser, mixedInvitee.ID}, {store.ConversationMemberTypeApp, deniedApp.ID}} {
+		var count int64
+		if err := db.Model(&store.ConversationMember{}).
+			Where("conversation_id = ? AND member_type = ? AND member_id = ?", created.Conversation.ID, candidate.memberType, candidate.memberID).
+			Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("denied candidate %s/%s count = %d, err = %v", candidate.memberType, candidate.memberID, count, err)
+		}
+	}
+	var afterDenied store.Conversation
+	if err := db.First(&afterDenied, "id = ?", created.Conversation.ID).Error; err != nil {
+		t.Fatalf("load group after denied invite: %v", err)
+	}
+	if afterDenied.LastMessageSeq != 2 {
+		t.Fatalf("last message seq after denied invite = %d, want 2", afterDenied.LastMessageSeq)
+	}
+
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(owner), ConversationID: created.Conversation.ID, AppIDs: []string{ownerApp.ID},
+	}); err != nil {
+		t.Fatalf("owner adds app: %v", err)
+	}
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(admin), ConversationID: created.Conversation.ID, AppIDs: []string{adminApp.ID},
+	}); err != nil {
+		t.Fatalf("admin adds app: %v", err)
+	}
+}
+
 type conversationNotificationRecorder struct {
 	db                  *gorm.DB
+	lastMessageUserIDs  []string
 	messages            int
 	removals            int
 	sawCommittedMessage bool
 	sawCommittedRemoval bool
 }
 
-func (r *conversationNotificationRecorder) PublishConversationMessage(_ context.Context, _ []string, message Message) {
+func (r *conversationNotificationRecorder) PublishConversationMessage(_ context.Context, userIDs []string, message Message) {
 	r.messages++
+	r.lastMessageUserIDs = append([]string(nil), userIDs...)
 	var count int64
 	if err := r.db.Model(&store.Message{}).Where("id = ?", message.ID).Count(&count).Error; err == nil && count == 1 {
 		r.sawCommittedMessage = true
@@ -268,7 +480,13 @@ func (r *conversationNotificationRecorder) PublishConversationRemoved(_ context.
 	}
 }
 
+func (*conversationNotificationRecorder) PublishConversationRestored(context.Context, []string, string) {
+}
+
 func (*conversationNotificationRecorder) PublishConversationPinUpdated(context.Context, []string, ConversationPinEvent) {
+}
+
+func (*conversationNotificationRecorder) PublishConversationMuteUpdated(context.Context, []string, ConversationMuteEvent) {
 }
 
 func (*conversationNotificationRecorder) PublishTopicEvent(context.Context, []string, TopicEvent) {}
@@ -281,7 +499,7 @@ func openConversationTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&store.User{}, &store.App{}, &store.AppUserGrant{}, &store.Conversation{}, &store.ConversationMember{},
-		&store.ConversationPin{},
+		&store.ConversationUserPreference{},
 		&store.DirectConversation{}, &store.AppConversation{}, &store.Message{}, &store.MessageRegistry{},
 		&store.ConversationTopic{}, &store.ConversationTopicParticipant{},
 		&store.AppEventOutbox{},

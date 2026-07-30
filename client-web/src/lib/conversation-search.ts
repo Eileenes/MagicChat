@@ -40,7 +40,6 @@ export type ConversationSearchResult = {
   matchQuality: ConversationSearchMatchQuality | null
 }
 
-const emptySearchResultLimit = 8
 const searchResultLimit = 20
 
 export function createConversationSearchIndex(
@@ -79,11 +78,7 @@ export function searchConversationIndex(
   const query = normalizePinyinSearchQuery(keyword)
 
   if (!query) {
-    return index.slice(0, emptySearchResultLimit).map(({ conversation }) => ({
-      conversation,
-      matchedField: null,
-      matchQuality: null,
-    }))
+    return []
   }
 
   return index

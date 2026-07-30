@@ -39,6 +39,7 @@ const (
 	messageTypeLink              = "link"
 	messageTypeMarkdown          = "markdown"
 	messageTypeCard              = "card"
+	messageTypeChoice            = "choice"
 	messageTypeText              = "text"
 )
 
@@ -86,11 +87,13 @@ type messageResponse struct {
 	ConversationID   string                      `json:"conversation_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	CreatedAt        time.Time                   `json:"created_at" format:"date-time"`
 	DelegatedBy      *messageDelegatedByResponse `json:"delegated_by,omitempty"`
+	EditableBody     json.RawMessage             `json:"editable_body,omitempty" swaggertype:"object"`
 	ID               string                      `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyToMessageID string                      `json:"reply_to_message_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyTo          *messageReplyToResponse     `json:"reply_to,omitempty"`
 	ReactionVersion  int64                       `json:"reaction_version"`
 	Reactions        []messageReactionResponse   `json:"reactions"`
+	Choice           *realtimeMessageChoiceState `json:"choice,omitempty"`
 	RevokedAt        *time.Time                  `json:"revoked_at,omitempty" format:"date-time"`
 	RevokedByUserID  string                      `json:"revoked_by_user_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	Sender           messageSenderResponse       `json:"sender"`
@@ -125,6 +128,11 @@ type messageTopicReplyResponse struct {
 
 type createMessageResponse struct {
 	Message messageResponse `json:"message"`
+}
+
+type messageCreatedEventPayload struct {
+	Message           messageResponse `json:"message"`
+	NotificationMuted bool            `json:"notification_muted"`
 }
 
 type listMessagesPageResponse struct {
@@ -328,6 +336,19 @@ func messageMentionContent(body json.RawMessage) (string, bool) {
 			return "", false
 		}
 		return value.Content, true
+	case messageTypeImage:
+		var value imageMessageBody
+		if json.Unmarshal(body, &value) != nil {
+			return "", false
+		}
+		contentType := strings.TrimSpace(value.CaptionType)
+		if contentType == "" {
+			contentType = messageTypeText
+		}
+		if contentType != messageTypeText && contentType != messageTypeMarkdown {
+			return "", false
+		}
+		return value.Caption, true
 	default:
 		return "", false
 	}
@@ -566,9 +587,9 @@ func normalizeLinkMessageTitle(title string) string {
 	return strings.Join(strings.Fields(stdhtml.UnescapeString(title)), " ")
 }
 
-func realtimeMessageCreatedEvent(message messageResponse) realtime.Envelope {
-	return realtime.NewEvent(realtime.EventMessageCreated, createMessageResponse{
-		Message: message,
+func realtimeMessageCreatedEvent(message messageResponse, notificationMuted bool) realtime.Envelope {
+	return realtime.NewEvent(realtime.EventMessageCreated, messageCreatedEventPayload{
+		Message: message, NotificationMuted: notificationMuted,
 	})
 }
 
@@ -593,6 +614,24 @@ func realtimeMessageReactionsUpdatedEvent(event messageapp.ReactionEvent) realti
 	})
 }
 
+func realtimeMessageChoiceUpdatedEvent(event messageapp.ChoiceUpdatedEvent) realtime.Envelope {
+	return realtime.NewEvent(realtime.EventMessageChoiceUpdated, messageChoiceUpdatedEventPayload{
+		ActorOptionIDs: append([]string{}, event.ActorOptionIDs...),
+		ActorUserID:    event.ActorUserID, Choice: newRealtimeMessageChoiceState(event.Choice),
+		ConversationID: event.ConversationID, MessageID: event.MessageID,
+	})
+}
+
+func newRealtimeMessageChoiceState(value messageapp.ChoiceState) realtimeMessageChoiceState {
+	options := make([]realtimeMessageChoiceOptionState, len(value.Options))
+	for index, option := range value.Options {
+		options[index] = realtimeMessageChoiceOptionState{ID: option.ID, ResponseCount: option.ResponseCount}
+	}
+	return realtimeMessageChoiceState{
+		MyOptionIDs: []string{}, Options: options, ResponseCount: value.ResponseCount,
+	}
+}
+
 type messageReactionCountResponse struct {
 	Count int64                         `json:"count"`
 	Text  string                        `json:"text"`
@@ -609,6 +648,25 @@ type messageReactionsUpdatedEventPayload struct {
 	Reactions       []messageReactionCountResponse `json:"reactions"`
 }
 
+type messageChoiceUpdatedEventPayload struct {
+	ActorOptionIDs []string                   `json:"actor_option_ids"`
+	ActorUserID    string                     `json:"actor_user_id"`
+	Choice         realtimeMessageChoiceState `json:"choice"`
+	ConversationID string                     `json:"conversation_id"`
+	MessageID      string                     `json:"message_id"`
+}
+
+type realtimeMessageChoiceState struct {
+	MyOptionIDs   []string                           `json:"my_option_ids"`
+	Options       []realtimeMessageChoiceOptionState `json:"options"`
+	ResponseCount int64                              `json:"response_count"`
+}
+
+type realtimeMessageChoiceOptionState struct {
+	ID            string `json:"id"`
+	ResponseCount int64  `json:"response_count"`
+}
+
 type conversationRemovedEventPayload struct {
 	ConversationID string `json:"conversation_id"`
 }
@@ -616,6 +674,11 @@ type conversationRemovedEventPayload struct {
 type conversationMemberMentionedEventPayload struct {
 	ConversationID   string `json:"conversation_id"`
 	LastMentionedSeq int64  `json:"last_mentioned_seq"`
+}
+
+type conversationMemberChoiceReceivedEventPayload struct {
+	ConversationID string `json:"conversation_id"`
+	LastChoiceSeq  int64  `json:"last_choice_seq"`
 }
 
 func realtimeConversationRemovedEvent(conversationID string) realtime.Envelope {
@@ -628,5 +691,12 @@ func realtimeConversationMemberMentionedEvent(conversationID string, lastMention
 	return realtime.NewEvent(realtime.EventMemberMentioned, conversationMemberMentionedEventPayload{
 		ConversationID:   conversationID,
 		LastMentionedSeq: lastMentionedSeq,
+	})
+}
+
+func realtimeConversationMemberChoiceReceivedEvent(conversationID string, lastChoiceSeq int64) realtime.Envelope {
+	return realtime.NewEvent(realtime.EventMemberChoiceReceived, conversationMemberChoiceReceivedEventPayload{
+		ConversationID: conversationID,
+		LastChoiceSeq:  lastChoiceSeq,
 	})
 }

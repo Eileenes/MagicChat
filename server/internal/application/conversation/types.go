@@ -8,16 +8,17 @@ import (
 )
 
 const (
-	MaxGroupMembers      = 500
-	MaxGroupNameLength   = 120
-	MaxGroupProjects     = 100
-	MaxClientListItems   = 100
-	MaxAvatarUploadBytes = 1 * 1024 * 1024
-	AvatarContentType    = "image/webp"
-	MemberTypeUser       = "user"
-	MemberTypeApp        = "app"
-	VisibilityPublic     = "public"
-	VisibilityPrivate    = "private"
+	MaxGroupMembers            = 500
+	MaxGroupNameLength         = 120
+	MaxGroupAnnouncementLength = 200
+	MaxGroupProjects           = 100
+	MaxClientListItems         = 100
+	MaxAvatarUploadBytes       = 1 * 1024 * 1024
+	AvatarContentType          = "image/webp"
+	MemberTypeUser             = "user"
+	MemberTypeApp              = "app"
+	VisibilityPublic           = "public"
+	VisibilityPrivate          = "private"
 )
 
 type Identity struct {
@@ -42,6 +43,13 @@ type MessageIdentity struct {
 	ID     string
 	Name   string
 	Type   string
+}
+
+type LastMessageSender struct {
+	ID       string
+	Name     string
+	Nickname string
+	Type     string
 }
 
 type Message struct {
@@ -78,6 +86,7 @@ type Project struct {
 }
 
 type Item struct {
+	Announcement       string
 	Avatar             string
 	CanSend            bool
 	CreatedAt          time.Time
@@ -85,18 +94,28 @@ type Item struct {
 	LastMessageAt      *time.Time
 	LastMessageID      *string
 	LastMessageSeq     int64
+	LastMessageSender  *LastMessageSender
 	LastMessageSummary string
 	LastMentionedSeq   int64
+	LastChoiceSeq      int64
 	LastReadSeq        int64
 	MemberCount        int
 	Members            []Member
 	Name               string
+	NotificationMuted  bool
 	Pinned             bool
 	Projects           *[]Project
 	Type               string
 	Topic              *TopicMetadata
 	UnreadCount        int64
 	Visibility         string
+}
+
+type SearchSummary struct {
+	Avatar string
+	ID     string
+	Name   string
+	Type   string
 }
 
 type TopicMetadata struct {
@@ -195,7 +214,13 @@ type ConversationPinEvent struct {
 	Pinned         bool
 }
 
+type ConversationMuteEvent struct {
+	ConversationID string
+	Muted          bool
+}
+
 type Group struct {
+	Announcement       string
 	Avatar             string
 	CreatedAt          time.Time
 	CreatedByUserID    string
@@ -203,8 +228,10 @@ type Group struct {
 	LastMessageAt      *time.Time
 	LastMessageID      *string
 	LastMessageSeq     int64
+	LastMessageSender  *LastMessageSender
 	LastMessageSummary string
 	LastMentionedSeq   int64
+	LastChoiceSeq      int64
 	LastReadSeq        int64
 	MemberCount        int
 	Members            []Member
@@ -217,7 +244,8 @@ type Group struct {
 }
 
 type ListCommand struct {
-	AccountID string
+	AccountID             string
+	IncludeConversationID string
 }
 
 type ListResult struct {
@@ -269,6 +297,31 @@ type SetPinResult struct {
 	Pinned         bool
 }
 
+type SetMuteCommand struct {
+	AccountID      string
+	ConversationID string
+	Muted          bool
+}
+
+type SetMuteResult struct {
+	ConversationID string
+	Muted          bool
+}
+
+type DismissCommand struct {
+	AccountID      string
+	ConversationID string
+}
+
+type DismissResult struct {
+	ConversationID string
+}
+
+type RestoreCommand struct {
+	AccountID      string
+	ConversationID string
+}
+
 type CreateDirectCommand struct {
 	Actor  Actor
 	UserID string
@@ -315,6 +368,12 @@ type UpdateNameCommand struct {
 	Actor          Actor
 	ConversationID string
 	Name           string
+}
+
+type UpdateAnnouncementCommand struct {
+	Actor          Actor
+	Announcement   string
+	ConversationID string
 }
 
 type UpdateVisibilityCommand struct {
@@ -377,6 +436,9 @@ type UpdateAvatarResult struct {
 type ClientService interface {
 	List(context.Context, ListCommand) (ListResult, error)
 	MarkRead(context.Context, ReadCommand) (ReadResult, error)
+	Dismiss(context.Context, DismissCommand) (DismissResult, error)
+	Restore(context.Context, RestoreCommand) (Item, error)
+	SetMuted(context.Context, SetMuteCommand) (SetMuteResult, error)
 	SetPinned(context.Context, SetPinCommand) (SetPinResult, error)
 	CreateDirect(context.Context, CreateDirectCommand) (OpenResult, error)
 	CreateApp(context.Context, CreateAppCommand) (OpenResult, error)
@@ -384,6 +446,7 @@ type ClientService interface {
 	AddMembers(context.Context, AddMembersCommand) (ConversationMutationResult, error)
 	RemoveMember(context.Context, RemoveMemberCommand) (ConversationMutationResult, error)
 	UpdateName(context.Context, UpdateNameCommand) (ConversationMutationResult, error)
+	UpdateAnnouncement(context.Context, UpdateAnnouncementCommand) (ConversationMutationResult, error)
 	UpdateVisibility(context.Context, UpdateVisibilityCommand) (ConversationMutationResult, error)
 	Join(context.Context, JoinCommand) (ConversationMutationResult, error)
 	Leave(context.Context, LeaveCommand) (LeaveResult, error)

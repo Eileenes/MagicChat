@@ -14,6 +14,8 @@ const (
 	MaxSetReactionRequestBody = 1024
 	MaxReactionSnapshotIDs    = 100
 	MaxReactionSnapshotBody   = 8 * 1024
+	MaxChoiceResponseBody     = 8 * 1024
+	MaxChoiceSnapshotBody     = 8 * 1024
 	ForwardModeMerged         = "merged"
 	ForwardModeSeparate       = "separate"
 	MaxForwardCount           = 50
@@ -37,10 +39,12 @@ type Reply struct {
 
 type Message struct {
 	Body             json.RawMessage
+	Choice           *ChoiceState
 	ClientMessageID  string
 	ConversationID   string
 	CreatedAt        time.Time
 	DelegatedBy      *Identity
+	EditableBody     json.RawMessage
 	ID               string
 	ReplyTo          *Reply
 	ReplyToMessageID string
@@ -52,6 +56,64 @@ type Message struct {
 	Seq              int64
 	Summary          string
 	Topic            *MessageTopic
+}
+
+type ChoiceOptionState struct {
+	ID            string
+	ResponseCount int64
+}
+
+type ChoiceState struct {
+	MyOptionIDs   []string
+	Options       []ChoiceOptionState
+	ResponseCount int64
+}
+
+type SubmitChoiceResponseCommand struct {
+	AccountID      string
+	ConversationID string
+	MessageID      string
+	OptionIDs      []string
+}
+
+type SubmitChoiceResponseResult struct {
+	Choice         ChoiceState
+	ConversationID string
+	Created        bool
+	MessageID      string
+	Response       ChoiceResponse
+}
+
+type ChoiceResponse struct {
+	CreatedAt time.Time
+	ID        string
+	OptionIDs []string
+	UserID    string
+}
+
+type ChoiceUpdatedEvent struct {
+	ActorOptionIDs []string
+	ActorUserID    string
+	Choice         ChoiceState
+	ConversationID string
+	MessageID      string
+}
+
+type ListChoiceSnapshotsCommand struct {
+	AccountID      string
+	ConversationID string
+	MessageIDs     []string
+}
+
+type ChoiceSnapshot struct {
+	Choice    *ChoiceState
+	MessageID string
+	Status    string
+}
+
+type ListChoiceSnapshotsResult struct {
+	ConversationID string
+	Snapshots      []ChoiceSnapshot
 }
 
 type ReactionSummary struct {
@@ -237,11 +299,12 @@ type ForwardTargetError struct {
 type FinalizeBody func(context.Context, json.RawMessage) (json.RawMessage, string, error)
 
 type CreateAsAppCommand struct {
-	AppID           string
-	Body            json.RawMessage
-	ClientMessageID string
-	ConversationID  string
-	Finalize        FinalizeBody
+	AppID            string
+	Body             json.RawMessage
+	ClientMessageID  string
+	ConversationID   string
+	Finalize         FinalizeBody
+	ReplyToMessageID string
 }
 
 type CreateDelegatedCommand struct {
@@ -354,6 +417,8 @@ type ClientService interface {
 	SetReaction(context.Context, SetReactionCommand) (SetReactionResult, error)
 	ListReactionSnapshots(context.Context, ListReactionSnapshotsCommand) (ListReactionSnapshotsResult, error)
 	ListReactionUsers(context.Context, ListReactionUsersCommand) (ListReactionUsersResult, error)
+	SubmitChoiceResponse(context.Context, SubmitChoiceResponseCommand) (SubmitChoiceResponseResult, error)
+	ListChoiceSnapshots(context.Context, ListChoiceSnapshotsCommand) (ListChoiceSnapshotsResult, error)
 }
 
 type AppService interface {

@@ -76,7 +76,7 @@ func TestConversationPinsAreUserScopedAndSortedByActivity(t *testing.T) {
 	}
 }
 
-func TestConversationPinRequiresTopicParticipationAndAllowsArchivedTopics(t *testing.T) {
+func TestConversationPinRejectsTopics(t *testing.T) {
 	db := openConversationTestDB(t)
 	now := time.Date(2026, 7, 21, 3, 0, 0, 0, time.UTC)
 	owner := insertConversationTestUser(t, db, "pin-topic-owner@example.com", "Owner", now)
@@ -99,14 +99,21 @@ func TestConversationPinRequiresTopicParticipationAndAllowsArchivedTopics(t *tes
 	}); err != nil {
 		t.Fatalf("participate topic: %v", err)
 	}
-	assertPinResult(t, service, member.ID, created.Conversation.ID, true)
-	assertPinResult(t, service, member.ID, created.Conversation.ID, false)
+	if _, err := service.SetPinned(context.Background(), SetPinCommand{
+		AccountID: member.ID, ConversationID: created.Conversation.ID, Pinned: true,
+	}); err == nil || ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "话题不支持置顶" {
+		t.Fatalf("topic pin error = %v, want invalid_request", err)
+	}
 	if _, err := service.ArchiveTopic(context.Background(), ArchiveTopicCommand{
 		Actor: actorFromTestUser(owner), TopicConversationID: created.Conversation.ID,
 	}); err != nil {
 		t.Fatalf("archive topic: %v", err)
 	}
-	assertPinResult(t, service, member.ID, created.Conversation.ID, true)
+	if _, err := service.SetPinned(context.Background(), SetPinCommand{
+		AccountID: member.ID, ConversationID: created.Conversation.ID, Pinned: true,
+	}); err == nil || ErrorCodeOf(err) != CodeInvalidRequest {
+		t.Fatalf("archived topic pin error = %v, want invalid_request", err)
+	}
 }
 
 func insertPinTestConversation(t *testing.T, db *gorm.DB, owner, member store.User, name string, activity, now time.Time) store.Conversation {
@@ -157,8 +164,12 @@ type pinNotificationRecorder struct {
 }
 
 func (*pinNotificationRecorder) PublishConversationMessage(context.Context, []string, Message) {}
-func (*pinNotificationRecorder) PublishConversationRemoved(context.Context, []string, string)  {}
-func (*pinNotificationRecorder) PublishTopicEvent(context.Context, []string, TopicEvent)       {}
+func (*pinNotificationRecorder) PublishConversationMuteUpdated(context.Context, []string, ConversationMuteEvent) {
+}
+func (*pinNotificationRecorder) PublishConversationRemoved(context.Context, []string, string) {}
+func (*pinNotificationRecorder) PublishConversationRestored(context.Context, []string, string) {
+}
+func (*pinNotificationRecorder) PublishTopicEvent(context.Context, []string, TopicEvent) {}
 func (r *pinNotificationRecorder) PublishConversationPinUpdated(_ context.Context, _ []string, event ConversationPinEvent) {
 	r.events = append(r.events, event)
 }

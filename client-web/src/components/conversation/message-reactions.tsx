@@ -3,6 +3,7 @@ import { LoaderCircle } from "lucide-react"
 import { toast } from "sonner"
 
 import { MessageReactionPicker } from "@/components/conversation/message-reaction-picker"
+import { messageReactionChipToneClassName } from "@/components/conversation/message-reaction-styles"
 import { UserProfilePopover } from "@/components/user-profile-popover"
 import {
   listConversationMessageReactionUsers,
@@ -61,10 +62,7 @@ export function MessageReactionChips({
 
   return (
     <div
-      className={cn(
-        "flex max-w-full flex-wrap items-center gap-1",
-        align === "end" ? "justify-end" : "justify-start"
-      )}
+      className="flex max-w-full flex-wrap items-center justify-start gap-1"
       data-slot="message-reactions"
     >
       {reactions.map((reaction) => {
@@ -74,9 +72,7 @@ export function MessageReactionChips({
           <div
             className={cn(
               "inline-flex min-h-6 max-w-full items-center gap-1 rounded-md px-2 text-xs whitespace-nowrap transition-colors",
-              align === "end"
-                ? "bg-background/60 text-foreground dark:bg-teal-900"
-                : "bg-zinc-200 text-foreground dark:bg-zinc-700",
+              messageReactionChipToneClassName[align],
               !canToggle && "opacity-80"
             )}
             data-slot="message-reaction-chip"

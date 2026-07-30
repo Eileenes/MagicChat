@@ -12,9 +12,8 @@ const projectTaskApiMocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/project-task-data-api", async (importOriginal) => {
-  const original = await importOriginal<
-    typeof import("@/lib/project-task-data-api")
-  >()
+  const original =
+    await importOriginal<typeof import("@/lib/project-task-data-api")>()
   return {
     ...original,
     getClientProjectTask: projectTaskApiMocks.getClientProjectTask,
@@ -28,9 +27,11 @@ vi.mock("@/lib/project-members", () => ({
 
 vi.mock("@/components/projects/project-task-details-dialog", () => ({
   ProjectTaskDetailsDialog: ({
+    onDeleted,
     onOpenChange,
     task,
   }: {
+    onDeleted?: (taskId: string) => void
     onOpenChange: (open: boolean) => void
     task: ProjectTask
   }) => (
@@ -39,15 +40,40 @@ vi.mock("@/components/projects/project-task-details-dialog", () => ({
       <button onClick={() => onOpenChange(false)} type="button">
         关闭详情
       </button>
+      <button
+        onClick={() => {
+          onOpenChange(false)
+          onDeleted?.(task.id)
+        }}
+        type="button"
+      >
+        删除任务
+      </button>
     </div>
   ),
 }))
 
-describe("ProjectTasksTab task details route state", () => {
+describe("ProjectTasksTab", () => {
   beforeEach(() => {
     window.localStorage.clear()
     projectTaskApiMocks.getClientProjectTask.mockReset()
     projectTaskApiMocks.listClientProjectTasks.mockReset()
+  })
+
+  it("loads todo and in-progress tasks by default", async () => {
+    projectTaskApiMocks.listClientProjectTasks.mockResolvedValue({
+      nextCursor: null,
+      tasks: [],
+    })
+
+    renderProjectTasksTab("/projects/project-1")
+
+    await waitFor(() => {
+      expect(projectTaskApiMocks.listClientProjectTasks).toHaveBeenCalledWith(
+        "project-1",
+        expect.objectContaining({ statuses: ["todo", "in_progress"] })
+      )
+    })
   })
 
   it("opens a linked task after refresh and removes only taskId when closed", async () => {
@@ -61,9 +87,9 @@ describe("ProjectTasksTab task details route state", () => {
 
     renderProjectTasksTab("/projects/project-1?source=link&taskId=task-1")
 
-    expect(await screen.findByRole("dialog", { name: "任务详情" })).toHaveTextContent(
-      task.title
-    )
+    expect(
+      await screen.findByRole("dialog", { name: "任务详情" })
+    ).toHaveTextContent(task.title)
     expect(projectTaskApiMocks.getClientProjectTask).toHaveBeenCalledWith(
       "project-1",
       "task-1"
@@ -76,7 +102,9 @@ describe("ProjectTasksTab task details route state", () => {
         "?source=link"
       )
     })
-    expect(screen.queryByRole("dialog", { name: "任务详情" })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("dialog", { name: "任务详情" })
+    ).not.toBeInTheDocument()
   })
 
   it("adds taskId to the URL when a task is opened", async () => {
@@ -95,10 +123,31 @@ describe("ProjectTasksTab task details route state", () => {
       })
     )
 
-    expect(await screen.findByRole("dialog", { name: "任务详情" })).toBeInTheDocument()
+    expect(
+      await screen.findByRole("dialog", { name: "任务详情" })
+    ).toBeInTheDocument()
     expect(screen.getByTestId("location-search")).toHaveTextContent(
       "source=list&taskId=task-1"
     )
+  })
+
+  it("does not reload a task while its deleted details are closing", async () => {
+    const user = userEvent.setup()
+    const task = createProjectTask()
+    projectTaskApiMocks.listClientProjectTasks
+      .mockResolvedValueOnce({ nextCursor: null, tasks: [task] })
+      .mockResolvedValue({ nextCursor: null, tasks: [] })
+
+    renderProjectTasksTab("/projects/project-1?source=list&taskId=task-1")
+
+    await user.click(await screen.findByRole("button", { name: "删除任务" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location-search")).toHaveTextContent(
+        "?source=list"
+      )
+    })
+    expect(projectTaskApiMocks.getClientProjectTask).not.toHaveBeenCalled()
   })
 })
 

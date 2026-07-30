@@ -12,6 +12,7 @@ import (
 	conversationapp "app/internal/application/conversation"
 	fileapp "app/internal/application/file"
 	messageapp "app/internal/application/message"
+	messagecontentapp "app/internal/application/messagecontent"
 	"app/internal/appregistry"
 	"app/internal/realtime"
 	"app/internal/store"
@@ -69,6 +70,7 @@ type appSendMessageRequest struct {
 	ActorUserID                 string               `json:"actor_user_id"`
 	AuthorizationConversationID string               `json:"authorization_conversation_id"`
 	Message                     json.RawMessage      `json:"message"`
+	ReplyToMessageID            string               `json:"reply_to_message_id"`
 	Target                      appSendMessageTarget `json:"target"`
 	TriggerMessageID            string               `json:"trigger_message_id"`
 	UserID                      string               `json:"user_id"`
@@ -269,12 +271,14 @@ type appAckEventsResponse struct {
 }
 
 type appConversationHistoryMessagePayload struct {
-	Body      json.RawMessage         `json:"body,omitempty"`
-	CreatedAt time.Time               `json:"created_at"`
-	ID        string                  `json:"id"`
-	Sender    appMessageSenderPayload `json:"sender"`
-	Seq       int64                   `json:"seq"`
-	Summary   string                  `json:"summary"`
+	Body             json.RawMessage                       `json:"body,omitempty"`
+	CreatedAt        time.Time                             `json:"created_at"`
+	ID               string                                `json:"id"`
+	ReplyTo          *appConversationHistoryMessagePayload `json:"reply_to,omitempty"`
+	ReplyToMessageID string                                `json:"reply_to_message_id,omitempty"`
+	Sender           appMessageSenderPayload               `json:"sender"`
+	Seq              int64                                 `json:"seq"`
+	Summary          string                                `json:"summary"`
 }
 
 type appConversationSummaryPayload struct {
@@ -677,7 +681,7 @@ func (s *Server) handleAppSendMessage(appID string, request realtime.Envelope) (
 
 	createdMessage, err := s.messages.CreateAsApp(context.Background(), messageapp.CreateAsAppCommand{
 		AppID: appID, Body: prepared.Body, ClientMessageID: request.ID, ConversationID: conversation.ID,
-		Finalize: messageapp.FinalizeBody(prepared.Finalize),
+		Finalize: messageapp.FinalizeBody(prepared.Finalize), ReplyToMessageID: req.ReplyToMessageID,
 	})
 	if err != nil {
 		return appSendMessageResponse{}, mapMessageApplicationErrorForApp(err)
@@ -692,10 +696,11 @@ func (s *Server) handleAppSendMessage(appID string, request realtime.Envelope) (
 		},
 		Created: createdMessage.Created,
 		Message: appMessagePayload{
-			Body:      message.Body,
-			CreatedAt: message.CreatedAt,
-			ID:        message.ID,
-			Seq:       message.Seq,
+			Body:             message.Body,
+			CreatedAt:        message.CreatedAt,
+			ID:               message.ID,
+			ReplyToMessageID: message.ReplyToMessageID,
+			Seq:              message.Seq,
 			Sender: &appMessageSenderPayload{
 				ID:   appID,
 				Type: store.MessageSenderTypeApp,
@@ -706,12 +711,26 @@ func (s *Server) handleAppSendMessage(appID string, request realtime.Envelope) (
 }
 
 func (s *Server) isTopicCreatedFromAuthorizationTrigger(conversationID, authorizationConversationID, triggerMessageID string) (bool, error) {
-	var count int64
-	err := s.db.Model(&store.ConversationTopic{}).Where(
-		"conversation_id = ? AND parent_conversation_id = ? AND source_message_id = ?",
-		strings.TrimSpace(conversationID), strings.TrimSpace(authorizationConversationID), strings.TrimSpace(triggerMessageID),
-	).Count(&count).Error
-	return count > 0, err
+	var topic store.ConversationTopic
+	query := s.db.Where(
+		"conversation_id = ? AND parent_conversation_id = ?",
+		strings.TrimSpace(conversationID), strings.TrimSpace(authorizationConversationID),
+	).Limit(1).Find(&topic)
+	if query.Error != nil || query.RowsAffected == 0 {
+		return false, query.Error
+	}
+	triggerMessageID = strings.TrimSpace(triggerMessageID)
+	if topic.SourceMessageID == triggerMessageID {
+		return true, nil
+	}
+	source, err := s.loadAppContextMessage(context.Background(), topic.ParentConversationID, topic.SourceMessageID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return source.ReplyToMessageID != nil && *source.ReplyToMessageID == triggerMessageID, nil
 }
 
 func (s *Server) handleAppSendMessageAsUser(appID string, request realtime.Envelope) (appSendMessageResponse, error) {
@@ -1200,19 +1219,95 @@ func (s *Server) loadAppConversationTopicContext(conversationID string) (*appCon
 	if topic.SourceSenderID != nil {
 		senderID = *topic.SourceSenderID
 	}
+	source := appConversationHistoryMessagePayload{
+		Body: topic.SourceMessageBody, CreatedAt: topic.SourceMessageCreatedAt,
+		ID: topic.SourceMessageID, Seq: topic.SourceMessageSeq,
+		Sender: appMessageSenderPayload{
+			ID: senderID, Name: topic.SourceSenderName, Type: topic.SourceSenderType,
+		},
+		Summary: topic.SourceMessageSummary,
+	}
+	storedSource, err := s.loadAppContextMessage(context.Background(), topic.ParentConversationID, topic.SourceMessageID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if err == nil && storedSource.ReplyToMessageID != nil {
+		quoted, quotedErr := s.loadAppContextMessage(context.Background(), topic.ParentConversationID, *storedSource.ReplyToMessageID)
+		if quotedErr != nil && !errors.Is(quotedErr, gorm.ErrRecordNotFound) {
+			return nil, quotedErr
+		}
+		if quotedErr == nil && quoted.DeletedAt == nil {
+			quotedPayload, payloadErr := s.newAppContextHistoryMessage(quoted)
+			if payloadErr != nil {
+				return nil, payloadErr
+			}
+			source.ReplyToMessageID = quoted.ID
+			source.ReplyTo = &quotedPayload
+		}
+	}
 	return &appConversationTopicContext{
 		ParentConversation: appMessageConversationPayload{
 			ID: parent.ID, Name: parent.Name, Type: parent.Kind,
 		},
 		ParentConversationID: topic.ParentConversationID,
-		SourceMessage: appConversationHistoryMessagePayload{
-			Body: topic.SourceMessageBody, CreatedAt: topic.SourceMessageCreatedAt,
-			ID: topic.SourceMessageID, Seq: topic.SourceMessageSeq,
-			Sender: appMessageSenderPayload{
-				ID: senderID, Name: topic.SourceSenderName, Type: topic.SourceSenderType,
-			},
-			Summary: topic.SourceMessageSummary,
-		},
+		SourceMessage:        source,
+	}, nil
+}
+
+func (s *Server) loadAppContextMessage(ctx context.Context, conversationID, messageID string) (store.Message, error) {
+	db := s.db.WithContext(ctx)
+	if store.MessagePartitioningEnabled(db) {
+		var registry store.MessageRegistry
+		if err := db.First(&registry, "id = ? AND conversation_id = ?", messageID, conversationID).Error; err != nil {
+			return store.Message{}, err
+		}
+		return store.LoadMessageByRegistry(ctx, db, registry)
+	}
+	var message store.Message
+	err := db.First(&message, "id = ? AND conversation_id = ?", messageID, conversationID).Error
+	return message, err
+}
+
+func (s *Server) newAppContextHistoryMessage(message store.Message) (appConversationHistoryMessagePayload, error) {
+	sender := appMessageSenderPayload{Type: message.SenderType}
+	if message.SenderID != nil {
+		sender.ID = *message.SenderID
+		switch message.SenderType {
+		case store.MessageSenderTypeUser:
+			var user store.User
+			query := s.db.Select("id", "email", "name", "nickname").Where("id = ?", *message.SenderID).Limit(1).Find(&user)
+			if query.Error != nil {
+				return appConversationHistoryMessagePayload{}, query.Error
+			}
+			if query.RowsAffected == 0 {
+				sender.Name = "用户"
+			} else {
+				sender.Email = user.Email
+				sender.Name = user.Name
+				sender.Nickname = user.Nickname
+			}
+		case store.MessageSenderTypeApp:
+			var app store.App
+			query := s.db.Unscoped().Select("id", "name").Where("id = ?", *message.SenderID).Limit(1).Find(&app)
+			if query.Error != nil {
+				return appConversationHistoryMessagePayload{}, query.Error
+			}
+			if query.RowsAffected == 0 {
+				sender.Name = "应用"
+			} else {
+				sender.Name = app.Name
+			}
+		}
+	}
+	body := message.Body
+	summary := message.Summary
+	if message.RevokedAt != nil {
+		body = nil
+		summary = "该消息已被撤回"
+	}
+	return appConversationHistoryMessagePayload{
+		Body: body, CreatedAt: message.CreatedAt, ID: message.ID,
+		Sender: sender, Seq: message.Seq, Summary: summary,
 	}, nil
 }
 
@@ -1825,10 +1920,12 @@ type preparedAppSendMessageBody struct {
 }
 
 type appSendMessageBodyEnvelope struct {
-	Content string `json:"content"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	URL     string `json:"url"`
+	Caption     string `json:"caption"`
+	CaptionType string `json:"caption_type"`
+	Content     string `json:"content"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	URL         string `json:"url"`
 }
 
 func (s *Server) prepareAppSendMessageBody(ctx context.Context, raw json.RawMessage) (preparedAppSendMessageBody, error) {
@@ -1858,7 +1955,7 @@ func (s *Server) prepareAppSendMessageBodyForUser(ctx context.Context, userID st
 			Body:     body,
 			Finalize: contents.Finalize,
 		}, nil
-	case messageTypeText, messageTypeMarkdown, messageTypeLink, messageTypeCard, messageTypeChart:
+	case messageTypeText, messageTypeMarkdown, messageTypeLink, messageTypeCard, messageTypeChart, messageTypeChoice:
 		body, err := s.normalizeAppSendMessageBody(ctx, raw)
 		if err != nil {
 			return preparedAppSendMessageBody{}, err
@@ -1868,13 +1965,21 @@ func (s *Server) prepareAppSendMessageBodyForUser(ctx context.Context, userID st
 			Finalize: s.messageContentService().Finalize,
 		}, nil
 	case messageTypeImage:
-		body, err := s.createRemoteImageMessageBody(ctx, firstNonEmptyAppString(envelope.Content, envelope.URL))
+		caption, err := messagecontentapp.NormalizeImageCaption(envelope.Caption, envelope.CaptionType)
+		if err != nil {
+			return preparedAppSendMessageBody{}, newAppRequestFailure("invalid_request", err.Error())
+		}
+		summary, err := messagecontentapp.ImageMessageSummary(caption)
+		if err != nil {
+			return preparedAppSendMessageBody{}, newAppRequestFailure("invalid_request", "图片说明格式错误")
+		}
+		body, err := s.createRemoteImageMessageBody(ctx, firstNonEmptyAppString(envelope.Content, envelope.URL), caption)
 		if err != nil {
 			return preparedAppSendMessageBody{}, err
 		}
 		return preparedAppSendMessageBody{
 			Body:     body,
-			Finalize: staticMessageBodyFinalizer(imageMessageSummary()),
+			Finalize: staticMessageBodyFinalizer(summary),
 		}, nil
 	case messageTypeFile:
 		body, name, err := s.prepareAppSendFileMessageBody(ctx, envelope)
@@ -2081,6 +2186,9 @@ func mapAppGroupConversationError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return newAppRequestFailure("not_found", "会话不存在")
 	}
+	if errors.Is(err, conversationapp.ErrAppInviteForbidden) {
+		return newAppRequestFailure("forbidden", "只有群主或管理员可以邀请应用加入群聊")
+	}
 	if errors.Is(err, errConversationAccessDenied) || errors.Is(err, conversationapp.ErrAccessDenied) {
 		return newAppRequestFailure("forbidden", "无权访问会话")
 	}
@@ -2127,6 +2235,12 @@ func legacyConversationItem(value conversationapp.Item) conversationListItemResp
 		MemberCount: value.MemberCount, Members: members, Name: value.Name, Type: value.Type,
 		UnreadCount: value.UnreadCount, Visibility: value.Visibility,
 	}
+	if value.LastMessageSender != nil {
+		result.LastMessageSender = &conversationLastMessageSenderResponse{
+			ID: value.LastMessageSender.ID, Name: value.LastMessageSender.Name,
+			Nickname: value.LastMessageSender.Nickname, Type: value.LastMessageSender.Type,
+		}
+	}
 	if value.Projects != nil {
 		projects := make([]conversationProjectResponse, 0, len(*value.Projects))
 		for _, project := range *value.Projects {
@@ -2147,7 +2261,7 @@ func legacyGroupConversation(value conversationapp.Group) groupConversationRespo
 			Nickname: member.Nickname, Phone: member.Phone, Role: member.Role, Type: member.Type,
 		})
 	}
-	return groupConversationResponse{
+	result := groupConversationResponse{
 		Avatar: value.Avatar, CreatedAt: value.CreatedAt, CreatedByUserID: value.CreatedByUserID,
 		ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID,
 		LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary,
@@ -2156,6 +2270,13 @@ func legacyGroupConversation(value conversationapp.Group) groupConversationRespo
 		PostingPolicy: value.PostingPolicy, Status: value.Status, Type: value.Type,
 		UnreadCount: value.UnreadCount, Visibility: value.Visibility,
 	}
+	if value.LastMessageSender != nil {
+		result.LastMessageSender = &conversationLastMessageSenderResponse{
+			ID: value.LastMessageSender.ID, Name: value.LastMessageSender.Name,
+			Nickname: value.LastMessageSender.Nickname, Type: value.LastMessageSender.Type,
+		}
+	}
+	return result
 }
 
 func newAppRequestFailure(code string, message string) appRequestFailure {

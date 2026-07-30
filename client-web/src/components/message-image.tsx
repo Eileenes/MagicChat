@@ -5,6 +5,7 @@ import {
   readTemporaryFileURLs,
   type ClientImageMessageBody,
 } from "@/lib/client-data-api"
+import { getImageThumbnailFrame } from "@/lib/image-message-thumbnail"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -33,11 +34,6 @@ type PreviewSize = {
 const minPreviewZoom = 0.5
 const maxPreviewZoom = 2
 const previewZoomStep = 0.1
-const legacyImageThumbnailSize = 256
-const minImageThumbnailWidth = 160
-const maxImageThumbnailWidth = 320
-const maxImageThumbnailHeight = 360
-
 export function MessageImage({ image }: MessageImageProps) {
   const previewDragRef = React.useRef<{
     offset: PreviewOffset
@@ -193,6 +189,9 @@ export function MessageImage({ image }: MessageImageProps) {
 
   const currentSource = source?.fileId === image.fileId ? source : null
   const thumbnailFrame = getImageThumbnailFrame(image)
+  const thumbnailRoundedClassName = image.caption
+    ? "rounded-t-sm"
+    : "rounded-sm"
 
   function resetPreviewState() {
     setPreviewZoom(1)
@@ -237,7 +236,9 @@ export function MessageImage({ image }: MessageImageProps) {
     })
   }
 
-  function handlePreviewImageLoad(event: React.SyntheticEvent<HTMLImageElement>) {
+  function handlePreviewImageLoad(
+    event: React.SyntheticEvent<HTMLImageElement>
+  ) {
     const previewImage = event.currentTarget
     setPreviewImageSize({
       height: previewImage.naturalHeight,
@@ -250,9 +251,7 @@ export function MessageImage({ image }: MessageImageProps) {
     setOpen(true)
   }
 
-  function handlePreviewPointerDown(
-    event: React.PointerEvent<HTMLDivElement>
-  ) {
+  function handlePreviewPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (
       event.button !== 0 ||
       !previewAreaSize ||
@@ -273,9 +272,7 @@ export function MessageImage({ image }: MessageImageProps) {
     setPreviewDragging(true)
   }
 
-  function handlePreviewPointerMove(
-    event: React.PointerEvent<HTMLDivElement>
-  ) {
+  function handlePreviewPointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const previewDrag = previewDragRef.current
 
     if (
@@ -319,31 +316,44 @@ export function MessageImage({ image }: MessageImageProps) {
       <MessageImageStatus
         frame={thumbnailFrame}
         icon={<ImageOff className="size-5" />}
+        roundedClassName={thumbnailRoundedClassName}
         text="图片加载失败"
       />
     )
   }
 
   if (!currentSource?.url) {
-    return <MessageImageLoadingStatus frame={thumbnailFrame} />
+    return (
+      <MessageImageLoadingStatus
+        frame={thumbnailFrame}
+        roundedClassName={thumbnailRoundedClassName}
+      />
+    )
   }
 
   return (
     <>
       <button
         aria-label="预览图片"
-        className="relative block max-w-[65vw] overflow-hidden rounded-sm bg-muted text-left"
+        className={cn(
+          "relative block max-w-[65vw] overflow-hidden bg-muted text-left",
+          thumbnailRoundedClassName
+        )}
         onClick={handlePreviewClick}
         style={thumbnailFrame}
         type="button"
       >
         {!currentSource.loaded && (
-          <MessageImageLoadingStatus frame={thumbnailFrame} />
+          <MessageImageLoadingStatus
+            frame={thumbnailFrame}
+            roundedClassName={thumbnailRoundedClassName}
+          />
         )}
         <img
           alt="图片消息"
           className={cn(
-            "absolute inset-0 h-full w-full rounded-sm object-cover",
+            "absolute inset-0 h-full w-full object-cover",
+            thumbnailRoundedClassName,
             currentSource.loaded ? "opacity-100" : "opacity-0"
           )}
           onError={handleImageError}
@@ -404,13 +414,24 @@ export function MessageImage({ image }: MessageImageProps) {
   )
 }
 
-function MessageImageLoadingStatus({ frame }: { frame: PreviewSize }) {
+function MessageImageLoadingStatus({
+  frame,
+  roundedClassName,
+}: {
+  frame: PreviewSize
+  roundedClassName: string
+}) {
   return (
     <div
-      className="relative flex max-w-[65vw] items-center justify-center overflow-hidden rounded-sm"
+      className={cn(
+        "relative flex max-w-[65vw] items-center justify-center overflow-hidden",
+        roundedClassName
+      )}
       style={frame}
     >
-      <Skeleton className="absolute inset-0 h-full w-full rounded-sm" />
+      <Skeleton
+        className={cn("absolute inset-0 h-full w-full", roundedClassName)}
+      />
       <div className="relative flex flex-col items-center gap-2 text-muted-foreground">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/60">
           <Spinner className="size-5" />
@@ -427,15 +448,20 @@ function MessageImageLoadingStatus({ frame }: { frame: PreviewSize }) {
 function MessageImageStatus({
   frame,
   icon,
+  roundedClassName,
   text,
 }: {
   frame: PreviewSize
   icon: React.ReactNode
+  roundedClassName: string
   text: string
 }) {
   return (
     <div
-      className="flex max-w-[65vw] flex-col items-center justify-center gap-2 overflow-hidden rounded-sm bg-muted text-muted-foreground"
+      className={cn(
+        "flex max-w-[65vw] flex-col items-center justify-center gap-2 overflow-hidden bg-muted text-muted-foreground",
+        roundedClassName
+      )}
       style={frame}
     >
       <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/60">
@@ -444,29 +470,6 @@ function MessageImageStatus({
       <span className="min-w-0 text-xs font-medium">{text}</span>
     </div>
   )
-}
-
-function getImageThumbnailFrame(image: ClientImageMessageBody): PreviewSize {
-  if (!image.width || !image.height) {
-    return {
-      height: legacyImageThumbnailSize,
-      width: legacyImageThumbnailSize,
-    }
-  }
-
-  const width = Math.min(
-    maxImageThumbnailWidth,
-    Math.max(minImageThumbnailWidth, image.width)
-  )
-  const height = Math.min(
-    maxImageThumbnailHeight,
-    (image.height * width) / image.width
-  )
-
-  return {
-    height: Math.max(1, Math.round(height)),
-    width: Math.max(1, Math.round(width)),
-  }
 }
 
 function getContainedPreviewSize(

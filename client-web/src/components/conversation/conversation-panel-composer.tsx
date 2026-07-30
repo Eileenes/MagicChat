@@ -2,24 +2,24 @@ import * as React from "react"
 import {
   ImageIcon,
   LoaderCircle,
+  Mic,
   Paperclip,
   Send,
   Smile,
-  UsersRound,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
-import { getAvatarInitial } from "@/lib/avatar"
-import { cn } from "@/lib/utils"
 import {
   type ClientConversation,
   type ClientMessage,
+  type ImageCaptionType,
 } from "@/lib/client-data-api"
 import {
   compressImageForMessage,
   imageMessageMaxBytes,
   isAcceptedImageMessageFile,
 } from "@/lib/image-message"
+import { getFileMessageUploadError } from "@/lib/file-message"
 import type { ConversationDraftMention } from "@/lib/conversation-drafts"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
 import {
@@ -29,6 +29,7 @@ import {
   getClipboardImageFile,
   getMentionTrigger,
   getVisibleMentionIndex,
+  insertDraftMention,
   insertTextareaText,
   isImeCompositionKeyEvent,
   syncDraftMentions,
@@ -37,11 +38,9 @@ import {
 } from "@/lib/conversation-composer"
 import { type ExpressionItem } from "@/components/expression-picker"
 import { ExpressionPickerPopover } from "@/components/expression-picker-popover"
-import { SendVoiceMessageDialog } from "@/components/conversation/send-voice-message-dialog"
-import { SmartVoiceInputDialog } from "@/components/conversation/smart-voice-input-dialog"
-import { ConversationVoiceMenu } from "@/components/conversation/conversation-voice-menu"
+import { VoiceInputDialog } from "@/components/conversation/voice-input-dialog"
+import { MentionCandidateMenu } from "@/components/conversation/mention-candidate-menu"
 import { MarkdownIcon } from "@/components/icons/markdown-icon"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { SendFileMessageDialog } from "@/components/send-file-message-dialog"
 import { SendImageMessageDialog } from "@/components/send-image-message-dialog"
@@ -52,8 +51,6 @@ import type {
   ConversationPanelMentionTarget,
   ConversationPanelReplyTarget,
 } from "@/lib/conversation-panel-types"
-
-const maxFileMessageUploadBytes = 20 * 1024 * 1024
 
 export const ConversationPanelComposer = React.forwardRef<
   ConversationPanelComposerHandle,
@@ -66,7 +63,11 @@ export const ConversationPanelComposer = React.forwardRef<
     onDraftBlur?: () => void
     onDraftChange: (draft: string, mentions: ConversationDraftMention[]) => void
     onSendFile: (file: File) => Promise<ClientMessage | null>
-    onSendImage: (image: File) => Promise<ClientMessage | null>
+    onSendImage: (
+      image: File,
+      caption: string,
+      captionType: ImageCaptionType
+    ) => Promise<ClientMessage | null>
     onSendVoice: (voice: VoiceMessageRecording) => Promise<ClientMessage | null>
     onRichTextModeChange: (richTextMode: boolean) => void
     onSendMessage: (content?: string) => void
@@ -94,7 +95,6 @@ export const ConversationPanelComposer = React.forwardRef<
 ) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
   const imageInputRef = React.useRef<HTMLInputElement | null>(null)
-  const mentionOptionRefs = React.useRef<Array<HTMLButtonElement | null>>([])
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
   const previousSendingRef = React.useRef(sending)
   const shouldFocusAfterSendingRef = React.useRef(false)
@@ -102,13 +102,13 @@ export const ConversationPanelComposer = React.forwardRef<
   const [fileDialogOpen, setFileDialogOpen] = React.useState(false)
   const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
   const [imagePreparing, setImagePreparing] = React.useState(false)
-  const [sendVoiceDialogOpen, setSendVoiceDialogOpen] = React.useState(false)
-  const [smartVoiceDialogOpen, setSmartVoiceDialogOpen] = React.useState(false)
+  const [voiceInputDialogOpen, setVoiceInputDialogOpen] = React.useState(false)
   const [mentionTrigger, setMentionTrigger] =
     React.useState<MentionTrigger | null>(null)
   const [selectedMentionIndex, setSelectedMentionIndex] = React.useState(0)
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const [selectedImage, setSelectedImage] = React.useState<File | null>(null)
+  const [imageCaption, setImageCaption] = React.useState("")
   const mentionCandidates = React.useMemo(
     () =>
       conversation.type === "group" ||
@@ -133,6 +133,17 @@ export const ConversationPanelComposer = React.forwardRef<
         textareaRef.current?.focus()
       })
     },
+    focusAtEnd() {
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current
+        if (!textarea) {
+          return
+        }
+
+        textarea.focus()
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+      })
+    },
     insertMention(target) {
       insertMentionTarget(target)
     },
@@ -153,21 +164,6 @@ export const ConversationPanelComposer = React.forwardRef<
   React.useEffect(() => {
     textareaRef.current?.focus()
   }, [])
-
-  React.useEffect(() => {
-    if (!mentionTrigger) {
-      return
-    }
-
-    const visibleSelectedIndex = getVisibleMentionIndex(
-      selectedMentionIndex,
-      filteredMentionCandidates.length
-    )
-
-    mentionOptionRefs.current[visibleSelectedIndex]?.scrollIntoView({
-      block: "nearest",
-    })
-  }, [filteredMentionCandidates.length, mentionTrigger, selectedMentionIndex])
 
   React.useEffect(() => {
     if (!replyTarget) {
@@ -330,31 +326,15 @@ export const ConversationPanelComposer = React.forwardRef<
       range?.start ?? textarea?.selectionStart ?? draft.length
     const selectionEnd = range?.end ?? textarea?.selectionEnd ?? selectionStart
 
-    const mentionText = `@${target.label}`
-    const insertedText = `${mentionText} `
-    const nextDraft =
-      draft.slice(0, selectionStart) + insertedText + draft.slice(selectionEnd)
-    const nextMention: ConversationDraftMention = {
-      end: selectionStart + mentionText.length,
-      id: target.id,
-      label: target.label,
-      start: selectionStart,
-      targetType: target.targetType,
-    }
+    const inserted = insertDraftMention(
+      draft,
+      draftMentions,
+      target,
+      selectionStart,
+      selectionEnd
+    )
 
-    const nextMentions = [
-      ...syncDraftMentions(
-        draftMentions.filter(
-          (mention) =>
-            mention.end <= selectionStart || mention.start >= selectionEnd
-        ),
-        draft,
-        nextDraft
-      ),
-      nextMention,
-    ].sort((mentionA, mentionB) => mentionA.start - mentionB.start)
-
-    onDraftChange(nextDraft, nextMentions)
+    onDraftChange(inserted.value, inserted.mentions)
     setMentionTrigger(null)
     setSelectedMentionIndex(0)
 
@@ -363,9 +343,8 @@ export const ConversationPanelComposer = React.forwardRef<
         return
       }
 
-      const nextCursor = selectionStart + insertedText.length
       textareaRef.current.focus()
-      textareaRef.current.setSelectionRange(nextCursor, nextCursor)
+      textareaRef.current.setSelectionRange(inserted.cursor, inserted.cursor)
     })
   }
 
@@ -397,21 +376,6 @@ export const ConversationPanelComposer = React.forwardRef<
     imageInputRef.current?.click()
   }
 
-  function handleSmartVoiceInputAccept(transcript: string) {
-    const textarea = textareaRef.current
-
-    if (textarea) {
-      insertTextareaText(textarea, transcript, handleTextareaValueChange)
-    } else {
-      handleTextareaValueChange(draft + transcript)
-    }
-
-    setSmartVoiceDialogOpen(false)
-    window.requestAnimationFrame(() => {
-      textareaRef.current?.focus()
-    })
-  }
-
   function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null
 
@@ -425,10 +389,12 @@ export const ConversationPanelComposer = React.forwardRef<
   }
 
   function prepareSelectedFile(file: File) {
-    if (file.size > maxFileMessageUploadBytes) {
+    const validationError = getFileMessageUploadError(file)
+
+    if (validationError) {
       setSelectedFile(null)
       setFileDialogOpen(false)
-      toast.error("文件大于 20MB，无法上传")
+      toast.error(validationError)
       return
     }
 
@@ -468,6 +434,7 @@ export const ConversationPanelComposer = React.forwardRef<
 
     setImagePreparing(true)
     setSelectedImage(null)
+    setImageCaption("")
     setImageDialogOpen(false)
 
     try {
@@ -521,19 +488,21 @@ export const ConversationPanelComposer = React.forwardRef<
 
     if (!open) {
       setSelectedImage(null)
+      setImageCaption("")
     }
   }
 
-  async function handleImageSendConfirm() {
+  async function handleImageSendConfirm(caption: string) {
     if (!selectedImage || sending) {
       return
     }
 
-    const message = await onSendImage(selectedImage)
+    const message = await onSendImage(selectedImage, caption, "text")
 
     if (message) {
       setImageDialogOpen(false)
       setSelectedImage(null)
+      setImageCaption("")
     }
   }
 
@@ -605,64 +574,11 @@ export const ConversationPanelComposer = React.forwardRef<
             className="max-h-48 min-h-24 resize-none"
           />
           {mentionTrigger && filteredMentionCandidates.length > 0 && (
-            <div className="absolute bottom-full left-0 z-20 mb-2 max-h-72 w-72 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-              {filteredMentionCandidates.map((candidate, index) => (
-                <Button
-                  key={`${candidate.targetType}-${candidate.id}`}
-                  ref={(element) => {
-                    mentionOptionRefs.current[index] = element
-                  }}
-                  className={cn(
-                    "h-auto w-full justify-start gap-2 px-2 py-1.5 text-left",
-                    index ===
-                      getVisibleMentionIndex(
-                        selectedMentionIndex,
-                        filteredMentionCandidates.length
-                      ) && "bg-accent"
-                  )}
-                  onMouseDown={(event) => {
-                    event.preventDefault()
-                    insertMentionCandidate(candidate)
-                  }}
-                  type="button"
-                  variant="ghost"
-                >
-                  <Avatar
-                    className={cn(
-                      "size-6 rounded-sm after:rounded-sm",
-                      candidate.targetType === "all"
-                        ? "bg-teal-500"
-                        : "bg-muted"
-                    )}
-                    data-size="sm"
-                  >
-                    {candidate.targetType === "all" ? (
-                      <AvatarFallback className="rounded-sm bg-transparent text-background">
-                        <UsersRound className="size-3.5" />
-                      </AvatarFallback>
-                    ) : candidate.avatar ? (
-                      <AvatarImage
-                        alt={candidate.label}
-                        className="rounded-sm"
-                        src={candidate.avatar}
-                      />
-                    ) : (
-                      <AvatarFallback className="rounded-sm text-xs">
-                        {getAvatarInitial(candidate.label)}
-                      </AvatarFallback>
-                    )}
-                  </Avatar>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm">
-                      {candidate.label}
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {candidate.description}
-                    </span>
-                  </span>
-                </Button>
-              ))}
-            </div>
+            <MentionCandidateMenu
+              candidates={filteredMentionCandidates}
+              onSelect={insertMentionCandidate}
+              selectedIndex={selectedMentionIndex}
+            />
           )}
         </div>
         <div
@@ -727,11 +643,17 @@ export const ConversationPanelComposer = React.forwardRef<
             </Toggle>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <ConversationVoiceMenu
+            <Button
+              aria-label="语音输入"
               disabled={sending}
-              onSendVoiceMessage={() => setSendVoiceDialogOpen(true)}
-              onSmartVoiceInput={() => setSmartVoiceDialogOpen(true)}
-            />
+              onClick={() => setVoiceInputDialogOpen(true)}
+              size="icon"
+              title="语音输入"
+              type="button"
+              variant="outline"
+            >
+              <Mic className="size-4" />
+            </Button>
             <Button
               type="button"
               aria-label="发送消息"
@@ -757,24 +679,22 @@ export const ConversationPanelComposer = React.forwardRef<
         sending={sending}
       />
       <SendImageMessageDialog
+        caption={imageCaption}
         conversationName={conversation.name}
         image={selectedImage}
-        onConfirm={() => void handleImageSendConfirm()}
+        mentionCandidates={mentionCandidates}
+        onCaptionChange={setImageCaption}
+        onConfirm={(caption) => void handleImageSendConfirm(caption)}
         onOpenChange={handleImageDialogOpenChange}
         open={imageDialogOpen}
         sending={sending}
       />
-      <SendVoiceMessageDialog
-        conversationName={conversation.name}
-        onConfirm={onSendVoice}
-        onOpenChange={setSendVoiceDialogOpen}
-        open={sendVoiceDialogOpen}
+      <VoiceInputDialog
+        onSendText={onSendMessage}
+        onSendVoice={onSendVoice}
+        onOpenChange={setVoiceInputDialogOpen}
+        open={voiceInputDialogOpen}
         sending={sending}
-      />
-      <SmartVoiceInputDialog
-        onAccept={handleSmartVoiceInputAccept}
-        onOpenChange={setSmartVoiceDialogOpen}
-        open={smartVoiceDialogOpen}
       />
     </footer>
   )

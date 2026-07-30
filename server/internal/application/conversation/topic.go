@@ -170,11 +170,15 @@ func (s *Service) createTopic(db *gorm.DB, creator topicCreator, parentID, sourc
 		if source.Seq < member.HistoryVisibleFromSeq || source.RevokedAt != nil || source.DeletedAt != nil || source.SenderID == nil || (source.SenderType != store.MessageSenderTypeUser && source.SenderType != store.MessageSenderTypeApp) {
 			return ErrTopicInvalidSource
 		}
+		origin, err := loadAppTopicOriginMessage(tx, parent.ID, source, creator)
+		if err != nil {
+			return err
+		}
 		senderName, err := loadTopicSourceSenderName(tx, source)
 		if err != nil {
 			return err
 		}
-		topicName, err := resolveTopicName(tx, source.Summary)
+		topicName, err := resolveTopicName(tx, origin.Summary)
 		if err != nil {
 			return err
 		}
@@ -182,7 +186,7 @@ func (s *Service) createTopic(db *gorm.DB, creator topicCreator, parentID, sourc
 		if err != nil {
 			return err
 		}
-		legacyCreatorUserID, err := resolveTopicLegacyCreatorUserID(creator, source, members)
+		legacyCreatorUserID, err := resolveTopicLegacyCreatorUserID(creator, origin, members)
 		if err != nil {
 			return err
 		}
@@ -213,7 +217,7 @@ func (s *Service) createTopic(db *gorm.DB, creator topicCreator, parentID, sourc
 		if err := tx.Create(&topic).Error; err != nil {
 			return err
 		}
-		participants := initialTopicParticipants(parent, source, members, creator, conversation.ID, now)
+		participants := initialTopicParticipants(parent, origin, members, creator, conversation.ID, now)
 		for _, current := range members {
 			if !conversationaccess.SourceMessageVisibleToMember(source.Seq, current) {
 				continue
@@ -304,7 +308,11 @@ func (s *Service) GetTopic(ctx context.Context, cmd GetTopicCommand) (TopicDetai
 	isUserCreator := access.Topic.CreatedByAppID == nil && access.Topic.CreatedByUserID == actor.ID
 	isSourceSender := access.Topic.SourceSenderType == store.MessageSenderTypeUser &&
 		access.Topic.SourceSenderID != nil && *access.Topic.SourceSenderID == actor.ID
-	canArchive := isUserCreator || isSourceSender || member.Role == store.ConversationMemberRoleOwner || member.Role == store.ConversationMemberRoleAdmin
+	isSourceRequester, err := topicSourceRepliesToUser(db, *access.Topic, actor.ID)
+	if err != nil {
+		return TopicDetail{}, internalError(err)
+	}
+	canArchive := isUserCreator || isSourceSender || isSourceRequester || member.Role == store.ConversationMemberRoleOwner || member.Role == store.ConversationMemberRoleAdmin
 	var revokedAt *time.Time
 	if store.MessagePartitioningEnabled(s.db) {
 		var registry store.MessageRegistry
@@ -442,7 +450,11 @@ func (s *Service) ArchiveTopic(ctx context.Context, cmd ArchiveTopicCommand) (It
 		isSourceSender := access.Topic.SourceSenderType == store.MessageSenderTypeUser &&
 			access.Topic.SourceSenderID != nil && *access.Topic.SourceSenderID == actor.ID
 		isUserCreator := access.Topic.CreatedByAppID == nil && access.Topic.CreatedByUserID == actor.ID
-		if !isUserCreator && !isSourceSender && member.Role != store.ConversationMemberRoleOwner && member.Role != store.ConversationMemberRoleAdmin {
+		isSourceRequester, err := topicSourceRepliesToUser(tx, *access.Topic, actor.ID)
+		if err != nil {
+			return err
+		}
+		if !isUserCreator && !isSourceSender && !isSourceRequester && member.Role != store.ConversationMemberRoleOwner && member.Role != store.ConversationMemberRoleAdmin {
 			return ErrAccessDenied
 		}
 		if access.IsArchived() {
@@ -729,6 +741,51 @@ func loadTopicSourceMessage(db *gorm.DB, conversationID, messageID string) (stor
 	var message store.Message
 	err := db.First(&message, "id = ? AND conversation_id = ?", messageID, conversationID).Error
 	return message, err
+}
+
+func loadAppTopicOriginMessage(db *gorm.DB, conversationID string, source store.Message, creator topicCreator) (store.Message, error) {
+	if creator.memberType != store.ConversationMemberTypeApp ||
+		source.SenderType != store.MessageSenderTypeApp ||
+		source.SenderID == nil || *source.SenderID != creator.id ||
+		source.ReplyToMessageID == nil {
+		return source, nil
+	}
+	origin, err := loadTopicSourceMessage(db, conversationID, *source.ReplyToMessageID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return source, nil
+	}
+	if err != nil {
+		return store.Message{}, err
+	}
+	if origin.RevokedAt != nil || origin.DeletedAt != nil || origin.SenderID == nil ||
+		(origin.SenderType != store.MessageSenderTypeUser && origin.SenderType != store.MessageSenderTypeApp) {
+		return source, nil
+	}
+	return origin, nil
+}
+
+func topicSourceRepliesToUser(db *gorm.DB, topic store.ConversationTopic, userID string) (bool, error) {
+	if topic.CreatedByAppID == nil || topic.SourceSenderType != store.MessageSenderTypeApp {
+		return false, nil
+	}
+	source, err := loadTopicSourceMessage(db, topic.ParentConversationID, topic.SourceMessageID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if source.SenderType != store.MessageSenderTypeApp || source.ReplyToMessageID == nil {
+		return false, nil
+	}
+	origin, err := loadTopicSourceMessage(db, topic.ParentConversationID, *source.ReplyToMessageID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return origin.SenderType == store.MessageSenderTypeUser && origin.SenderID != nil && *origin.SenderID == userID, nil
 }
 
 func loadTopicSourceSenderName(db *gorm.DB, message store.Message) (string, error) {

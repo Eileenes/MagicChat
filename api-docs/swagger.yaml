@@ -89,6 +89,33 @@ definitions:
       user:
         $ref: '#/definitions/admin.userResponse'
     type: object
+  admin.dashboardStatsResponse:
+    properties:
+      active_conversations_7_days:
+        example: 74
+        type: integer
+      active_conversations_24_hours:
+        example: 27
+        type: integer
+      messages_7_days:
+        example: 1842
+        type: integer
+      messages_24_hours:
+        example: 326
+        type: integer
+      online_users:
+        example: 18
+        type: integer
+      total_users:
+        example: 120
+        type: integer
+      visited_users_7_days:
+        example: 86
+        type: integer
+      visited_users_24_hours:
+        example: 32
+        type: integer
+    type: object
   admin.emailLoginSettingsResponse:
     properties:
       enabled:
@@ -409,6 +436,19 @@ definitions:
       message:
         $ref: '#/definitions/client.messageResponse'
     type: object
+  client.choiceResponseResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      option_ids:
+        items:
+          type: string
+        type: array
+      user_id:
+        type: string
+    type: object
   client.clientAppCredentialResponse:
     properties:
       app:
@@ -540,8 +580,23 @@ definitions:
         example: user
         type: string
     type: object
+  client.conversationLastMessageSenderResponse:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      nickname:
+        type: string
+      type:
+        example: user
+        type: string
+    type: object
   client.conversationListItemResponse:
     properties:
+      announcement:
+        example: 本周五 18:00 发布，请及时更新任务状态。
+        type: string
       avatar:
         example: /assets/avatars/builtin/07.webp
         type: string
@@ -554,6 +609,9 @@ definitions:
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      last_choice_seq:
+        example: 0
+        type: integer
       last_mentioned_seq:
         example: 0
         type: integer
@@ -563,6 +621,8 @@ definitions:
       last_message_id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      last_message_sender:
+        $ref: '#/definitions/client.conversationLastMessageSenderResponse'
       last_message_seq:
         example: 12
         type: integer
@@ -582,6 +642,9 @@ definitions:
       name:
         example: 张三
         type: string
+      notification_muted:
+        example: false
+        type: boolean
       pinned:
         example: false
         type: boolean
@@ -819,6 +882,12 @@ definitions:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
     type: object
+  client.dismissConversationResponse:
+    properties:
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+    type: object
   client.dissolveGroupConversationResponse:
     properties:
       conversation_id:
@@ -897,6 +966,9 @@ definitions:
     type: object
   client.groupConversationResponse:
     properties:
+      announcement:
+        example: 本周五 18:00 发布，请及时更新任务状态。
+        type: string
       avatar:
         example: /assets/avatars/groups/07.webp
         type: string
@@ -909,6 +981,9 @@ definitions:
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      last_choice_seq:
+        example: 0
+        type: integer
       last_mentioned_seq:
         example: 0
         type: integer
@@ -918,6 +993,8 @@ definitions:
       last_message_id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      last_message_sender:
+        $ref: '#/definitions/client.conversationLastMessageSenderResponse'
       last_message_seq:
         example: 12
         type: integer
@@ -982,6 +1059,22 @@ definitions:
         type: string
       message:
         $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.listChoiceSnapshotsRequest:
+    properties:
+      message_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  client.listChoiceSnapshotsResponse:
+    properties:
+      conversation_id:
+        type: string
+      snapshots:
+        items:
+          $ref: '#/definitions/client.messageChoiceSnapshotResponse'
+        type: array
     type: object
   client.listClientAppsResponse:
     properties:
@@ -1102,6 +1195,35 @@ definitions:
         example: 0
         type: integer
     type: object
+  client.messageChoiceOptionStateResponse:
+    properties:
+      id:
+        type: string
+      response_count:
+        type: integer
+    type: object
+  client.messageChoiceSnapshotResponse:
+    properties:
+      choice:
+        $ref: '#/definitions/client.messageChoiceStateResponse'
+      message_id:
+        type: string
+      status:
+        type: string
+    type: object
+  client.messageChoiceStateResponse:
+    properties:
+      my_option_ids:
+        items:
+          type: string
+        type: array
+      options:
+        items:
+          $ref: '#/definitions/client.messageChoiceOptionStateResponse'
+        type: array
+      response_count:
+        type: integer
+    type: object
   client.messageDelegatedByResponse:
     properties:
       id:
@@ -1175,6 +1297,8 @@ definitions:
     properties:
       body:
         type: object
+      choice:
+        $ref: '#/definitions/client.messageChoiceStateResponse'
       client_message_id:
         example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
         type: string
@@ -1186,6 +1310,8 @@ definitions:
         type: string
       delegated_by:
         $ref: '#/definitions/client.messageDelegatedByResponse'
+      editable_body:
+        type: object
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
@@ -1211,6 +1337,75 @@ definitions:
       seq:
         example: 13
         type: integer
+      topic:
+        $ref: '#/definitions/client.messageTopicResponse'
+    type: object
+  client.messageSearchConversationResponse:
+    properties:
+      avatar:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      type:
+        type: string
+    type: object
+  client.messageSearchItemResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/client.messageSearchConversationResponse'
+      message:
+        $ref: '#/definitions/client.messageSearchMessageResponse'
+    type: object
+  client.messageSearchMessageResponse:
+    properties:
+      body:
+        type: object
+      choice:
+        $ref: '#/definitions/client.messageChoiceStateResponse'
+      client_message_id:
+        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
+        type: string
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      delegated_by:
+        $ref: '#/definitions/client.messageDelegatedByResponse'
+      editable_body:
+        type: object
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      reaction_version:
+        type: integer
+      reactions:
+        items:
+          $ref: '#/definitions/client.messageReactionResponse'
+        type: array
+      reply_to:
+        $ref: '#/definitions/client.messageReplyToResponse'
+      reply_to_message_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      revoked_at:
+        format: date-time
+        type: string
+      revoked_by_user_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      sender:
+        $ref: '#/definitions/client.messageSenderResponse'
+      sender_name:
+        type: string
+      seq:
+        example: 13
+        type: integer
+      summary:
+        type: string
       topic:
         $ref: '#/definitions/client.messageTopicResponse'
     type: object
@@ -1421,12 +1616,33 @@ definitions:
         example: 5
         type: integer
     type: object
+  client.restoreConversationResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/client.conversationListItemResponse'
+    type: object
   client.revokeConversationMessageResponse:
     properties:
       message:
         $ref: '#/definitions/client.messageResponse'
       system_message:
         $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.searchMessagesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/client.messageSearchItemResponse'
+        type: array
+    type: object
+  client.setConversationMuteResponse:
+    properties:
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      muted:
+        example: true
+        type: boolean
     type: object
   client.setConversationPinResponse:
     properties:
@@ -1456,6 +1672,26 @@ definitions:
         items:
           $ref: '#/definitions/client.messageReactionResponse'
         type: array
+    type: object
+  client.submitChoiceResponseRequest:
+    properties:
+      option_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  client.submitChoiceResponseResponse:
+    properties:
+      choice:
+        $ref: '#/definitions/client.messageChoiceStateResponse'
+      conversation_id:
+        type: string
+      created:
+        type: boolean
+      message_id:
+        type: string
+      response:
+        $ref: '#/definitions/client.choiceResponseResponse'
     type: object
   client.successEnvelope:
     properties:
@@ -1595,6 +1831,14 @@ definitions:
         type: array
       visibility:
         type: string
+    type: object
+  client.updateGroupConversationAnnouncementRequest:
+    properties:
+      announcement:
+        example: 本周五 18:00 发布，请及时更新任务状态。
+        type: string
+    required:
+    - announcement
     type: object
   client.updateGroupConversationAvatarResponse:
     properties:
@@ -2045,6 +2289,32 @@ paths:
       summary: 管理员登录
       tags:
       - 管理员认证
+  /api/admin/dashboard:
+    get:
+      description: 返回用户访问、实时在线、消息和活跃会话的 24 小时及 7 天统计。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/admin.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.dashboardStatsResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+      summary: 获取管理仪表盘统计
+      tags:
+      - 管理仪表盘
   /api/admin/settings/email-login:
     get:
       description: 管理员读取邮箱验证码登录和完整 SMTP 设置，包括已保存的 SMTP 密码。
@@ -2559,13 +2829,17 @@ paths:
       - 管理员第三方登录
   /api/admin/users:
     get:
-      description: 管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；sort 仅支持 email、created_at、status；order
-        仅支持 asc、desc。
+      description: 管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；online 仅支持 true、false；sort
+        仅支持 email、created_at、status；order 仅支持 asc、desc。
       parameters:
       - description: 搜索关键字，匹配邮箱、名称、昵称或手机号
         in: query
         name: keyword
         type: string
+      - description: 在线状态，true 表示在线，false 表示不在线
+        in: query
+        name: online
+        type: boolean
       - description: 页码，从 1 开始
         in: query
         name: page
@@ -3446,7 +3720,12 @@ paths:
       - 客户端通讯录
   /api/client/conversations:
     get:
-      description: 普通用户获取自己参与的最近 100 个会话。茉莉固定第一，其他置顶会话和未置顶会话分别按照最后消息时间倒序排列。
+      description: 普通用户获取最近 100 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。
+      parameters:
+      - description: 即使话题超过活跃时间，也包含这个当前正在查看的会话 ID
+        in: query
+        name: include_conversation_id
+        type: string
       produces:
       - application/json
       responses:
@@ -3468,6 +3747,50 @@ paths:
           schema:
             $ref: '#/definitions/client.errorEnvelope'
       summary: 列出当前用户会话
+      tags:
+      - 客户端会话
+  /api/client/conversations/{conversation_id}:
+    delete:
+      description: 仅从当前用户的列表暂时移除会话，不删除消息或成员关系；出现新消息后会自动恢复。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.dismissConversationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 从当前用户的对话列表移除会话
       tags:
       - 客户端会话
   /api/client/conversations/{conversation_id}/avatar:
@@ -3529,7 +3852,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 普通用户向自己参与的 active 群聊添加成员，并生成一条系统邀请消息。
+      description: 普通用户向自己参与的 active 群聊添加用户成员；只有群主或管理员可以添加应用成员。成功后生成一条系统邀请消息。
       parameters:
       - description: 会话 ID
         in: path
@@ -3698,6 +4021,72 @@ paths:
       summary: 发送消息
       tags:
       - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/{message_id}/choice-response:
+    put:
+      consumes:
+      - application/json
+      description: 当前用户为一条可见且未撤回的 choice 消息提交一次单选或多选答案；重复提交相同答案按幂等请求处理。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 选择消息 ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      - description: 所选选项
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.submitChoiceResponseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.submitChoiceResponseResponse'
+              type: object
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.submitChoiceResponseResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 回复选择消息
+      tags:
+      - 客户端消息
   /api/client/conversations/{conversation_id}/messages/{message_id}/reactions:
     put:
       consumes:
@@ -3815,7 +4204,8 @@ paths:
       - 客户端消息
   /api/client/conversations/{conversation_id}/messages/{message_id}/revoke:
     post:
-      description: 普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息只返回元信息，并创建一条系统消息。
+      description: 普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息不返回 body；仅当用户撤回本人发送的 text/markdown
+        消息时返回 editable_body，并创建一条系统消息。
       parameters:
       - description: 会话 ID
         in: path
@@ -3864,6 +4254,38 @@ paths:
           schema:
             $ref: '#/definitions/client.errorEnvelope'
       summary: 撤回会话消息
+      tags:
+      - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/choices/query:
+    post:
+      consumes:
+      - application/json
+      description: 返回当前用户视角下至多 100 条 choice 消息的聚合结果和本人答案，用于客户端断线恢复。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 选择消息 ID 列表
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.listChoiceSnapshotsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.listChoiceSnapshotsResponse'
+              type: object
+      summary: 批量查询选择消息状态
       tags:
       - 客户端消息
   /api/client/conversations/{conversation_id}/messages/files:
@@ -3996,8 +4418,8 @@ paths:
     post:
       consumes:
       - multipart/form-data
-      description: 普通用户上传 WebP 或 PNG 图片并发送为会话图片消息。PNG 会在服务端转换为 WebP，图片写入 temporary
-        bucket，消息 body 只保存 file_id。
+      description: 普通用户上传 WebP 或 PNG 图片并发送为会话图片消息，可附带 text 或 markdown 图片说明。PNG 会在服务端转换为
+        WebP，图片写入 temporary bucket。
       parameters:
       - description: 会话 ID
         in: path
@@ -4008,6 +4430,18 @@ paths:
         in: formData
         name: client_message_id
         required: true
+        type: string
+      - description: 引用消息 ID
+        in: formData
+        name: reply_to_message_id
+        type: string
+      - description: 图片说明，最多 5000 个字符，支持与文本消息相同的 @ token
+        in: formData
+        name: caption
+        type: string
+      - description: 图片说明类型：text 或 markdown，默认 text
+        in: formData
+        name: caption_type
         type: string
       - description: WebP 或 PNG 图片
         in: formData
@@ -4144,6 +4578,10 @@ paths:
         name: duration_ms
         required: true
         type: integer
+      - description: 语音识别文字，最多 5000 个字符
+        in: formData
+        name: transcript
+        type: string
       - description: WebM/Opus 语音文件
         in: formData
         name: voice
@@ -4197,6 +4635,93 @@ paths:
       summary: 发送语音消息
       tags:
       - 客户端消息
+  /api/client/conversations/{conversation_id}/mute:
+    delete:
+      description: 为当前用户恢复一个有权访问会话的消息提醒。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.setConversationMuteResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 取消会话消息免打扰
+      tags:
+      - 客户端会话
+    put:
+      description: 为当前用户开启一个有权访问会话的消息免打扰。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.setConversationMuteResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 开启会话消息免打扰
+      tags:
+      - 客户端会话
   /api/client/conversations/{conversation_id}/pin:
     delete:
       description: 为当前用户取消置顶。内置应用茉莉不能取消置顶。
@@ -4440,6 +4965,50 @@ paths:
       summary: 标记会话已读
       tags:
       - 客户端会话
+  /api/client/conversations/{conversation_id}/restore:
+    post:
+      description: 用户主动打开一个之前从列表移除的会话时恢复它，不影响消息、成员关系和免打扰状态。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.restoreConversationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 将会话恢复到当前用户的对话列表
+      tags:
+      - 客户端会话
   /api/client/conversations/apps:
     post:
       consumes:
@@ -4634,6 +5203,58 @@ paths:
       security:
       - UserSession: []
       summary: 解散群聊
+      tags:
+      - 客户端会话
+  /api/client/conversations/groups/{conversation_id}/announcement:
+    patch:
+      consumes:
+      - application/json
+      description: 群主或管理员修改 active 群聊公告。内容会去除首尾空白，最多 200 个 Unicode 字符；空内容会清空公告。修改后生成系统消息。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 群公告
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.updateGroupConversationAnnouncementRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 修改群公告
       tags:
       - 客户端会话
   /api/client/conversations/groups/{conversation_id}/join:
@@ -5852,6 +6473,62 @@ paths:
       summary: 更新项目任务
       tags:
       - 客户端任务
+  /api/client/search/messages:
+    get:
+      description: 在滚动最近一年内搜索当前用户有权查看的聊天记录。keyword 必填，其他过滤条件可选，按消息时间倒序最多返回 10 条。
+      parameters:
+      - description: 消息关键词，至少 2 个字符
+        in: query
+        name: keyword
+        required: true
+        type: string
+      - description: 发送者 ID
+        in: query
+        name: sender_id
+        type: string
+      - description: 会话 ID
+        in: query
+        name: conversation_id
+        type: string
+      - description: 开始时间，RFC3339，必须在最近一年内
+        in: query
+        name: from
+        type: string
+      - description: 结束时间，RFC3339，必须在最近一年内
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.searchMessagesResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 搜索聊天记录
+      tags:
+      - 客户端搜索
   /api/client/temporary-files:
     post:
       consumes:

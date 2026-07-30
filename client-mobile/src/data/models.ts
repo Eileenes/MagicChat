@@ -119,19 +119,30 @@ export type ClientConversationTopic = {
   }
 }
 
+export type ClientConversationLastMessageSender = {
+  id: string
+  name: string
+  nickname: string
+  type: "user" | "app" | "system"
+}
+
 export type ClientConversation = {
   avatar: string
+  canSend: boolean
   createdAt: string
   id: string
   lastMessageAt: string | null
   lastMessageId: string | null
   lastMessageSeq: number
+  lastMessageSender: ClientConversationLastMessageSender | null
   lastMessageSummary: string
+  lastChoiceSeq: number
   lastMentionedSeq: number
   lastReadSeq: number
   memberCount: number
   members?: ClientConversationMember[]
   name: string
+  notificationMuted: boolean
   pinned: boolean
   projects?: ClientConversationProject[]
   topic?: ClientConversationTopic
@@ -201,6 +212,43 @@ export type MessageReactionsUpdatedEvent = {
   reactions: Omit<ClientMessageReaction, "reactedByMe">[]
 }
 
+export type ClientMessageChoiceState = {
+  myOptionIds: string[]
+  options: {
+    id: string
+    responseCount: number
+  }[]
+  responseCount: number
+}
+
+export type MessageChoiceSnapshot = {
+  choice: ClientMessageChoiceState | null
+  conversationId: string
+  messageId: string
+  status: "active" | "deleted" | "revoked"
+}
+
+export type SubmitChoiceResponseResult = {
+  choice: ClientMessageChoiceState
+  conversationId: string
+  created: boolean
+  messageId: string
+  response: {
+    createdAt: string
+    id: string
+    optionIds: string[]
+    userId: string
+  }
+}
+
+export type MessageChoiceUpdatedEvent = {
+  actorOptionIds: string[]
+  actorUserId: string
+  choice: ClientMessageChoiceState
+  conversationId: string
+  messageId: string
+}
+
 export type ClientTextMessageBody = {
   content: string
   type: "text"
@@ -209,6 +257,17 @@ export type ClientTextMessageBody = {
 export type ClientMarkdownMessageBody = {
   content: string
   type: "markdown"
+}
+
+export type ClientChoiceMessageBody = {
+  content: string
+  contentType: "text" | "markdown"
+  options: {
+    id: string
+    label: string
+  }[]
+  selection: "single" | "multiple"
+  type: "choice"
 }
 
 export type ClientLinkMessageBody = {
@@ -224,13 +283,70 @@ export type ClientCardMessageBody = {
   url: string
 }
 
-export type ClientChartMessageBody = {
-  chartType: "line" | "bar" | "pie" | "radar"
-  data: Record<string, unknown>
+export type ClientChartSeries = {
+  name: string
+  values: (number | null)[]
+}
+
+export type ClientLineChartMessageBody = {
+  chartType: "line"
+  data: {
+    labels: string[]
+    series: ClientChartSeries[]
+  }
   description: string
   title: string
   type: "chart"
 }
+
+export type ClientBarChartMessageBody = {
+  chartType: "bar"
+  data: {
+    direction: "horizontal" | "vertical"
+    labels: string[]
+    mode: "grouped" | "stacked"
+    series: ClientChartSeries[]
+  }
+  description: string
+  title: string
+  type: "chart"
+}
+
+export type ClientPieChartMessageBody = {
+  chartType: "pie"
+  data: {
+    items: {
+      name: string
+      value: number
+    }[]
+  }
+  description: string
+  title: string
+  type: "chart"
+}
+
+export type ClientRadarChartMessageBody = {
+  chartType: "radar"
+  data: {
+    axes: {
+      max: number
+      name: string
+    }[]
+    series: {
+      name: string
+      values: number[]
+    }[]
+  }
+  description: string
+  title: string
+  type: "chart"
+}
+
+export type ClientChartMessageBody =
+  | ClientLineChartMessageBody
+  | ClientBarChartMessageBody
+  | ClientPieChartMessageBody
+  | ClientRadarChartMessageBody
 
 export type ClientFileMessageBody = {
   fileId: string
@@ -239,7 +355,11 @@ export type ClientFileMessageBody = {
   type: "file"
 }
 
+export type ImageCaptionType = "text" | "markdown"
+
 export type ClientImageMessageBody = {
+  caption?: string
+  captionType?: ImageCaptionType
   fileId: string
   height?: number
   type: "image"
@@ -321,6 +441,7 @@ export type ClientSystemEventMessageBody =
 
 export type ClientMessageBody =
   | ClientForwardableMessageBody
+  | ClientChoiceMessageBody
   | ClientSystemEventMessageBody
   | { type: "revoked" }
   | { type: "unsupported" }
@@ -328,6 +449,7 @@ export type ClientMessageBody =
 export type ClientMessage = {
   body: ClientMessageBody
   clientMessageId: string
+  choice?: ClientMessageChoiceState
   conversationId: string
   createdAt: string
   delegatedBy?: {

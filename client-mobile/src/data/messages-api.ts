@@ -4,18 +4,43 @@ import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-clie
 import {
   normalizeClientMessage,
   normalizeClientMessagePage,
+  normalizeMessageChoiceState,
   normalizeMessageReactions,
   normalizeReactionVersion,
 } from "@/data/message-normalizer"
 import type {
+  ClientMessage,
   ClientMessageList,
+  MessageChoiceSnapshot,
   MessageReactionSnapshot,
+  SubmitChoiceResponseResult,
 } from "@/data/models"
 import type { ClientMessageUpload } from "@/data/message-upload"
 
 type ApiOptions = {
   fetcher?: ApiFetch
   signal?: AbortSignal
+}
+
+export type ForwardConversationMessagesResult = {
+  failedCount: number
+  results: (
+    | {
+        conversationId: string
+        messages: ClientMessage[]
+        status: "sent"
+      }
+    | {
+        conversationId: string
+        error: {
+          code: string
+          message: string
+        }
+        messages: []
+        status: "failed"
+      }
+  )[]
+  sentCount: number
 }
 
 export async function fetchConversationMessages(
@@ -48,6 +73,135 @@ export async function fetchConversationMessages(
     messages: data.messages.map(normalizeClientMessage),
     page: normalizeClientMessagePage(data.page),
   }
+}
+
+export async function submitConversationMessageChoiceResponse(
+  serverUrl: string,
+  conversationId: string,
+  messageId: string,
+  optionIds: string[],
+  options: ApiOptions = {}
+): Promise<SubmitChoiceResponseResult> {
+  const uniqueOptionIds = [...new Set(optionIds)]
+  if (
+    uniqueOptionIds.length === 0 ||
+    uniqueOptionIds.length !== optionIds.length ||
+    uniqueOptionIds.some((id) => id.length === 0)
+  ) {
+    throw new ApiRequestError("请选择有效选项")
+  }
+
+  const data = await createApiClient(serverUrl, options.fetcher).request<{
+    choice?: unknown
+    conversation_id?: unknown
+    created?: unknown
+    message_id?: unknown
+    response?: unknown
+  }>(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/choice-response`,
+    {
+      body: JSON.stringify({ option_ids: uniqueOptionIds }),
+      errorMessage: "提交选择失败",
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      signal: options.signal,
+    }
+  )
+
+  const response = asRecord(data?.response)
+  const responseOptionIds = response?.option_ids
+  if (
+    data?.conversation_id !== conversationId ||
+    data.message_id !== messageId ||
+    typeof data.created !== "boolean" ||
+    !response ||
+    !asString(response.id) ||
+    !asString(response.created_at) ||
+    !asString(response.user_id) ||
+    !Array.isArray(responseOptionIds) ||
+    !responseOptionIds.every(
+      (optionId) => typeof optionId === "string" && optionId.length > 0
+    )
+  ) {
+    throw new ApiRequestError("提交选择响应格式不正确")
+  }
+
+  return {
+    choice: normalizeMessageChoiceState(data.choice),
+    conversationId,
+    created: data.created,
+    messageId,
+    response: {
+      createdAt: asString(response.created_at)!,
+      id: asString(response.id)!,
+      optionIds: [...responseOptionIds],
+      userId: asString(response.user_id)!,
+    },
+  }
+}
+
+export async function fetchConversationMessageChoiceSnapshots(
+  serverUrl: string,
+  conversationId: string,
+  messageIds: string[],
+  options: ApiOptions = {}
+): Promise<MessageChoiceSnapshot[]> {
+  const uniqueMessageIds = [...new Set(messageIds)]
+  if (uniqueMessageIds.length === 0 || uniqueMessageIds.length > 100) {
+    throw new ApiRequestError("选择消息快照请求格式不正确")
+  }
+
+  const data = await createApiClient(serverUrl, options.fetcher).request<{
+    conversation_id?: unknown
+    snapshots?: unknown
+  }>(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/choices/query`,
+    {
+      body: JSON.stringify({ message_ids: uniqueMessageIds }),
+      errorMessage: "同步选择状态失败",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: options.signal,
+    }
+  )
+  if (
+    data?.conversation_id !== conversationId ||
+    !Array.isArray(data.snapshots)
+  ) {
+    throw new ApiRequestError("选择状态快照响应格式不正确")
+  }
+
+  const snapshots = data.snapshots.map((candidate) => {
+    const snapshot = asRecord(candidate)
+    const messageId = asString(snapshot?.message_id)
+    const status = asString(snapshot?.status)
+    if (
+      !snapshot ||
+      !messageId ||
+      (status !== "active" && status !== "deleted" && status !== "revoked") ||
+      (status === "active" && !snapshot.choice)
+    ) {
+      throw new ApiRequestError("选择状态快照响应格式不正确")
+    }
+    return {
+      choice:
+        status === "active"
+          ? normalizeMessageChoiceState(snapshot.choice)
+          : null,
+      conversationId,
+      messageId,
+      status,
+    } satisfies MessageChoiceSnapshot
+  })
+  if (
+    snapshots.length !== uniqueMessageIds.length ||
+    snapshots.some(
+      (snapshot, index) => snapshot.messageId !== uniqueMessageIds[index]
+    )
+  ) {
+    throw new ApiRequestError("选择状态快照响应格式不正确")
+  }
+  return snapshots
 }
 
 export async function setConversationMessageReaction(
@@ -126,7 +280,11 @@ export async function fetchConversationMessageReactionSnapshots(
 export async function sendConversationTextMessage(
   serverUrl: string,
   conversationId: string,
-  input: { clientMessageId: string; content: string },
+  input: {
+    clientMessageId: string
+    content: string
+    replyToMessageId?: string
+  },
   options: ApiOptions = {}
 ) {
   const data = await createApiClient(serverUrl, options.fetcher).request<{
@@ -135,6 +293,7 @@ export async function sendConversationTextMessage(
     body: JSON.stringify({
       body: { content: input.content, type: "text" },
       client_message_id: input.clientMessageId,
+      reply_to_message_id: input.replyToMessageId,
     }),
     errorMessage: "发送消息失败",
     headers: { "Content-Type": "application/json" },
@@ -152,7 +311,11 @@ export async function sendConversationTextMessage(
 export function sendConversationFileMessage(
   serverUrl: string,
   conversationId: string,
-  input: { clientMessageId: string; file: ClientMessageUpload },
+  input: {
+    clientMessageId: string
+    file: ClientMessageUpload
+    replyToMessageId?: string
+  },
   options: ApiOptions = {}
 ) {
   return sendConversationUploadMessage(
@@ -162,6 +325,7 @@ export function sendConversationFileMessage(
       clientMessageId: input.clientMessageId,
       fieldName: "file",
       path: "files",
+      replyToMessageId: input.replyToMessageId,
       upload: input.file,
     },
     "发送文件失败",
@@ -172,7 +336,11 @@ export function sendConversationFileMessage(
 export function sendConversationImageMessage(
   serverUrl: string,
   conversationId: string,
-  input: { clientMessageId: string; image: ClientMessageUpload },
+  input: {
+    clientMessageId: string
+    image: ClientMessageUpload
+    replyToMessageId?: string
+  },
   options: ApiOptions = {}
 ) {
   return sendConversationUploadMessage(
@@ -182,6 +350,7 @@ export function sendConversationImageMessage(
       clientMessageId: input.clientMessageId,
       fieldName: "image",
       path: "images",
+      replyToMessageId: input.replyToMessageId,
       upload: input.image,
     },
     "发送图片失败",
@@ -195,6 +364,7 @@ export function sendConversationVoiceMessage(
   input: {
     clientMessageId: string
     durationMS: number
+    replyToMessageId?: string
     voice: ClientMessageUpload
   },
   options: ApiOptions = {}
@@ -207,6 +377,7 @@ export function sendConversationVoiceMessage(
       extraFields: { duration_ms: String(input.durationMS) },
       fieldName: "voice",
       path: "voices",
+      replyToMessageId: input.replyToMessageId,
       upload: input.voice,
     },
     "发送语音失败",
@@ -247,6 +418,115 @@ export async function markConversationRead(
   }
 }
 
+export async function revokeConversationMessage(
+  serverUrl: string,
+  conversationId: string,
+  messageId: string,
+  options: ApiOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<{
+    message?: unknown
+    system_message?: unknown
+  }>(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/revoke`,
+    {
+      errorMessage: "撤回消息失败",
+      method: "POST",
+      signal: options.signal,
+    }
+  )
+
+  if (!data?.message || !data.system_message) {
+    throw new ApiRequestError("撤回消息响应格式不正确")
+  }
+
+  return {
+    message: normalizeClientMessage(data.message),
+    systemMessage: normalizeClientMessage(data.system_message),
+  }
+}
+
+export async function forwardConversationMessages(
+  serverUrl: string,
+  sourceConversationId: string,
+  input: {
+    clientForwardId: string
+    messageIds: string[]
+    targetConversationIds: string[]
+  },
+  options: ApiOptions = {}
+): Promise<ForwardConversationMessagesResult> {
+  const data = await createApiClient(serverUrl, options.fetcher).request<{
+    failed_count?: unknown
+    results?: unknown
+    sent_count?: unknown
+  }>(
+    `/api/client/conversations/${encodeURIComponent(sourceConversationId)}/messages/forward`,
+    {
+      body: JSON.stringify({
+        client_forward_id: input.clientForwardId,
+        message_ids: input.messageIds,
+        mode: "separate",
+        target_conversation_ids: input.targetConversationIds,
+      }),
+      errorMessage: "转发消息失败",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: options.signal,
+    }
+  )
+
+  if (
+    typeof data?.sent_count !== "number" ||
+    typeof data.failed_count !== "number" ||
+    !Array.isArray(data.results)
+  ) {
+    throw new ApiRequestError("转发消息响应格式不正确")
+  }
+
+  const results = data.results.map((value) => {
+    const result = asRecord(value)
+    const conversationId = asString(result?.conversation_id)
+    const status = asString(result?.status)
+    if (
+      !conversationId ||
+      (status !== "sent" && status !== "failed")
+    ) {
+      throw new ApiRequestError("转发消息响应格式不正确")
+    }
+
+    if (status === "sent") {
+      if (!Array.isArray(result?.messages)) {
+        throw new ApiRequestError("转发消息响应格式不正确")
+      }
+      return {
+        conversationId,
+        messages: result.messages.map(normalizeClientMessage),
+        status,
+      } as const
+    }
+
+    const error = asRecord(result?.error)
+    const code = asString(error?.code)
+    const message = asString(error?.message)
+    if (!code || !message) {
+      throw new ApiRequestError("转发消息响应格式不正确")
+    }
+    return {
+      conversationId,
+      error: { code, message },
+      messages: [] as [],
+      status,
+    } as const
+  })
+
+  return {
+    failedCount: data.failed_count,
+    results,
+    sentCount: data.sent_count,
+  }
+}
+
 async function sendConversationUploadMessage(
   serverUrl: string,
   conversationId: string,
@@ -255,6 +535,7 @@ async function sendConversationUploadMessage(
     extraFields?: Record<string, string>
     fieldName: "file" | "image" | "voice"
     path: "files" | "images" | "voices"
+    replyToMessageId?: string
     upload: ClientMessageUpload
   },
   errorMessage: string,
@@ -264,10 +545,20 @@ async function sendConversationUploadMessage(
   const file = new File(input.upload.uri)
 
   formData.set("client_message_id", input.clientMessageId)
+  if (input.replyToMessageId) {
+    formData.set("reply_to_message_id", input.replyToMessageId)
+  }
   for (const [name, value] of Object.entries(input.extraFields ?? {})) {
     formData.set(name, value)
   }
-  formData.set(input.fieldName, file, input.upload.name)
+  if (input.fieldName === "voice") {
+    formData.set(
+      input.fieldName,
+      createTypedFilePart(file, input.upload)
+    )
+  } else {
+    formData.set(input.fieldName, file, input.upload.name)
+  }
 
   const data = await createApiClient(serverUrl, options.fetcher).request<{
     message?: unknown
@@ -287,6 +578,19 @@ async function sendConversationUploadMessage(
   }
 
   return normalizeClientMessage(data.message)
+}
+
+function createTypedFilePart(
+  file: File,
+  upload: ClientMessageUpload
+): Blob {
+  // Expo Fetch accepts file-like values with bytes(), name and type. Android
+  // otherwise classifies .webm as video/webm instead of the required audio MIME.
+  return {
+    bytes: () => file.bytes(),
+    name: upload.name,
+    type: upload.mimeType,
+  } as unknown as Blob
 }
 
 function normalizeReactionSnapshot(

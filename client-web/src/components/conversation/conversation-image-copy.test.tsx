@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -7,21 +7,17 @@ import {
   ConversationPanel,
   type ConversationPanelMessage,
 } from "@/components/conversation-panel"
-import type { ClientConversation } from "@/lib/client-data-api"
+import type {
+  ClientConversation,
+  ClientImageMessageBody,
+} from "@/lib/client-data-api"
 import {
   ClientDataContext,
   type ClientDataContextValue,
 } from "@/lib/client-data-context"
 
 const mocks = vi.hoisted(() => ({
-  copyTemporaryImageToClipboard: vi.fn(),
   readTemporaryFileURLs: vi.fn(),
-  toastError: vi.fn(),
-  toastSuccess: vi.fn(),
-}))
-
-vi.mock("@/lib/image-clipboard", () => ({
-  copyTemporaryImageToClipboard: mocks.copyTemporaryImageToClipboard,
 }))
 
 vi.mock("@/lib/client-data-api", async (importOriginal) => {
@@ -32,13 +28,6 @@ vi.mock("@/lib/client-data-api", async (importOriginal) => {
     readTemporaryFileURLs: mocks.readTemporaryFileURLs,
   }
 })
-
-vi.mock("sonner", () => ({
-  toast: {
-    error: mocks.toastError,
-    success: mocks.toastSuccess,
-  },
-}))
 
 describe("conversation image copy", () => {
   beforeEach(() => {
@@ -52,42 +41,78 @@ describe("conversation image copy", () => {
     ])
   })
 
-  it("copies an image from the message action menu and reports success", async () => {
-    const user = userEvent.setup()
-    mocks.copyTemporaryImageToClipboard.mockResolvedValue(undefined)
+  it("omits copy from the image context menu", async () => {
     renderImageConversation()
 
     await openImageMessageActionMenu()
-    const copyAction = await screen.findByRole("menuitem", { name: "复制" })
-    expect(copyAction).not.toHaveAttribute("data-disabled")
-
-    await user.click(copyAction)
-
-    await waitFor(() => {
-      expect(mocks.copyTemporaryImageToClipboard).toHaveBeenCalledWith("file-1")
-      expect(mocks.toastSuccess).toHaveBeenCalledWith("图片已复制")
-    })
-    expect(mocks.toastError).not.toHaveBeenCalled()
+    await screen.findByRole("menuitem", { name: "回复" })
+    expect(
+      screen.queryByRole("menuitem", { name: "复制" })
+    ).not.toBeInTheDocument()
   })
 
-  it("reports an error when copying the image fails", async () => {
+  it("omits copy from the image hover menu", async () => {
     const user = userEvent.setup()
-    mocks.copyTemporaryImageToClipboard.mockRejectedValue(
-      new Error("clipboard unavailable")
-    )
     renderImageConversation()
 
-    await openImageMessageActionMenu()
-    await user.click(await screen.findByRole("menuitem", { name: "复制" }))
+    const image = await screen.findByRole("button", { name: "预览图片" })
+    const messageRow = image.closest<HTMLElement>(
+      "[data-conversation-message-id]"
+    )
+    expect(messageRow).not.toBeNull()
+    await user.click(
+      within(messageRow!).getByRole("button", { name: "更多操作" })
+    )
+    await screen.findByRole("menuitem", { name: "回复" })
+    expect(
+      screen.queryByRole("menuitem", { name: "复制" })
+    ).not.toBeInTheDocument()
+  })
 
-    await waitFor(() => {
-      expect(mocks.toastError).toHaveBeenCalledWith("图片复制失败")
+  it("renders a markdown caption below the image", async () => {
+    renderImageConversation({
+      caption: "**图片说明**",
+      captionType: "markdown",
     })
-    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+
+    const image = await screen.findByRole("button", { name: "预览图片" })
+    const caption = screen.getByText("图片说明")
+    expect(caption.tagName).toBe("STRONG")
+    expect(image).toHaveClass("rounded-t-sm")
+    expect(image).not.toHaveClass("rounded-sm")
+  })
+
+  it("keeps all image corners rounded without a caption", async () => {
+    renderImageConversation()
+
+    const image = await screen.findByRole("button", { name: "预览图片" })
+
+    expect(image).toHaveClass("rounded-sm")
+    expect(image).not.toHaveClass("rounded-t-sm")
+  })
+
+  it("constrains a long caption to the image thumbnail width", async () => {
+    renderImageConversation({
+      caption:
+        "一段足够长的图片说明，它应该在图片宽度内换行，而不是把图片气泡撑宽。",
+      height: 200,
+      width: 800,
+    })
+
+    const image = await screen.findByRole("button", { name: "预览图片" })
+    const imageMessageBody = image.closest<HTMLElement>(
+      '[data-slot="image-message-body"]'
+    )
+
+    expect(imageMessageBody).not.toBeNull()
+    expect(imageMessageBody).toHaveStyle({ width: "320px" })
+    expect(imageMessageBody).toHaveClass("max-w-[65vw]")
   })
 })
 
-function renderImageConversation() {
+function renderImageConversation(
+  imageOverrides: Partial<ClientImageMessageBody> = {}
+) {
   return render(
     <MemoryRouter>
       <ClientDataContext.Provider value={createClientDataValue()}>
@@ -98,7 +123,7 @@ function renderImageConversation() {
           historyError={null}
           historyLoading={false}
           historyLoadingBefore={false}
-          messages={[createImageMessage()]}
+          messages={[createImageMessage(imageOverrides)]}
           onCancelReply={vi.fn()}
           onDraftChange={vi.fn()}
           onLoadBeforeMessages={vi.fn()}
@@ -128,7 +153,9 @@ async function openImageMessageActionMenu() {
   fireEvent.contextMenu(messageActionTrigger)
 }
 
-function createImageMessage(): ConversationPanelMessage {
+function createImageMessage(
+  imageOverrides: Partial<ClientImageMessageBody> = {}
+): ConversationPanelMessage {
   return {
     author: "Alice",
     avatar: "",
@@ -137,6 +164,7 @@ function createImageMessage(): ConversationPanelMessage {
       height: 120,
       type: "image",
       width: 160,
+      ...imageOverrides,
     },
     canRevoke: false,
     createdAt: "2026-07-17T10:00:00Z",
@@ -161,7 +189,9 @@ function createConversation(): ClientConversation {
     lastMessageAt: null,
     lastMessageId: null,
     lastMessageSeq: 1,
+    lastMessageSender: null,
     lastMessageSummary: "[图片]",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 1,
     memberCount: 2,

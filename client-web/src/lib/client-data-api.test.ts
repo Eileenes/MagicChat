@@ -4,12 +4,17 @@ import {
   addGroupConversationMembers,
   ClientDataRequestError,
   createGroupConversation,
+  dismissConversation,
+  formatClientMessageBodySummary,
   getCurrentClientUser,
   listClientContacts,
   listClientConversations,
   listConversationMessages,
   normalizeMessageCreatedEventPayload,
   normalizeConversationPinUpdatedEventPayload,
+  normalizeConversationMuteUpdatedEventPayload,
+  normalizeClientMessageBody,
+  restoreConversation,
   sendConversationFileMessage,
   sendConversationImageMessage,
   sendConversationLinkMessage,
@@ -18,6 +23,8 @@ import {
   sendConversationEntityCardMessage,
   sendConversationTextMessage,
   setConversationPinned,
+  setConversationMuted,
+  updateGroupConversationAnnouncement,
 } from "@/lib/client-data-api"
 
 describe("client data API", () => {
@@ -190,9 +197,17 @@ describe("client data API", () => {
                 last_message_at: "2026-07-03T08:00:00Z",
                 last_message_id: "message-1",
                 last_message_seq: 12,
+                last_message_sender: {
+                  id: "user-2",
+                  name: "Bob Li",
+                  nickname: "Bob",
+                  type: "user",
+                },
                 last_message_summary: "好的，我看一下",
                 member_count: 2,
                 name: "Bob Li",
+                notification_muted: false,
+                pinned: false,
                 type: "direct",
               },
             ],
@@ -209,6 +224,7 @@ describe("client data API", () => {
 
     await expect(listClientConversations(fetcher)).resolves.toEqual([
       {
+        announcement: "",
         avatar: "/assets/avatars/builtin/03.webp",
         canSend: true,
         createdAt: "2026-07-03T07:00:00Z",
@@ -216,11 +232,19 @@ describe("client data API", () => {
         lastMessageAt: "2026-07-03T08:00:00Z",
         lastMessageId: "message-1",
         lastMessageSeq: 12,
+        lastMessageSender: {
+          id: "user-2",
+          name: "Bob Li",
+          nickname: "Bob",
+          type: "user",
+        },
         lastMessageSummary: "好的，我看一下",
+        lastChoiceSeq: 0,
         lastMentionedSeq: 0,
         lastReadSeq: 0,
         memberCount: 2,
         name: "Bob Li",
+        notificationMuted: false,
         pinned: false,
         type: "direct",
         unreadCount: 0,
@@ -231,6 +255,50 @@ describe("client data API", () => {
       credentials: "include",
       method: "GET",
     })
+  })
+
+  it("updates and normalizes a group announcement", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            conversation: {
+              announcement: "本周五发布 🚀",
+              created_at: "2026-07-30T09:30:00Z",
+              id: "conversation-group-1",
+              name: "新品讨论组",
+              type: "group",
+            },
+            message: null,
+          },
+        }),
+        { headers: { "content-type": "application/json" }, status: 200 }
+      )
+    )
+
+    await expect(
+      updateGroupConversationAnnouncement(
+        "conversation-group-1",
+        { announcement: "  本周五发布 🚀  " },
+        fetcher
+      )
+    ).resolves.toMatchObject({
+      conversation: {
+        announcement: "本周五发布 🚀",
+        id: "conversation-group-1",
+      },
+      message: null,
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/conversations/groups/conversation-group-1/announcement",
+      {
+        body: JSON.stringify({ announcement: "  本周五发布 🚀  " }),
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      }
+    )
   })
 
   it("sets conversation pin state with credentials", async () => {
@@ -279,6 +347,91 @@ describe("client data API", () => {
     ).toEqual({ conversationId: "conversation-1", pinned: false })
   })
 
+  it("sets conversation mute state and dismisses conversations", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: { conversation_id: "conversation-1", muted: true },
+          }),
+          { headers: { "content-type": "application/json" }, status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: { conversation_id: "conversation-1" },
+          }),
+          { headers: { "content-type": "application/json" }, status: 200 }
+        )
+      )
+
+    await expect(
+      setConversationMuted("conversation-1", true, fetcher)
+    ).resolves.toEqual({ conversationId: "conversation-1", muted: true })
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "/api/client/conversations/conversation-1/mute",
+      { credentials: "include", method: "PUT" }
+    )
+
+    await expect(
+      dismissConversation("conversation-1", fetcher)
+    ).resolves.toEqual({ conversationId: "conversation-1" })
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "/api/client/conversations/conversation-1",
+      { credentials: "include", method: "DELETE" }
+    )
+  })
+
+  it("restores a hidden conversation", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            conversation: {
+              created_at: "2026-07-03T09:30:00Z",
+              id: "conversation-1",
+              name: "新品讨论组",
+              notification_muted: true,
+              pinned: false,
+              type: "group",
+            },
+          },
+        }),
+        { headers: { "content-type": "application/json" }, status: 200 }
+      )
+    )
+
+    await expect(
+      restoreConversation("conversation-1", fetcher)
+    ).resolves.toMatchObject({
+      id: "conversation-1",
+      name: "新品讨论组",
+      notificationMuted: true,
+      pinned: false,
+      type: "group",
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/conversations/conversation-1/restore",
+      { credentials: "include", method: "POST" }
+    )
+  })
+
+  it("normalizes conversation mute realtime events", () => {
+    expect(
+      normalizeConversationMuteUpdatedEventPayload({
+        conversation_id: "conversation-1",
+        muted: false,
+      })
+    ).toEqual({ conversationId: "conversation-1", muted: false })
+  })
+
   it("creates a group conversation with credentials", async () => {
     const fetcher = vi.fn().mockImplementation(
       () =>
@@ -290,6 +443,16 @@ describe("client data API", () => {
                 created_at: "2026-07-03T09:30:00Z",
                 created_by_user_id: "user-1",
                 id: "conversation-group-1",
+                last_message_at: "2026-07-03T09:30:00Z",
+                last_message_id: "message-system-1",
+                last_message_seq: 1,
+                last_message_sender: {
+                  id: "",
+                  name: "系统",
+                  nickname: "",
+                  type: "system",
+                },
+                last_message_summary: "Alice 邀请 Bob Li 加入群聊",
                 member_count: 2,
                 members: [
                   {
@@ -337,14 +500,22 @@ describe("client data API", () => {
         fetcher
       )
     ).resolves.toEqual({
+      announcement: "",
       avatar: "",
       canSend: true,
       createdAt: "2026-07-03T09:30:00Z",
       id: "conversation-group-1",
-      lastMessageAt: null,
-      lastMessageId: null,
-      lastMessageSeq: 0,
-      lastMessageSummary: "",
+      lastMessageAt: "2026-07-03T09:30:00Z",
+      lastMessageId: "message-system-1",
+      lastMessageSeq: 1,
+      lastMessageSender: {
+        id: "",
+        name: "系统",
+        nickname: "",
+        type: "system",
+      },
+      lastMessageSummary: "Alice 邀请 Bob Li 加入群聊",
+      lastChoiceSeq: 0,
       lastMentionedSeq: 0,
       lastReadSeq: 0,
       memberCount: 2,
@@ -371,7 +542,6 @@ describe("client data API", () => {
         },
       ],
       name: "新品讨论组",
-      pinned: false,
       type: "group",
       unreadCount: 0,
       visibility: "private",
@@ -648,6 +818,8 @@ describe("client data API", () => {
     await sendConversationImageMessage(
       "conversation-1",
       {
+        caption: "**图片说明**",
+        captionType: "markdown",
         clientMessageId: "client-image",
         image: new File(["image"], "photo.webp", { type: "image/webp" }),
         replyToMessageId: "message-quoted",
@@ -683,6 +855,29 @@ describe("client data API", () => {
     expect((imageBody as FormData).get("reply_to_message_id")).toBe(
       "message-quoted"
     )
+    expect((imageBody as FormData).get("caption")).toBe("**图片说明**")
+    expect((imageBody as FormData).get("caption_type")).toBe("markdown")
+  })
+
+  it("normalizes image captions and formats markdown summaries", () => {
+    const body = normalizeClientMessageBody({
+      caption: "  **图片说明**  ",
+      caption_type: "markdown",
+      file_id: "image-1",
+      height: 240,
+      type: "image",
+      width: 320,
+    })
+
+    expect(body).toEqual({
+      caption: "**图片说明**",
+      captionType: "markdown",
+      fileId: "image-1",
+      height: 240,
+      type: "image",
+      width: 320,
+    })
+    expect(formatClientMessageBodySummary(body)).toBe("[图片] 图片说明")
   })
 
   it("sends and normalizes card message messages", async () => {
@@ -934,6 +1129,59 @@ describe("client data API", () => {
     })
   })
 
+  it("normalizes an editable body returned for an own revoked message", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            messages: [
+              {
+                id: "message-revoked",
+                conversation_id: "conversation-1",
+                seq: 12,
+                sender: {
+                  type: "user",
+                  id: "user-1",
+                },
+                created_at: "2026-07-03T08:00:00Z",
+                revoked_at: "2026-07-03T08:02:00Z",
+                revoked_by_user_id: "user-1",
+                editable_body: {
+                  content: "重新编辑这条消息",
+                  type: "text",
+                },
+              },
+            ],
+            page: {
+              limit: 20,
+              oldest_seq: 12,
+              newest_seq: 12,
+              has_more_before: false,
+              has_more_after: false,
+            },
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 200,
+        }
+      )
+    )
+
+    const result = await listConversationMessages("conversation-1", {}, fetcher)
+
+    expect(result.messages[0]?.body).toEqual({
+      editableBody: {
+        content: "重新编辑这条消息",
+        type: "text",
+      },
+      type: "revoked",
+    })
+  })
+
   it("keeps message history available when one message body is unsupported", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(
@@ -1026,6 +1274,30 @@ describe("client data API", () => {
       id: "message-realtime-unsupported",
       body: { type: "unsupported" },
     })
+  })
+
+  it("normalizes and summarizes group announcement system events", () => {
+    const updated = normalizeClientMessageBody({
+      actor: { display_name: "Alice", id: "user-1" },
+      announcement: "本周五发布",
+      event: "group_announcement_updated",
+      type: "system_event",
+    })
+    expect(updated).toEqual({
+      actor: { displayName: "Alice", id: "user-1" },
+      announcement: "本周五发布",
+      event: "group_announcement_updated",
+      type: "system_event",
+    })
+    expect(formatClientMessageBodySummary(updated)).toBe("Alice 更新了群公告")
+
+    const cleared = normalizeClientMessageBody({
+      actor: { display_name: "Alice", id: "user-1" },
+      announcement: "",
+      event: "group_announcement_updated",
+      type: "system_event",
+    })
+    expect(formatClientMessageBodySummary(cleared)).toBe("Alice 清空了群公告")
   })
 
   it("throws a typed unauthorized error", async () => {

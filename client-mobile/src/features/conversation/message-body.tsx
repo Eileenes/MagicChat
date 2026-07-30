@@ -1,5 +1,4 @@
 import {
-  BarChart3,
   ChevronDown,
   ChevronUp,
   Download,
@@ -33,12 +32,14 @@ import {
   type MessageMentionLabelResolver,
 } from "@/domain/messages/message-presenter"
 import { MarkdownMessage } from "@/features/conversation/markdown-message"
+import { MessageChart } from "@/features/conversation/message-chart"
 import { MessageMentionText } from "@/features/conversation/message-mention-text"
 import { VoiceMessagePlayer } from "@/features/conversation/voice-message-player"
 
 export function MessageBody({
   body,
   currentUserId,
+  flushImage,
   onImagePress,
   onMentionPress,
   onResourceError,
@@ -50,6 +51,7 @@ export function MessageBody({
 }: {
   body: ClientMessageBody
   currentUserId: string
+  flushImage: boolean
   onImagePress: (fileId: string) => void
   onMentionPress: (target: EntityReference) => void
   onResourceError: (fileId: string) => void
@@ -109,30 +111,14 @@ export function MessageBody({
   }
 
   if (body.type === "chart") {
-    return (
-      <YStack gap="$2" minW={220}>
-        <XStack gap="$2" items="center">
-          <ThemedIcon icon={BarChart3} size={18} />
-          <SizableText fontWeight="600">{body.title}</SizableText>
-        </XStack>
-        {body.description ? (
-          <Paragraph color="$color10" size="$2">
-            {body.description}
-          </Paragraph>
-        ) : null}
-        <Separator />
-        <Paragraph color="$color10" size="$2">
-          {formatChartPreview(body.chartType, body.data)}
-        </Paragraph>
-      </YStack>
-    )
+    return <MessageChart chart={body} />
   }
 
   if (body.type === "file") {
     const state = resourceStates.get(body.fileId)
     const isLoading = state?.status === "loading"
     return (
-      <XStack gap="$3" items="center" minW={220}>
+      <XStack gap="$3" items="center" width="100%">
         <ThemedIcon icon={FileText} size={24} />
         <YStack flex={1}>
           <SizableText fontWeight="600" numberOfLines={1}>
@@ -164,34 +150,16 @@ export function MessageBody({
   if (body.type === "image") {
     const state = resourceStates.get(body.fileId)
     const resource = state?.resource
-    if (!resource) {
-      return (
-        <XStack
-          gap="$2"
-          items="center"
-          minW={160}
-          onPress={() => onImagePress(body.fileId)}
-          p="$2"
-        >
-          {state?.status === "loading" ? (
-            <Spinner />
-          ) : (
-            <ThemedIcon icon={ImageIcon} />
-          )}
-          <SizableText color="$color10">
-            {state?.status === "error" ? "图片加载失败，点击重试" : "正在加载图片"}
-          </SizableText>
-        </XStack>
-      )
-    }
-
     const size = getImageDisplaySize(body.width, body.height)
-    return (
+    const image = resource ? (
       <Pressable
         accessibilityLabel="查看图片"
         onPress={() => onImagePress(body.fileId)}
         style={{
-          borderRadius: 7,
+          borderBottomLeftRadius: body.caption ? 0 : 7,
+          borderBottomRightRadius: body.caption ? 0 : 7,
+          borderTopLeftRadius: 7,
+          borderTopRightRadius: 7,
           height: size.height,
           overflow: "hidden",
           width: size.width,
@@ -210,6 +178,55 @@ export function MessageBody({
           width={size.width}
         />
       </Pressable>
+    ) : (
+      <XStack
+        gap="$2"
+        items="center"
+        minW={160}
+        onPress={() => onImagePress(body.fileId)}
+        p="$2"
+      >
+        {state?.status === "loading" ? (
+          <Spinner />
+        ) : (
+          <ThemedIcon icon={ImageIcon} />
+        )}
+        <SizableText color="$color10">
+          {state?.status === "error" ? "图片加载失败，点击重试" : "正在加载图片"}
+        </SizableText>
+      </XStack>
+    )
+
+    if (!body.caption) return image
+
+    return (
+      <YStack maxW="100%" width={size.width}>
+        {image}
+        <YStack
+          pb={flushImage ? "$3" : undefined}
+          pt="$2"
+          px={flushImage ? "$3" : undefined}
+        >
+          {body.captionType === "markdown" ? (
+            <MarkdownMessage
+              content={body.caption}
+              currentUserId={currentUserId}
+              onMentionPress={onMentionPress}
+              resolveMentionLabel={resolveMentionLabel}
+              serverUrl={serverUrl}
+            />
+          ) : (
+            <Paragraph selectable>
+              <MessageMentionText
+                content={body.caption}
+                currentUserId={currentUserId}
+                onMentionPress={onMentionPress}
+                resolveMentionLabel={resolveMentionLabel}
+              />
+            </Paragraph>
+          )}
+        </YStack>
+      </YStack>
     )
   }
 
@@ -263,7 +280,14 @@ function MessageLinkCard({
   title: string
 }) {
   return (
-    <Card gap="$2" maxW={280} onPress={onPress} p="$3">
+    <Card
+      bg="transparent"
+      borderWidth={0}
+      gap="$2"
+      onPress={onPress}
+      p={0}
+      width="100%"
+    >
       <XStack gap="$2" items="center">
         <ThemedIcon icon={icon} size={18} />
         <SizableText flex={1} fontWeight="600" numberOfLines={1}>
@@ -293,7 +317,7 @@ function ForwardBundleBody({
   const visibleItems = expanded ? body.items : body.items.slice(0, 3)
 
   return (
-    <YStack gap="$2" minW={240}>
+    <YStack gap="$2" width="100%">
       <XStack gap="$2" items="center">
         <ThemedIcon icon={MessagesSquare} size={18} />
         <SizableText fontWeight="600">聊天记录 · {body.itemCount} 条</SizableText>
@@ -326,44 +350,6 @@ function ForwardBundleBody({
   )
 }
 
-function formatChartPreview(
-  chartType: Extract<ClientMessageBody, { type: "chart" }>["chartType"],
-  data: Record<string, unknown>
-) {
-  const label =
-    chartType === "line"
-      ? "折线图"
-      : chartType === "bar"
-        ? "柱状图"
-        : chartType === "pie"
-          ? "饼图"
-          : "雷达图"
-  const values =
-    chartType === "pie"
-      ? Array.isArray(data.items)
-        ? data.items
-            .slice(0, 5)
-            .map((item) => {
-              const value = asRecord(item)
-              return typeof value?.name === "string" && typeof value.value === "number"
-                ? `${value.name} ${value.value}`
-                : ""
-            })
-            .filter(Boolean)
-            .join(" · ")
-        : ""
-      : Array.isArray(data.labels)
-        ? data.labels.filter((item): item is string => typeof item === "string").join(" · ")
-        : Array.isArray(data.axes)
-          ? data.axes
-              .map((item) => asRecord(item)?.name)
-              .filter((item): item is string => typeof item === "string")
-              .join(" · ")
-          : ""
-
-  return values ? `${label} · ${values}` : label
-}
-
 function getImageDisplaySize(width?: number, height?: number) {
   const displayWidth = 240
   if (!width || !height) return { height: 180, width: displayWidth }
@@ -371,12 +357,6 @@ function getImageDisplaySize(width?: number, height?: number) {
     height: Math.min(300, Math.max(120, (displayWidth * height) / width)),
     width: displayWidth,
   }
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
 }
 
 async function openExternalUrl(url: string) {

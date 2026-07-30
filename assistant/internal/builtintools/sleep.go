@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"assistant/internal/mcpclient"
 )
@@ -54,12 +56,20 @@ const (
 	messageTypeFile                       = "file"
 	messageTypeCard                       = "card"
 	messageTypeChart                      = "chart"
+	messageTypeChoice                     = "choice"
 	messageTypeEntityCard                 = "entity_card"
 	maxChartMessageBodyBytes              = 64 * 1024
 	maxChartMessageTitleRunes             = 16
 	maxChartMessageDescriptionRunes       = 128
 	maxChartMessageValue                  = 1_000_000_000_000_000
+	maxChoiceMessageContentRunes          = 5_000
+	maxChoiceMessageOptions               = 20
+	maxChoiceMessageOptionIDRunes         = 64
+	maxChoiceMessageOptionLabelRunes      = 200
+	maxImageMessageCaptionRunes           = 5_000
 )
+
+var choiceMessageOptionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 type sleepFunc func(context.Context, time.Duration) error
 type scopeContextKey struct{}
@@ -181,18 +191,28 @@ type readHistoryInput struct {
 }
 
 type messageInput struct {
-	AuthorizationRef string          `json:"authorization_ref"`
-	ChartType        string          `json:"chart_type"`
-	ContactID        string          `json:"contact_id"`
-	Content          string          `json:"content"`
-	ConversationID   string          `json:"conversation_id"`
-	Data             json.RawMessage `json:"data"`
-	Description      string          `json:"description"`
-	Name             string          `json:"name"`
-	TargetType       string          `json:"target_type"`
-	Title            string          `json:"title"`
-	Type             string          `json:"type"`
-	URL              string          `json:"url"`
+	AuthorizationRef string                     `json:"authorization_ref"`
+	Caption          string                     `json:"caption"`
+	CaptionType      string                     `json:"caption_type"`
+	ChartType        string                     `json:"chart_type"`
+	ContactID        string                     `json:"contact_id"`
+	Content          string                     `json:"content"`
+	ContentType      string                     `json:"content_type"`
+	ConversationID   string                     `json:"conversation_id"`
+	Data             json.RawMessage            `json:"data"`
+	Description      string                     `json:"description"`
+	Name             string                     `json:"name"`
+	Options          []choiceMessageOptionInput `json:"options"`
+	Selection        string                     `json:"selection"`
+	TargetType       string                     `json:"target_type"`
+	Title            string                     `json:"title"`
+	Type             string                     `json:"type"`
+	URL              string                     `json:"url"`
+}
+
+type choiceMessageOptionInput struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 type entityCardInput struct {
@@ -221,17 +241,22 @@ type readFileURLsInput struct {
 }
 
 type scopedMessagePayload struct {
-	AuthorizationRef string          `json:"-"`
-	ChartType        string          `json:"chart_type,omitempty"`
-	Content          string          `json:"content,omitempty"`
-	Data             json.RawMessage `json:"data,omitempty"`
-	Description      string          `json:"description,omitempty"`
-	EntityID         string          `json:"entity_id,omitempty"`
-	EntityType       string          `json:"entity_type,omitempty"`
-	Name             string          `json:"name,omitempty"`
-	Title            string          `json:"title,omitempty"`
-	Type             string          `json:"type"`
-	URL              string          `json:"url,omitempty"`
+	AuthorizationRef string                     `json:"-"`
+	Caption          string                     `json:"caption,omitempty"`
+	CaptionType      string                     `json:"caption_type,omitempty"`
+	ChartType        string                     `json:"chart_type,omitempty"`
+	Content          string                     `json:"content,omitempty"`
+	ContentType      string                     `json:"content_type,omitempty"`
+	Data             json.RawMessage            `json:"data,omitempty"`
+	Description      string                     `json:"description,omitempty"`
+	EntityID         string                     `json:"entity_id,omitempty"`
+	EntityType       string                     `json:"entity_type,omitempty"`
+	Name             string                     `json:"name,omitempty"`
+	Options          []choiceMessageOptionInput `json:"options,omitempty"`
+	Selection        string                     `json:"selection,omitempty"`
+	Title            string                     `json:"title,omitempty"`
+	Type             string                     `json:"type"`
+	URL              string                     `json:"url,omitempty"`
 }
 
 type sendMessageTargetPayload struct {
@@ -852,6 +877,9 @@ func callReply(ctx context.Context, input json.RawMessage) (mcpclient.ToolResult
 	if err != nil {
 		return mcpclient.ToolResult{}, err
 	}
+	if message.Type == messageTypeChoice {
+		result.Final = true
+	}
 	return result, nil
 }
 
@@ -1211,18 +1239,24 @@ func parseMessageInput(input json.RawMessage, requireContact bool) (scopedMessag
 	}
 	messageType := strings.TrimSpace(parsed.Type)
 	switch messageType {
-	case messageTypeText, messageTypeMarkdown, messageTypeImage, messageTypeFile, messageTypeCard, messageTypeChart:
+	case messageTypeText, messageTypeMarkdown, messageTypeImage, messageTypeFile, messageTypeCard, messageTypeChart, messageTypeChoice:
 	default:
 		return scopedMessagePayload{}, fmt.Errorf("unsupported message type %q", parsed.Type)
 	}
 	if messageType == messageTypeFile {
 		return parseFileMessageInput(parsed)
 	}
+	if messageType == messageTypeImage {
+		return parseImageMessageInput(parsed)
+	}
 	if messageType == messageTypeCard {
 		return parseCardMessageInput(parsed)
 	}
 	if messageType == messageTypeChart {
 		return parseChartMessageInput(parsed)
+	}
+	if messageType == messageTypeChoice {
+		return parseChoiceMessageInput(parsed)
 	}
 	content := strings.TrimSpace(parsed.Content)
 	if content == "" {
@@ -1233,6 +1267,86 @@ func parseMessageInput(input json.RawMessage, requireContact bool) (scopedMessag
 		AuthorizationRef: strings.TrimSpace(parsed.AuthorizationRef),
 		Type:             messageType,
 		Content:          content,
+	}, nil
+}
+
+func parseImageMessageInput(parsed messageInput) (scopedMessagePayload, error) {
+	content := strings.TrimSpace(parsed.Content)
+	if content == "" {
+		return scopedMessagePayload{}, fmt.Errorf("content is required")
+	}
+	caption := strings.TrimSpace(parsed.Caption)
+	if len([]rune(caption)) > maxImageMessageCaptionRunes {
+		return scopedMessagePayload{}, fmt.Errorf("image caption must be at most 5000 characters")
+	}
+	captionType := strings.ToLower(strings.TrimSpace(parsed.CaptionType))
+	if caption == "" {
+		captionType = ""
+	} else if captionType == "" {
+		captionType = messageTypeText
+	} else if captionType != messageTypeText && captionType != messageTypeMarkdown {
+		return scopedMessagePayload{}, fmt.Errorf("image caption_type must be text or markdown")
+	}
+
+	return scopedMessagePayload{
+		AuthorizationRef: strings.TrimSpace(parsed.AuthorizationRef),
+		Caption:          caption,
+		CaptionType:      captionType,
+		Content:          content,
+		Type:             messageTypeImage,
+	}, nil
+}
+
+func parseChoiceMessageInput(parsed messageInput) (scopedMessagePayload, error) {
+	contentType := strings.ToLower(strings.TrimSpace(parsed.ContentType))
+	if contentType != messageTypeText && contentType != messageTypeMarkdown {
+		return scopedMessagePayload{}, fmt.Errorf("choice content_type must be text or markdown")
+	}
+	content := strings.TrimSpace(parsed.Content)
+	if content == "" {
+		return scopedMessagePayload{}, fmt.Errorf("choice content is required")
+	}
+	if len([]rune(content)) > maxChoiceMessageContentRunes {
+		return scopedMessagePayload{}, fmt.Errorf("choice content must be at most 5000 characters")
+	}
+	selection := strings.ToLower(strings.TrimSpace(parsed.Selection))
+	if selection != "single" && selection != "multiple" {
+		return scopedMessagePayload{}, fmt.Errorf("choice selection must be single or multiple")
+	}
+	if len(parsed.Options) < 2 || len(parsed.Options) > maxChoiceMessageOptions {
+		return scopedMessagePayload{}, fmt.Errorf("choice options must contain between 2 and 20 items")
+	}
+	options := make([]choiceMessageOptionInput, len(parsed.Options))
+	seen := make(map[string]struct{}, len(parsed.Options))
+	for index, rawOption := range parsed.Options {
+		option := choiceMessageOptionInput{
+			ID: strings.TrimSpace(rawOption.ID), Label: strings.TrimSpace(rawOption.Label),
+		}
+		if option.ID == "" || len([]rune(option.ID)) > maxChoiceMessageOptionIDRunes || !choiceMessageOptionIDPattern.MatchString(option.ID) {
+			return scopedMessagePayload{}, fmt.Errorf("choice option id must use 1 to 64 letters, digits, hyphens, or underscores")
+		}
+		if _, ok := seen[option.ID]; ok {
+			return scopedMessagePayload{}, fmt.Errorf("choice option ids must be unique")
+		}
+		seen[option.ID] = struct{}{}
+		if option.Label == "" {
+			return scopedMessagePayload{}, fmt.Errorf("choice option label is required")
+		}
+		if len([]rune(option.Label)) > maxChoiceMessageOptionLabelRunes {
+			return scopedMessagePayload{}, fmt.Errorf("choice option label must be at most 200 characters")
+		}
+		for _, character := range option.Label {
+			if unicode.IsControl(character) || character == '\u2028' || character == '\u2029' {
+				return scopedMessagePayload{}, fmt.Errorf("choice option label must be plain text on one line")
+			}
+		}
+		options[index] = option
+	}
+
+	return scopedMessagePayload{
+		AuthorizationRef: strings.TrimSpace(parsed.AuthorizationRef),
+		Content:          content, ContentType: contentType, Options: options,
+		Selection: selection, Type: messageTypeChoice,
 	}, nil
 }
 

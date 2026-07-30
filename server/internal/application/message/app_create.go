@@ -17,19 +17,24 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 	if cmd.Finalize == nil {
 		return CreateResult{}, internalError(errors.New("message finalizer is required"))
 	}
+	replyToMessageID, err := normalizeOptionalUUID(cmd.ReplyToMessageID, "引用消息 ID")
+	if err != nil {
+		return CreateResult{}, InvalidRequestError(err.Error(), err)
+	}
 	var created bool
 	var message store.Message
 	memberUserIDs := []string{}
 	mentionedUserIDs := []string{}
+	choiceUserIDs := []string{}
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := appapp.LockUsableApp(tx, cmd.AppID); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errConversationAccessDenied
 			}
 			return err
 		}
-		access, _, _, err := requireAppConversationAccess(tx, cmd.ConversationID, cmd.AppID, true, false)
+		access, member, participant, err := requireAppConversationAccess(tx, cmd.ConversationID, cmd.AppID, true, false)
 		if err != nil {
 			return err
 		}
@@ -53,6 +58,13 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 			message = existing
 			return nil
 		}
+		visibleFromSeq := member.HistoryVisibleFromSeq
+		if participant != nil {
+			visibleFromSeq = participant.HistoryVisibleFromSeq
+		}
+		if err := validateReplyToMessage(tx, cmd.ConversationID, visibleFromSeq, replyToMessageID); err != nil {
+			return err
+		}
 		finalBody, summary, err := cmd.Finalize(ctx, cmd.Body)
 		if err != nil {
 			return err
@@ -61,7 +73,7 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 		message = store.Message{
 			ID: uuid.NewString(), ConversationID: cmd.ConversationID, Seq: conversation.LastMessageSeq + 1,
 			SenderType: store.MessageSenderTypeApp, SenderID: &cmd.AppID, ClientMessageID: &cmd.ClientMessageID,
-			Body: finalBody, Summary: summary, CreatedAt: now, UpdatedAt: now,
+			ReplyToMessageID: replyToMessageID, Body: finalBody, Summary: summary, CreatedAt: now, UpdatedAt: now,
 		}
 		if err := tx.Create(&message).Error; err != nil {
 			return err
@@ -80,6 +92,10 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 		if err != nil {
 			return err
 		}
+		choiceUserIDs, err = updateConversationChoiceSeq(tx, access, message.Seq, finalBody, memberUserIDs, now)
+		if err != nil {
+			return err
+		}
 		created = true
 		return nil
 	})
@@ -90,6 +106,7 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 	if created && s.notifications != nil {
 		s.notifications.PublishSharedMessageCreated(ctx, memberUserIDs, converted)
 		s.notifications.PublishMembersMentioned(ctx, mentionedUserIDs, message.ConversationID, message.Seq)
+		s.notifications.PublishMembersChoiceReceived(ctx, choiceUserIDs, message.ConversationID, message.Seq)
 	}
 	return CreateResult{Created: created, Message: converted}, nil
 }
@@ -102,6 +119,7 @@ func (s *Service) CreateDelegated(ctx context.Context, cmd CreateDelegatedComman
 	var message store.Message
 	memberUserIDs := []string{}
 	mentionedUserIDs := []string{}
+	choiceUserIDs := []string{}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		access, err := loadUserConversationAccess(tx, cmd.ConversationID, cmd.AccountID, true)
@@ -155,6 +173,10 @@ func (s *Service) CreateDelegated(ctx context.Context, cmd CreateDelegatedComman
 		if err != nil {
 			return err
 		}
+		choiceUserIDs, err = updateConversationChoiceSeq(tx, access.Context, message.Seq, finalBody, memberUserIDs, now)
+		if err != nil {
+			return err
+		}
 		created = true
 		return nil
 	})
@@ -165,6 +187,7 @@ func (s *Service) CreateDelegated(ctx context.Context, cmd CreateDelegatedComman
 	if created && s.notifications != nil {
 		s.notifications.PublishSharedMessageCreated(ctx, memberUserIDs, converted)
 		s.notifications.PublishMembersMentioned(ctx, mentionedUserIDs, message.ConversationID, message.Seq)
+		s.notifications.PublishMembersChoiceReceived(ctx, choiceUserIDs, message.ConversationID, message.Seq)
 	}
 	return CreateResult{Created: created, Message: converted}, nil
 }
@@ -187,6 +210,8 @@ func mapAppCreateError(err error) error {
 		return forbidden("当前会话不能发送消息", err)
 	case errors.Is(err, errAppDirectAccessDenied):
 		return forbidden("对方当前无权直接使用此应用", err)
+	case errors.Is(err, errReplyToMessageInvalid):
+		return InvalidRequestError("引用消息无效", err)
 	default:
 		return err
 	}

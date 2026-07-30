@@ -27,6 +27,19 @@ type conversationOptionalStringSlice struct {
 	Value   []string
 }
 
+type conversationOptionalString struct {
+	Present bool
+	Value   string
+}
+
+func (value *conversationOptionalString) UnmarshalJSON(raw []byte) error {
+	value.Present = true
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return errors.New("字符串字段不能为 null")
+	}
+	return json.Unmarshal(raw, &value.Value)
+}
+
 func (value *conversationOptionalStringSlice) UnmarshalJSON(raw []byte) error {
 	value.Present = true
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
@@ -49,6 +62,10 @@ type addGroupConversationMembersRequest struct {
 
 type updateGroupConversationNameRequest struct {
 	Name string `json:"name" example:"产品讨论组"`
+}
+
+type updateGroupConversationAnnouncementRequest struct {
+	Announcement conversationOptionalString `json:"announcement" swaggertype:"string" binding:"required" example:"本周五 18:00 发布，请及时更新任务状态。"`
 }
 
 type createAppConversationRequest struct {
@@ -81,26 +98,37 @@ type conversationProjectResponse struct {
 	Name        string `json:"name"`
 }
 
+type conversationLastMessageSenderResponse struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Nickname string `json:"nickname"`
+	Type     string `json:"type" example:"user"`
+}
+
 type conversationListItemResponse struct {
-	Avatar             string                             `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
-	CanSend            bool                               `json:"can_send" example:"true"`
-	CreatedAt          time.Time                          `json:"created_at" format:"date-time"`
-	ID                 string                             `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	LastMessageAt      *time.Time                         `json:"last_message_at" format:"date-time"`
-	LastMessageID      *string                            `json:"last_message_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	LastMessageSeq     int64                              `json:"last_message_seq" example:"12"`
-	LastMessageSummary string                             `json:"last_message_summary" example:"好的，我看一下"`
-	LastMentionedSeq   int64                              `json:"last_mentioned_seq" example:"0"`
-	LastReadSeq        int64                              `json:"last_read_seq" example:"9"`
-	MemberCount        int                                `json:"member_count" example:"2"`
-	Members            []conversationMemberResponse       `json:"members"`
-	Name               string                             `json:"name" example:"张三"`
-	Pinned             bool                               `json:"pinned" example:"false"`
-	Projects           *[]conversationProjectResponse     `json:"projects,omitempty"`
-	Type               string                             `json:"type" example:"direct"`
-	Topic              *conversationTopicMetadataResponse `json:"topic,omitempty"`
-	UnreadCount        int64                              `json:"unread_count" example:"3"`
-	Visibility         string                             `json:"visibility" example:"private"`
+	Announcement       string                                 `json:"announcement" example:"本周五 18:00 发布，请及时更新任务状态。"`
+	Avatar             string                                 `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
+	CanSend            bool                                   `json:"can_send" example:"true"`
+	CreatedAt          time.Time                              `json:"created_at" format:"date-time"`
+	ID                 string                                 `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	LastMessageAt      *time.Time                             `json:"last_message_at" format:"date-time"`
+	LastMessageID      *string                                `json:"last_message_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	LastMessageSeq     int64                                  `json:"last_message_seq" example:"12"`
+	LastMessageSender  *conversationLastMessageSenderResponse `json:"last_message_sender"`
+	LastMessageSummary string                                 `json:"last_message_summary" example:"好的，我看一下"`
+	LastMentionedSeq   int64                                  `json:"last_mentioned_seq" example:"0"`
+	LastChoiceSeq      int64                                  `json:"last_choice_seq" example:"0"`
+	LastReadSeq        int64                                  `json:"last_read_seq" example:"9"`
+	MemberCount        int                                    `json:"member_count" example:"2"`
+	Members            []conversationMemberResponse           `json:"members"`
+	Name               string                                 `json:"name" example:"张三"`
+	NotificationMuted  bool                                   `json:"notification_muted" example:"false"`
+	Pinned             bool                                   `json:"pinned" example:"false"`
+	Projects           *[]conversationProjectResponse         `json:"projects,omitempty"`
+	Type               string                                 `json:"type" example:"direct"`
+	Topic              *conversationTopicMetadataResponse     `json:"topic,omitempty"`
+	UnreadCount        int64                                  `json:"unread_count" example:"3"`
+	Visibility         string                                 `json:"visibility" example:"private"`
 }
 
 type conversationTopicMetadataResponse struct {
@@ -151,24 +179,27 @@ type createTopicResponse struct {
 }
 
 type groupConversationResponse struct {
-	Avatar             string                       `json:"avatar" example:"/assets/avatars/groups/07.webp"`
-	CreatedAt          time.Time                    `json:"created_at" format:"date-time"`
-	CreatedByUserID    string                       `json:"created_by_user_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	ID                 string                       `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	LastMessageAt      *time.Time                   `json:"last_message_at" format:"date-time"`
-	LastMessageID      *string                      `json:"last_message_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	LastMessageSeq     int64                        `json:"last_message_seq" example:"12"`
-	LastMessageSummary string                       `json:"last_message_summary" example:"张三 邀请 李四 加入群聊"`
-	LastMentionedSeq   int64                        `json:"last_mentioned_seq" example:"0"`
-	LastReadSeq        int64                        `json:"last_read_seq" example:"12"`
-	MemberCount        int                          `json:"member_count" example:"3"`
-	Members            []conversationMemberResponse `json:"members"`
-	Name               string                       `json:"name" example:"产品讨论组"`
-	PostingPolicy      string                       `json:"posting_policy" example:"open"`
-	Status             string                       `json:"status" example:"active"`
-	Type               string                       `json:"type" example:"group"`
-	UnreadCount        int64                        `json:"unread_count" example:"0"`
-	Visibility         string                       `json:"visibility" example:"private"`
+	Announcement       string                                 `json:"announcement" example:"本周五 18:00 发布，请及时更新任务状态。"`
+	Avatar             string                                 `json:"avatar" example:"/assets/avatars/groups/07.webp"`
+	CreatedAt          time.Time                              `json:"created_at" format:"date-time"`
+	CreatedByUserID    string                                 `json:"created_by_user_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	ID                 string                                 `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	LastMessageAt      *time.Time                             `json:"last_message_at" format:"date-time"`
+	LastMessageID      *string                                `json:"last_message_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	LastMessageSeq     int64                                  `json:"last_message_seq" example:"12"`
+	LastMessageSender  *conversationLastMessageSenderResponse `json:"last_message_sender"`
+	LastMessageSummary string                                 `json:"last_message_summary" example:"张三 邀请 李四 加入群聊"`
+	LastMentionedSeq   int64                                  `json:"last_mentioned_seq" example:"0"`
+	LastChoiceSeq      int64                                  `json:"last_choice_seq" example:"0"`
+	LastReadSeq        int64                                  `json:"last_read_seq" example:"12"`
+	MemberCount        int                                    `json:"member_count" example:"3"`
+	Members            []conversationMemberResponse           `json:"members"`
+	Name               string                                 `json:"name" example:"产品讨论组"`
+	PostingPolicy      string                                 `json:"posting_policy" example:"open"`
+	Status             string                                 `json:"status" example:"active"`
+	Type               string                                 `json:"type" example:"group"`
+	UnreadCount        int64                                  `json:"unread_count" example:"0"`
+	Visibility         string                                 `json:"visibility" example:"private"`
 }
 
 type listClientConversationsResponse struct {
@@ -214,6 +245,19 @@ type setConversationPinResponse struct {
 	Pinned         bool   `json:"pinned" example:"true"`
 }
 
+type setConversationMuteResponse struct {
+	ConversationID string `json:"conversation_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	Muted          bool   `json:"muted" example:"true"`
+}
+
+type dismissConversationResponse struct {
+	ConversationID string `json:"conversation_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+}
+
+type restoreConversationResponse struct {
+	Conversation conversationListItemResponse `json:"conversation"`
+}
+
 func NewConversationAPI(conversations conversationapp.ClientService, projects projectapp.ClientService) *ConversationAPI {
 	return &ConversationAPI{conversations: conversations, projects: projects}
 }
@@ -223,6 +267,7 @@ func (a *ConversationAPI) RegisterRoutes(group *echo.Group) {
 	group.POST("/conversations/apps", a.createApp)
 	group.POST("/conversations/direct", a.createDirect)
 	group.POST("/conversations/groups", a.createGroup)
+	group.PATCH("/conversations/groups/:conversation_id/announcement", a.updateAnnouncement)
 	group.PATCH("/conversations/groups/:conversation_id/name", a.updateName)
 	group.POST("/conversations/groups/:conversation_id/public", a.setPublic)
 	group.POST("/conversations/groups/:conversation_id/private", a.setPrivate)
@@ -236,12 +281,126 @@ func (a *ConversationAPI) RegisterRoutes(group *echo.Group) {
 	group.DELETE("/conversations/:conversation_id/projects/:project_id", a.unbindProject)
 	group.POST("/conversations/:conversation_id/members", a.addMembers)
 	group.POST("/conversations/:conversation_id/read", a.markRead)
+	group.DELETE("/conversations/:conversation_id", a.dismiss)
+	group.POST("/conversations/:conversation_id/restore", a.restore)
+	group.PUT("/conversations/:conversation_id/mute", a.mute)
+	group.DELETE("/conversations/:conversation_id/mute", a.unmute)
 	group.PUT("/conversations/:conversation_id/pin", a.pin)
 	group.DELETE("/conversations/:conversation_id/pin", a.unpin)
 	group.POST("/conversations/:conversation_id/messages/:message_id/topic", a.createTopic)
 	group.GET("/conversations/topics/:conversation_id", a.getTopic)
 	group.POST("/conversations/topics/:conversation_id/participate", a.participateTopic)
 	group.POST("/conversations/topics/:conversation_id/archive", a.archiveTopic)
+}
+
+// mute godoc
+//
+// @Summary 开启会话消息免打扰
+// @Description 为当前用户开启一个有权访问会话的消息免打扰。
+// @Tags 客户端会话
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Success 200 {object} successEnvelope{data=setConversationMuteResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/mute [put]
+func (a *ConversationAPI) mute(c echo.Context) error {
+	return a.setMuted(c, true)
+}
+
+// unmute godoc
+//
+// @Summary 取消会话消息免打扰
+// @Description 为当前用户恢复一个有权访问会话的消息提醒。
+// @Tags 客户端会话
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Success 200 {object} successEnvelope{data=setConversationMuteResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/mute [delete]
+func (a *ConversationAPI) unmute(c echo.Context) error {
+	return a.setMuted(c, false)
+}
+
+func (a *ConversationAPI) setMuted(c echo.Context, muted bool) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(conversationapp.CodeInternal), "服务端错误")
+	}
+	result, err := a.conversations.SetMuted(c.Request().Context(), conversationapp.SetMuteCommand{
+		AccountID: current.ID, ConversationID: c.Param("conversation_id"), Muted: muted,
+	})
+	if err != nil {
+		return writeConversationError(c, err)
+	}
+	return writeSuccess(c, http.StatusOK, setConversationMuteResponse{
+		ConversationID: result.ConversationID, Muted: result.Muted,
+	})
+}
+
+// dismiss godoc
+//
+// @Summary 从当前用户的对话列表移除会话
+// @Description 仅从当前用户的列表暂时移除会话，不删除消息或成员关系；出现新消息后会自动恢复。
+// @Tags 客户端会话
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Success 200 {object} successEnvelope{data=dismissConversationResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id} [delete]
+func (a *ConversationAPI) dismiss(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(conversationapp.CodeInternal), "服务端错误")
+	}
+	result, err := a.conversations.Dismiss(c.Request().Context(), conversationapp.DismissCommand{
+		AccountID: current.ID, ConversationID: c.Param("conversation_id"),
+	})
+	if err != nil {
+		return writeConversationError(c, err)
+	}
+	return writeSuccess(c, http.StatusOK, dismissConversationResponse{ConversationID: result.ConversationID})
+}
+
+// restore godoc
+//
+// @Summary 将会话恢复到当前用户的对话列表
+// @Description 用户主动打开一个之前从列表移除的会话时恢复它，不影响消息、成员关系和免打扰状态。
+// @Tags 客户端会话
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Success 200 {object} successEnvelope{data=restoreConversationResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/restore [post]
+func (a *ConversationAPI) restore(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(conversationapp.CodeInternal), "服务端错误")
+	}
+	result, err := a.conversations.Restore(c.Request().Context(), conversationapp.RestoreCommand{
+		AccountID: current.ID, ConversationID: c.Param("conversation_id"),
+	})
+	if err != nil {
+		return writeConversationError(c, err)
+	}
+	return writeSuccess(c, http.StatusOK, restoreConversationResponse{
+		Conversation: newConversationItemResponse(result),
+	})
 }
 
 // pin godoc
@@ -360,9 +519,10 @@ func (a *ConversationAPI) archiveTopic(c echo.Context) error {
 // list godoc
 //
 // @Summary 列出当前用户会话
-// @Description 普通用户获取自己参与的最近 100 个会话。茉莉固定第一，其他置顶会话和未置顶会话分别按照最后消息时间倒序排列。
+// @Description 普通用户获取最近 100 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。
 // @Tags 客户端会话
 // @Produce json
+// @Param include_conversation_id query string false "即使话题超过活跃时间，也包含这个当前正在查看的会话 ID"
 // @Success 200 {object} successEnvelope{data=listClientConversationsResponse}
 // @Failure 401 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
@@ -372,7 +532,9 @@ func (a *ConversationAPI) list(c echo.Context) error {
 	if !ok {
 		return writeFailure(c, 500, string(conversationapp.CodeInternal), "服务端错误")
 	}
-	result, err := a.conversations.List(c.Request().Context(), conversationapp.ListCommand{AccountID: current.ID})
+	result, err := a.conversations.List(c.Request().Context(), conversationapp.ListCommand{
+		AccountID: current.ID, IncludeConversationID: c.QueryParam("include_conversation_id"),
+	})
 	if err != nil {
 		return writeConversationError(c, err)
 	}
@@ -486,7 +648,7 @@ func (a *ConversationAPI) createGroup(c echo.Context) error {
 // addMembers godoc
 //
 // @Summary 添加群聊成员
-// @Description 普通用户向自己参与的 active 群聊添加成员，并生成一条系统邀请消息。
+// @Description 普通用户向自己参与的 active 群聊添加用户成员；只有群主或管理员可以添加应用成员。成功后生成一条系统邀请消息。
 // @Tags 客户端会话
 // @Accept json
 // @Produce json
@@ -602,6 +764,46 @@ func (a *ConversationAPI) updateName(c echo.Context) error {
 		return writeFailure(c, 400, string(conversationapp.CodeInvalidRequest), "请求格式错误")
 	}
 	result, err := a.conversations.UpdateName(c.Request().Context(), conversationapp.UpdateNameCommand{Actor: conversationActor(current), ConversationID: c.Param("conversation_id"), Name: req.Name})
+	if err != nil {
+		return writeConversationError(c, err)
+	}
+	return writeSuccess(c, http.StatusOK, newMutationResponse(result))
+}
+
+// updateAnnouncement godoc
+//
+// @Summary 修改群公告
+// @Description 群主或管理员修改 active 群聊公告。内容会去除首尾空白，最多 200 个 Unicode 字符；空内容会清空公告。修改后生成系统消息。
+// @Tags 客户端会话
+// @Accept json
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param body body updateGroupConversationAnnouncementRequest true "群公告"
+// @Success 200 {object} successEnvelope{data=addGroupConversationMembersResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/groups/{conversation_id}/announcement [patch]
+func (a *ConversationAPI) updateAnnouncement(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, 500, string(conversationapp.CodeInternal), "服务端错误")
+	}
+	if err := validateConversationPath(c.Param("conversation_id")); err != nil {
+		return writeFailure(c, 400, string(conversationapp.CodeInvalidRequest), err.Error())
+	}
+	var req updateGroupConversationAnnouncementRequest
+	if err := c.Bind(&req); err != nil {
+		return writeFailure(c, 400, string(conversationapp.CodeInvalidRequest), "请求格式错误")
+	}
+	if !req.Announcement.Present {
+		return writeFailure(c, 400, string(conversationapp.CodeInvalidRequest), "缺少群公告字段")
+	}
+	result, err := a.conversations.UpdateAnnouncement(c.Request().Context(), conversationapp.UpdateAnnouncementCommand{
+		Actor: conversationActor(current), Announcement: req.Announcement.Value, ConversationID: c.Param("conversation_id"),
+	})
 	if err != nil {
 		return writeConversationError(c, err)
 	}
@@ -880,7 +1082,13 @@ func conversationActor(value account.Account) conversationapp.Actor {
 }
 
 func newConversationItemResponse(value conversationapp.Item) conversationListItemResponse {
-	result := conversationListItemResponse{Avatar: value.Avatar, CanSend: value.CanSend, CreatedAt: value.CreatedAt, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, Pinned: value.Pinned, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	result := conversationListItemResponse{Announcement: value.Announcement, Avatar: value.Avatar, CanSend: value.CanSend, CreatedAt: value.CreatedAt, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastChoiceSeq: value.LastChoiceSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, NotificationMuted: value.NotificationMuted, Pinned: value.Pinned, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	if value.LastMessageSender != nil {
+		result.LastMessageSender = &conversationLastMessageSenderResponse{
+			ID: value.LastMessageSender.ID, Name: value.LastMessageSender.Name,
+			Nickname: value.LastMessageSender.Nickname, Type: value.LastMessageSender.Type,
+		}
+	}
 	if value.Projects != nil {
 		projects := make([]conversationProjectResponse, 0, len(*value.Projects))
 		for _, project := range *value.Projects {
@@ -917,7 +1125,14 @@ func newTopicDetailResponse(value conversationapp.TopicDetail) topicDetailRespon
 }
 
 func newGroupResponse(value conversationapp.Group) groupConversationResponse {
-	return groupConversationResponse{Avatar: value.Avatar, CreatedAt: value.CreatedAt, CreatedByUserID: value.CreatedByUserID, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, PostingPolicy: value.PostingPolicy, Status: value.Status, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	result := groupConversationResponse{Announcement: value.Announcement, Avatar: value.Avatar, CreatedAt: value.CreatedAt, CreatedByUserID: value.CreatedByUserID, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastChoiceSeq: value.LastChoiceSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, PostingPolicy: value.PostingPolicy, Status: value.Status, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	if value.LastMessageSender != nil {
+		result.LastMessageSender = &conversationLastMessageSenderResponse{
+			ID: value.LastMessageSender.ID, Name: value.LastMessageSender.Name,
+			Nickname: value.LastMessageSender.Nickname, Type: value.LastMessageSender.Type,
+		}
+	}
+	return result
 }
 
 func newConversationMembers(values []conversationapp.Member) []conversationMemberResponse {

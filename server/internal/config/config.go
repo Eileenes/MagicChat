@@ -15,6 +15,7 @@ type Config struct {
 	Admin    AdminConfig
 	Storage  StorageConfig
 	Apps     AppsConfig
+	ASRModel ASRModelConfig
 }
 
 type ServerConfig struct {
@@ -41,6 +42,10 @@ type AdminConfig struct {
 
 type AppsConfig struct {
 	AIAssistantSecret string
+}
+
+type ASRModelConfig struct {
+	APIKey string
 }
 
 type StorageConfig struct {
@@ -85,6 +90,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.Apps.AIAssistantSecret, err = requiredEnv("AI_ASSISTANT_SECRET"); err != nil {
+		return Config{}, err
+	}
+	if cfg.ASRModel.APIKey, err = requiredEnv("ASRMODEL_API_KEY"); err != nil {
 		return Config{}, err
 	}
 	storage, err := loadStorageConfig()

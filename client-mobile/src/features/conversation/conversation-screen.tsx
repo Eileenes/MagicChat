@@ -4,8 +4,9 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router"
+import * as Clipboard from "expo-clipboard"
 import { Ellipsis } from "lucide-react-native"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Alert, AppState, BackHandler } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { SizableText, useToastController, YStack } from "tamagui"
@@ -20,12 +21,15 @@ import {
 import { ApiRequestError, isUnauthorizedError } from "@/data/api-client"
 import {
   useConversationMessages,
+  useForwardConversationMessage,
   useMarkConversationRead,
+  useRevokeConversationMessage,
   useSendConversationFileMessage,
   useSendConversationImageMessage,
   useSendConversationTextMessage,
   useSendConversationVoiceMessage,
   useSetConversationMessageReaction,
+  useSubmitConversationMessageChoiceResponse,
 } from "@/data/message-hooks"
 import type {
   PreparedClientMessageUpload,
@@ -47,13 +51,17 @@ import {
   buildPresentedMessages,
   collectMessageResources,
   createMessageMentionLabelResolver,
+  formatClientMessageBodySummary,
   type MessageMentionLabelResolver,
 } from "@/domain/messages/message-presenter"
+import { shouldShowMessageChoiceResponseCounts } from "@/domain/messages/message-choices"
 import {
   MessageComposer,
   type MessageComposerHandle,
 } from "@/features/conversation/message-composer"
+import { ForwardMessageSheet } from "@/features/conversation/forward-message-sheet"
 import { MessageList } from "@/features/conversation/message-list"
+import type { MessageReplyTarget } from "@/features/conversation/message-reply-preview"
 import { createMentionCandidates } from "@/features/conversation/mention-model"
 import { TopicArchiveDialog } from "@/features/conversation/topic-archive-dialog"
 import {
@@ -65,10 +73,17 @@ import {
   buildTopicConversationHref,
 } from "@/navigation/conversations"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
+import { addMessageSelectionActionListener } from "@/native/message-selection-actions"
 import { useClientData } from "@/providers/client-data-provider"
 import { useRealtime } from "@/realtime/realtime-context"
 
 const EMPTY_MENTION_RESOLVER: MessageMentionLabelResolver = () => undefined
+
+type ScopedMessageActionTarget = MessageReplyTarget & {
+  avatar: string
+  conversationId: string
+  createdAt: string
+}
 
 export function ConversationScreen() {
   const params = useLocalSearchParams<{
@@ -94,6 +109,23 @@ export function ConversationScreen() {
   )
   const appIsActiveRef = useRef(appIsActive)
   const composerRef = useRef<MessageComposerHandle>(null)
+  const [forwardMessageState, setForwardMessage] =
+    useState<ScopedMessageActionTarget | null>(null)
+  const [forwardSheetOpen, setForwardSheetOpen] = useState(false)
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false)
+  const [replyTargetState, setReplyTarget] =
+    useState<ScopedMessageActionTarget | null>(null)
+  const forwardMessage =
+    forwardMessageState?.conversationId === conversationId
+      ? forwardMessageState
+      : null
+  const replyTarget =
+    replyTargetState?.conversationId === conversationId
+      ? replyTargetState
+      : null
+  const requestForwardSheetClose = useCallback(() => {
+    setForwardSheetOpen(false)
+  }, [])
   const [topicArchiveDialogOpen, setTopicArchiveDialogOpen] = useState(false)
   const { contacts, conversations, currentUser, currentUserError, isReady } =
     useClientData()
@@ -149,6 +181,18 @@ export function ConversationScreen() {
     session,
     conversationId
   )
+  const submitChoiceMutation = useSubmitConversationMessageChoiceResponse(
+    session,
+    conversationId
+  )
+  const revokeMessageMutation = useRevokeConversationMessage(
+    session,
+    conversationId
+  )
+  const forwardMessageMutation = useForwardConversationMessage(
+    session,
+    conversationId
+  )
   const isSending =
     sendTextMutation.isPending ||
     sendFileMutation.isPending ||
@@ -196,6 +240,100 @@ export function ConversationScreen() {
       resolveMentionLabel,
     ]
   )
+
+  useEffect(() => {
+    if (!isFocused) return
+
+    const subscription = addMessageSelectionActionListener((event) => {
+      const message = presentedMessages.find(
+        (candidate) => candidate.id === event.messageId
+      )
+      if (!message) return
+
+      const target = {
+        author: message.author,
+        avatar: message.avatar,
+        conversationId,
+        createdAt: message.createdAt,
+        id: message.id,
+        summary: formatClientMessageBodySummary(
+          message.body,
+          resolveMentionLabel
+        ),
+      }
+
+      if (event.action === "copy") {
+        void Clipboard.setStringAsync(target.summary)
+          .then(() => {
+            toast.show("已复制", {
+              customData: { tone: "success" satisfies AppToastTone },
+            })
+          })
+          .catch(() => {
+            toast.show("复制失败", {
+              customData: { tone: "error" satisfies AppToastTone },
+            })
+          })
+        return
+      }
+
+      if (event.action === "reply") {
+        if (topicArchived) return
+        setReplyTarget(target)
+        requestAnimationFrame(() => composerRef.current?.focus())
+        return
+      }
+
+      if (event.action === "forward") {
+        setForwardMessage(target)
+        setForwardSheetOpen(true)
+        composerRef.current?.dismissAccessory()
+        return
+      }
+
+      if (
+        event.action === "revoke" &&
+        message.canRevoke &&
+        !revokeMessageMutation.isPending
+      ) {
+        void revokeMessageMutation
+          .mutateAsync(message.id)
+          .then(() => {
+            setReplyTarget((current) =>
+              current?.id === message.id ? null : current
+            )
+            toast.show("消息已撤回", {
+              customData: { tone: "success" satisfies AppToastTone },
+            })
+          })
+          .catch((error: unknown) => {
+            if (isUnauthorizedError(error)) {
+              void invalidateSession()
+              router.replace("/init")
+              return
+            }
+            toast.show(
+              error instanceof ApiRequestError
+                ? error.message
+                : "撤回消息失败，请重试。",
+              { customData: { tone: "error" satisfies AppToastTone } }
+            )
+          })
+      }
+    })
+
+    return () => subscription?.remove()
+  }, [
+    invalidateSession,
+    conversationId,
+    isFocused,
+    presentedMessages,
+    resolveMentionLabel,
+    revokeMessageMutation,
+    router,
+    toast,
+    topicArchived,
+  ])
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (status) => {
@@ -311,11 +449,14 @@ export function ConversationScreen() {
   ])
 
   async function handleSend(content: string) {
+    const replyToMessageId = replyTarget?.id
     try {
       await sendTextMutation.mutateAsync({
         clientMessageId: createClientMessageId(),
         content,
+        replyToMessageId,
       })
+      clearReplyTargetAfterSend(replyToMessageId)
       return true
     } catch (error: unknown) {
       Alert.alert(
@@ -327,18 +468,22 @@ export function ConversationScreen() {
   }
 
   async function handleSendUpload(selection: PreparedClientMessageUpload) {
+    const replyToMessageId = replyTarget?.id
     try {
       if (selection.kind === "image") {
         await sendImageMutation.mutateAsync({
           clientMessageId: createClientMessageId(),
           image: selection.upload,
+          replyToMessageId,
         })
       } else {
         await sendFileMutation.mutateAsync({
           clientMessageId: createClientMessageId(),
           file: selection.upload,
+          replyToMessageId,
         })
       }
+      clearReplyTargetAfterSend(replyToMessageId)
       return true
     } catch (error: unknown) {
       Alert.alert(
@@ -352,17 +497,20 @@ export function ConversationScreen() {
   }
 
   async function handleSendVoice(recording: PreparedClientVoiceMessage) {
+    const replyToMessageId = replyTarget?.id
     try {
       await sendVoiceMutation.mutateAsync({
         clientMessageId: createClientMessageId(),
         durationMS: recording.durationMS,
+        replyToMessageId,
         voice: recording.upload,
       })
+      clearReplyTargetAfterSend(replyToMessageId)
       return true
     } catch (error: unknown) {
       Alert.alert(
         "语音发送失败",
-        error instanceof ApiRequestError
+        error instanceof Error
           ? error.message
           : "消息发送失败，请重试。"
       )
@@ -393,8 +541,84 @@ export function ConversationScreen() {
     }
   }
 
+  async function handleRespondChoice(
+    messageId: string,
+    optionIds: string[]
+  ) {
+    try {
+      await submitChoiceMutation.mutateAsync({ messageId, optionIds })
+    } catch (error: unknown) {
+      if (isUnauthorizedError(error)) {
+        void invalidateSession()
+        router.replace("/init")
+      }
+      throw error
+    }
+  }
+
+  function clearReplyTargetAfterSend(replyToMessageId: string | undefined) {
+    if (!replyToMessageId) return
+    setReplyTarget((current) =>
+      current?.id === replyToMessageId ? null : current
+    )
+  }
+
+  async function handleForwardMessage(targetConversationIds: string[]) {
+    if (!forwardMessage || forwardMessageMutation.isPending) return false
+
+    try {
+      const result = await forwardMessageMutation.mutateAsync({
+        clientForwardId: createClientMessageId(),
+        messageId: forwardMessage.id,
+        targetConversationIds,
+      })
+      if (result.sentCount === 0) {
+        const firstFailure = result.results.find(
+          (candidate) => candidate.status === "failed"
+        )
+        toast.show(
+          firstFailure?.status === "failed"
+            ? firstFailure.error.message
+            : "转发消息失败，请重试。",
+          { customData: { tone: "error" satisfies AppToastTone } }
+        )
+        return false
+      }
+
+      toast.show(
+        result.failedCount > 0
+          ? `已转发到 ${result.sentCount} 个会话，${result.failedCount} 个失败`
+          : `已转发到 ${result.sentCount} 个会话`,
+        {
+          customData: {
+            tone: (result.failedCount > 0
+              ? "error"
+              : "success") satisfies AppToastTone,
+          },
+        }
+      )
+      return true
+    } catch (error: unknown) {
+      if (isUnauthorizedError(error)) {
+        void invalidateSession()
+        router.replace("/init")
+      } else {
+        toast.show(
+          error instanceof ApiRequestError
+            ? error.message
+            : "转发消息失败，请重试。",
+          { customData: { tone: "error" satisfies AppToastTone } }
+        )
+      }
+      return false
+    }
+  }
+
   function handleRefresh() {
-    void messagesQuery.refetch()
+    if (isPullRefreshing) return
+
+    setIsPullRefreshing(true)
+    void messagesQuery.refetch().finally(() => setIsPullRefreshing(false))
   }
 
   function handleLoadOlder() {
@@ -535,13 +759,14 @@ export function ConversationScreen() {
           <>
             <MessageList
               canAddReaction={!topicArchived}
+              canRespondToChoice={conversation.canSend && !topicArchived}
               conversationId={conversation.id}
               currentUserId={currentUser.id}
               error={messagesQuery.error}
               hasOlder={messagesQuery.hasOlder}
               isFetchingOlder={messagesQuery.isFetchingOlder}
               isLoading={messagesQuery.isLoading}
-              isRefreshing={messagesQuery.isRefreshing}
+              isPullRefreshing={isPullRefreshing}
               messages={presentedMessages}
               onAvatarLongPress={
                 conversation.type === "group"
@@ -559,6 +784,7 @@ export function ConversationScreen() {
                 void resources.reload(fileId).catch(() => undefined)
               }
               onResourcePress={(fileId) => void handleResourcePress(fileId)}
+              onRespondChoice={handleRespondChoice}
               onSetReaction={handleSetReaction}
               onVoiceResourcePress={(fileId) =>
                 void handleVoiceResourcePress(fileId)
@@ -568,6 +794,9 @@ export function ConversationScreen() {
               resolveMentionLabel={resolveMentionLabel}
               resourceStates={resources.states}
               server={session}
+              showChoiceResponseCounts={
+                shouldShowMessageChoiceResponseCounts(conversation)
+              }
             />
             {topicArchived ? (
               <YStack bg="$background" items="center" p="$4">
@@ -577,12 +806,14 @@ export function ConversationScreen() {
               </YStack>
             ) : (
               <MessageComposer
-                disabled={isSending}
+                disabled={isSending || !conversation.canSend}
                 mentionCandidates={mentionCandidates}
+                onClearReply={() => setReplyTarget(null)}
                 onSend={handleSend}
                 onSendUpload={handleSendUpload}
                 onSendVoice={handleSendVoice}
                 ref={composerRef}
+                replyTarget={replyTarget}
                 server={session}
               />
             )}
@@ -596,6 +827,19 @@ export function ConversationScreen() {
         open={topicArchiveDialogOpen}
         saving={archiveTopicMutation.isPending}
       />
+      {forwardMessage ? (
+        <ForwardMessageSheet
+          conversations={conversations}
+          onAnimationComplete={(open) => {
+            if (!open) setForwardMessage(null)
+          }}
+          onForward={handleForwardMessage}
+          onRequestClose={requestForwardSheetClose}
+          open={forwardSheetOpen}
+          server={session}
+          source={forwardMessage}
+        />
+      ) : null}
     </YStack>
   )
 }

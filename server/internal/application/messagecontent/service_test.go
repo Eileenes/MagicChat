@@ -32,6 +32,7 @@ func TestServiceNormalizesAndFinalizesCoreMessageBodies(t *testing.T) {
 		{"link", `{"type":"link","url":"https://example.com/path"}`, "[链接] Example & Docs"},
 		{"card", `{"type":"card","title":" Card ","description":" Desc ","url":"/projects/one"}`, "[卡片] Card"},
 		{"chart", `{"type":"chart","chart_type":"line","title":"趋势","description":"描述","data":{"labels":["一","二"],"series":[{"name":"数量","values":[1,2]}]}}`, "[图表] 趋势"},
+		{"choice", `{"type":"choice","content_type":"markdown","content":"## 请选择\n\n- 一个项目","selection":"single","options":[{"id":"project-a","label":"项目 A"},{"id":"project_b","label":"项目 B"}]}`, "[选择] 请选择\n一个项目"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			prepared, err := service.Prepare(context.Background(), "", json.RawMessage(testCase.raw))
@@ -44,6 +45,39 @@ func TestServiceNormalizesAndFinalizesCoreMessageBodies(t *testing.T) {
 			}
 			if summary != testCase.wantSummary {
 				t.Fatalf("summary = %q, want %q", summary, testCase.wantSummary)
+			}
+		})
+	}
+}
+
+func TestChoiceMessageValidation(t *testing.T) {
+	service := NewService(Dependencies{})
+	valid := `{"type":"choice","content_type":"text","content":"请选择","selection":"multiple","options":[{"id":"a","label":"选项 A"},{"id":"b-2","label":"选项 B"}]}`
+	prepared, err := service.Prepare(context.Background(), "", json.RawMessage(valid))
+	if err != nil {
+		t.Fatalf("prepare valid choice: %v", err)
+	}
+	var preparedChoice choiceBody
+	if err := json.Unmarshal(prepared, &preparedChoice); err != nil ||
+		preparedChoice.Type != TypeChoice || preparedChoice.Selection != choiceSelectionMultiple ||
+		len(preparedChoice.Options) != 2 || preparedChoice.Options[1].ID != "b-2" {
+		t.Fatalf("prepared choice = %s, decoded = %#v, err = %v", prepared, preparedChoice, err)
+	}
+
+	for _, testCase := range []struct {
+		name string
+		body string
+	}{
+		{"content type", `{"type":"choice","content_type":"html","content":"请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`},
+		{"selection", `{"type":"choice","content_type":"text","content":"请选择","selection":"any","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`},
+		{"too few options", `{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A"}]}`},
+		{"duplicate option id", `{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"a","label":"B"}]}`},
+		{"invalid option id", `{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a b","label":"A"},{"id":"b","label":"B"}]}`},
+		{"multiline label", `{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A\nA"},{"id":"b","label":"B"}]}`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := service.Prepare(context.Background(), "", json.RawMessage(testCase.body)); err == nil {
+				t.Fatal("prepare choice succeeded, want validation error")
 			}
 		})
 	}
@@ -89,6 +123,15 @@ func TestServiceSanitizesForwardBodiesAndPreservesLimits(t *testing.T) {
 	}
 	if string(body) != `{"type":"markdown","content":"Hi @A\\*B"}` || summary != "Hi @A\\*B" || metrics.LeafCount != 1 {
 		t.Fatalf("body = %s, summary = %q, metrics = %#v", body, summary, metrics)
+	}
+
+	body, summary, metrics, err = service.SanitizeForwardBody(
+		json.RawMessage(`{"type":"image","file_id":"image-1","width":320,"height":240,"caption":"**架构图** {(@user/`+userID+`)}","caption_type":"markdown"}`),
+		map[string]string{"user/" + userID: "A*B"},
+		0,
+	)
+	if err != nil || summary != "[图片] 架构图 @A\\*B" || metrics.LeafCount != 1 || !strings.Contains(string(body), `"caption":"**架构图** @A\\*B"`) || strings.Contains(string(body), "{(@") {
+		t.Fatalf("image body = %s, summary = %q, metrics = %#v, err = %v", body, summary, metrics, err)
 	}
 
 	bundle, err := json.Marshal(forwardBundleBody{

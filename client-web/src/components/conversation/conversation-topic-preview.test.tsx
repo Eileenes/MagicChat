@@ -47,7 +47,6 @@ describe("conversation topic preview", () => {
     await userEvent.click(screen.getByRole("button", { name: "查看话题" }))
     expect(onOpenTopic).toHaveBeenCalledWith("topic-1")
   })
-
 })
 
 function createMessage(): ConversationPanelMessage {
@@ -105,7 +104,9 @@ function createConversation(): ClientConversation {
     lastMessageAt: null,
     lastMessageId: null,
     lastMessageSeq: 1,
+    lastMessageSender: null,
     lastMessageSummary: "我们讨论一下",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 1,
     memberCount: 2,

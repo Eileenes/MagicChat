@@ -1,10 +1,13 @@
 import * as React from "react"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { ClientConversation } from "@/lib/client-data-api"
 import type { ConversationPanelMessage } from "@/lib/conversation-panel-types"
-import { ConversationPanelHistory } from "@/components/conversation/conversation-panel-history"
+import {
+  ConversationPanelHistory,
+  type ConversationHistoryNavigation,
+} from "@/components/conversation/conversation-panel-history"
 import { formatConversationMessageTime } from "@/lib/conversation-message-presenter"
 
 const testState = vi.hoisted(() => ({
@@ -16,6 +19,7 @@ const testState = vi.hoisted(() => ({
 }))
 
 const defaultResizeObserver = window.ResizeObserver
+const defaultScrollIntoView = HTMLElement.prototype.scrollIntoView
 
 class ControlledResizeObserver implements ResizeObserver {
   constructor(callback: ResizeObserverCallback) {
@@ -115,12 +119,21 @@ describe("ConversationPanelHistory", () => {
       configurable: true,
       value: ControlledResizeObserver,
     })
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    })
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     Object.defineProperty(window, "ResizeObserver", {
       configurable: true,
       value: defaultResizeObserver,
+    })
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: defaultScrollIntoView,
     })
   })
 
@@ -268,6 +281,88 @@ describe("ConversationPanelHistory", () => {
     expect(testState.bubbleRenderCount).toBe(1)
   })
 
+  it("compacts an oversized history when it is at the bottom", () => {
+    const onCompactMessages = vi.fn()
+    const messages = Array.from({ length: 301 }, (_, index) =>
+      createMessage(`message-${index + 1}`, "other")
+    )
+
+    render(
+      <ConversationPanelHistory
+        {...createProps(messages)}
+        onCompactMessages={onCompactMessages}
+      />
+    )
+
+    expect(onCompactMessages).toHaveBeenCalledOnce()
+  })
+
+  it("does not compact while reading away from the bottom", () => {
+    const onCompactMessages = vi.fn()
+    const initialMessages = Array.from({ length: 300 }, (_, index) =>
+      createMessage(`message-${index + 1}`, "other")
+    )
+    const props = {
+      ...createProps(initialMessages),
+      onCompactMessages,
+    }
+    const { rerender } = render(<ConversationPanelHistory {...props} />)
+    const viewport = getViewport()
+    viewport.scrollTop = 100
+    fireEvent.scroll(viewport)
+
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        messages={[...initialMessages, createMessage("message-301", "other")]}
+      />
+    )
+
+    expect(onCompactMessages).not.toHaveBeenCalled()
+  })
+
+  it("compacts the conversation cache when leaving the history", () => {
+    const onCompactMessages = vi.fn()
+    const { unmount } = render(
+      <ConversationPanelHistory
+        {...createProps([createMessage("message-1", "other")])}
+        onCompactMessages={onCompactMessages}
+      />
+    )
+
+    unmount()
+
+    expect(onCompactMessages).toHaveBeenCalledOnce()
+  })
+
+  it("protects recently loaded history for three minutes", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-23T00:00:00Z"))
+    const onCompactMessages = vi.fn()
+    const latestMessages = Array.from({ length: 300 }, (_, index) =>
+      createMessage(`message-${index + 2}`, "other")
+    )
+    const props = {
+      ...createProps(latestMessages),
+      onCompactMessages,
+    }
+    const { rerender } = render(<ConversationPanelHistory {...props} />)
+
+    rerender(<ConversationPanelHistory {...props} loadingBefore />)
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        messages={[createMessage("message-1", "other"), ...latestMessages]}
+      />
+    )
+
+    expect(onCompactMessages).not.toHaveBeenCalled()
+
+    act(() => vi.advanceTimersByTime(3 * 60 * 1000))
+
+    expect(onCompactMessages).toHaveBeenCalledOnce()
+  })
+
   it("marks the newer message when adjacent messages are more than one hour apart", () => {
     const firstMessage = createMessage(
       "message-1",
@@ -301,7 +396,92 @@ describe("ConversationPanelHistory", () => {
       formatConversationMessageTime(moreThanOneHourLater.createdAt)
     )
   })
+
+  it("centers and highlights a message selected from search", () => {
+    const onReturnToLatest = vi.fn()
+    const onFocusHandled = vi.fn()
+    const message = createMessage("message-1", "other")
+    render(
+      <ConversationPanelHistory
+        {...createProps([message])}
+        navigation={createHistoryNavigation({
+          focus: { messageId: message.id, requestKey: 1 },
+          onFocusHandled,
+          onReturnToLatest,
+        })}
+      />
+    )
+
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({
+      block: "center",
+    })
+    expect(screen.getByTestId("message-message-1").parentElement).toHaveClass(
+      "ring-2"
+    )
+    expect(onFocusHandled).toHaveBeenCalledWith(1)
+    fireEvent.click(screen.getByRole("button", { name: "回到最新消息" }))
+    expect(onReturnToLatest).toHaveBeenCalledOnce()
+  })
+
+  it("loads newer messages when scrolling down in history mode", () => {
+    const onLoadAfterMessages = vi.fn()
+    render(
+      <ConversationPanelHistory
+        {...createProps([createMessage("message-1", "other")])}
+        navigation={createHistoryNavigation({ onLoadAfterMessages })}
+      />
+    )
+    const viewport = getViewport()
+    viewport.scrollTop = testState.scrollHeight - testState.clientHeight
+    fireEvent.scroll(viewport)
+
+    expect(onLoadAfterMessages).toHaveBeenCalledOnce()
+  })
+
+  it("does not treat the final newer history page as realtime messages", () => {
+    const initialMessages = [createMessage("message-1", "other")]
+    const props = createProps(initialMessages)
+    const { rerender } = render(
+      <ConversationPanelHistory
+        {...props}
+        navigation={createHistoryNavigation({ loadingAfter: true })}
+      />
+    )
+    const viewport = getViewport()
+    viewport.scrollTop = 100
+    fireEvent.scroll(viewport)
+
+    testState.scrollHeight = 1_100
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        messages={[...initialMessages, createMessage("message-2", "other")]}
+        navigation={createHistoryNavigation({
+          loadingAfter: false,
+          viewMode: "latest",
+        })}
+      />
+    )
+
+    expect(viewport.scrollTop).toBe(100)
+    expect(screen.queryByText(/条新消息/)).not.toBeInTheDocument()
+  })
 })
+
+function createHistoryNavigation(
+  overrides: Partial<ConversationHistoryNavigation> = {}
+): ConversationHistoryNavigation {
+  return {
+    focus: null,
+    loadingAfter: false,
+    onFocusHandled: vi.fn(),
+    onLoadAfterMessages: vi.fn(),
+    onReturnToLatest: vi.fn(),
+    pendingLatestMessageCount: 0,
+    viewMode: "history",
+    ...overrides,
+  }
+}
 
 function getViewport() {
   const viewport = document.querySelector<HTMLDivElement>(
@@ -341,7 +521,9 @@ function createConversation(): ClientConversation {
     lastMessageAt: "2026-07-14T10:00:00Z",
     lastMessageId: "message-1",
     lastMessageSeq: 1,
+    lastMessageSender: null,
     lastMessageSummary: "测试消息",
+    lastChoiceSeq: 0,
     lastReadSeq: 1,
     memberCount: 2,
     name: "测试会话",

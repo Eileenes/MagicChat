@@ -87,7 +87,9 @@ export function RealtimeProvider({ children }: React.PropsWithChildren) {
     const unsubscribeEvents = client.subscribeEvent((event, payload) => {
       if (event === realtimeEvents.systemReady) {
         enqueueSynchronization(() =>
-          synchronizeRealtimeData(queryClient, activeServer)
+          synchronizeRealtimeData(queryClient, activeServer, {
+            activeConversationId: activeConversationIdRef.current,
+          })
         )
         return
       }
@@ -133,7 +135,9 @@ export function RealtimeProvider({ children }: React.PropsWithChildren) {
         client.connect()
         void prepareMessageNotifications().catch(() => undefined)
         enqueueSynchronization(() =>
-          refreshClientDataOnForeground(queryClient, activeServer)
+          refreshClientDataOnForeground(queryClient, activeServer, {
+            activeConversationId: activeConversationIdRef.current,
+          })
         )
       }
     }

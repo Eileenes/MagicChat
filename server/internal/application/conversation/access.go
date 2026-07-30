@@ -71,6 +71,14 @@ func normalizeGroupName(raw string) (string, error) {
 	return name, nil
 }
 
+func normalizeGroupAnnouncement(raw string) (string, error) {
+	announcement := strings.TrimSpace(raw)
+	if len([]rune(announcement)) > MaxGroupAnnouncementLength {
+		return "", errors.New("群公告不能超过 200 个字符")
+	}
+	return announcement, nil
+}
+
 func normalizeMemberIDs(rawIDs []string, creatorID string) ([]string, error) {
 	parsedCreatorID, err := uuid.Parse(creatorID)
 	if err != nil {
@@ -308,6 +316,10 @@ func (s *Service) loadItem(db *gorm.DB, conversation store.Conversation, current
 	if err != nil {
 		return Item{}, err
 	}
+	lastMessageSenders, err := loadLastMessageSenders(db, []store.Conversation{conversation})
+	if err != nil {
+		return Item{}, err
+	}
 	if conversation.Kind == store.ConversationKindTopic {
 		presentations, err := loadTopicPresentations(db, []store.Conversation{conversation}, currentUserID)
 		if err != nil {
@@ -318,38 +330,44 @@ func (s *Service) loadItem(db *gorm.DB, conversation store.Conversation, current
 			return Item{}, gorm.ErrRecordNotFound
 		}
 		item := newTopicItem(conversation, currentUserID, membersByConversation[conversation.ID], users, apps, presentation)
+		item.LastMessageSender = lastMessageSenders[conversation.ID]
 		item.CanSend, err = loadUserConversationCanSend(db, conversation.ID, currentUserID)
 		if err != nil {
 			return Item{}, err
 		}
-		if err := s.loadItemPinState(db, &item, currentUserID); err != nil {
+		if err := s.loadItemPreferenceState(db, &item, currentUserID); err != nil {
 			return Item{}, err
 		}
 		return item, nil
 	}
 	item := newItem(conversation, currentUserID, membersByConversation[conversation.ID], users, apps)
+	item.LastMessageSender = lastMessageSenders[conversation.ID]
 	item.CanSend, err = loadUserConversationCanSend(db, conversation.ID, currentUserID)
 	if err != nil {
 		return Item{}, err
 	}
-	if err := s.loadItemPinState(db, &item, currentUserID); err != nil {
+	if err := s.loadItemPreferenceState(db, &item, currentUserID); err != nil {
 		return Item{}, err
 	}
 	return item, nil
 }
 
-func (s *Service) loadItemPinState(db *gorm.DB, item *Item, currentUserID string) error {
+func (s *Service) loadItemPreferenceState(db *gorm.DB, item *Item, currentUserID string) error {
 	if item.ID == builtinAssistantConversationID(currentUserID) {
 		item.Pinned = true
+	}
+	var preference store.ConversationUserPreference
+	err := db.First(&preference, "user_id = ? AND conversation_id = ?", currentUserID, item.ID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	}
-	var count int64
-	if err := db.Model(&store.ConversationPin{}).Where(
-		"user_id = ? AND conversation_id = ?", currentUserID, item.ID,
-	).Count(&count).Error; err != nil {
+	if err != nil {
 		return err
 	}
-	item.Pinned = count > 0
+	if item.ID != builtinAssistantConversationID(currentUserID) {
+		item.Pinned = preference.Pinned
+	}
+	item.NotificationMuted = preference.NotificationMuted
 	return nil
 }
 
@@ -426,16 +444,18 @@ func newTopicItem(conversation store.Conversation, currentUserID string, members
 	parentItem := newItem(presentation.parent, currentUserID, members, users, apps)
 	lastReadSeq := int64(0)
 	lastMentionedSeq := int64(0)
+	lastChoiceSeq := int64(0)
 	participating := presentation.participant != nil
 	if presentation.participant != nil {
 		lastReadSeq = presentation.participant.LastReadSeq
 		lastMentionedSeq = presentation.participant.LastMentionedSeq
+		lastChoiceSeq = presentation.participant.LastChoiceSeq
 	}
 	return Item{
 		Avatar: parentItem.Avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
 		LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
-		LastMentionedSeq: lastMentionedSeq, LastReadSeq: lastReadSeq,
+		LastMentionedSeq: lastMentionedSeq, LastChoiceSeq: lastChoiceSeq, LastReadSeq: lastReadSeq,
 		MemberCount: len(members), Members: newMembers(members, users, apps), Name: conversation.Name,
 		Topic: &TopicMetadata{
 			Archived:             presentation.topic.ArchivedAt != nil,
@@ -453,6 +473,7 @@ func newItem(conversation store.Conversation, currentUserID string, members []st
 	name, avatar := conversation.Name, conversation.Avatar
 	lastReadSeq := currentMemberLastReadSeq(currentUserID, members)
 	lastMentionedSeq := currentMemberLastMentionedSeq(currentUserID, members)
+	lastChoiceSeq := currentMemberLastChoiceSeq(currentUserID, members)
 	if conversation.Kind == store.ConversationKindDirect {
 		for _, member := range members {
 			if member.MemberID == currentUserID {
@@ -487,10 +508,11 @@ func newItem(conversation store.Conversation, currentUserID string, members []st
 		name = "群聊"
 	}
 	return Item{
-		Avatar: avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
+		Announcement: conversation.Announcement,
+		Avatar:       avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
 		LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
-		LastMentionedSeq: lastMentionedSeq, LastReadSeq: lastReadSeq,
+		LastMentionedSeq: lastMentionedSeq, LastChoiceSeq: lastChoiceSeq, LastReadSeq: lastReadSeq,
 		MemberCount: listMemberCount(conversation.Kind, members), Members: newMembers(members, users, apps),
 		Name: name, Type: conversation.Kind, UnreadCount: unreadCount(conversation.LastMessageSeq, lastReadSeq),
 		Visibility: conversation.Visibility,
@@ -576,7 +598,8 @@ func newGroup(conversation store.Conversation, candidates []memberCandidate, cur
 		lastReadSeq = conversation.LastMessageSeq
 	}
 	return Group{
-		Avatar: conversation.Avatar, CreatedAt: conversation.CreatedAt, CreatedByUserID: conversation.CreatedByUserID,
+		Announcement: conversation.Announcement,
+		Avatar:       conversation.Avatar, CreatedAt: conversation.CreatedAt, CreatedByUserID: conversation.CreatedByUserID,
 		ID: conversation.ID, LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
 		LastReadSeq: lastReadSeq, MemberCount: len(members), Members: members, Name: conversation.Name,
@@ -628,6 +651,15 @@ func currentMemberLastMentionedSeq(currentUserID string, members []store.Convers
 	for _, member := range members {
 		if member.MemberType == store.ConversationMemberTypeUser && member.MemberID == currentUserID {
 			return member.LastMentionedSeq
+		}
+	}
+	return 0
+}
+
+func currentMemberLastChoiceSeq(currentUserID string, members []store.ConversationMember) int64 {
+	for _, member := range members {
+		if member.MemberType == store.ConversationMemberTypeUser && member.MemberID == currentUserID {
+			return member.LastChoiceSeq
 		}
 	}
 	return 0

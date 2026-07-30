@@ -17,14 +17,22 @@ import {
   readLastConversationId,
   writeLastConversationId,
 } from "@/lib/last-conversation"
+import { createConversationMessageState } from "@/lib/client-data-state"
 
 const mocks = vi.hoisted(() => ({
   createConversationTopic: vi.fn(),
+  forwardConversationMessages: vi.fn(),
+  getConversationTopic: vi.fn(),
 }))
 
 vi.mock("@/lib/client-data-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/client-data-api")>()
-  return { ...actual, createConversationTopic: mocks.createConversationTopic }
+  return {
+    ...actual,
+    createConversationTopic: mocks.createConversationTopic,
+    forwardConversationMessages: mocks.forwardConversationMessages,
+    getConversationTopic: mocks.getConversationTopic,
+  }
 })
 
 describe("ChatPage create group dialog", () => {
@@ -69,13 +77,9 @@ describe("ChatPage create topic confirmation", () => {
       {
         ...createConversationOverrides([conversation]),
         getConversationMessageState: vi.fn(() => ({
-          error: null,
+          ...createConversationMessageState(),
           loaded: true,
-          loading: false,
-          loadingBefore: false,
           messages: [sourceMessage],
-          page: null,
-          sending: false,
         })),
         updateMessageTopic: vi.fn(),
       },
@@ -106,6 +110,114 @@ describe("ChatPage create topic confirmation", () => {
   })
 })
 
+describe("ChatPage topic source forwarding", () => {
+  it("forwards the source message before selected topic replies", async () => {
+    const user = userEvent.setup()
+    const parent = createConversation("conversation-parent", "父会话")
+    const topic: ClientConversation = {
+      ...createConversation("conversation-topic", "讨论发布计划"),
+      topic: {
+        archived: false,
+        parentConversationId: parent.id,
+        parentConversationName: parent.name,
+        parentConversationType: "group",
+        participating: true,
+        sourceMessageId: "message-source",
+        sourceMessageSeq: 8,
+        sourceSender: {
+          avatar: "",
+          id: "user-2",
+          name: "Bob",
+          type: "user",
+        },
+      },
+      type: "topic",
+    }
+    const sourceMessage = {
+      body: { content: "讨论发布计划", type: "text" as const },
+      createdAt: "2026-07-20T10:00:00Z",
+      id: "message-source",
+      revokedAt: null,
+      sender: {
+        avatar: "",
+        id: "user-2",
+        name: "Bob",
+        type: "user" as const,
+      },
+      seq: 8,
+      summary: "讨论发布计划",
+    }
+    const topicReply: ClientMessage = {
+      ...createSourceMessage(topic.id),
+      body: { content: "话题回复", type: "text" },
+      id: "message-reply",
+      seq: 1,
+    }
+    mocks.getConversationTopic.mockReset()
+    mocks.getConversationTopic.mockResolvedValue({
+      canArchive: false,
+      canParticipate: false,
+      conversation: topic,
+      parentConversation: {
+        id: parent.id,
+        name: parent.name,
+        type: parent.type,
+      },
+      sourceMessage,
+    })
+    mocks.forwardConversationMessages.mockReset()
+    mocks.forwardConversationMessages.mockResolvedValue({
+      failedCount: 0,
+      results: [
+        {
+          conversationId: parent.id,
+          messages: [],
+          status: "sent",
+        },
+      ],
+      sentCount: 1,
+    })
+    renderChatPage(
+      {
+        ...createConversationOverrides([topic, parent]),
+        getConversationMessageState: vi.fn((conversationId: string) =>
+          conversationId === topic.id
+            ? {
+                ...createConversationMessageState(),
+                loaded: true,
+                messages: [topicReply],
+              }
+            : createConversationMessageState()
+        ),
+      },
+      `/chat/${topic.id}`
+    )
+
+    const sourceBubble = await screen.findByTestId(
+      "topic-source-message-bubble"
+    )
+    fireEvent.contextMenu(sourceBubble)
+    await user.click(screen.getByRole("menuitem", { name: "多选" }))
+    await user.click(screen.getByText("话题回复"))
+    expect(screen.getByText("已选择 2 条")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "合并转发" }))
+    await user.click(screen.getByRole("checkbox", { name: parent.name }))
+    await user.click(screen.getByRole("button", { name: "转发（1）" }))
+
+    await waitFor(() =>
+      expect(mocks.forwardConversationMessages).toHaveBeenCalledWith(
+        topic.id,
+        expect.objectContaining({
+          messageIds: [sourceMessage.id, topicReply.id],
+          mode: "merged",
+          targetConversationIds: [parent.id],
+        })
+      )
+    )
+  })
+})
+
 describe("ChatPage app direct access", () => {
   it("renders retained app history as read-only after access is revoked", async () => {
     const conversation: ClientConversation = {
@@ -118,13 +230,9 @@ describe("ChatPage app direct access", () => {
       {
         ...createConversationOverrides([conversation]),
         getConversationMessageState: vi.fn(() => ({
-          error: null,
+          ...createConversationMessageState(),
           loaded: true,
-          loading: false,
-          loadingBefore: false,
           messages: [sourceMessage],
-          page: null,
-          sending: false,
         })),
       },
       `/chat/${conversation.id}`
@@ -243,6 +351,7 @@ function createConversationOverrides(
   return {
     conversations,
     ensureConversationMessages: vi.fn(),
+    focusConversationMessage: vi.fn(),
     getConversation: vi.fn(
       (conversationId: string) =>
         conversations.find(
@@ -311,28 +420,39 @@ function createClientDataValue(
     addGroupConversationMembers: vi.fn(),
     createGroupConversation: vi.fn(),
     createProject: vi.fn(),
+    compactConversationMessages: vi.fn(),
+    consumeConversationMessageFocus: vi.fn(),
+    registerConversationMessageView: vi.fn(() => vi.fn()),
+    dismissConversation: vi.fn(),
     dissolveGroupConversation: vi.fn(),
     ensureConversationMessages: vi.fn(),
+    focusConversationMessage: vi.fn(),
     getConversation: vi.fn(() => null),
     getConversationMessageState: vi.fn(),
     handleIncomingConversationMessage: vi.fn(),
     handleIncomingConversationMessageUpdate: vi.fn(),
+    handleIncomingMessageChoiceUpdate: vi.fn(),
     handleIncomingMessageReactionsUpdate: vi.fn(),
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
+    loadAfterConversationMessages: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
     loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
     setConversationPinned: vi.fn(),
+    setConversationMuted: vi.fn(),
     mergeIncomingConversationMessage: vi.fn(),
     openAppConversation: vi.fn(),
     openDirectConversation: vi.fn(),
     refreshContacts: vi.fn(),
     refreshConversations: vi.fn(),
+    restoreConversation: vi.fn(),
     refreshMe: vi.fn(),
     refreshProjects: vi.fn(),
     removeConversation: vi.fn(),
     removeGroupConversationMember: vi.fn(),
+    returnToLatestConversationMessages: vi.fn(),
+    respondToChoice: vi.fn(),
     revokeConversationMessage: vi.fn(),
     setMessageReaction: vi.fn(),
     sendConversationFile: vi.fn(),
@@ -345,9 +465,12 @@ function createClientDataValue(
     setGroupConversationPrivate: vi.fn(),
     setGroupConversationPublic: vi.fn(),
     syncLoadedConversationMessages: vi.fn(),
+    updateConversationLastChoiceSeq: vi.fn(),
     updateConversationLastMentionedSeq: vi.fn(),
     updateConversationLastMessage: vi.fn(),
     updateConversationPinned: vi.fn(),
+    updateConversationMuted: vi.fn(),
+    updateGroupConversationAnnouncement: vi.fn(),
     updateGroupConversationAvatar: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,
@@ -394,7 +517,9 @@ function createConversation(id: string, name: string): ClientConversation {
     lastMessageAt: null,
     lastMessageId: null,
     lastMessageSeq: 0,
+    lastMessageSender: null,
     lastMessageSummary: "",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 1,

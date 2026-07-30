@@ -14,11 +14,14 @@ import {
 } from "react"
 import {
   Keyboard,
+  Platform,
   Pressable,
   StyleSheet,
+  Vibration,
 } from "react-native"
 import {
   Button,
+  SizableText,
   type TamaguiElement,
   useToastController,
   XStack,
@@ -56,16 +59,21 @@ import {
 } from "@/features/conversation/message-upload-picker"
 import { MessageUploadDialog } from "@/features/conversation/message-upload-dialog"
 import { MessageVoiceDialog } from "@/features/conversation/message-voice-dialog"
+import {
+  MessageReplyPreview,
+  type MessageReplyTarget,
+} from "@/features/conversation/message-reply-preview"
 import { useVoiceMessageRecorder } from "@/features/conversation/use-voice-message-recorder"
 
 export type MessageComposerHandle = {
   dismissAccessory: () => void
+  focus: () => void
   insertMention: (target: MentionSelection) => void
 }
 
 const COMPOSER_CONTROL_HEIGHT = 38
 const COMPOSER_INPUT_GAP = 8
-const COMPOSER_INPUT_HORIZONTAL_PADDING = 8
+const COMPOSER_INPUT_HORIZONTAL_PADDING = "$3"
 const COMPOSER_LINE_HEIGHT = 22
 const COMPOSER_MAX_LINES = 4
 const COMPOSER_MAX_CONTROL_HEIGHT =
@@ -82,18 +90,22 @@ export const MessageComposer = forwardRef<
   {
     disabled: boolean
     mentionCandidates: MentionCandidate[]
+    onClearReply: () => void
     onSend: (content: string) => Promise<boolean>
     onSendUpload: (selection: PreparedClientMessageUpload) => Promise<boolean>
     onSendVoice: (recording: PreparedClientVoiceMessage) => Promise<boolean>
+    replyTarget: MessageReplyTarget | null
     server: ServerTarget
   }
 >(function MessageComposer(
   {
     disabled,
     mentionCandidates,
+    onClearReply,
     onSend,
     onSendUpload,
     onSendVoice,
+    replyTarget,
     server,
   },
   ref
@@ -110,7 +122,6 @@ export const MessageComposer = forwardRef<
   const uploadInFlightRef = useRef(false)
   const voiceUploadInFlightRef = useRef(false)
   const voiceRecordingRef = useRef<PreparedClientVoiceMessage | null>(null)
-  const inputVoiceGestureRef = useRef(false)
   const mountedRef = useRef(true)
   const [content, setContent] = useState("")
   const [inputHeight, setInputHeight] = useState(COMPOSER_CONTROL_HEIGHT)
@@ -139,11 +150,20 @@ export const MessageComposer = forwardRef<
     : inputHeight
   const composerPanelHeight =
     visibleControlHeight + COMPOSER_PANEL_VERTICAL_CHROME
-  const inputScrollEnabled = inputHeight >= COMPOSER_MAX_CONTROL_HEIGHT
+  const inputVerticalPadding =
+    Platform.OS === "ios" ? COMPOSER_TEXT_VERTICAL_CHROME / 2 : 0
+  // Toggling scrolling changes UITextView.contentSize on iOS, which can feed
+  // back into inputHeight through onContentSizeChange and cause oscillation.
+  const inputScrollEnabled =
+    Platform.OS === "ios" || inputHeight >= COMPOSER_MAX_CONTROL_HEIGHT
 
   useEffect(() => {
     voiceRecordingRef.current = voiceRecorder.recording
   }, [voiceRecorder.recording])
+
+  useEffect(() => {
+    if (voiceRecorder.status === "recording") Vibration.vibrate(35)
+  }, [voiceRecorder.status])
 
   useEffect(() => {
     if (!voiceRecorder.error) return
@@ -181,6 +201,12 @@ export const MessageComposer = forwardRef<
   useImperativeHandle(ref, () => ({
     dismissAccessory() {
       setAccessoryMode(null)
+    },
+    focus() {
+      setVoiceMode(false)
+      setAccessoryMode(null)
+      setMentionPickerOpen(false)
+      focusInputAfterRender()
     },
     insertMention(target) {
       if (!disabled) insertMentionTarget(target)
@@ -244,13 +270,26 @@ export const MessageComposer = forwardRef<
   function handleInputContentSizeChange(
     event: { nativeEvent: { contentSize: { height: number; width: number } } }
   ) {
+    // iOS includes the placeholder in an empty UITextView's contentSize.
+    // Keep the empty composer at its minimum height regardless of that metric.
+    if (contentRef.current.length === 0) {
+      setInputHeight((currentHeight) =>
+        currentHeight === COMPOSER_CONTROL_HEIGHT
+          ? currentHeight
+          : COMPOSER_CONTROL_HEIGHT
+      )
+      return
+    }
+
     const measuredHeight = Math.ceil(event.nativeEvent.contentSize.height)
+    // UITextView contentSize includes its vertical padding. Android keeps the
+    // existing zero-padding measurement and needs the control chrome added.
+    const measuredControlHeight =
+      measuredHeight +
+      (Platform.OS === "ios" ? 0 : COMPOSER_TEXT_VERTICAL_CHROME)
     const nextHeight = Math.max(
       COMPOSER_CONTROL_HEIGHT,
-      Math.min(
-        COMPOSER_MAX_CONTROL_HEIGHT,
-        measuredHeight + COMPOSER_TEXT_VERTICAL_CHROME
-      )
+      Math.min(COMPOSER_MAX_CONTROL_HEIGHT, measuredControlHeight)
     )
     setInputHeight((currentHeight) =>
       currentHeight === nextHeight ? currentHeight : nextHeight
@@ -419,34 +458,6 @@ export const MessageComposer = forwardRef<
     void voiceRecorder.stopRecording()
   }
 
-  function handleInputPress() {
-    if (inputVoiceGestureRef.current) {
-      inputVoiceGestureRef.current = false
-      return
-    }
-    if (interactionDisabled) return
-
-    setAccessoryMode(null)
-    setMentionPickerOpen(false)
-    focusInputAfterRender()
-  }
-
-  function handleInputLongPress() {
-    if (interactionDisabled || contentRef.current.trim()) return
-
-    inputVoiceGestureRef.current = true
-    setAccessoryMode(null)
-    setMentionPickerOpen(false)
-    inputRef.current?.blur()
-    Keyboard.dismiss()
-    void voiceRecorder.startRecording()
-  }
-
-  function handleInputPressOut() {
-    if (!inputVoiceGestureRef.current) return
-    void voiceRecorder.stopRecording()
-  }
-
   async function handleVoiceConfirm() {
     const recording = voiceRecorder.recording
     if (!recording || disabled) return
@@ -466,6 +477,9 @@ export const MessageComposer = forwardRef<
   return (
     <>
       <YStack bg="$background">
+        {replyTarget ? (
+          <MessageReplyPreview onClear={onClearReply} target={replyTarget} />
+        ) : null}
         <XStack
           height={composerPanelHeight}
           items="center"
@@ -481,7 +495,7 @@ export const MessageComposer = forwardRef<
             strokeWidth={1.5}
           />
           <YStack
-            bg="$color1"
+            bg={voiceInteractionActive ? "$color5" : "$color1"}
             flex={1}
             height={visibleControlHeight}
             mx={COMPOSER_INPUT_GAP}
@@ -493,60 +507,55 @@ export const MessageComposer = forwardRef<
                 onPressIn={handleVoicePressIn}
                 onPressOut={handleVoicePressOut}
                 prompt={voicePrompt}
-                recording={voiceRecorder.status === "recording"}
+                recording={voiceInteractionActive}
               />
             ) : (
               <>
-                <AppInput
-                  autoCapitalize="sentences"
-                  bg="transparent"
-                  borderWidth={0}
-                  color="$gray12"
-                  disabled={disabled || voiceInteractionActive}
-                  fontFamily="$body"
-                  fontSize="$4"
-                  focusStyle={{ borderWidth: 0, outlineWidth: 0 }}
-                  height={inputHeight}
-                  minH={0}
-                  multiline
-                  onChangeText={handleContentChange}
-                  onContentSizeChange={handleInputContentSizeChange}
-                  onFocus={() => setAccessoryMode(null)}
-                  onSelectionChange={handleSelectionChange}
-                  placeholder={
-                    voiceInteractionActive
-                      ? voicePrompt
-                      : "发消息或按住说话"
-                  }
-                  placeholderTextColor="$gray9"
-                  px={COMPOSER_INPUT_HORIZONTAL_PADDING}
-                  py={0}
-                  ref={inputRef}
-                  returnKeyType="default"
-                  scrollEnabled={inputScrollEnabled}
-                  selection={pendingSelection}
-                  style={styles.composerInput}
-                  submitBehavior="newline"
-                  textAlignVertical="center"
-                  unstyled
-                  value={content}
-                  width="100%"
-                />
-                {content.trim().length === 0 ? (
-                  <Pressable
-                    accessibilityHint="短按输入文字，长按录制语音"
-                    accessibilityLabel="发消息或按住说话"
-                    delayLongPress={400}
-                    disabled={disabled || preparingUpload}
-                    onLongPress={handleInputLongPress}
-                    onPress={handleInputPress}
-                    onPressIn={() => {
-                      inputVoiceGestureRef.current = false
-                    }}
-                    onPressOut={handleInputPressOut}
-                    style={styles.inputGestureTarget}
+                {voiceInteractionActive ? (
+                  <XStack
+                    height={inputHeight}
+                    items="center"
+                    justify="center"
+                    px={COMPOSER_INPUT_HORIZONTAL_PADDING}
+                    width="100%"
+                  >
+                    <SizableText size="$4" text="center">
+                      {voicePrompt}
+                    </SizableText>
+                  </XStack>
+                ) : (
+                  <AppInput
+                    autoCapitalize="sentences"
+                    bg="transparent"
+                    borderWidth={0}
+                    color="$gray12"
+                    disabled={disabled}
+                    fontFamily="$body"
+                    fontSize="$4"
+                    focusStyle={{ borderWidth: 0, outlineWidth: 0 }}
+                    height={inputHeight}
+                    includeFontPadding={false}
+                    minH={0}
+                    multiline
+                    onChangeText={handleContentChange}
+                    onContentSizeChange={handleInputContentSizeChange}
+                    onFocus={() => setAccessoryMode(null)}
+                    onSelectionChange={handleSelectionChange}
+                    placeholder="发消息"
+                    placeholderTextColor="$gray9"
+                    px={COMPOSER_INPUT_HORIZONTAL_PADDING}
+                    py={inputVerticalPadding}
+                    ref={inputRef}
+                    returnKeyType="default"
+                    scrollEnabled={inputScrollEnabled}
+                    selection={pendingSelection}
+                    submitBehavior="newline"
+                    textAlignVertical="center"
+                    unstyled
+                    value={content}
+                    width="100%"
                   />
-                ) : null}
+                )}
               </>
             )}
           </YStack>
@@ -622,9 +631,8 @@ function getVoicePrompt(
   status: ReturnType<typeof useVoiceMessageRecorder>["status"],
   elapsedMS: number
 ) {
-  if (status === "requesting") return "正在连接麦克风…"
-  if (status === "recording") {
-    return `正在录音 ${formatRecordingDuration(elapsedMS)}，松开结束`
+  if (status === "requesting" || status === "recording") {
+    return `正在录音 ${formatRecordingDuration(elapsedMS)}`
   }
   if (status === "processing") return "正在生成语音…"
   return "按住 说话"
@@ -663,9 +671,8 @@ function VoiceRecordButton({
       {({ pressed }) => (
         <Button
           accessible={false}
-          bg="$color1"
+          bg={recording ? "$color5" : "$color1"}
           borderWidth={0}
-          color={recording ? "$red10" : undefined}
           disabled={disabled}
           forceStyle={pressed ? "press" : undefined}
           height={COMPOSER_CONTROL_HEIGHT}
@@ -683,13 +690,6 @@ function VoiceRecordButton({
 }
 
 const styles = StyleSheet.create({
-  composerInput: {
-    includeFontPadding: false,
-    paddingVertical: 0,
-  },
-  inputGestureTarget: {
-    ...StyleSheet.absoluteFill,
-  },
   voicePressTarget: {
     flex: 1,
   },

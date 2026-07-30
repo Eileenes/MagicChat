@@ -53,6 +53,9 @@ func TestLoadReadsEnvironmentConfiguration(t *testing.T) {
 	if cfg.Apps.AIAssistantSecret != "test-ai-assistant-secret" {
 		t.Fatalf("Apps.AIAssistantSecret = %q", cfg.Apps.AIAssistantSecret)
 	}
+	if cfg.ASRModel.APIKey != "test-asrmodel-api-key" {
+		t.Fatal("ASRModel.APIKey is not loaded")
+	}
 	if cfg.Storage.Provider != "s3" || cfg.Storage.Endpoint != "https://s3.example.com" || cfg.Storage.Region != "ap-guangzhou" {
 		t.Fatalf("Storage endpoint configuration = %#v", cfg.Storage)
 	}
@@ -119,6 +122,7 @@ func TestLoadRejectsMissingRequiredEnvironment(t *testing.T) {
 		"POSTGRES_PASSWORD",
 		"ADMIN_PASSWORD",
 		"AI_ASSISTANT_SECRET",
+		"ASRMODEL_API_KEY",
 		"AWS_ENDPOINT_URL_S3",
 		"AWS_REGION",
 		"AWS_ACCESS_KEY_ID",
@@ -197,6 +201,7 @@ func setRequiredEnvironment(t *testing.T) {
 		"POSTGRES_PASSWORD":            "test-postgres-password",
 		"ADMIN_PASSWORD":               "test-admin-password",
 		"AI_ASSISTANT_SECRET":          "test-ai-assistant-secret",
+		"ASRMODEL_API_KEY":             "test-asrmodel-api-key",
 		"AWS_ENDPOINT_URL_S3":          "https://s3.example.com",
 		"AWS_REGION":                   "us-east-1",
 		"AWS_ACCESS_KEY_ID":            "test-access-key",

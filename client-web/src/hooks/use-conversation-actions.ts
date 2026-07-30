@@ -13,10 +13,12 @@ import {
   leaveGroupConversation as leaveGroupConversationRequest,
   openAppConversation as openAppConversationRequest,
   removeGroupConversationMember as removeGroupConversationMemberRequest,
+  restoreConversation as restoreConversationRequest,
   revokeConversationMessage as revokeConversationMessageRequest,
   setGroupConversationPrivate as setGroupConversationPrivateRequest,
   setGroupConversationPublic as setGroupConversationPublicRequest,
   updateGroupConversationName as updateGroupConversationNameRequest,
+  updateGroupConversationAnnouncement as updateGroupConversationAnnouncementRequest,
   uploadGroupConversationAvatar as uploadGroupConversationAvatarRequest,
 } from "@/lib/client-data-api"
 import type {
@@ -79,10 +81,22 @@ export function useConversationActions({
         const currentConversation = currentConversations.find(
           (item) => item.id === conversation.id
         )
-        const nextConversation =
-          conversation.projects === undefined && currentConversation?.projects
-            ? { ...conversation, projects: currentConversation.projects }
-            : conversation
+        const nextConversation = { ...conversation }
+        if (currentConversation) {
+          if (
+            nextConversation.projects === undefined &&
+            currentConversation.projects
+          ) {
+            nextConversation.projects = currentConversation.projects
+          }
+          if (nextConversation.notificationMuted === undefined) {
+            nextConversation.notificationMuted =
+              currentConversation.notificationMuted
+          }
+          if (nextConversation.pinned === undefined) {
+            nextConversation.pinned = currentConversation.pinned
+          }
+        }
 
         return orderConversations([
           nextConversation,
@@ -136,6 +150,19 @@ export function useConversationActions({
     [handleError, upsertConversation]
   )
 
+  const restoreConversation = useCallback(
+    async (conversationId: string) => {
+      try {
+        const conversation = await restoreConversationRequest(conversationId)
+        upsertConversation(conversation)
+        return conversation
+      } catch (error) {
+        throw handleError(error, "恢复对话失败")
+      }
+    },
+    [handleError, upsertConversation]
+  )
+
   const createGroupConversation = useCallback(
     async (name: string, memberIds: string[], appIds: string[] = []) => {
       try {
@@ -182,7 +209,8 @@ export function useConversationActions({
   const applyGroupConversationAction = useCallback(
     async (
       action: () => Promise<GroupConversationActionResult>,
-      fallbackMessage: string
+      fallbackMessage: string,
+      refreshRelatedContacts = true
     ) => {
       try {
         const result = await action()
@@ -193,7 +221,9 @@ export function useConversationActions({
             updateList: false,
           })
         }
-        await refreshContacts()
+        if (refreshRelatedContacts) {
+          await refreshContacts()
+        }
         return result.conversation
       } catch (error) {
         throw handleError(error, fallbackMessage)
@@ -239,6 +269,19 @@ export function useConversationActions({
       applyGroupConversationAction(
         () => updateGroupConversationNameRequest(conversationId, { name }),
         "修改群聊名称失败"
+      ),
+    [applyGroupConversationAction]
+  )
+
+  const updateGroupConversationAnnouncement = useCallback(
+    async (conversationId: string, announcement: string) =>
+      applyGroupConversationAction(
+        () =>
+          updateGroupConversationAnnouncementRequest(conversationId, {
+            announcement,
+          }),
+        "修改群公告失败",
+        false
       ),
     [applyGroupConversationAction]
   )
@@ -338,11 +381,13 @@ export function useConversationActions({
     openAppConversation,
     openDirectConversation,
     removeConversation,
+    restoreConversation,
     removeGroupConversationMember,
     revokeConversationMessage,
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   }
 }

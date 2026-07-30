@@ -2,17 +2,19 @@ import * as React from "react"
 import { Bot, MessagesSquare } from "lucide-react"
 import { toast } from "sonner"
 import { getAvatarInitial } from "@/lib/avatar"
-import { copyTemporaryImageToClipboard } from "@/lib/image-clipboard"
 import { cn } from "@/lib/utils"
 import {
   formatClientMessageBodySummary,
   type ClientConversation,
+  type ClientMessage,
+  type ClientMessageChoiceState,
 } from "@/lib/client-data-api"
 import {
   formatMentionTemplateText,
   parseMentionTemplate,
   type MentionLabelResolver,
 } from "@/lib/message-mentions"
+import { getImageThumbnailFrame } from "@/lib/image-message-thumbnail"
 import { AppProfilePopover } from "@/components/app-profile-popover"
 import { MessageAttachment } from "@/components/message-attachment"
 import { MessageImage } from "@/components/message-image"
@@ -24,7 +26,9 @@ import { MessageRenderErrorBoundary } from "@/components/message-render-error-bo
 import { MessageVoice } from "@/components/message-voice"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   Dialog,
   DialogContent,
@@ -32,11 +36,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { MessageActionMenu } from "@/components/message-action-menu"
+import {
+  MessageActionMenu,
+  MessageMoreActionsMenu,
+  type MessageActionOptions,
+} from "@/components/message-action-menu"
 import {
   MessageReactionAddButton,
   MessageReactionChips,
 } from "@/components/conversation/message-reactions"
+import { messageReactionChipToneClassName } from "@/components/conversation/message-reaction-styles"
 import { UserProfilePopover } from "@/components/user-profile-popover"
 import type {
   ConversationPanelMentionTarget,
@@ -86,6 +95,7 @@ type MessageBubbleProps = {
   onForward?: (message: ConversationPanelMessage) => void
   onCreateTopic?: (message: ConversationPanelMessage) => void
   onMultiSelect?: (message: ConversationPanelMessage) => void
+  onReeditRevoked?: (message: ConversationPanelMessage) => void
   onReply?: (message: ConversationPanelMessage) => void
   onOpenTopic?: (conversationId: string) => void
   onRevoke?: (message: ConversationPanelMessage) => void
@@ -93,6 +103,10 @@ type MessageBubbleProps = {
     message: ConversationPanelMessage,
     text: string,
     reacted: boolean
+  ) => Promise<void>
+  onRespondToChoice?: (
+    message: ConversationPanelMessage,
+    optionIds: string[]
   ) => Promise<void>
   onToggleSelected?: (message: ConversationPanelMessage) => void
   selectable?: boolean
@@ -110,10 +124,12 @@ export const MessageBubble = React.memo(function MessageBubble({
   onForward,
   onCreateTopic,
   onMultiSelect,
+  onReeditRevoked,
   onReply,
   onOpenTopic,
   onRevoke,
   onSetReaction,
+  onRespondToChoice,
   onToggleSelected,
   selectable = true,
   canReply = true,
@@ -133,6 +149,9 @@ export const MessageBubble = React.memo(function MessageBubble({
     (conversation.type === "group" ||
       conversation.topic?.parentConversationType === "group") &&
     message.mentionTarget !== null
+  const showChoiceResponseCounts =
+    conversation.type === "group" ||
+    conversation.topic?.parentConversationType === "group"
   const unavailable =
     message.body.type === "revoked" || message.body.type === "unsupported"
   const canAddReaction = canReply && message.body.type !== "revoked"
@@ -155,6 +174,12 @@ export const MessageBubble = React.memo(function MessageBubble({
       bubbleRef.current,
       mentionLabelResolver
     )
+  }
+
+  function handleMoreActionsOpenChange(open: boolean) {
+    if (open) {
+      selectedCopyTextRef.current = ""
+    }
   }
 
   function handleAuthorMentionClick() {
@@ -182,14 +207,30 @@ export const MessageBubble = React.memo(function MessageBubble({
 
   const flushImageBubble =
     message.body.type === "image" && !message.replyTo && !message.topic
+  const messageActionOptions: MessageActionOptions = {
+    canRevoke: Boolean(onRevoke) && message.canRevoke,
+    copyDisabled: !copyText,
+    hideCopy: message.body.type === "image",
+    onCopy: handleCopyMessage,
+    onCreateTopic:
+      onCreateTopic && !message.topic
+        ? () => onCreateTopic(message)
+        : undefined,
+    onForward: onForward ? () => onForward(message) : undefined,
+    onMultiSelect: onMultiSelect ? () => onMultiSelect(message) : undefined,
+    onReply: canReply && onReply ? () => onReply(message) : undefined,
+    onRevoke: onRevoke ? () => onRevoke(message) : undefined,
+  }
 
   const messageBody = (
     <div
       className={cn(
         "group/message-bubble min-w-0 rounded-md text-sm leading-relaxed shadow-sm",
-        message.body.type === "text" && !message.topic
-          ? "max-w-120"
-          : "max-w-full",
+        message.topic
+          ? "max-w-[calc(30rem+1.5rem)]"
+          : message.body.type === "text"
+            ? "max-w-120"
+            : "max-w-full",
         flushImageBubble ? "overflow-hidden p-0" : "p-3",
         fromMe
           ? "bg-teal-100/60 text-foreground dark:bg-teal-950/80"
@@ -208,11 +249,35 @@ export const MessageBubble = React.memo(function MessageBubble({
       ref={bubbleRef}
     >
       {message.replyTo && <MessageReplyReference replyTo={message.replyTo} />}
-      <MessageBodyRenderer
-        body={message.body}
-        currentUserId={currentUserId}
-        mentionLabelResolver={mentionLabelResolver}
-      />
+      {message.body.type === "choice" ? (
+        <MessageChoiceBody
+          align={fromMe ? "end" : "start"}
+          body={message.body}
+          canRespond={canReply && !selectionMode && Boolean(onRespondToChoice)}
+          choice={message.choice}
+          currentUserId={currentUserId}
+          mentionLabelResolver={mentionLabelResolver}
+          messageId={message.id}
+          onRespond={
+            onRespondToChoice
+              ? (optionIds) => onRespondToChoice(message, optionIds)
+              : undefined
+          }
+          showResponseCounts={showChoiceResponseCounts}
+        />
+      ) : (
+        <MessageBodyRenderer
+          body={message.body}
+          currentUserId={currentUserId}
+          flushImage={flushImageBubble}
+          mentionLabelResolver={mentionLabelResolver}
+          onReeditRevoked={
+            fromMe && !selectionMode && onReeditRevoked
+              ? () => onReeditRevoked(message)
+              : undefined
+          }
+        />
+      )}
       {!selectionMode && message.reactions.length > 0 && (
         <div className={cn("mt-2", flushImageBubble && "mx-2 mb-2")}>
           <MessageReactionChips
@@ -246,20 +311,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     selectionMode || unavailable ? (
       messageBody
     ) : (
-      <MessageActionMenu
-        canRevoke={Boolean(onRevoke) && message.canRevoke}
-        copyDisabled={message.body.type !== "image" && !copyText}
-        onCreateTopic={
-          onCreateTopic && !message.topic
-            ? () => onCreateTopic(message)
-            : undefined
-        }
-        onCopy={handleCopyMessage}
-        onForward={onForward ? () => onForward(message) : undefined}
-        onMultiSelect={onMultiSelect ? () => onMultiSelect(message) : undefined}
-        onReply={canReply && onReply ? () => onReply(message) : undefined}
-        onRevoke={onRevoke ? () => onRevoke(message) : undefined}
-      >
+      <MessageActionMenu {...messageActionOptions}>
         {messageBody}
       </MessageActionMenu>
     )
@@ -317,13 +369,25 @@ export const MessageBubble = React.memo(function MessageBubble({
             data-slot="message-bubble-line"
           >
             {renderedMessageBody}
-            {!selectionMode && onSetReaction && canAddReaction && (
-              <MessageReactionAddButton
-                align={fromMe ? "end" : "start"}
-                onSetReaction={(text, reacted) =>
-                  onSetReaction(message, text, reacted)
-                }
-              />
+            {!selectionMode && !unavailable && (
+              <div
+                className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/message-row:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100"
+                data-slot="message-hover-actions"
+              >
+                {onSetReaction && canAddReaction && (
+                  <MessageReactionAddButton
+                    align={fromMe ? "end" : "start"}
+                    onSetReaction={(text, reacted) =>
+                      onSetReaction(message, text, reacted)
+                    }
+                  />
+                )}
+                <MessageMoreActionsMenu
+                  {...messageActionOptions}
+                  align={fromMe ? "end" : "start"}
+                  onOpenChange={handleMoreActionsOpenChange}
+                />
+              </div>
             )}
           </div>
           {message.delegatedByName && (
@@ -376,11 +440,13 @@ function areMessageBubblePropsEqual(
     previous.onCreateTopic === next.onCreateTopic &&
     previous.onInsertMention === next.onInsertMention &&
     previous.onMultiSelect === next.onMultiSelect &&
+    previous.onReeditRevoked === next.onReeditRevoked &&
     previous.onReply === next.onReply &&
     previous.canReply === next.canReply &&
     previous.onOpenTopic === next.onOpenTopic &&
     previous.onRevoke === next.onRevoke &&
     previous.onSetReaction === next.onSetReaction &&
+    previous.onRespondToChoice === next.onRespondToChoice &&
     previous.onToggleSelected === next.onToggleSelected &&
     previous.selectable === next.selectable &&
     previous.selected === next.selected &&
@@ -400,6 +466,7 @@ function arePanelMessagesEqual(
     previous.author === next.author &&
     previous.avatar === next.avatar &&
     previous.body === next.body &&
+    areMessageChoicesEqual(previous.choice, next.choice) &&
     previous.canRevoke === next.canRevoke &&
     previous.delegatedByName === next.delegatedByName &&
     previous.reactionVersion === next.reactionVersion &&
@@ -411,6 +478,34 @@ function arePanelMessagesEqual(
     areMentionTargetsEqual(previous.mentionTarget, next.mentionTarget) &&
     areReplyTargetsEqual(previous.replyTo, next.replyTo) &&
     areAppProfilesEqual(previous.senderAppProfile, next.senderAppProfile)
+  )
+}
+
+function areMessageChoicesEqual(
+  previous: ConversationPanelMessage["choice"],
+  next: ConversationPanelMessage["choice"]
+) {
+  if (previous === next) {
+    return true
+  }
+  if (
+    !previous ||
+    !next ||
+    previous.responseCount !== next.responseCount ||
+    previous.myOptionIds.length !== next.myOptionIds.length ||
+    previous.options.length !== next.options.length
+  ) {
+    return false
+  }
+  return (
+    previous.myOptionIds.every((id, index) => id === next.myOptionIds[index]) &&
+    previous.options.every((option, index) => {
+      const nextOption = next.options[index]
+      return (
+        option.id === nextOption.id &&
+        option.responseCount === nextOption.responseCount
+      )
+    })
   )
 }
 
@@ -492,16 +587,6 @@ async function copyMessageToClipboard(
   messageElement: HTMLElement | null,
   mentionLabelResolver: MentionLabelResolver
 ) {
-  if (message.body.type === "image") {
-    try {
-      await copyTemporaryImageToClipboard(message.body.fileId)
-      toast.success("图片已复制")
-    } catch {
-      toast.error("图片复制失败")
-    }
-    return
-  }
-
   const text =
     (selectedText.trim()
       ? selectedText
@@ -575,6 +660,8 @@ function getMessageCopyText(
         message.body.content,
         mentionLabelResolver
       )
+    case "choice":
+      return formatClientMessageBodySummary(message.body)
     case "forward_bundle":
       return formatClientMessageBodySummary(message.body)
     case "system_event":
@@ -604,6 +691,195 @@ function MessageReplyReference({
         {replyTo.summary}
       </div>
     </div>
+  )
+}
+
+export function MessageChoiceBody({
+  align,
+  body,
+  canRespond,
+  choice,
+  currentUserId,
+  mentionLabelResolver,
+  messageId,
+  onRespond,
+  showResponseCounts,
+}: {
+  align: "start" | "end"
+  body: Extract<ClientMessage["body"], { type: "choice" }>
+  canRespond: boolean
+  choice?: ClientMessageChoiceState
+  currentUserId: string
+  mentionLabelResolver: MentionLabelResolver
+  messageId: string
+  onRespond?: (optionIds: string[]) => Promise<void>
+  showResponseCounts: boolean
+}) {
+  const answered = Boolean(choice?.myOptionIds.length)
+  const [draftOptionIds, setDraftOptionIds] = React.useState<string[]>([])
+  const [submitting, setSubmitting] = React.useState(false)
+  const selectedOptionIds = answered
+    ? (choice?.myOptionIds ?? [])
+    : draftOptionIds
+
+  const choiceOptions = body.options
+
+  const countsByOptionId = new Map(
+    choice?.options.map((option) => [option.id, option.responseCount]) ?? []
+  )
+
+  async function submitResponse() {
+    if (!onRespond || answered || selectedOptionIds.length === 0) {
+      return
+    }
+    setSubmitting(true)
+    try {
+      await onRespond(selectedOptionIds)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "提交选择失败")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  function toggleMultipleOption(optionId: string, checked: boolean) {
+    setDraftOptionIds((current) =>
+      checked
+        ? choiceOptions
+            .map((option) => option.id)
+            .filter((id) => id === optionId || current.includes(id))
+        : current.filter((id) => id !== optionId)
+    )
+  }
+
+  return (
+    <div className="w-120 max-w-full" data-slot="choice-message">
+      <div className="mb-3">
+        {body.contentType === "markdown" ? (
+          <MessageMarkdown
+            content={body.content}
+            currentUserId={currentUserId}
+            mentionLabelResolver={mentionLabelResolver}
+          />
+        ) : (
+          <TextMessageBody
+            content={body.content}
+            currentUserId={currentUserId}
+            mentionLabelResolver={mentionLabelResolver}
+          />
+        )}
+      </div>
+      {body.selection === "single" ? (
+        <RadioGroup
+          className="gap-2"
+          disabled={!canRespond || answered || submitting}
+          onValueChange={(value) => setDraftOptionIds([value])}
+          value={selectedOptionIds[0] ?? ""}
+        >
+          {choiceOptions.map((option) => (
+            <ChoiceOptionRow
+              align={align}
+              control={
+                <RadioGroupItem
+                  aria-label={option.label}
+                  id={`${messageId}-${option.id}`}
+                  value={option.id}
+                />
+              }
+              count={countsByOptionId.get(option.id) ?? 0}
+              htmlFor={`${messageId}-${option.id}`}
+              key={option.id}
+              label={option.label}
+              selected={selectedOptionIds.includes(option.id)}
+              showResponseCount={showResponseCounts}
+            />
+          ))}
+        </RadioGroup>
+      ) : (
+        <div className="grid gap-2">
+          {choiceOptions.map((option) => (
+            <ChoiceOptionRow
+              align={align}
+              control={
+                <Checkbox
+                  aria-label={option.label}
+                  checked={selectedOptionIds.includes(option.id)}
+                  disabled={!canRespond || answered || submitting}
+                  id={`${messageId}-${option.id}`}
+                  onCheckedChange={(checked) =>
+                    toggleMultipleOption(option.id, checked === true)
+                  }
+                />
+              }
+              count={countsByOptionId.get(option.id) ?? 0}
+              htmlFor={`${messageId}-${option.id}`}
+              key={option.id}
+              label={option.label}
+              selected={selectedOptionIds.includes(option.id)}
+              showResponseCount={showResponseCounts}
+            />
+          ))}
+        </div>
+      )}
+      {!answered && (
+        <div className="mt-3 border-t border-foreground/10 pt-3">
+          <Button
+            className="w-full"
+            disabled={
+              !canRespond || submitting || selectedOptionIds.length === 0
+            }
+            onClick={() => void submitResponse()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {submitting ? "提交中..." : "提交"}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChoiceOptionRow({
+  align,
+  control,
+  count,
+  htmlFor,
+  label,
+  selected,
+  showResponseCount,
+}: {
+  align: "start" | "end"
+  control: React.ReactNode
+  count: number
+  htmlFor: string
+  label: string
+  selected: boolean
+  showResponseCount: boolean
+}) {
+  return (
+    <label
+      className={cn(
+        "flex min-w-0 items-center gap-2 rounded-md border border-foreground/10 px-3 py-2 transition-colors",
+        selected && "border-teal-500/50 bg-teal-500/10"
+      )}
+      htmlFor={htmlFor}
+    >
+      {control}
+      <span className="min-w-0 flex-1 wrap-break-word">{label}</span>
+      {showResponseCount && (
+        <Badge
+          className={cn(
+            "shrink-0 tabular-nums",
+            messageReactionChipToneClassName[align]
+          )}
+          variant="secondary"
+        >
+          {count}
+        </Badge>
+      )}
+    </label>
   )
 }
 
@@ -734,19 +1010,30 @@ function MessageAvatarProfile({
 type MessageBodyRendererProps = {
   body: ConversationPanelMessage["body"]
   currentUserId: string
+  flushImage?: boolean
   mentionLabelResolver: MentionLabelResolver
+  onReeditRevoked?: () => void
 }
 
 export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
   body,
   currentUserId,
+  flushImage = false,
   mentionLabelResolver,
+  onReeditRevoked,
 }: MessageBodyRendererProps) {
   switch (body.type) {
     case "file":
       return <MessageAttachment file={body} />
     case "image":
-      return <MessageImage image={body} />
+      return (
+        <ImageMessageBody
+          body={body}
+          currentUserId={currentUserId}
+          flush={flushImage}
+          mentionLabelResolver={mentionLabelResolver}
+        />
+      )
     case "voice":
       return <MessageVoice voice={body} />
     case "link":
@@ -778,6 +1065,20 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
           mentionLabelResolver={mentionLabelResolver}
         />
       )
+    case "choice":
+      return body.contentType === "markdown" ? (
+        <MessageMarkdown
+          content={body.content}
+          currentUserId={currentUserId}
+          mentionLabelResolver={mentionLabelResolver}
+        />
+      ) : (
+        <TextMessageBody
+          content={body.content}
+          currentUserId={currentUserId}
+          mentionLabelResolver={mentionLabelResolver}
+        />
+      )
     case "text":
       return (
         <TextMessageBody
@@ -795,7 +1096,20 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
         />
       )
     case "revoked":
-      return <span className="text-muted-foreground">该消息已被撤回</span>
+      return body.editableBody && onReeditRevoked ? (
+        <span className="text-muted-foreground">
+          <button
+            className="cursor-pointer p-0 font-medium text-sky-500 transition-colors hover:text-sky-600 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none"
+            onClick={onReeditRevoked}
+            type="button"
+          >
+            重新编辑
+          </button>
+          已撤回的消息
+        </span>
+      ) : (
+        <span className="text-muted-foreground">该消息已被撤回</span>
+      )
     case "unsupported":
       return <span className="text-muted-foreground">暂不支持查看该消息</span>
     case "system_event":
@@ -810,6 +1124,8 @@ function areMessageBodyRendererPropsEqual(
   return (
     previous.body === next.body &&
     previous.currentUserId === next.currentUserId &&
+    previous.flushImage === next.flushImage &&
+    previous.onReeditRevoked === next.onReeditRevoked &&
     (previous.mentionLabelResolver === next.mentionLabelResolver ||
       !messageBodyUsesMentionLabels(next.body))
   )
@@ -818,8 +1134,14 @@ function areMessageBodyRendererPropsEqual(
 function messageBodyUsesMentionLabels(
   body: ConversationPanelMessage["body"]
 ): boolean {
-  if (body.type === "text" || body.type === "markdown") {
-    return body.content.includes("{(@")
+  if (
+    body.type === "text" ||
+    body.type === "markdown" ||
+    body.type === "choice" ||
+    body.type === "image"
+  ) {
+    const content = body.type === "image" ? body.caption : body.content
+    return Boolean(content?.includes("{(@"))
   }
 
   if (body.type === "forward_bundle") {
@@ -827,6 +1149,47 @@ function messageBodyUsesMentionLabels(
   }
 
   return false
+}
+
+function ImageMessageBody({
+  body,
+  currentUserId,
+  flush,
+  mentionLabelResolver,
+}: {
+  body: Extract<ConversationPanelMessage["body"], { type: "image" }>
+  currentUserId: string
+  flush: boolean
+  mentionLabelResolver: MentionLabelResolver
+}) {
+  const thumbnailFrame = getImageThumbnailFrame(body)
+
+  return (
+    <div
+      className="max-w-[65vw] min-w-0"
+      data-slot="image-message-body"
+      style={{ width: thumbnailFrame.width }}
+    >
+      <MessageImage image={body} />
+      {body.caption && (
+        <div className={cn("min-w-0 pt-2", flush && "px-3 pb-3")}>
+          {body.captionType === "markdown" ? (
+            <MessageMarkdown
+              content={body.caption}
+              currentUserId={currentUserId}
+              mentionLabelResolver={mentionLabelResolver}
+            />
+          ) : (
+            <TextMessageBody
+              content={body.caption}
+              currentUserId={currentUserId}
+              mentionLabelResolver={mentionLabelResolver}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ForwardBundleMessage({

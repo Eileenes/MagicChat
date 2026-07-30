@@ -1,6 +1,19 @@
 import * as React from "react"
 import { LoaderCircle } from "lucide-react"
 
+import { MentionCandidateMenu } from "@/components/conversation/mention-candidate-menu"
+import {
+  createDraftMentionTemplate,
+  filterMentionCandidates,
+  getMentionTrigger,
+  getVisibleMentionIndex,
+  insertDraftMention,
+  isImeCompositionKeyEvent,
+  syncDraftMentions,
+  type MentionCandidate,
+  type MentionTrigger,
+} from "@/lib/conversation-composer"
+import type { ConversationDraftMention } from "@/lib/conversation-drafts"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,11 +25,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 
 type SendImageMessageDialogProps = {
+  caption: string
   conversationName: string
   image: File | null
-  onConfirm: () => void
+  mentionCandidates?: MentionCandidate[]
+  onCaptionChange: (caption: string) => void
+  onConfirm: (caption: string) => void
   onOpenChange: (open: boolean) => void
   open: boolean
   sending: boolean
@@ -35,17 +52,28 @@ type PreviewSize = {
 const minImagePreviewZoom = 0.5
 const maxImagePreviewZoom = 3
 const imagePreviewZoomStep = 0.1
+const emptyMentionCandidates: MentionCandidate[] = []
+
+type CaptionMentionState = {
+  image: File | null
+  mentions: ConversationDraftMention[]
+  selectedIndex: number
+  trigger: MentionTrigger | null
+}
 
 export function SendImageMessageDialog({
+  caption,
   conversationName,
   image,
+  mentionCandidates = emptyMentionCandidates,
+  onCaptionChange,
   onConfirm,
   onOpenChange,
   open,
   sending,
 }: SendImageMessageDialogProps) {
   const previewURL = useObjectURL(image)
-  const confirmButtonRef = React.useRef<HTMLButtonElement | null>(null)
+  const captionInputRef = React.useRef<HTMLInputElement | null>(null)
   const previewDragRef = React.useRef<{
     imageKey: string
     offset: PreviewOffset
@@ -72,16 +100,37 @@ export function SendImageMessageDialog({
     y: 0,
   })
   const [previewDragging, setPreviewDragging] = React.useState(false)
+  const [captionMentionState, setCaptionMentionState] =
+    React.useState<CaptionMentionState>({
+      image: null,
+      mentions: [],
+      selectedIndex: 0,
+      trigger: null,
+    })
+  const captionMentions =
+    captionMentionState.image === image ? captionMentionState.mentions : []
+  const captionMentionTrigger =
+    captionMentionState.image === image ? captionMentionState.trigger : null
+  const selectedMentionIndex =
+    captionMentionState.image === image ? captionMentionState.selectedIndex : 0
+  const filteredMentionCandidates = React.useMemo(
+    () =>
+      filterMentionCandidates(
+        mentionCandidates,
+        captionMentionTrigger?.query ?? ""
+      ),
+    [captionMentionTrigger?.query, mentionCandidates]
+  )
   const zoom = zoomState.imageKey === imageKey ? zoomState.value : 1
-  const currentImageSize =
-    imageSize?.imageKey === imageKey ? imageSize : null
-  const previewSize = currentImageSize && previewAreaSize
-    ? getContainedSize(
-        currentImageSize,
-        previewAreaSize.width,
-        previewAreaSize.height
-      )
-    : null
+  const currentImageSize = imageSize?.imageKey === imageKey ? imageSize : null
+  const previewSize =
+    currentImageSize && previewAreaSize
+      ? getContainedSize(
+          currentImageSize,
+          previewAreaSize.width,
+          previewAreaSize.height
+        )
+      : null
   const clampedPreviewOffset =
     previewAreaSize && previewSize
       ? clampPreviewOffset(previewOffset, previewAreaSize, previewSize, zoom)
@@ -95,8 +144,7 @@ export function SendImageMessageDialog({
 
       event.preventDefault()
       const nextZoom = clampPreviewZoom(
-        zoom +
-          (event.deltaY < 0 ? imagePreviewZoomStep : -imagePreviewZoomStep)
+        zoom + (event.deltaY < 0 ? imagePreviewZoomStep : -imagePreviewZoomStep)
       )
 
       setZoomState({ imageKey, value: nextZoom })
@@ -150,15 +198,8 @@ export function SendImageMessageDialog({
     }
   }, [handlePreviewWheel, image, open, previewAreaElement, previewURL])
 
-  function handlePreviewPointerDown(
-    event: React.PointerEvent<HTMLDivElement>
-  ) {
-    if (
-      event.button !== 0 ||
-      !previewAreaSize ||
-      !previewSize ||
-      zoom <= 1
-    ) {
+  function handlePreviewPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !previewAreaSize || !previewSize || zoom <= 1) {
       return
     }
 
@@ -174,9 +215,7 @@ export function SendImageMessageDialog({
     setPreviewDragging(true)
   }
 
-  function handlePreviewPointerMove(
-    event: React.PointerEvent<HTMLDivElement>
-  ) {
+  function handlePreviewPointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const previewDrag = previewDragRef.current
 
     if (
@@ -217,6 +256,137 @@ export function SendImageMessageDialog({
     setPreviewDragging(false)
   }
 
+  function handleCaptionChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const nextCaption = event.target.value
+    const cursor = event.target.selectionStart ?? nextCaption.length
+
+    setCaptionMentionState({
+      image,
+      mentions: syncDraftMentions(captionMentions, caption, nextCaption),
+      selectedIndex: 0,
+      trigger:
+        mentionCandidates.length > 0
+          ? getMentionTrigger(nextCaption, cursor)
+          : null,
+    })
+    onCaptionChange(nextCaption)
+  }
+
+  function handleCaptionSelect(event: React.SyntheticEvent<HTMLInputElement>) {
+    const input = event.currentTarget
+    const value = input.value
+    const cursor = input.selectionStart ?? value.length
+
+    setCaptionMentionState((currentState) => ({
+      image,
+      mentions: currentState.image === image ? currentState.mentions : [],
+      selectedIndex: 0,
+      trigger:
+        mentionCandidates.length > 0 ? getMentionTrigger(value, cursor) : null,
+    }))
+  }
+
+  function handleCaptionKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (isImeCompositionKeyEvent(event)) {
+      return
+    }
+
+    if (captionMentionTrigger && filteredMentionCandidates.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault()
+        setSelectedMentionIndex(
+          (selectedMentionIndex + 1) % filteredMentionCandidates.length
+        )
+        return
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault()
+        setSelectedMentionIndex(
+          (selectedMentionIndex - 1 + filteredMentionCandidates.length) %
+            filteredMentionCandidates.length
+        )
+        return
+      }
+      if (event.key === "Escape") {
+        event.preventDefault()
+        closeMentionCandidates()
+        return
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault()
+        insertCaptionMention(
+          filteredMentionCandidates[
+            getVisibleMentionIndex(
+              selectedMentionIndex,
+              filteredMentionCandidates.length
+            )
+          ] ?? filteredMentionCandidates[0]
+        )
+        return
+      }
+    }
+
+    if (event.key === "Enter" && image && !sending) {
+      event.preventDefault()
+      submitCaption()
+    }
+  }
+
+  function insertCaptionMention(candidate: MentionCandidate | undefined) {
+    if (!candidate) {
+      return
+    }
+
+    const input = captionInputRef.current
+    const selectionEnd = input?.selectionStart ?? caption.length
+    const trigger = getMentionTrigger(caption, selectionEnd)
+    const inserted = insertDraftMention(
+      caption,
+      captionMentions,
+      candidate,
+      trigger?.start ?? selectionEnd,
+      selectionEnd
+    )
+
+    setCaptionMentionState({
+      image,
+      mentions: inserted.mentions,
+      selectedIndex: 0,
+      trigger: null,
+    })
+    onCaptionChange(inserted.value)
+
+    window.requestAnimationFrame(() => {
+      captionInputRef.current?.focus()
+      captionInputRef.current?.setSelectionRange(
+        inserted.cursor,
+        inserted.cursor
+      )
+    })
+  }
+
+  function setSelectedMentionIndex(selectedIndex: number) {
+    setCaptionMentionState((currentState) => ({
+      image,
+      mentions: currentState.image === image ? currentState.mentions : [],
+      selectedIndex,
+      trigger: currentState.image === image ? currentState.trigger : null,
+    }))
+  }
+
+  function closeMentionCandidates() {
+    setCaptionMentionState((currentState) => ({
+      image,
+      mentions: currentState.image === image ? currentState.mentions : [],
+      selectedIndex: 0,
+      trigger: null,
+    }))
+  }
+
+  function submitCaption() {
+    onConfirm(createDraftMentionTemplate(caption, captionMentions))
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -227,7 +397,7 @@ export function SendImageMessageDialog({
           }
 
           event.preventDefault()
-          confirmButtonRef.current?.focus()
+          captionInputRef.current?.focus()
         }}
       >
         <DialogHeader>
@@ -236,8 +406,8 @@ export function SendImageMessageDialog({
             确认发送图片到当前会话
           </DialogDescription>
         </DialogHeader>
-        {image && previewURL && (
-          <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-3">
+        {image && (
+          <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto_auto] gap-3">
             <div
               ref={setPreviewAreaElement}
               className={cn(
@@ -251,29 +421,31 @@ export function SendImageMessageDialog({
               onPointerUp={handlePreviewPointerEnd}
             >
               <div className="relative h-full w-full">
-                <img
-                  alt="待发送图片预览"
-                  className="absolute top-1/2 left-1/2 max-w-none rounded-sm object-contain select-none"
-                  draggable={false}
-                  onLoad={(event) => {
-                    const target = event.currentTarget
-                    setImageSize({
-                      height: target.naturalHeight,
-                      imageKey,
-                      width: target.naturalWidth,
-                    })
-                  }}
-                  src={previewURL}
-                  style={
-                    previewSize
-                      ? {
-                          height: previewSize.height * zoom,
-                          transform: `translate(-50%, -50%) translate(${clampedPreviewOffset.x}px, ${clampedPreviewOffset.y}px)`,
-                          width: previewSize.width * zoom,
-                        }
-                      : undefined
-                  }
-                />
+                {previewURL && (
+                  <img
+                    alt="待发送图片预览"
+                    className="absolute top-1/2 left-1/2 max-w-none rounded-sm object-contain select-none"
+                    draggable={false}
+                    onLoad={(event) => {
+                      const target = event.currentTarget
+                      setImageSize({
+                        height: target.naturalHeight,
+                        imageKey,
+                        width: target.naturalWidth,
+                      })
+                    }}
+                    src={previewURL}
+                    style={
+                      previewSize
+                        ? {
+                            height: previewSize.height * zoom,
+                            transform: `translate(-50%, -50%) translate(${clampedPreviewOffset.x}px, ${clampedPreviewOffset.y}px)`,
+                            width: previewSize.width * zoom,
+                          }
+                        : undefined
+                    }
+                  />
+                )}
               </div>
             </div>
             <p className="min-w-0 text-sm text-muted-foreground">
@@ -282,6 +454,27 @@ export function SendImageMessageDialog({
                 {conversationName}
               </span>
             </p>
+            <div className="relative">
+              <Input
+                ref={captionInputRef}
+                aria-label="图片说明"
+                disabled={sending}
+                maxLength={5000}
+                onChange={handleCaptionChange}
+                onKeyDown={handleCaptionKeyDown}
+                onSelect={handleCaptionSelect}
+                placeholder="添加图片说明"
+                value={caption}
+              />
+              {captionMentionTrigger &&
+                filteredMentionCandidates.length > 0 && (
+                  <MentionCandidateMenu
+                    candidates={filteredMentionCandidates}
+                    onSelect={insertCaptionMention}
+                    selectedIndex={selectedMentionIndex}
+                  />
+                )}
+            </div>
           </div>
         )}
         <DialogFooter>
@@ -291,9 +484,8 @@ export function SendImageMessageDialog({
             </Button>
           </DialogClose>
           <Button
-            ref={confirmButtonRef}
             disabled={!image || sending}
-            onClick={onConfirm}
+            onClick={submitCaption}
             type="button"
           >
             {sending && <LoaderCircle className="size-4 animate-spin" />}

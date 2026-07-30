@@ -15,78 +15,210 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const topicConversationListActivityWindow = 30 * time.Minute
+
+type topicConversationListGroup struct {
+	ParentConversationID string
+}
+
 func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error) {
-	db := s.db
+	db := s.db.WithContext(ctx)
 	accountID := strings.TrimSpace(cmd.AccountID)
+	includeConversationID := strings.TrimSpace(cmd.IncludeConversationID)
+	if includeConversationID != "" {
+		normalizedID, err := normalizeConversationID(includeConversationID)
+		if err != nil {
+			return ListResult{}, invalidRequest(err.Error(), err)
+		}
+		includeConversationID = normalizedID
+	}
 	assistantID := builtinAssistantConversationID(accountID)
 	assistant, hasAssistant, err := s.ensureBuiltinAssistantConversation(db, accountID)
 	if err != nil {
 		return ListResult{}, internalError(err)
 	}
-	limit := MaxClientListItems
-	if hasAssistant {
-		limit--
-	}
-	var pins []store.ConversationPin
-	if err := db.Where("user_id = ?", accountID).Find(&pins).Error; err != nil {
+	var preferences []store.ConversationUserPreference
+	if err := db.Where("user_id = ?", accountID).Find(&preferences).Error; err != nil {
 		return ListResult{}, internalError(err)
 	}
-	pinnedConversationIDs := make(map[string]struct{}, len(pins))
-	for _, pin := range pins {
-		pinnedConversationIDs[pin.ConversationID] = struct{}{}
+	preferencesByConversation := make(map[string]store.ConversationUserPreference, len(preferences))
+	for _, preference := range preferences {
+		preferencesByConversation[preference.ConversationID] = preference
 	}
-	var conversations []store.Conversation
+	if hasAssistant && !conversationVisibleForPreference(assistant, preferencesByConversation[assistant.ID]) {
+		hasAssistant = false
+	}
+	groupLimit := MaxClientListItems
+	if hasAssistant {
+		groupLimit--
+	}
+	var parentConversations []store.Conversation
 	if err := db.Model(&store.Conversation{}).
 		Joins("JOIN conversation_members cm ON cm.conversation_id = conversations.id").
-		Joins("LEFT JOIN conversation_pins cp ON cp.conversation_id = conversations.id AND cp.user_id = ?", accountID).
+		Joins("LEFT JOIN conversation_user_preferences cup ON cup.conversation_id = conversations.id AND cup.user_id = ?", accountID).
 		Where("cm.member_type = ? AND cm.member_id = ? AND cm.left_at IS NULL", store.ConversationMemberTypeUser, accountID).
 		Where("conversations.id <> ?", assistantID).
 		Where("conversations.kind <> ?", store.ConversationKindTopic).
 		Where("conversations.status = ?", store.ConversationStatusActive).
-		Order("CASE WHEN cp.user_id IS NULL THEN 1 ELSE 0 END ASC").
+		Where("cup.hidden_through_seq IS NULL OR conversations.last_message_seq > cup.hidden_through_seq").
+		Order("CASE WHEN COALESCE(cup.pinned, false) THEN 0 ELSE 1 END ASC").
 		Order("COALESCE(conversations.last_message_at, conversations.created_at) DESC").
-		Order("conversations.id ASC").Limit(limit).Find(&conversations).Error; err != nil {
+		Order("conversations.id ASC").Limit(groupLimit).Find(&parentConversations).Error; err != nil {
 		return ListResult{}, internalError(err)
 	}
-	var topicConversations []store.Conversation
-	if err := db.Model(&store.Conversation{}).
+
+	topicActivityCutoff := s.now().UTC().Add(-topicConversationListActivityWindow)
+	var topicGroups []topicConversationListGroup
+	topicGroupQuery := db.Model(&store.Conversation{}).
+		Select("ct.parent_conversation_id AS parent_conversation_id").
 		Joins("JOIN conversation_topic_participants ctp ON ctp.conversation_id = conversations.id").
 		Joins("JOIN conversation_topics ct ON ct.conversation_id = conversations.id").
 		Joins("JOIN conversations parent_conversations ON parent_conversations.id = ct.parent_conversation_id").
 		Joins("JOIN conversation_members parent_cm ON parent_cm.conversation_id = ct.parent_conversation_id").
-		Joins("LEFT JOIN conversation_pins cp ON cp.conversation_id = conversations.id AND cp.user_id = ?", accountID).
+		Joins("LEFT JOIN conversation_user_preferences cup ON cup.conversation_id = conversations.id AND cup.user_id = ?", accountID).
 		Where("ctp.participant_type = ? AND ctp.participant_id = ?", store.ConversationMemberTypeUser, accountID).
 		Where("parent_cm.member_type = ? AND parent_cm.member_id = ? AND parent_cm.left_at IS NULL", store.ConversationMemberTypeUser, accountID).
 		Where("ct.source_message_seq >= CASE WHEN parent_cm.history_visible_from_seq < 1 THEN 1 ELSE parent_cm.history_visible_from_seq END").
 		Where("ct.archived_at IS NULL").
 		Where("conversations.status = ? AND parent_conversations.status = ?", store.ConversationStatusActive, store.ConversationStatusActive).
-		Order("CASE WHEN cp.user_id IS NULL THEN 1 ELSE 0 END ASC").
-		Order("COALESCE(conversations.last_message_at, conversations.created_at) DESC").
-		Order("conversations.id ASC").Limit(limit).Find(&topicConversations).Error; err != nil {
+		Where("cup.hidden_through_seq IS NULL OR conversations.last_message_seq > cup.hidden_through_seq")
+	topicGroupQuery = applyTopicConversationListActivityFilter(topicGroupQuery, topicActivityCutoff, includeConversationID)
+	if err := topicGroupQuery.
+		Group("ct.parent_conversation_id").
+		Order("MAX(COALESCE(conversations.last_message_at, conversations.created_at)) DESC").
+		Order("ct.parent_conversation_id ASC").
+		Limit(MaxClientListItems).
+		Scan(&topicGroups).Error; err != nil {
 		return ListResult{}, internalError(err)
 	}
-	conversations = append(conversations, topicConversations...)
-	sort.Slice(conversations, func(left, right int) bool {
-		_, leftPinned := pinnedConversationIDs[conversations[left].ID]
-		_, rightPinned := pinnedConversationIDs[conversations[right].ID]
+	if !hasAssistant {
+		filteredGroups := topicGroups[:0]
+		for _, group := range topicGroups {
+			if group.ParentConversationID != assistantID {
+				filteredGroups = append(filteredGroups, group)
+			}
+		}
+		topicGroups = filteredGroups
+	}
+
+	parentByID := make(map[string]store.Conversation, len(parentConversations)+len(topicGroups))
+	for _, conversation := range parentConversations {
+		parentByID[conversation.ID] = conversation
+	}
+	missingParentIDs := make([]string, 0, len(topicGroups))
+	for _, group := range topicGroups {
+		if group.ParentConversationID == assistantID {
+			continue
+		}
+		if _, ok := parentByID[group.ParentConversationID]; !ok {
+			missingParentIDs = append(missingParentIDs, group.ParentConversationID)
+		}
+	}
+	if len(missingParentIDs) > 0 {
+		var missingParents []store.Conversation
+		if err := db.Model(&store.Conversation{}).
+			Joins("JOIN conversation_members cm ON cm.conversation_id = conversations.id").
+			Where("cm.member_type = ? AND cm.member_id = ? AND cm.left_at IS NULL", store.ConversationMemberTypeUser, accountID).
+			Where("conversations.id IN ?", missingParentIDs).
+			Where("conversations.kind <> ?", store.ConversationKindTopic).
+			Where("conversations.status = ?", store.ConversationStatusActive).
+			Find(&missingParents).Error; err != nil {
+			return ListResult{}, internalError(err)
+		}
+		for _, conversation := range missingParents {
+			parentByID[conversation.ID] = conversation
+		}
+	}
+
+	candidateParentIDs := make([]string, 0, len(parentByID))
+	for parentID := range parentByID {
+		candidateParentIDs = append(candidateParentIDs, parentID)
+	}
+	if hasAssistant {
+		candidateParentIDs = append(candidateParentIDs, assistantID)
+	}
+	var topicConversations []store.Conversation
+	if len(candidateParentIDs) > 0 {
+		topicQuery := db.Model(&store.Conversation{}).
+			Joins("JOIN conversation_topic_participants ctp ON ctp.conversation_id = conversations.id").
+			Joins("JOIN conversation_topics ct ON ct.conversation_id = conversations.id").
+			Joins("JOIN conversations parent_conversations ON parent_conversations.id = ct.parent_conversation_id").
+			Joins("JOIN conversation_members parent_cm ON parent_cm.conversation_id = ct.parent_conversation_id").
+			Joins("LEFT JOIN conversation_user_preferences cup ON cup.conversation_id = conversations.id AND cup.user_id = ?", accountID).
+			Where("ctp.participant_type = ? AND ctp.participant_id = ?", store.ConversationMemberTypeUser, accountID).
+			Where("parent_cm.member_type = ? AND parent_cm.member_id = ? AND parent_cm.left_at IS NULL", store.ConversationMemberTypeUser, accountID).
+			Where("ct.source_message_seq >= CASE WHEN parent_cm.history_visible_from_seq < 1 THEN 1 ELSE parent_cm.history_visible_from_seq END").
+			Where("ct.archived_at IS NULL").
+			Where("ct.parent_conversation_id IN ?", candidateParentIDs).
+			Where("conversations.status = ? AND parent_conversations.status = ?", store.ConversationStatusActive, store.ConversationStatusActive).
+			Where("cup.hidden_through_seq IS NULL OR conversations.last_message_seq > cup.hidden_through_seq")
+		topicQuery = applyTopicConversationListActivityFilter(topicQuery, topicActivityCutoff, includeConversationID)
+		if err := topicQuery.Find(&topicConversations).Error; err != nil {
+			return ListResult{}, internalError(err)
+		}
+	}
+	var topicRecords []store.ConversationTopic
+	if len(topicConversations) > 0 {
+		topicIDs := make([]string, 0, len(topicConversations))
+		for _, conversation := range topicConversations {
+			topicIDs = append(topicIDs, conversation.ID)
+		}
+		if err := db.Where("conversation_id IN ?", topicIDs).Find(&topicRecords).Error; err != nil {
+			return ListResult{}, internalError(err)
+		}
+	}
+	parentIDByTopicID := make(map[string]string, len(topicRecords))
+	for _, topic := range topicRecords {
+		parentIDByTopicID[topic.ConversationID] = topic.ParentConversationID
+	}
+	topicsByParentID := make(map[string][]store.Conversation, len(candidateParentIDs))
+	topicActivityByParentID := make(map[string]time.Time, len(candidateParentIDs))
+	for _, conversation := range topicConversations {
+		parentID := parentIDByTopicID[conversation.ID]
+		topicsByParentID[parentID] = append(topicsByParentID[parentID], conversation)
+		activityAt := conversationListActivityAt(conversation)
+		if activityAt.After(topicActivityByParentID[parentID]) {
+			topicActivityByParentID[parentID] = activityAt
+		}
+	}
+	parentConversations = parentConversations[:0]
+	for _, conversation := range parentByID {
+		parentConversations = append(parentConversations, conversation)
+	}
+	sort.Slice(parentConversations, func(left, right int) bool {
+		leftConversation, rightConversation := parentConversations[left], parentConversations[right]
+		leftPinned := preferencesByConversation[leftConversation.ID].Pinned
+		rightPinned := preferencesByConversation[rightConversation.ID].Pinned
 		if leftPinned != rightPinned {
 			return leftPinned
 		}
-		leftAt := conversations[left].CreatedAt
-		if conversations[left].LastMessageAt != nil {
-			leftAt = *conversations[left].LastMessageAt
+		leftAt := conversationListActivityAt(leftConversation)
+		if topicAt := topicActivityByParentID[leftConversation.ID]; topicAt.After(leftAt) {
+			leftAt = topicAt
 		}
-		rightAt := conversations[right].CreatedAt
-		if conversations[right].LastMessageAt != nil {
-			rightAt = *conversations[right].LastMessageAt
+		rightAt := conversationListActivityAt(rightConversation)
+		if topicAt := topicActivityByParentID[rightConversation.ID]; topicAt.After(rightAt) {
+			rightAt = topicAt
 		}
 		if !leftAt.Equal(rightAt) {
 			return leftAt.After(rightAt)
 		}
-		return conversations[left].ID < conversations[right].ID
+		return leftConversation.ID < rightConversation.ID
 	})
-	if len(conversations) > limit {
-		conversations = conversations[:limit]
+	if len(parentConversations) > groupLimit {
+		parentConversations = parentConversations[:groupLimit]
+	}
+	conversations := make([]store.Conversation, 0, len(parentConversations)+len(topicConversations))
+	if hasAssistant {
+		assistantTopics := topicsByParentID[assistantID]
+		sortConversationListTopics(assistantTopics)
+		conversations = append(conversations, assistantTopics...)
+	}
+	for _, parent := range parentConversations {
+		conversations = append(conversations, parent)
+		topics := topicsByParentID[parent.ID]
+		sortConversationListTopics(topics)
+		conversations = append(conversations, topics...)
 	}
 	ids := make([]string, 0, len(conversations)+1)
 	if hasAssistant {
@@ -104,6 +236,15 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 		return ListResult{}, internalError(err)
 	}
 	topicPresentations, err := loadTopicPresentations(db, conversations, accountID)
+	if err != nil {
+		return ListResult{}, internalError(err)
+	}
+	allConversations := make([]store.Conversation, 0, len(conversations)+1)
+	if hasAssistant {
+		allConversations = append(allConversations, assistant)
+	}
+	allConversations = append(allConversations, conversations...)
+	lastMessageSenders, err := loadLastMessageSenders(db, allConversations)
 	if err != nil {
 		return ListResult{}, internalError(err)
 	}
@@ -140,11 +281,17 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 			parent = &presentation.parent
 		}
 		item.CanSend = canUserSendConversation(conversation, parent, membersByConversation[conversation.ID], accessibleAppIDs)
+		item.LastMessageSender = lastMessageSenders[conversation.ID]
 		conversationProjects := projects[conversation.ID]
 		if conversationProjects == nil {
 			conversationProjects = []Project{}
 		}
-		_, item.Pinned = pinnedConversationIDs[conversation.ID]
+		preference := preferencesByConversation[conversation.ID]
+		item.NotificationMuted = preference.NotificationMuted
+		item.Pinned = preference.Pinned
+		if conversation.Kind == store.ConversationKindTopic {
+			item.Pinned = false
+		}
 		if conversation.ID == assistantID {
 			item.Pinned = true
 		}
@@ -158,6 +305,34 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 		appendItem(conversation)
 	}
 	return result, nil
+}
+
+func applyTopicConversationListActivityFilter(db *gorm.DB, cutoff time.Time, includeConversationID string) *gorm.DB {
+	if includeConversationID == "" {
+		return db.Where("(COALESCE(conversations.last_message_at, conversations.created_at) >= ? OR conversations.last_message_seq > ctp.last_read_seq)", cutoff)
+	}
+	return db.Where("(COALESCE(conversations.last_message_at, conversations.created_at) >= ? OR conversations.last_message_seq > ctp.last_read_seq OR conversations.id = ?)", cutoff, includeConversationID)
+}
+
+func conversationListActivityAt(conversation store.Conversation) time.Time {
+	if conversation.LastMessageAt != nil {
+		return *conversation.LastMessageAt
+	}
+	return conversation.CreatedAt
+}
+
+func sortConversationListTopics(topics []store.Conversation) {
+	sort.Slice(topics, func(left, right int) bool {
+		leftAt, rightAt := conversationListActivityAt(topics[left]), conversationListActivityAt(topics[right])
+		if !leftAt.Equal(rightAt) {
+			return leftAt.After(rightAt)
+		}
+		return topics[left].ID < topics[right].ID
+	})
+}
+
+func conversationVisibleForPreference(conversation store.Conversation, preference store.ConversationUserPreference) bool {
+	return preference.HiddenThroughSeq == nil || conversation.LastMessageSeq > *preference.HiddenThroughSeq
 }
 
 func (s *Service) ensureBuiltinAssistantConversation(db *gorm.DB, userID string) (store.Conversation, bool, error) {

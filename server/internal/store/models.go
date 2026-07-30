@@ -112,6 +112,7 @@ type Conversation struct {
 	ID                 string    `gorm:"type:uuid;primaryKey"`
 	Kind               string    `gorm:"size:32;not null;index"`
 	Name               string    `gorm:"size:160;not null"`
+	Announcement       string    `gorm:"not null;default:''"`
 	Avatar             string    `gorm:"size:512;not null;default:''"`
 	CreatedByAppID     *string   `gorm:"type:uuid;index"`
 	CreatedByApp       *App      `gorm:"foreignKey:CreatedByAppID;constraint:OnDelete:RESTRICT;"`
@@ -142,18 +143,23 @@ type ConversationMember struct {
 	LastReadMessageID     *string      `gorm:"type:uuid"`
 	LastReadSeq           int64        `gorm:"not null;default:0"`
 	LastMentionedSeq      int64        `gorm:"not null;default:0"`
+	LastChoiceSeq         int64        `gorm:"not null;default:0"`
 }
 
-type ConversationPin struct {
-	UserID         string       `gorm:"type:uuid;primaryKey;index"`
-	User           User         `gorm:"constraint:OnDelete:CASCADE;"`
-	ConversationID string       `gorm:"type:uuid;primaryKey;index"`
-	Conversation   Conversation `gorm:"constraint:OnDelete:CASCADE;"`
-	CreatedAt      time.Time    `gorm:"not null"`
+type ConversationUserPreference struct {
+	UserID            string       `gorm:"type:uuid;primaryKey;index"`
+	User              User         `gorm:"constraint:OnDelete:CASCADE;"`
+	ConversationID    string       `gorm:"type:uuid;primaryKey;index"`
+	Conversation      Conversation `gorm:"constraint:OnDelete:CASCADE;"`
+	Pinned            bool         `gorm:"not null;default:false"`
+	NotificationMuted bool         `gorm:"not null;default:false"`
+	HiddenThroughSeq  *int64
+	CreatedAt         time.Time `gorm:"not null"`
+	UpdatedAt         time.Time `gorm:"not null"`
 }
 
-func (ConversationPin) TableName() string {
-	return "conversation_pins"
+func (ConversationUserPreference) TableName() string {
+	return "conversation_user_preferences"
 }
 
 type Message struct {
@@ -227,6 +233,7 @@ type ConversationTopicParticipant struct {
 	LastReadMessageID     *string   `gorm:"type:uuid"`
 	LastReadSeq           int64     `gorm:"not null;default:0"`
 	LastMentionedSeq      int64     `gorm:"not null;default:0"`
+	LastChoiceSeq         int64     `gorm:"not null;default:0"`
 	CreatedAt             time.Time `gorm:"not null"`
 	UpdatedAt             time.Time `gorm:"not null"`
 }
@@ -250,6 +257,15 @@ type MessageReactionState struct {
 	MessageID string    `gorm:"type:uuid;primaryKey"`
 	Version   int64     `gorm:"not null;default:0"`
 	UpdatedAt time.Time `gorm:"not null"`
+}
+
+type MessageChoiceResponse struct {
+	ID             string          `gorm:"type:uuid;primaryKey"`
+	ConversationID string          `gorm:"type:uuid;not null;index:message_choice_responses_conversation_message_index,priority:1"`
+	MessageID      string          `gorm:"type:uuid;not null;uniqueIndex:message_choice_responses_message_user_unique,priority:1;index:message_choice_responses_conversation_message_index,priority:2;index:message_choice_responses_user_message_index,priority:2"`
+	UserID         string          `gorm:"type:uuid;not null;uniqueIndex:message_choice_responses_message_user_unique,priority:2;index:message_choice_responses_user_message_index,priority:1"`
+	OptionIDs      json.RawMessage `gorm:"type:jsonb;not null;serializer:json"`
+	CreatedAt      time.Time       `gorm:"not null;index:message_choice_responses_conversation_message_index,priority:3"`
 }
 
 type DirectConversation struct {

@@ -51,7 +51,7 @@ export function AppSidebar({
                 <img
                   alt="应用 Logo"
                   className="size-full object-contain"
-                  src="/logo.png"
+                  src="/favicon.webp"
                 />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
@@ -67,7 +67,7 @@ export function AppSidebar({
       <SidebarContent>
         <NavConsolePages
           pages={consolePages.map((page) => ({
-            name: page.title,
+            name: page.label,
             url: page.path,
             icon: page.icon,
             children: page.children?.map((child) => ({

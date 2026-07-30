@@ -3,6 +3,7 @@ import type {
   ClientConversation,
   ClientMessage,
   ClientMessageBody,
+  ClientMessageChoiceState,
   ClientMessageReaction,
   ClientUser,
 } from "@/data/models"
@@ -23,6 +24,9 @@ export type PresentedMessage = {
   author: string
   avatar: string
   body: ClientMessageBody
+  canRevoke: boolean
+  choice?: ClientMessageChoiceState
+  createdAt: string
   delegatedByName: string
   id: string
   reactions: ClientMessageReaction[]
@@ -32,7 +36,6 @@ export type PresentedMessage = {
   }
   role: "me" | "other" | "system"
   sender: EntityReference | null
-  time: string
   topic?: {
     archived: boolean
     conversationId: string
@@ -100,6 +103,9 @@ export function buildPresentedMessages({
         appsById
       ),
       body: message.body,
+      canRevoke: canRevokeMessage(message, conversation, currentUser.id),
+      choice: message.choice,
+      createdAt: message.createdAt,
       delegatedByName: message.delegatedBy?.name ?? "",
       id: message.id,
       reactions: message.reactions,
@@ -137,7 +143,6 @@ export function buildPresentedMessages({
         message.sender.type === "system"
           ? null
           : { id: message.sender.id, type: message.sender.type },
-      time: formatMessageTime(message.createdAt),
       topic: message.topic
         ? {
             archived: message.topic.archived,
@@ -168,6 +173,35 @@ export function buildPresentedMessages({
         : undefined,
     }
   })
+}
+
+function canRevokeMessage(
+  message: ClientMessage,
+  conversation: ClientConversation,
+  currentUserId: string
+) {
+  if (
+    message.sender.type === "system" ||
+    message.body.type === "revoked" ||
+    message.body.type === "unsupported" ||
+    conversation.topic?.archived
+  ) {
+    return false
+  }
+  if (message.sender.type === "user" && message.sender.id === currentUserId) {
+    return true
+  }
+  if (
+    conversation.type !== "group" &&
+    conversation.topic?.parentConversationType !== "group"
+  ) {
+    return false
+  }
+
+  const currentMember = conversation.members?.find(
+    (member) => member.id === currentUserId
+  )
+  return currentMember?.role === "owner" || currentMember?.role === "admin"
 }
 
 export function createMessageMentionLabelResolver({
@@ -218,11 +252,26 @@ export function formatClientMessageBodySummary(
       resolveMentionLabel
     )
   }
+  if (body.type === "choice") {
+    const content =
+      body.contentType === "markdown"
+        ? formatMarkdownAsPlainText(body.content)
+        : body.content
+    return `[选择] ${formatMentionTemplateText(content, resolveMentionLabel)}`
+  }
   if (body.type === "link") return `[链接] ${body.title || body.url}`
   if (body.type === "card") return `[卡片] ${body.title}`
   if (body.type === "chart") return `[图表] ${body.title}`
   if (body.type === "file") return `[文件] ${body.name}`
-  if (body.type === "image") return "[图片]"
+  if (body.type === "image") {
+    if (!body.caption) return "[图片]"
+    const caption =
+      body.captionType === "markdown"
+        ? formatMarkdownAsPlainText(body.caption)
+        : body.caption
+    const summary = formatMentionTemplateText(caption, resolveMentionLabel)
+    return summary ? `[图片] ${summary}` : "[图片]"
+  }
   if (body.type === "voice") {
     const summary = `[语音] ${formatVoiceDuration(body.durationMS)}`
     return body.transcript ? `${summary} - ${body.transcript}` : summary
@@ -346,6 +395,46 @@ function collectBodyResources(
 function formatMessageTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? "" : messageTimeFormatter.format(date)
+}
+
+const messageTimeMarkerThresholdMs = 60 * 60 * 1_000
+
+export function shouldShowMessageTimeMarker(
+  olderCreatedAt: string,
+  newerCreatedAt: string
+) {
+  const olderTime = new Date(olderCreatedAt).getTime()
+  const newerTime = new Date(newerCreatedAt).getTime()
+
+  if (Number.isNaN(olderTime) || Number.isNaN(newerTime)) return false
+  return newerTime - olderTime > messageTimeMarkerThresholdMs
+}
+
+export function formatMessageTimeMarker(value: string, now = new Date()) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+
+  const time = `${padMessageTimePart(date.getHours())}:${padMessageTimePart(date.getMinutes())}`
+  if (isSameLocalMessageDay(date, now)) return time
+
+  const monthAndDay = `${padMessageTimePart(date.getMonth() + 1)}/${padMessageTimePart(date.getDate())}`
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${monthAndDay} ${time}`
+  }
+
+  return `${date.getFullYear()}/${monthAndDay} ${time}`
+}
+
+function isSameLocalMessageDay(date: Date, otherDate: Date) {
+  return (
+    date.getFullYear() === otherDate.getFullYear() &&
+    date.getMonth() === otherDate.getMonth() &&
+    date.getDate() === otherDate.getDate()
+  )
+}
+
+function padMessageTimePart(value: number) {
+  return String(value).padStart(2, "0")
 }
 
 function getMessageAuthor(

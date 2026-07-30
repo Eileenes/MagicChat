@@ -21,11 +21,12 @@ type appMessageCreatedPayload struct {
 }
 
 type appMessageConversationPayload struct {
-	ID     string                           `json:"id"`
-	Name   string                           `json:"name"`
-	Parent *appMessageConversationReference `json:"parent,omitempty"`
-	Source *appMessageTopicSourcePayload    `json:"source_message,omitempty"`
-	Type   string                           `json:"type"`
+	CreatedByAppID string                           `json:"created_by_app_id,omitempty"`
+	ID             string                           `json:"id"`
+	Name           string                           `json:"name"`
+	Parent         *appMessageConversationReference `json:"parent,omitempty"`
+	Source         *appMessageTopicSourcePayload    `json:"source_message,omitempty"`
+	Type           string                           `json:"type"`
 }
 
 type appMessageConversationReference struct {
@@ -40,11 +41,12 @@ type appMessageTopicSourcePayload struct {
 }
 
 type appMessagePayload struct {
-	Body      json.RawMessage `json:"body"`
-	CreatedAt time.Time       `json:"created_at"`
-	ID        string          `json:"id"`
-	Seq       int64           `json:"seq"`
-	Summary   string          `json:"summary"`
+	Body             json.RawMessage `json:"body"`
+	CreatedAt        time.Time       `json:"created_at"`
+	ID               string          `json:"id"`
+	ReplyToMessageID string          `json:"reply_to_message_id,omitempty"`
+	Seq              int64           `json:"seq"`
+	Summary          string          `json:"summary"`
 }
 
 type appMessageSenderPayload struct {
@@ -89,6 +91,9 @@ func createAppMessageEventOutbox(db *gorm.DB, access conversationaccess.Context,
 	}
 	conversationPayload := appMessageConversationPayload{ID: conversation.ID, Name: conversation.Name, Type: conversation.Kind}
 	if access.IsTopic() && access.ParentConversation != nil && access.Topic != nil {
+		if access.Topic.CreatedByAppID != nil {
+			conversationPayload.CreatedByAppID = *access.Topic.CreatedByAppID
+		}
 		conversationPayload.Parent = &appMessageConversationReference{
 			ID: access.ParentConversation.ID, Name: access.ParentConversation.Name, Type: access.ParentConversation.Kind,
 		}
@@ -96,7 +101,7 @@ func createAppMessageEventOutbox(db *gorm.DB, access conversationaccess.Context,
 	}
 	payload := appMessageCreatedPayload{
 		Conversation: conversationPayload,
-		Message:      appMessagePayload{Body: message.Body, CreatedAt: message.CreatedAt, ID: message.ID, Seq: message.Seq, Summary: message.Summary},
+		Message:      appMessagePayload{Body: message.Body, CreatedAt: message.CreatedAt, ID: message.ID, ReplyToMessageID: optionalString(message.ReplyToMessageID), Seq: message.Seq, Summary: message.Summary},
 		Sender:       appMessageSenderPayload{Email: sender.Email, ID: sender.ID, Name: sender.Name, Nickname: sender.Nickname, Type: store.MessageSenderTypeUser},
 	}
 	result := make([]AppEvent, 0, len(appIDs))
@@ -112,6 +117,13 @@ func createAppMessageEventOutbox(db *gorm.DB, access conversationaccess.Context,
 		result = append(result, AppEvent{AppID: stored.AppID, Cursor: stored.ID, Event: stored.Event, Payload: stored.Payload})
 	}
 	return result, nil
+}
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // lockAndFilterActiveConversationApps serializes event creation with app

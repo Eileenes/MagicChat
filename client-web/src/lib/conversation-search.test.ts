@@ -147,7 +147,7 @@ describe("conversation search", () => {
     ])
   })
 
-  it("shows the first 8 conversations in the provided order", () => {
+  it("returns no conversations when the keyword is empty", () => {
     const conversations = Array.from({ length: 10 }, (_, index) =>
       createConversation({
         id: `conversation-${index}`,
@@ -157,10 +157,7 @@ describe("conversation search", () => {
 
     const results = search(conversations, "  ")
 
-    expect(results).toHaveLength(8)
-    expect(results[0]?.conversation.id).toBe("conversation-0")
-    expect(results[7]?.conversation.id).toBe("conversation-7")
-    expect(results.every((result) => result.matchedField === null)).toBe(true)
+    expect(results).toHaveLength(0)
   })
 
   it("reuses search fields when only conversation activity changes", () => {
@@ -174,6 +171,7 @@ describe("conversation search", () => {
       ...conversation,
       lastMessageAt: "2026-07-14T12:00:00Z",
       lastMessageSummary: "新消息",
+      lastChoiceSeq: 0,
     }
 
     const updatedIndex = createConversationSearchIndex(
@@ -236,6 +234,7 @@ function createConversation(
     lastMessageId: null,
     lastMessageSeq: 0,
     lastMessageSummary: "",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 0,
@@ -245,6 +244,7 @@ function createConversation(
     unreadCount: 0,
     visibility: "private",
     ...overrides,
+    lastMessageSender: overrides.lastMessageSender ?? null,
   }
 }
 

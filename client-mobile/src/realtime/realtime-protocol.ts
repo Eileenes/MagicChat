@@ -1,10 +1,13 @@
 export const REALTIME_PROTOCOL_VERSION = 1
 
 export const realtimeEvents = {
+  conversationMemberChoiceReceived: "conversation.member_choice_received",
   conversationMemberMentioned: "conversation.member_mentioned",
+  conversationMuteUpdated: "conversation.mute_updated",
   conversationPinUpdated: "conversation.pin_updated",
   conversationRemoved: "conversation.removed",
   messageCreated: "message.created",
+  messageChoiceUpdated: "message.choice_updated",
   messageReactionsUpdated: "message.reactions_updated",
   messageUpdated: "message.updated",
   systemReady: "system.ready",

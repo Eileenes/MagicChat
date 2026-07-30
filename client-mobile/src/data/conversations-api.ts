@@ -40,19 +40,30 @@ type ConversationTopicResponse = {
   }
 }
 
+type ConversationLastMessageSenderResponse = {
+  id?: string
+  name?: string
+  nickname?: string
+  type?: string
+}
+
 type ConversationResponse = {
   avatar?: string
+  can_send?: boolean
   created_at?: string
   id?: string
   last_message_at?: string | null
   last_message_id?: string | null
   last_message_seq?: number
+  last_message_sender?: ConversationLastMessageSenderResponse | null
   last_message_summary?: string
+  last_choice_seq?: number
   last_mentioned_seq?: number
   last_read_seq?: number
   member_count?: number
   members?: ConversationMemberResponse[]
   name?: string
+  notification_muted?: boolean
   pinned?: boolean
   projects?: ConversationProjectResponse[]
   topic?: ConversationTopicResponse | null
@@ -67,6 +78,20 @@ type ConversationsResponse = {
 
 type ConversationActionResponse = {
   conversation?: ConversationResponse
+}
+
+type ConversationPinResponse = {
+  conversation_id?: string
+  pinned?: boolean
+}
+
+type ConversationMuteResponse = {
+  conversation_id?: string
+  muted?: boolean
+}
+
+type ConversationDismissResponse = {
+  conversation_id?: string
 }
 
 type ConversationTopicDetailResponse = {
@@ -97,6 +122,77 @@ export async function fetchConversations(
   }
 
   return data.conversations.map(normalizeConversation)
+}
+
+export async function setConversationPinned(
+  serverUrl: string,
+  conversationId: string,
+  pinned: boolean,
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    ConversationPinResponse
+  >(`/api/client/conversations/${encodeURIComponent(conversationId)}/pin`, {
+    errorMessage: pinned ? "置顶会话失败" : "取消置顶失败",
+    method: pinned ? "PUT" : "DELETE",
+    signal: options.signal,
+  })
+
+  if (
+    !data?.conversation_id?.trim() ||
+    typeof data.pinned !== "boolean"
+  ) {
+    throw new ApiRequestError("会话置顶响应格式不正确")
+  }
+
+  return {
+    conversationId: data.conversation_id,
+    pinned: data.pinned,
+  }
+}
+
+export async function setConversationMuted(
+  serverUrl: string,
+  conversationId: string,
+  muted: boolean,
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    ConversationMuteResponse
+  >(`/api/client/conversations/${encodeURIComponent(conversationId)}/mute`, {
+    errorMessage: muted ? "开启消息免打扰失败" : "取消消息免打扰失败",
+    method: muted ? "PUT" : "DELETE",
+    signal: options.signal,
+  })
+
+  if (!data?.conversation_id?.trim() || typeof data.muted !== "boolean") {
+    throw new ApiRequestError("会话免打扰响应格式不正确")
+  }
+
+  return {
+    conversationId: data.conversation_id,
+    muted: data.muted,
+  }
+}
+
+export async function dismissConversation(
+  serverUrl: string,
+  conversationId: string,
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    ConversationDismissResponse
+  >(`/api/client/conversations/${encodeURIComponent(conversationId)}`, {
+    errorMessage: "删除对话失败",
+    method: "DELETE",
+    signal: options.signal,
+  })
+
+  if (!data?.conversation_id?.trim()) {
+    throw new ApiRequestError("删除对话响应格式不正确")
+  }
+
+  return { conversationId: data.conversation_id }
 }
 
 export async function openDirectConversation(
@@ -217,16 +313,22 @@ function normalizeConversation(
 
   const normalized: ClientConversation = {
     avatar: conversation.avatar ?? "",
+    canSend: conversation.can_send !== false,
     createdAt: conversation.created_at,
     id: conversation.id,
     lastMessageAt: conversation.last_message_at ?? null,
     lastMessageId: conversation.last_message_id ?? null,
     lastMessageSeq: conversation.last_message_seq ?? 0,
+    lastMessageSender: normalizeConversationLastMessageSender(
+      conversation.last_message_sender
+    ),
     lastMessageSummary: conversation.last_message_summary ?? "",
+    lastChoiceSeq: conversation.last_choice_seq ?? 0,
     lastMentionedSeq: conversation.last_mentioned_seq ?? 0,
     lastReadSeq: conversation.last_read_seq ?? 0,
     memberCount: conversation.member_count ?? 0,
     name: conversation.name,
+    notificationMuted: Boolean(conversation.notification_muted),
     pinned: Boolean(conversation.pinned),
     type: normalizeConversationType(conversation.type),
     unreadCount: conversation.unread_count ?? 0,
@@ -248,6 +350,22 @@ function normalizeConversation(
   }
 
   return normalized
+}
+
+function normalizeConversationLastMessageSender(
+  sender: ConversationResponse["last_message_sender"]
+): ClientConversation["lastMessageSender"] {
+  if (!sender) {
+    return null
+  }
+
+  return {
+    id: sender.id ?? "",
+    name: sender.name ?? "",
+    nickname: sender.nickname ?? "",
+    type:
+      sender.type === "app" || sender.type === "system" ? sender.type : "user",
+  }
 }
 
 function normalizeConversationTopic(

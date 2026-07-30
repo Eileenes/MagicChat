@@ -341,6 +341,82 @@ func TestHandleParsedServerMessageIgnoresGroupMessageWithoutDirectAppMention(t *
 	}
 }
 
+func TestChoiceResponseCreatedContinuesTheOriginalSessionAsTrustedUserTrigger(t *testing.T) {
+	choiceBody := json.RawMessage(`{"type":"choice","content_type":"markdown","content":"**请选择项目**","selection":"multiple","options":[{"id":"project-a","label":"项目 A"},{"id":"daily","label":"日常待办"}]}`)
+	payload, err := json.Marshal(choiceResponseCreatedPayload{
+		ChoiceMessage: messagePayload{
+			Body: choiceBody, ID: "choice-message-1", Seq: 8, Summary: "[选择] 请选择项目",
+		},
+		Conversation: conversationPayload{ID: "conversation-1", Name: "茉莉", Type: "app"},
+		Response: struct {
+			CreatedAt time.Time `json:"created_at"`
+			ID        string    `json:"id"`
+			OptionIDs []string  `json:"option_ids"`
+		}{
+			CreatedAt: time.Date(2026, 7, 23, 10, 1, 0, 0, time.UTC),
+			ID:        "11111111-1111-1111-1111-111111111111", OptionIDs: []string{"daily", "project-a"},
+		},
+		Sender: senderPayload{Email: "alice@example.com", ID: "user-1", Name: "Alice", Type: "user"},
+	})
+	if err != nil {
+		t.Fatalf("marshal choice response event: %v", err)
+	}
+	var historyRequest appListConversationMessagesRequestPayload
+	requester := appRequestFunc(func(_ context.Context, method string, request any) (json.RawMessage, error) {
+		if method != methodConversationMessagesList {
+			t.Fatalf("unexpected request method %q", method)
+		}
+		raw, marshalErr := json.Marshal(request)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		if unmarshalErr := json.Unmarshal(raw, &historyRequest); unmarshalErr != nil {
+			return nil, unmarshalErr
+		}
+		return json.Marshal(appListConversationMessagesResponsePayload{
+			Messages: []historyMessagePayload{{
+				Body: choiceBody, CreatedAt: time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC),
+				ID: "choice-message-1", Seq: 8,
+				Sender:  senderPayload{ID: "assistant-app", Name: "茉莉", Type: "app"},
+				Summary: "[选择] 请选择项目",
+			}},
+		})
+	})
+	runner := &capturingAgentRunner{}
+	handled := handleParsedServerMessage(
+		context.Background(),
+		envelope{V: protocolVersion, Kind: kindEvent, Event: eventChoiceResponseCreated, Payload: payload},
+		"assistant-app", requester,
+		replyAgentFunc(func(context.Context, agent.Request, agent.OutputSink) error { return nil }),
+		runner,
+		func(context.Context, envelope) error { return nil },
+	)
+	if !handled || !runner.started {
+		t.Fatalf("handled = %t, runner started = %t", handled, runner.started)
+	}
+	if runner.key != "conversation-1" || runner.prepared.EventConversationID != "conversation-1" || runner.prepared.MessageSeq != 0 {
+		t.Fatalf("runner key/prepared = %q/%#v", runner.key, runner.prepared)
+	}
+	if runner.prepared.Authorization.Authorization.ActorID != "user-1" ||
+		runner.prepared.Authorization.Authorization.TriggerMessageID != "11111111-1111-1111-1111-111111111111" ||
+		!strings.HasPrefix(runner.prepared.Authorization.Ref, "auth_choice_") {
+		t.Fatalf("choice authorization = %#v", runner.prepared.Authorization)
+	}
+	for _, snippet := range []string{"用户已回答", "项目 A", "日常待办", "project-a", "daily"} {
+		if !strings.Contains(runner.prepared.Request.Content, snippet) {
+			t.Fatalf("request content = %q, want %q", runner.prepared.Request.Content, snippet)
+		}
+	}
+	if runner.prepared.Request.MessageID != "11111111-1111-1111-1111-111111111111" ||
+		runner.prepared.Scope.CurrentAppID != "assistant-app" {
+		t.Fatalf("request/scope = %#v / %#v", runner.prepared.Request, runner.prepared.Scope)
+	}
+	if historyRequest.BeforeOrEqualSeq != 8 || historyRequest.RunAs == nil ||
+		historyRequest.RunAs.TriggerMessageID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("history request = %#v", historyRequest)
+	}
+}
+
 func TestHandleParsedServerMessageIgnoresTopicMessageWithoutDirectAppMention(t *testing.T) {
 	appID := "00000000-0000-0000-0000-000000000001"
 	body, err := json.Marshal(messageBody{Type: "text", Content: "我们先讨论一下实现方案"})
@@ -381,23 +457,51 @@ func TestHandleParsedServerMessageIgnoresTopicMessageWithoutDirectAppMention(t *
 	}
 }
 
-func TestShouldHandleIncomingTopicMessageRequiresDirectMention(t *testing.T) {
+func TestShouldHandleIncomingMessageUsesConversationContextAndTriggerType(t *testing.T) {
 	appID := "00000000-0000-0000-0000-000000000001"
 	for _, test := range []struct {
-		name       string
-		senderType string
-		body       messageBody
-		want       bool
+		name         string
+		conversation conversationPayload
+		senderType   string
+		body         messageBody
+		want         bool
 	}{
-		{name: "text mention", senderType: "user", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}, want: true},
-		{name: "markdown uppercase mention", senderType: "user", body: messageBody{Type: "markdown", Content: "请处理 {(@app/" + strings.ToUpper(appID) + ")}"}, want: true},
-		{name: "text without mention", senderType: "user", body: messageBody{Type: "text", Content: "我们先讨论一下"}},
-		{name: "image", senderType: "user", body: messageBody{Type: "image", FileID: "file-1"}},
-		{name: "app sender", senderType: "app", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}},
+		{name: "app text", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "text", Content: "请处理"}, want: true},
+		{name: "app markdown", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "markdown", Content: "请处理"}, want: true},
+		{name: "app voice", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "voice", FileID: "voice-1"}, want: true},
+		{name: "direct text", conversation: conversationPayload{Type: "direct"}, senderType: "user", body: messageBody{Type: "text", Content: "请处理"}, want: true},
+		{name: "app image", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "image", FileID: "image-1"}},
+		{name: "app file", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "file", FileID: "file-1"}},
+		{name: "app link", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "link", URL: "https://example.com"}},
+		{name: "app card", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "card", Title: "测试"}},
+		{name: "app forwarded bundle", conversation: conversationPayload{Type: "app"}, senderType: "user", body: messageBody{Type: "forward_bundle"}},
+		{name: "group text mention", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}, want: true},
+		{name: "group markdown uppercase mention", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "markdown", Content: "请处理 {(@app/" + strings.ToUpper(appID) + ")}"}, want: true},
+		{name: "group image caption mention", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "image", Caption: "请处理 {(@app/" + appID + ")}", CaptionType: "text", FileID: "image-1"}},
+		{name: "group text without mention", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "text", Content: "我们先讨论一下"}},
+		{name: "group voice", conversation: conversationPayload{Type: "group"}, senderType: "user", body: messageBody{Type: "voice", FileID: "voice-1"}},
+		{name: "app topic text", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "app"}}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}, want: true},
+		{name: "app topic voice", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "app"}}, senderType: "user", body: messageBody{Type: "voice", FileID: "voice-1"}, want: true},
+		{name: "app topic image", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "app"}}, senderType: "user", body: messageBody{Type: "image", FileID: "image-1"}},
+		{name: "direct topic markdown", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "direct"}}, senderType: "user", body: messageBody{Type: "markdown", Content: "继续处理"}, want: true},
+		{name: "group topic mention", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}, want: true},
+		{name: "group topic image caption mention", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "image", Caption: "请处理 {(@app/" + appID + ")}", CaptionType: "text", FileID: "image-1"}},
+		{name: "group topic without mention", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}},
+		{name: "own group topic text without mention", conversation: conversationPayload{Type: "topic", CreatedByAppID: appID, Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}, want: true},
+		{name: "own group topic markdown without mention", conversation: conversationPayload{Type: "topic", CreatedByAppID: strings.ToUpper(appID), Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "markdown", Content: "继续处理"}, want: true},
+		{name: "own group topic voice without mention", conversation: conversationPayload{Type: "topic", CreatedByAppID: appID, Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "voice", FileID: "voice-1"}, want: true},
+		{name: "own group topic image without mention", conversation: conversationPayload{Type: "topic", CreatedByAppID: appID, Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "image", FileID: "image-1"}},
+		{name: "other app group topic without mention", conversation: conversationPayload{Type: "topic", CreatedByAppID: "11111111-1111-1111-1111-111111111111", Parent: &conversationReferencePayload{Type: "group"}}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}},
+		{name: "own group topic app sender", conversation: conversationPayload{Type: "topic", CreatedByAppID: appID, Parent: &conversationReferencePayload{Type: "group"}}, senderType: "app", body: messageBody{Type: "text", Content: "继续处理"}},
+		{name: "topic without parent falls back to mention", conversation: conversationPayload{Type: "topic"}, senderType: "user", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}, want: true},
+		{name: "topic without parent and without mention", conversation: conversationPayload{Type: "topic"}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}},
+		{name: "topic with missing parent type falls back to mention", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{}}, senderType: "user", body: messageBody{Type: "text", Content: "请处理 {(@app/" + appID + ")}"}, want: true},
+		{name: "topic with missing parent type and without mention", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{}}, senderType: "user", body: messageBody{Type: "text", Content: "继续处理"}},
+		{name: "topic app sender", conversation: conversationPayload{Type: "topic", Parent: &conversationReferencePayload{Type: "app"}}, senderType: "app", body: messageBody{Type: "text", Content: "继续处理"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := shouldHandleIncomingMessage(appID, messageCreatedPayload{
-				Conversation: conversationPayload{ID: "topic-1", Type: "topic"},
+				Conversation: test.conversation,
 				Sender:       senderPayload{ID: "sender-1", Type: test.senderType},
 			}, test.body)
 			if got != test.want {
@@ -412,6 +516,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 	var actions []string
 	var agentRequests []agent.Request
 	var sent []envelope
+	var notice sendMessageRequestPayload
 	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
 		switch method {
 		case methodConversationMessagesList:
@@ -420,6 +525,16 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 					historyTextMessage("message-1", 1, "user-1", "Alice", "请处理 {(@app/"+appID+")}"),
 				},
 			})
+		case methodMessageSend:
+			actions = append(actions, "send-notice")
+			raw, err := json.Marshal(payload)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(raw, &notice); err != nil {
+				return nil, err
+			}
+			return json.Marshal(sendMessageResponsePayload{Message: messagePayload{ID: "notice-1", Seq: 2}})
 		case methodConversationTopicCreate:
 			actions = append(actions, "create-topic")
 			var topicRequest topicMutationRequestPayload
@@ -430,7 +545,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 			if err := json.Unmarshal(raw, &topicRequest); err != nil {
 				return nil, err
 			}
-			if topicRequest.ConversationID != "conversation-group-1" || topicRequest.SourceMessageID != "message-1" {
+			if topicRequest.ConversationID != "conversation-group-1" || topicRequest.SourceMessageID != "notice-1" {
 				t.Fatalf("topic creation request = %#v", topicRequest)
 			}
 			return testTopicMutationResponse("topic-1", "请处理")
@@ -456,11 +571,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 			if err := json.Unmarshal(message.Payload, &payload); err != nil {
 				t.Fatalf("decode sent message: %v", err)
 			}
-			if payload.Message.Content == complexTaskTopicNotice {
-				actions = append(actions, "send-notice")
-			} else {
-				actions = append(actions, "send-reply")
-			}
+			actions = append(actions, "send-reply")
 			sent = append(sent, message)
 			return nil
 		},
@@ -474,21 +585,17 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 		agentRequests[0].Conversation.Parent.Type != "group" {
 		t.Fatalf("conversation = %#v, want topic-1 topic", agentRequests[0].Conversation)
 	}
-	if len(sent) != 2 {
-		t.Fatalf("sent count = %d, want 2", len(sent))
+	if len(sent) != 1 {
+		t.Fatalf("sent count = %d, want 1", len(sent))
 	}
 	if !slices.Equal(actions, []string{"send-notice", "create-topic", "send-reply"}) {
 		t.Fatalf("actions = %v", actions)
 	}
-	var notice sendMessageRequestPayload
-	if err := json.Unmarshal(sent[0].Payload, &notice); err != nil {
-		t.Fatalf("decode topic notice: %v", err)
-	}
-	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice {
+	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice || notice.ReplyToMessageID != "message-1" {
 		t.Fatalf("topic notice = %#v", notice)
 	}
 	var reply sendMessageRequestPayload
-	if err := json.Unmarshal(sent[1].Payload, &reply); err != nil {
+	if err := json.Unmarshal(sent[0].Payload, &reply); err != nil {
 		t.Fatalf("decode topic reply: %v", err)
 	}
 	if reply.Target.Type != "topic" || reply.Target.ConversationID != "topic-1" {
@@ -508,6 +615,8 @@ func TestHandleParsedServerMessageRunsGroupMessageWithUppercaseDirectAppMention(
 					historyTextMessage("message-1", 1, "user-1", "Alice", "请处理 {(@app/"+mentionedAppID+")}"),
 				},
 			})
+		case methodMessageSend:
+			return json.Marshal(sendMessageResponsePayload{Message: messagePayload{ID: "notice-1", Seq: 2}})
 		case methodConversationTopicCreate:
 			return testTopicMutationResponse("topic-1", "请处理")
 		default:
@@ -580,7 +689,13 @@ func TestHandleParsedServerMessageRecoversAgentSessionFromTopic(t *testing.T) {
 					ID: "parent-group", Name: "产品讨论组", Type: "group",
 				},
 				ParentConversationID: "parent-group",
-				SourceMessage:        historyTextMessage("parent-message-42", 42, "user-1", "Alice", "请整理发布计划"),
+				SourceMessage: func() historyMessagePayload {
+					source := historyTextMessage("parent-notice-43", 43, appID, "茉莉", complexTaskTopicNotice)
+					quoted := historyTextMessage("parent-message-42", 42, "user-1", "Alice", "请整理发布计划")
+					source.ReplyToMessageID = quoted.ID
+					source.ReplyTo = &quoted
+					return source
+				}(),
 			},
 		})
 	})
@@ -602,8 +717,9 @@ func TestHandleParsedServerMessageRecoversAgentSessionFromTopic(t *testing.T) {
 		request.Conversation.Parent == nil || request.Conversation.Parent.ID != "parent-group" || request.Conversation.Parent.Type != "group" {
 		t.Fatalf("recovered agent request = %#v", request)
 	}
-	if len(request.History) != 3 || request.History[0].Seq != 0 || request.History[0].Summary != "请整理发布计划" ||
-		request.History[1].Summary != "已经开始处理" || request.History[2].Summary != "我们先讨论一下实现方案" {
+	if len(request.History) != 4 || request.History[0].Seq != 0 || request.History[0].Summary != "请整理发布计划" ||
+		request.History[1].Seq != 0 || request.History[1].Summary != complexTaskTopicNotice ||
+		request.History[2].Summary != "已经开始处理" || request.History[3].Summary != "我们先讨论一下实现方案" {
 		t.Fatalf("recovered topic history = %#v", request.History)
 	}
 	if len(sent) != 1 {
@@ -710,19 +826,19 @@ func TestNewToolRegistryIncludesBuiltinTools(t *testing.T) {
 	}
 }
 
-func TestHandleServerMessageReadsTemporaryFileURLForImageAndFileMessages(t *testing.T) {
+func TestHandleServerMessageIgnoresImageAndFileMessages(t *testing.T) {
 	tests := []struct {
-		name             string
-		body             map[string]any
-		expectedSnippets []string
+		name string
+		body map[string]any
 	}{
 		{
 			name: "image",
 			body: map[string]any{
-				"type":    "image",
-				"file_id": "file-image-1",
+				"type":         "image",
+				"file_id":      "file-image-1",
+				"caption":      "请分析这张图",
+				"caption_type": "text",
 			},
-			expectedSnippets: []string{"图片", "file-image-1", "https://assets.example.test/image.webp"},
 		},
 		{
 			name: "file",
@@ -732,54 +848,18 @@ func TestHandleServerMessageReadsTemporaryFileURLForImageAndFileMessages(t *test
 				"name":       "report.pdf",
 				"size_bytes": 1234,
 			},
-			expectedSnippets: []string{"文件", "report.pdf", "1234", "file-report-1", "https://assets.example.test/report.pdf"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var readURLPayload struct {
-				FileIDs []string `json:"file_ids"`
-			}
-			var readURLPayloadMap map[string]any
-			var agentRequests []agent.Request
 			requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
-				switch method {
-				case "temporary_files.read_urls":
-					rawPayload, err := json.Marshal(payload)
-					if err != nil {
-						t.Fatalf("marshal read URL payload: %v", err)
-					}
-					if err := json.Unmarshal(rawPayload, &readURLPayloadMap); err != nil {
-						t.Fatalf("unmarshal read URL payload map: %v", err)
-					}
-					if err := json.Unmarshal(rawPayload, &readURLPayload); err != nil {
-						t.Fatalf("unmarshal read URL payload: %v", err)
-					}
-					fileID := readURLPayload.FileIDs[0]
-					readURL := "https://assets.example.test/image.webp"
-					if tt.name == "file" {
-						readURL = "https://assets.example.test/report.pdf"
-					}
-					return json.Marshal(map[string]any{
-						"urls": []map[string]any{
-							{
-								"file_id":    fileID,
-								"url":        readURL,
-								"expires_at": "2026-07-08T12:00:00Z",
-							},
-						},
-					})
-				case methodConversationMessagesList:
-					return json.Marshal(appListConversationMessagesResponsePayload{})
-				default:
-					t.Fatalf("unexpected app request method %q", method)
-					return nil, nil
-				}
+				t.Fatalf("unexpected app request method %q", method)
+				return nil, nil
 			})
 			replyAgent := replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
-				agentRequests = append(agentRequests, request)
-				return nil
+				t.Fatal("agent should not run")
+				return nil // unreachable
 			})
 
 			handleParsedServerMessage(
@@ -791,22 +871,23 @@ func TestHandleServerMessageReadsTemporaryFileURLForImageAndFileMessages(t *test
 				directAgentRunner{},
 				func(context.Context, envelope) error { return nil },
 			)
-
-			if _, ok := readURLPayloadMap["conversation_id"]; ok {
-				t.Fatalf("read URL payload = %#v, want file_ids only", readURLPayloadMap)
-			}
-			if len(readURLPayload.FileIDs) != 1 || readURLPayload.FileIDs[0] != tt.body["file_id"] {
-				t.Fatalf("read URL file_ids = %#v, want body file id", readURLPayload.FileIDs)
-			}
-			if len(agentRequests) != 1 {
-				t.Fatalf("agent request count = %d, want 1", len(agentRequests))
-			}
-			for _, snippet := range tt.expectedSnippets {
-				if !strings.Contains(agentRequests[0].Content, snippet) {
-					t.Fatalf("agent content = %q, want to contain %q", agentRequests[0].Content, snippet)
-				}
-			}
 		})
+	}
+}
+
+func TestBuildAgentMessageContentIncludesImageCaption(t *testing.T) {
+	content, err := buildAgentMessageContent(messageBody{
+		Type: "image", FileID: "image-1", Caption: "**架构图**", CaptionType: "markdown",
+	}, map[string]temporaryFileReadURLPayload{
+		"image-1": {FileID: "image-1", URL: "https://assets.example.test/image-1"},
+	})
+	if err != nil {
+		t.Fatalf("buildAgentMessageContent() error = %v", err)
+	}
+	for _, snippet := range []string{"图片说明（markdown）：**架构图**", "https://assets.example.test/image-1"} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("content = %q, want to contain %q", content, snippet)
+		}
 	}
 }
 
@@ -862,10 +943,12 @@ func TestHandleServerMessagePrefetchesCurrentFileURLAndKeepsHistoryFileIDs(t *te
 							"name": "Alice",
 							"type": "user",
 						},
-						"summary": "当前图片",
+						"summary": "当前语音",
 						"body": map[string]any{
-							"type":    "image",
-							"file_id": "file-current-image",
+							"type":        "voice",
+							"file_id":     "file-current-voice",
+							"duration_ms": 3000,
+							"transcript":  "请总结这些内容",
 						},
 					},
 				},
@@ -903,8 +986,10 @@ func TestHandleServerMessagePrefetchesCurrentFileURLAndKeepsHistoryFileIDs(t *te
 	handleParsedServerMessage(
 		context.Background(),
 		testMessageCreatedEnvelopeWithBody(t, "user-1", "message-current", 3, map[string]any{
-			"type":    "image",
-			"file_id": "file-current-image",
+			"type":        "voice",
+			"file_id":     "file-current-voice",
+			"duration_ms": 3000,
+			"transcript":  "请总结这些内容",
 		}),
 		"",
 		requester,
@@ -916,7 +1001,7 @@ func TestHandleServerMessagePrefetchesCurrentFileURLAndKeepsHistoryFileIDs(t *te
 	if _, ok := readURLPayloadMap["conversation_id"]; ok {
 		t.Fatalf("read URL payload = %#v, want file_ids only", readURLPayloadMap)
 	}
-	wantFileIDs := []string{"file-current-image"}
+	wantFileIDs := []string{"file-current-voice"}
 	if !slices.Equal(readURLPayload.FileIDs, wantFileIDs) {
 		t.Fatalf("read URL file_ids = %#v, want %#v", readURLPayload.FileIDs, wantFileIDs)
 	}
@@ -924,8 +1009,8 @@ func TestHandleServerMessagePrefetchesCurrentFileURLAndKeepsHistoryFileIDs(t *te
 		t.Fatalf("agent request count = %d, want 1", len(agentRequests))
 	}
 	agentRequest := agentRequests[0]
-	if !strings.Contains(agentRequest.Content, "https://assets.example.test/file-current-image") {
-		t.Fatalf("agent content = %q, want current image URL", agentRequest.Content)
+	if !strings.Contains(agentRequest.Content, "https://assets.example.test/file-current-voice") {
+		t.Fatalf("agent content = %q, want current voice URL", agentRequest.Content)
 	}
 	if len(agentRequest.History) != 2 {
 		t.Fatalf("history count = %d, want 2", len(agentRequest.History))
@@ -1515,6 +1600,19 @@ type sentMessages struct {
 	messages []envelope
 }
 
+type capturingAgentRunner struct {
+	key      string
+	prepared preparedAgentRun
+	started  bool
+}
+
+func (r *capturingAgentRunner) Start(_ context.Context, key string, _ agent.OutputSink, _ replyAgent, prepared preparedAgentRun) bool {
+	r.key = key
+	r.prepared = prepared
+	r.started = true
+	return true
+}
+
 func (s *sentMessages) write(_ context.Context, message envelope) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1653,6 +1751,13 @@ func testTopicMutationResponse(topicID, name string) (json.RawMessage, error) {
 		Conversation: conversationPayload{ID: topicID, Name: name, Type: "topic"},
 		Created:      true,
 	})
+}
+
+func testMessageSendResponse(messageID string) json.RawMessage {
+	raw, _ := json.Marshal(sendMessageResponsePayload{
+		Message: messagePayload{ID: messageID},
+	})
+	return raw
 }
 
 func waitForSignal(t *testing.T, ch <-chan struct{}, label string) {

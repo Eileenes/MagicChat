@@ -181,6 +181,7 @@ const ws = new WebSocket(process.env.MAGICCHAT_APP_WS_URL, {
     "message": {
       "id": "消息 ID",
       "seq": 42,
+      "reply_to_message_id": "被引用消息 ID（可选）",
       "body": {"type": "text", "content": "请生成本周报表"},
       "summary": "请生成本周报表",
       "created_at": "2026-07-20T06:05:00Z"
@@ -202,6 +203,7 @@ const ws = new WebSocket(process.env.MAGICCHAT_APP_WS_URL, {
   "id": "话题会话 ID",
   "name": "发布计划",
   "type": "topic",
+  "created_by_app_id": "创建话题的应用 ID（由应用创建时提供）",
   "parent": {
     "id": "父会话 ID",
     "name": "产品讨论组",
@@ -213,6 +215,8 @@ const ws = new WebSocket(process.env.MAGICCHAT_APP_WS_URL, {
   }
 }
 ```
+
+`created_by_app_id` 仅在话题由应用创建时出现，应用可以据此区分自己创建的话题和其他话题。
 
 ### 3.2 `topic.closed`
 
@@ -236,9 +240,60 @@ const ws = new WebSocket(process.env.MAGICCHAT_APP_WS_URL, {
 
 收到后应停止向该话题发送新消息，并结束与该话题关联的本地任务或 Session。
 
-### 3.3 可靠投递与 ACK
+### 3.3 `choice.response_created`
 
-`message.created` 和 `topic.closed` 会先写入 Server outbox。未确认事件会在重连后按 cursor 升序重放。
+用户回答由当前应用发送的选择消息后，Server 会向该应用推送可靠事件：
+
+```json
+{
+  "v": 1,
+  "kind": "event",
+  "id": "event-id",
+  "cursor": 1289,
+  "event": "choice.response_created",
+  "payload": {
+    "conversation": {
+      "id": "会话 ID",
+      "name": "项目讨论组",
+      "type": "group"
+    },
+    "choice_message": {
+      "id": "选择消息 ID",
+      "seq": 43,
+      "body": {
+        "type": "choice",
+        "content_type": "markdown",
+        "content": "**请选择部署时间**",
+        "selection": "single",
+        "options": [
+          {"id": "today", "label": "今天"},
+          {"id": "tomorrow", "label": "明天"}
+        ]
+      },
+      "summary": "[选择] 请选择部署时间",
+      "created_at": "2026-07-24T08:00:00Z"
+    },
+    "sender": {
+      "id": "用户 ID",
+      "type": "user",
+      "name": "Alice",
+      "nickname": "Alice",
+      "email": "alice@example.com"
+    },
+    "response": {
+      "id": "回答 ID",
+      "option_ids": ["tomorrow"],
+      "created_at": "2026-07-24T08:01:00Z"
+    }
+  }
+}
+```
+
+`response.option_ids` 使用发送选择消息时定义的选项 ID；`single` 只会包含一个 ID，`multiple` 可以包含多个。每名用户只能回答同一条选择消息一次。只有原始选择消息的发送应用会收到该事件；选择消息被撤回或删除后不能再回答。话题中的事件会在 `conversation` 中附带与 `message.created` 相同的 `parent` 和 `source_message` 信息。
+
+### 3.4 可靠投递与 ACK
+
+`message.created`、`choice.response_created` 和 `topic.closed` 会先写入 Server outbox。未确认事件会在重连后按 cursor 升序重放。
 
 推荐处理顺序：
 
@@ -291,7 +346,7 @@ ws.on("message", (raw) => {
 | 话题 | `conversation.topic.close` | 关闭当前应用创建的话题。 |
 | 群聊 | `group_conversations.create` | 创建应用担任群主的群聊。 |
 | 群聊 | `group_conversations.get` | 查询群聊详情。 |
-| 群聊 | `group_conversations.update` | 修改群名称。 |
+| 群聊 | `group_conversations.update` | 修改群名称或群公告。 |
 | 群聊 | `group_conversations.dissolve` | 解散群聊。 |
 | 群聊 | `group_conversations.members.list` | 查询群成员。 |
 | 群聊 | `group_conversations.members.add` | 添加群成员。 |
@@ -340,6 +395,7 @@ function resolvePendingRequest(replyTo, envelope) {
 | `target.type` | 是 | `user`、`app`、`group`、`topic` 或 `conversation`。 |
 | `target.user_id` | 条件必填 | `target.type=user` 时使用。 |
 | `target.conversation_id` | 条件必填 | 其他目标类型使用。 |
+| `reply_to_message_id` | 否 | 引用同一目标会话内当前应用可见的消息。 |
 | `message` | 是 | 消息 body。 |
 
 示例：
@@ -350,6 +406,7 @@ function resolvePendingRequest(replyTo, envelope) {
     "type": "group",
     "conversation_id": "群聊 ID"
   },
+  "reply_to_message_id": "被引用消息 ID",
   "message": {
     "type": "markdown",
     "content": "## 处理结果\n\n已生成 5 项统计。"
@@ -359,9 +416,64 @@ function resolvePendingRequest(replyTo, envelope) {
 
 `target.type=user` 会创建或复用用户与应用的一对一会话，目标用户必须处于应用可见范围内。其他目标要求当前应用仍是会话成员且会话可发言。
 
-可发送的普通消息类型包括 `text`、`markdown`、`link`、`card`、`chart`、`image` 和 `file`。不能发送 `entity_card`。图片和文件应提供可由 Server 拉取的 URL，整个 Envelope 仍受 1 MiB 限制。
+可发送的消息类型包括 `text`、`markdown`、`choice`、`link`、`card`、`chart`、`image` 和 `file`。不能发送 `entity_card`。图片和文件应提供可由 Server 拉取的 URL，整个 Envelope 仍受 1 MiB 限制。
 
-响应包含 `conversation`、`message` 和 `created`。同一请求 ID 重试不会重复发送。
+图片消息可附带 text 或 markdown 说明：
+
+```json
+{
+  "target": {
+    "type": "conversation",
+    "conversation_id": "会话 ID"
+  },
+  "message": {
+    "type": "image",
+    "content": "https://example.com/chart.png",
+    "caption": "**本周趋势图**",
+    "caption_type": "markdown"
+  }
+}
+```
+
+`caption` 可选，最多 5000 个字符；`caption_type` 可为 `text` 或 `markdown`，未填写时默认为 `text`。说明中可以使用与文本消息相同的精确 `@` token；转发图片时，这些 token 会被转换为普通显示文字，不会在目标会话中再次触发通知。
+
+发送选择消息仍使用 `message.send`，把 `message` 设置为 `choice` body：
+
+```json
+{
+  "target": {
+    "type": "group",
+    "conversation_id": "群聊 ID"
+  },
+  "message": {
+    "type": "choice",
+    "content_type": "markdown",
+    "content": "**请选择部署时间**",
+    "selection": "single",
+    "options": [
+      {"id": "today", "label": "今天"},
+      {"id": "tomorrow", "label": "明天"},
+      {"id": "next_week", "label": "下周"}
+    ]
+  }
+}
+```
+
+选择消息字段约束：
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `message.type` | 是 | 固定为 `choice`。 |
+| `message.content_type` | 是 | `text` 或 `markdown`，决定问题正文的渲染方式。 |
+| `message.content` | 是 | 问题正文，去除首尾空白后不能为空，最多 5000 个字符。 |
+| `message.selection` | 是 | `single` 表示单选，`multiple` 表示多选。 |
+| `message.options` | 是 | 2 到 20 个选项。 |
+| `message.options[].id` | 是 | 选项唯一 ID，1 到 64 个字符，只允许字母、数字、`-` 和 `_`。 |
+| `message.options[].label` | 是 | 展示给用户的单行纯文本，最多 200 个字符，不能包含换行或控制字符。 |
+
+用户提交后，应用通过可靠的 `choice.response_created` 事件获取所选 ID。该事件必须与其他可靠事件一样在业务处理成功后调用 `events.ack`。
+
+响应包含 `conversation`、`message` 和 `created`；引用消息时，响应的 `message.reply_to_message_id` 会返回被引用消息 ID。同一请求 ID 重试不会重复发送。
 
 ### 4.4 `users.get`
 
@@ -512,19 +624,24 @@ function resolvePendingRequest(replyTo, envelope) {
 {"conversation_id":"群聊 ID"}
 ```
 
-响应的 `conversation` 包含群名称、状态、群主、创建者、成员数量、当前应用角色和创建时间等信息。
+响应的 `conversation` 包含群名称、群公告、状态、群主、创建者、成员数量、当前应用角色和创建时间等信息。
 
 ### 4.13 `group_conversations.update`
 
-修改群名称。
+修改群名称或群公告。每次请求只能修改其中一个字段。
 
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
 | `conversation_id` | 是 | 群聊 UUID。 |
-| `name` | 是 | 新名称，最多 120 个字符。 |
+| `name` | 与 `announcement` 二选一 | 新名称，最多 120 个字符。 |
+| `announcement` | 与 `name` 二选一 | 群公告，去除首尾空白后最多 200 个 Unicode 字符；空字符串表示清空。 |
 
 ```json
 {"conversation_id":"群聊 ID","name":"新版项目讨论组"}
+```
+
+```json
+{"conversation_id":"群聊 ID","announcement":"本周五 18:00 发布"}
 ```
 
 应用必须是群主或管理员。响应包含更新后的 `conversation` 和可能产生的系统 `message`。

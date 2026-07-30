@@ -2,9 +2,54 @@ import { describe, expect, it } from "vitest"
 
 import type { ClientConversation, ClientMessage } from "@/lib/client-data-api"
 import {
+  compactConversationMessageState,
+  createConversationMessageState,
+  isConversationTopicVisibleInList,
   mergeConversationMessages,
   orderConversations,
 } from "@/lib/client-data-state"
+
+describe("compactConversationMessageState", () => {
+  it("keeps the newest messages and preserves the older-page boundary", () => {
+    const messages = Array.from({ length: 305 }, (_, index) =>
+      createMessage(`message-${index + 1}`, index + 1)
+    )
+    const state = {
+      ...createConversationMessageState(),
+      loaded: true,
+      messages,
+      page: {
+        hasMoreAfter: false,
+        hasMoreBefore: false,
+        limit: 20,
+        newestSeq: 305,
+        oldestSeq: 1,
+      },
+    }
+
+    const compacted = compactConversationMessageState(state)
+
+    expect(compacted.messages).toHaveLength(300)
+    expect(compacted.messages[0].seq).toBe(6)
+    expect(compacted.messages.at(-1)?.seq).toBe(305)
+    expect(compacted.page).toEqual({
+      hasMoreAfter: false,
+      hasMoreBefore: true,
+      limit: 20,
+      newestSeq: 305,
+      oldestSeq: 6,
+    })
+  })
+
+  it("keeps the same state when it is already within the limit", () => {
+    const state = {
+      ...createConversationMessageState(),
+      messages: [createMessage("message-1", 1)],
+    }
+
+    expect(compactConversationMessageState(state)).toBe(state)
+  })
+})
 
 describe("mergeConversationMessages", () => {
   it("appends newer messages in sequence order", () => {
@@ -122,6 +167,109 @@ describe("orderConversations", () => {
       ]).map(({ id }) => id)
     ).toEqual(["assistant", "recent-pinned", "older-pinned", "newest-unpinned"])
   })
+
+  it("keeps topics under their parent and orders the group by topic activity", () => {
+    const now = Date.parse("2026-07-27T08:00:00Z")
+    const activeParent = createConversation(
+      "active-parent",
+      "group",
+      "2026-07-27"
+    )
+    activeParent.lastMessageAt = "2026-07-27T06:00:00Z"
+    const recentParent = createConversation(
+      "recent-parent",
+      "group",
+      "2026-07-27"
+    )
+    recentParent.lastMessageAt = "2026-07-27T07:53:00Z"
+    const newestTopic = createTopicConversation(
+      "newest-topic",
+      activeParent,
+      "2026-07-27T07:55:00Z"
+    )
+    const olderTopic = createTopicConversation(
+      "older-topic",
+      activeParent,
+      "2026-07-27T07:50:00Z"
+    )
+
+    expect(
+      orderConversations(
+        [recentParent, olderTopic, activeParent, newestTopic],
+        now
+      ).map(({ id }) => id)
+    ).toEqual(["active-parent", "newest-topic", "older-topic", "recent-parent"])
+  })
+
+  it("does not let a legacy topic pin move its parent group", () => {
+    const now = Date.parse("2026-07-27T08:00:00Z")
+    const oldParent = createConversation("old-parent", "group", "2026-07-27")
+    oldParent.lastMessageAt = "2026-07-27T07:30:00Z"
+    const recentParent = createConversation(
+      "recent-parent",
+      "group",
+      "2026-07-27"
+    )
+    recentParent.lastMessageAt = "2026-07-27T07:55:00Z"
+    const pinnedTopic = {
+      ...createTopicConversation(
+        "pinned-topic",
+        oldParent,
+        "2026-07-27T07:40:00Z"
+      ),
+      pinned: true,
+    }
+
+    expect(
+      orderConversations([oldParent, pinnedTopic, recentParent], now).map(
+        ({ id }) => id
+      )
+    ).toEqual(["recent-parent", "old-parent", "pinned-topic"])
+  })
+})
+
+describe("isConversationTopicVisibleInList", () => {
+  const now = Date.parse("2026-07-27T08:00:00Z")
+  const parent = createConversation("parent", "group", "2026-07-27")
+
+  it("hides inactive read topics but keeps unread and active topics", () => {
+    const stale = createTopicConversation(
+      "stale",
+      parent,
+      "2026-07-27T07:29:59Z"
+    )
+    const unread = { ...stale, id: "unread", lastMessageSeq: 2, unreadCount: 1 }
+
+    expect(isConversationTopicVisibleInList(stale, { now })).toBe(false)
+    expect(isConversationTopicVisibleInList(unread, { now })).toBe(true)
+    expect(
+      isConversationTopicVisibleInList(stale, {
+        activeConversationId: stale.id,
+        now,
+      })
+    ).toBe(true)
+  })
+
+  it("never shows archived or non-participating topics", () => {
+    const topic = createTopicConversation(
+      "topic",
+      parent,
+      "2026-07-27T07:55:00Z"
+    )
+
+    expect(
+      isConversationTopicVisibleInList({
+        ...topic,
+        topic: { ...topic.topic!, archived: true },
+      })
+    ).toBe(false)
+    expect(
+      isConversationTopicVisibleInList({
+        ...topic,
+        topic: { ...topic.topic!, participating: false },
+      })
+    ).toBe(false)
+  })
 })
 
 function createMessage(
@@ -156,7 +304,9 @@ function createConversation(
     lastMessageAt: `${activityDate}T09:00:00Z`,
     lastMessageId: `message-${id}`,
     lastMessageSeq: 1,
+    lastMessageSender: null,
     lastMessageSummary: id,
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 1,
     memberCount: members?.length ?? 2,
@@ -165,6 +315,32 @@ function createConversation(
     type,
     unreadCount: 0,
     visibility: "private",
+  }
+}
+
+function createTopicConversation(
+  id: string,
+  parent: ClientConversation,
+  lastMessageAt: string
+): ClientConversation {
+  return {
+    ...createConversation(id, "topic", "2026-07-27"),
+    lastMessageAt,
+    topic: {
+      archived: false,
+      parentConversationId: parent.id,
+      parentConversationName: parent.name,
+      parentConversationType: parent.type === "topic" ? "group" : parent.type,
+      participating: true,
+      sourceMessageId: `source-${id}`,
+      sourceMessageSeq: 1,
+      sourceSender: {
+        avatar: "",
+        id: "user-1",
+        name: "User",
+        type: "user",
+      },
+    },
   }
 }
 

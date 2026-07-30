@@ -2,7 +2,6 @@ package appclient
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -17,7 +16,6 @@ import (
 const (
 	defaultConversationAgentIdleTimeout = 10 * time.Minute
 	maxConversationSequenceWatermarks   = 10_000
-	retirementRetryDelay                = 5 * time.Second
 )
 
 type agentRunner interface {
@@ -25,14 +23,13 @@ type agentRunner interface {
 }
 
 type preparedAgentRun struct {
-	Authorization              preparedAuthorization
-	CloseTopicOnSessionFailure bool
-	ErrorSink                  agent.OutputSink
-	EventConversationID        string
-	MessageSeq                 int64
-	ReplySink                  agent.OutputSink
-	Request                    agent.Request
-	Scope                      builtintools.Scope
+	Authorization       preparedAuthorization
+	ErrorSink           agent.OutputSink
+	EventConversationID string
+	MessageSeq          int64
+	ReplySink           agent.OutputSink
+	Request             agent.Request
+	Scope               builtintools.Scope
 }
 
 type preparedAuthorization struct {
@@ -77,32 +74,20 @@ type conversationAgentRunner struct {
 }
 
 type conversationAgentJob struct {
-	actorID              string
-	actorType            string
-	cancel               context.CancelFunc
-	ctx                  context.Context
-	errorSink            agent.OutputSink
-	lastActiveAt         time.Time
-	lastScope            builtintools.Scope
-	lastSeenSeq          int64
-	pending              []preparedAgentRun
-	retireCancel         context.CancelFunc
-	retirementGeneration uint64
-	retirementReason     retirementReason
-	retiring             bool
-	running              bool
-	session              *agent.Session
-	sink                 agent.OutputSink
-	scopeStore           *conversationScopeStore
-	timer                *time.Timer
+	actorID      string
+	actorType    string
+	cancel       context.CancelFunc
+	ctx          context.Context
+	errorSink    agent.OutputSink
+	lastActiveAt time.Time
+	lastSeenSeq  int64
+	pending      []preparedAgentRun
+	running      bool
+	session      *agent.Session
+	sink         agent.OutputSink
+	scopeStore   *conversationScopeStore
+	timer        *time.Timer
 }
-
-type retirementReason string
-
-const (
-	retirementReasonIdle     retirementReason = "idle"
-	retirementReasonCapacity retirementReason = "capacity"
-)
 
 type conversationAgentRunnerOptions struct {
 	IdleTimeout time.Duration
@@ -167,14 +152,6 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 			r.mu.Unlock()
 			return true
 		}
-		if job.retiring {
-			if job.retirementReason == retirementReasonCapacity {
-				r.mu.Unlock()
-				log.Printf("agent topic is being retired for session capacity: conversation_id=%s", key)
-				return r.rejectPreparedRun(ctx, key, sink, prepared, false)
-			}
-			r.cancelRetirementLocked(job)
-		}
 		if job.timer != nil {
 			job.timer.Stop()
 			job.timer = nil
@@ -202,7 +179,6 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 			return sendAgentFallback(ctx, prepared.ErrorSink) == nil
 		}
 		job.actorType, job.actorID = authorizationActor(prepared.Authorization)
-		job.lastScope = prepared.Scope
 		job.lastActiveAt = time.Now().UTC()
 		job.sink = sink
 		job.errorSink = prepared.ErrorSink
@@ -218,18 +194,18 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		return true
 	}
 
-	var retiredKey string
-	var retiredJob *conversationAgentJob
-	var retirementGeneration uint64
-	var retirementCtx context.Context
 	if r.activeSessionCountLocked() >= r.maxSessions {
-		retiredKey, retiredJob = r.selectOldestIdleJobLocked()
+		retiredKey, retiredJob := r.selectOldestIdleJobLocked()
 		if retiredJob == nil {
 			r.mu.Unlock()
 			log.Printf("agent session capacity reached: max=%d", r.maxSessions)
-			return r.rejectPreparedRun(ctx, key, sink, prepared, prepared.CloseTopicOnSessionFailure)
+			return r.rejectPreparedRun(ctx, sink, prepared)
 		}
-		retirementGeneration, retirementCtx = r.beginRetirementLocked(retiredJob, retirementReasonCapacity)
+		delete(r.jobs, retiredKey)
+		if retiredJob.timer != nil {
+			retiredJob.timer.Stop()
+			retiredJob.timer = nil
+		}
 		retiredJob.cancel()
 		retiredJob.session = nil
 	}
@@ -240,11 +216,8 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 	if err != nil {
 		r.mu.Unlock()
 		cancel()
-		if retiredJob != nil {
-			go r.retireJob(retiredKey, retiredJob, retirementGeneration, retirementCtx)
-		}
 		log.Printf("create agent session failed: %v", err)
-		return r.rejectPreparedRun(ctx, key, sink, prepared, prepared.CloseTopicOnSessionFailure)
+		return r.rejectPreparedRun(ctx, sink, prepared)
 	}
 	job := &conversationAgentJob{
 		actorID:      strings.TrimSpace(prepared.Authorization.Authorization.ActorID),
@@ -253,7 +226,6 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		ctx:          jobCtx,
 		errorSink:    prepared.ErrorSink,
 		lastActiveAt: time.Now().UTC(),
-		lastScope:    prepared.Scope,
 		running:      true,
 		session:      session,
 		sink:         sink,
@@ -266,9 +238,6 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 	r.recordSequenceLocked(eventKey, prepared.MessageSeq)
 	r.mu.Unlock()
 
-	if retiredJob != nil {
-		go r.retireJob(retiredKey, retiredJob, retirementGeneration, retirementCtx)
-	}
 	go r.runJob(key, job)
 	return true
 }
@@ -385,9 +354,6 @@ func (r *conversationAgentRunner) CancelAll() {
 		if job.timer != nil {
 			job.timer.Stop()
 		}
-		if job.retireCancel != nil {
-			job.retireCancel()
-		}
 		job.cancel()
 	}
 }
@@ -396,7 +362,7 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 	for {
 		r.mu.Lock()
 		current, ok := r.jobs[key]
-		if !ok || current != job || job.retiring {
+		if !ok || current != job {
 			r.mu.Unlock()
 			return
 		}
@@ -453,7 +419,6 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 				}
 				appended = true
 				job.actorType, job.actorID = authorizationActor(next.Authorization)
-				job.lastScope = next.Scope
 				job.sink = next.ReplySink
 				job.errorSink = next.ErrorSink
 			}
@@ -484,30 +449,28 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 func (r *conversationAgentRunner) retireIdleJob(key string, job *conversationAgentJob) {
 	r.mu.Lock()
 	current, ok := r.jobs[key]
-	if !ok || current != job || job.retiring || job.running || job.session.HasPending() || len(job.pending) > 0 {
+	if !ok || current != job || job.running || job.session.HasPending() || len(job.pending) > 0 {
 		r.mu.Unlock()
 		return
 	}
-	generation, retireCtx := r.beginRetirementLocked(job, retirementReasonIdle)
+	delete(r.jobs, key)
+	if job.timer != nil {
+		job.timer.Stop()
+		job.timer = nil
+	}
 	r.mu.Unlock()
-	r.retireJob(key, job, generation, retireCtx)
+	job.cancel()
 }
 
 func (r *conversationAgentRunner) activeSessionCountLocked() int {
-	count := 0
-	for _, job := range r.jobs {
-		if !job.retiring {
-			count++
-		}
-	}
-	return count
+	return len(r.jobs)
 }
 
 func (r *conversationAgentRunner) selectOldestIdleJobLocked() (string, *conversationAgentJob) {
 	var selectedKey string
 	var selected *conversationAgentJob
 	for key, job := range r.jobs {
-		if job.retiring || job.running || job.session.HasPending() || len(job.pending) > 0 {
+		if job.running || job.session.HasPending() || len(job.pending) > 0 {
 			continue
 		}
 		if selected == nil || job.lastActiveAt.Before(selected.lastActiveAt) {
@@ -518,125 +481,6 @@ func (r *conversationAgentRunner) selectOldestIdleJobLocked() (string, *conversa
 		return "", nil
 	}
 	return selectedKey, selected
-}
-
-func (r *conversationAgentRunner) beginRetirementLocked(job *conversationAgentJob, reason retirementReason) (uint64, context.Context) {
-	if job.timer != nil {
-		job.timer.Stop()
-		job.timer = nil
-	}
-	if job.retireCancel != nil {
-		job.retireCancel()
-	}
-	job.retiring = true
-	job.retirementReason = reason
-	job.retirementGeneration++
-	retireCtx, cancel := context.WithCancel(r.ctx)
-	job.retireCancel = cancel
-	return job.retirementGeneration, retireCtx
-}
-
-func (r *conversationAgentRunner) cancelRetirementLocked(job *conversationAgentJob) {
-	if job.retireCancel != nil {
-		job.retireCancel()
-		job.retireCancel = nil
-	}
-	if job.timer != nil {
-		job.timer.Stop()
-		job.timer = nil
-	}
-	job.retirementGeneration++
-	job.retirementReason = ""
-	job.retiring = false
-}
-
-func (r *conversationAgentRunner) retireJob(key string, job *conversationAgentJob, generation uint64, retireCtx context.Context) {
-	r.mu.Lock()
-	current, ok := r.jobs[key]
-	if !ok || current != job || !job.retiring || job.retirementGeneration != generation {
-		r.mu.Unlock()
-		return
-	}
-	scope := job.lastScope
-	r.mu.Unlock()
-
-	ctx, cancel := context.WithTimeout(retireCtx, 30*time.Second)
-	defer cancel()
-	err := closeRetiringConversation(ctx, key, scope)
-
-	r.mu.Lock()
-	current, ok = r.jobs[key]
-	if !ok || current != job || !job.retiring || job.retirementGeneration != generation {
-		r.mu.Unlock()
-		return
-	}
-	if err == nil {
-		delete(r.jobs, key)
-		job.retireCancel()
-		job.retireCancel = nil
-		r.mu.Unlock()
-		cancel()
-		job.cancel()
-		return
-	}
-	if errors.Is(err, context.Canceled) && retireCtx.Err() != nil {
-		r.mu.Unlock()
-		return
-	}
-	log.Printf("close retired agent topic failed: conversation_id=%s error=%v", key, err)
-	job.retireCancel()
-	job.retireCancel = nil
-	if job.retirementReason == retirementReasonIdle {
-		job.retiring = false
-		job.retirementReason = ""
-		job.lastActiveAt = time.Now().UTC()
-		job.timer = time.AfterFunc(retirementRetryDelay, func() {
-			r.retireIdleJob(key, job)
-		})
-		r.mu.Unlock()
-		return
-	}
-	job.timer = time.AfterFunc(retirementRetryDelay, func() {
-		r.retryCapacityRetirement(key, job)
-	})
-	r.mu.Unlock()
-}
-
-func (r *conversationAgentRunner) retryCapacityRetirement(key string, job *conversationAgentJob) {
-	r.mu.Lock()
-	current, ok := r.jobs[key]
-	if !ok || current != job || !job.retiring || job.retirementReason != retirementReasonCapacity || job.retireCancel != nil {
-		r.mu.Unlock()
-		return
-	}
-	generation, retireCtx := r.beginRetirementLocked(job, retirementReasonCapacity)
-	r.mu.Unlock()
-	r.retireJob(key, job, generation, retireCtx)
-}
-
-func closeRetiringConversation(ctx context.Context, key string, scope builtintools.Scope) error {
-	if scope.ConversationType != "topic" || scope.Requester == nil {
-		return nil
-	}
-	return closeConversationTopic(ctx, scope.Requester, key)
-}
-
-func closeConversationTopic(ctx context.Context, requester builtintools.AppRequester, conversationID string) error {
-	raw, err := requester.Request(ctx, methodConversationTopicGet, topicMutationRequestPayload{ConversationID: conversationID})
-	if err != nil {
-		return err
-	}
-	var topic topicMutationResponsePayload
-	if err := json.Unmarshal(raw, &topic); err != nil {
-		return err
-	}
-	if topic.Archived {
-		return nil
-	}
-	_, err = requester.Request(ctx, methodConversationTopicClose, topicMutationRequestPayload{
-		ConversationID: conversationID, ExpectedLastMessageSeq: topic.LastMessageSeq,
-	})
-	return err
 }
 
 func (r *conversationAgentRunner) CloseConversationSession(conversationID string) {
@@ -650,10 +494,6 @@ func (r *conversationAgentRunner) CloseConversationSession(conversationID string
 		delete(r.jobs, conversationID)
 		if job.timer != nil {
 			job.timer.Stop()
-		}
-		if job.retireCancel != nil {
-			job.retireCancel()
-			job.retireCancel = nil
 		}
 	}
 	r.mu.Unlock()
@@ -682,26 +522,15 @@ func (r *conversationAgentRunner) sendIfCurrent(ctx context.Context, key string,
 
 func (r *conversationAgentRunner) rejectPreparedRun(
 	ctx context.Context,
-	key string,
 	sink agent.OutputSink,
 	prepared preparedAgentRun,
-	closeTopic bool,
 ) bool {
 	errorSink := prepared.ErrorSink
 	if errorSink == nil {
 		errorSink = sink
 	}
 	sendErr := sendAgentFallback(ctx, errorSink)
-	var closeErr error
-	if closeTopic && prepared.Scope.ConversationType == "topic" && prepared.Scope.Requester != nil {
-		closeCtx, cancel := context.WithTimeout(r.ctx, 30*time.Second)
-		closeErr = closeConversationTopic(closeCtx, prepared.Scope.Requester, key)
-		cancel()
-		if closeErr != nil && !errors.Is(closeErr, context.Canceled) {
-			log.Printf("close rejected agent topic failed: conversation_id=%s error=%v", key, closeErr)
-		}
-	}
-	return sendErr == nil && closeErr == nil
+	return sendErr == nil
 }
 
 type conversationAgentSink struct {

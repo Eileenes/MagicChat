@@ -15,6 +15,7 @@ import (
 	appapp "app/internal/application/app"
 	contactapp "app/internal/application/contact"
 	conversationapp "app/internal/application/conversation"
+	"app/internal/application/dashboard"
 	"app/internal/application/emailauth"
 	entitycardapp "app/internal/application/entitycard"
 	externalauthapp "app/internal/application/externalauth"
@@ -23,6 +24,7 @@ import (
 	messageapp "app/internal/application/message"
 	messagecontentapp "app/internal/application/messagecontent"
 	projectapp "app/internal/application/project"
+	searchapp "app/internal/application/search"
 	settingsapp "app/internal/application/settings"
 	taskapp "app/internal/application/task"
 	"app/internal/application/usermanagement"
@@ -30,6 +32,7 @@ import (
 	externalauthinfra "app/internal/infrastructure/externalauth"
 	"app/internal/infrastructure/filestorage"
 	mailinfra "app/internal/infrastructure/mail"
+	searchinfra "app/internal/infrastructure/search"
 	"app/internal/realtime"
 	"app/internal/store"
 
@@ -48,6 +51,8 @@ type Server struct {
 	adminAuthAPI        *adminapi.AuthAPI
 	userManagement      *usermanagement.Service
 	adminUsers          *adminapi.UserAPI
+	dashboard           *dashboard.Service
+	adminDashboard      *adminapi.DashboardAPI
 	identityProviders   *identityprovider.Service
 	adminProviders      *adminapi.IdentityProviderAPI
 	externalAuth        *externalauthapp.Service
@@ -64,6 +69,8 @@ type Server struct {
 	messages            *messageapp.Service
 	messageContents     *messagecontentapp.Service
 	clientMessages      *clientapi.MessageAPI
+	searches            *searchapp.Service
+	clientSearch        *clientapi.SearchAPI
 	settings            *settingsapp.Service
 	clientInfo          *clientapi.InfoAPI
 	adminSettings       *adminapi.SettingsAPI
@@ -77,6 +84,7 @@ type Server struct {
 	appConnections      *appconnection.Manager
 	realtime            *realtime.ConnectionPool
 	appEventMu          sync.Mutex
+	asrRealtimeURL      string
 
 	beforeAppEventLock     func(store.Message)
 	afterUserMessageCommit func(store.Message)
@@ -96,8 +104,9 @@ func NewRouterWithTaskReminderWorker(ctx context.Context, db *gorm.DB, cfg confi
 
 func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options, workerContext context.Context) *echo.Echo {
 	server := &Server{
-		db:  db,
-		cfg: cfg,
+		db:             db,
+		cfg:            cfg,
+		asrRealtimeURL: defaultASRModelRealtimeURL,
 	}
 	server.files = fileapp.NewService(fileapp.Dependencies{
 		DB:                  db,
@@ -162,6 +171,10 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientTasks = clientapi.NewTaskAPI(server.tasks)
 	realtimeOptions.RecordUserPong = server.recordUserPong
 	server.realtime = realtime.NewConnectionPool(realtimeOptions)
+	server.dashboard = dashboard.NewService(dashboard.Dependencies{
+		DB: db, Presence: server.realtime,
+	})
+	server.adminDashboard = adminapi.NewDashboardAPI(server.dashboard)
 	server.userManagement = usermanagement.NewService(usermanagement.Dependencies{
 		DB: db, Presence: server.realtime, AppConnections: server.appConnections,
 	})
@@ -201,6 +214,12 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		},
 	})
 	server.clientMessages = clientapi.NewMessageAPI(server.messages, server.files)
+	server.searches = searchapp.NewService(searchapp.Dependencies{
+		Backend:       searchinfra.NewPostgresMessageBackend(db),
+		Conversations: server.conversations,
+		Messages:      server.messages,
+	})
+	server.clientSearch = clientapi.NewSearchAPI(server.searches)
 
 	router := echo.New()
 	router.HideBanner = true
@@ -229,12 +248,15 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientConversations.RegisterRoutes(client)
 	server.clientContacts.RegisterRoutes(client)
 	server.clientMessages.RegisterRoutes(client)
+	server.clientSearch.RegisterRoutes(client)
 	client.GET("/ws", server.clientWebSocket)
+	client.GET("/asr/realtime", server.clientASRWebSocket)
 
 	admin := router.Group("/api/admin", server.adminAuthAPI.RequireSession)
 	server.adminSettings.RegisterRoutes(admin)
 	server.adminPasswordLogin.RegisterRoutes(admin)
 	server.adminEmailLogin.RegisterRoutes(admin)
+	server.adminDashboard.RegisterRoutes(admin)
 	server.adminApps.RegisterRoutes(admin)
 	server.adminUsers.RegisterRoutes(admin)
 	server.adminProviders.RegisterRoutes(admin)

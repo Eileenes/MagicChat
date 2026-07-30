@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest"
 import {
   buildAppWebSocketURL,
   createClientApp,
+  deleteClientApp,
   getClientAppCredentials,
+  getClientAppProfile,
   regenerateClientAppSecret,
   updateClientApp,
   uploadClientAppAvatar,
@@ -116,6 +118,29 @@ describe("client app API", () => {
     })
   })
 
+  it("loads an owned application profile with a profile-specific error", async () => {
+    const successFetcher = vi.fn().mockResolvedValue(
+      createJSONResponse({
+        success: true,
+        data: {
+          app: createAppResponse(),
+          connection_secret: "current-secret",
+        },
+      })
+    )
+
+    await expect(
+      getClientAppProfile("app/1", successFetcher)
+    ).resolves.toMatchObject({ id: "app-1" })
+
+    const failureFetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 500 }))
+    await expect(getClientAppProfile("app-1", failureFetcher)).rejects.toThrow(
+      "加载应用资料失败"
+    )
+  })
+
   it("regenerates an owned application secret", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       createJSONResponse({
@@ -182,6 +207,21 @@ describe("client app API", () => {
         "Content-Type": "application/json",
       },
       method: "PATCH",
+    })
+  })
+
+  it("deletes an owned application", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      createJSONResponse({
+        success: true,
+        data: {},
+      })
+    )
+
+    await expect(deleteClientApp("app/1", fetcher)).resolves.toBeUndefined()
+    expect(fetcher).toHaveBeenCalledWith("/api/client/apps/app%2F1", {
+      credentials: "include",
+      method: "DELETE",
     })
   })
 

@@ -42,6 +42,21 @@ describe("topic client API", () => {
     })
   })
 
+  it("can keep the currently viewed inactive topic in the list", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ success: true, data: { conversations: [] } })
+    )
+
+    await listClientConversations(fetcher, {
+      includeConversationId: "topic/current",
+    })
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/conversations?include_conversation_id=topic%2Fcurrent",
+      { credentials: "include", method: "GET" }
+    )
+  })
+
   it("creates and loads a topic through the dedicated endpoints", async () => {
     const fetcher = vi
       .fn()

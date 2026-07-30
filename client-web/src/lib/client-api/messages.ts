@@ -16,6 +16,10 @@ import type {
   SetMessageReactionResponse,
   ConversationRemovedEventPayloadResponse,
   ConversationMemberMentionedEventPayloadResponse,
+  ConversationMemberChoiceReceivedEventPayloadResponse,
+  MessageChoiceUpdatedEventPayloadResponse,
+  SubmitChoiceResponseResponse,
+  ListChoiceSnapshotsResponse,
   TopicEventPayloadResponse,
   ReadTemporaryFileURLsResponse,
   ClientMessageBody,
@@ -39,6 +43,9 @@ import type {
   MessageReactionSnapshot,
   ClientMessageReactionUser,
   SetMessageReactionInput,
+  MessageChoiceUpdatedEvent,
+  MessageChoiceSnapshot,
+  SubmitChoiceResponseResult,
 } from "./types"
 import {
   isTemporaryFileReadURLFresh,
@@ -47,10 +54,125 @@ import {
   normalizeMessagePage,
   normalizeMessageReactions,
   normalizeMessageReactionUsers,
+  normalizeMessageChoiceState,
   normalizeTemporaryFileReadURL,
 } from "./message-normalizers"
 
 const temporaryFileReadURLCache = new Map<string, TemporaryFileReadURL>()
+
+export async function submitConversationMessageChoiceResponse(
+  conversationId: string,
+  messageId: string,
+  optionIds: string[],
+  fetcher: ClientDataFetch = fetch
+): Promise<SubmitChoiceResponseResult> {
+  const response = await fetcher(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/choice-response`,
+    {
+      body: JSON.stringify({ option_ids: optionIds }),
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+    }
+  )
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<SubmitChoiceResponseResponse>
+  >(response)
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "提交选择失败")
+  }
+  const data = (
+    payload as
+      ClientDataSuccessEnvelope<SubmitChoiceResponseResponse> | undefined
+  )?.data
+  if (
+    data?.conversation_id !== conversationId ||
+    data.message_id !== messageId ||
+    typeof data.created !== "boolean" ||
+    !data.response?.id ||
+    !data.response.created_at ||
+    !data.response.user_id ||
+    !Array.isArray(data.response.option_ids)
+  ) {
+    throw new ClientDataRequestError("提交选择响应格式不正确")
+  }
+  return {
+    choice: normalizeMessageChoiceState(data.choice),
+    conversationId,
+    created: data.created,
+    messageId,
+    response: {
+      createdAt: data.response.created_at,
+      id: data.response.id,
+      optionIds: [...data.response.option_ids],
+      userId: data.response.user_id,
+    },
+  }
+}
+
+export async function listConversationMessageChoiceSnapshots(
+  conversationId: string,
+  messageIds: string[],
+  fetcher: ClientDataFetch = fetch
+): Promise<MessageChoiceSnapshot[]> {
+  const response = await fetcher(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/choices/query`,
+    {
+      body: JSON.stringify({ message_ids: messageIds }),
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    }
+  )
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<ListChoiceSnapshotsResponse>
+  >(response)
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "同步选择状态失败")
+  }
+  const data = (
+    payload as
+      ClientDataSuccessEnvelope<ListChoiceSnapshotsResponse> | undefined
+  )?.data
+  if (
+    data?.conversation_id !== conversationId ||
+    !Array.isArray(data.snapshots)
+  ) {
+    throw new ClientDataRequestError("选择状态快照响应格式不正确")
+  }
+  const snapshots = data.snapshots.map((snapshot) => {
+    if (
+      !snapshot?.message_id ||
+      (snapshot.status !== "active" &&
+        snapshot.status !== "deleted" &&
+        snapshot.status !== "revoked") ||
+      (snapshot.status === "active" && !snapshot.choice)
+    ) {
+      throw new ClientDataRequestError("选择状态快照响应格式不正确")
+    }
+    return {
+      choice:
+        snapshot.status === "active"
+          ? normalizeMessageChoiceState(snapshot.choice)
+          : null,
+      conversationId,
+      messageId: snapshot.message_id,
+      status: snapshot.status,
+    }
+  })
+  const requestedMessageIds = [...new Set(messageIds)]
+  if (
+    snapshots.length !== requestedMessageIds.length ||
+    snapshots.some(
+      (snapshot, index) => snapshot.messageId !== requestedMessageIds[index]
+    )
+  ) {
+    throw new ClientDataRequestError("选择状态快照响应格式不正确")
+  }
+  return snapshots
+}
 
 export async function setConversationMessageReaction(
   conversationId: string,
@@ -172,8 +294,7 @@ export async function listConversationMessageReactionUsers(
   }
   const data = (
     payload as
-      | ClientDataSuccessEnvelope<ListMessageReactionUsersResponse>
-      | undefined
+      ClientDataSuccessEnvelope<ListMessageReactionUsersResponse> | undefined
   )?.data
   if (
     data?.conversation_id !== conversationId ||
@@ -591,6 +712,11 @@ export async function sendConversationImageMessage(
   if (input.replyToMessageId) {
     formData.set("reply_to_message_id", input.replyToMessageId)
   }
+  const caption = input.caption?.trim() ?? ""
+  if (caption) {
+    formData.set("caption", caption)
+    formData.set("caption_type", input.captionType ?? "text")
+  }
   formData.set("image", input.image)
 
   const response = await fetcher(
@@ -626,6 +752,9 @@ export async function sendConversationVoiceMessage(
   formData.set("duration_ms", String(input.durationMS))
   if (input.replyToMessageId) {
     formData.set("reply_to_message_id", input.replyToMessageId)
+  }
+  if (input.transcript) {
+    formData.set("transcript", input.transcript)
   }
   formData.set("voice", input.voice, "voice-message.webm")
 
@@ -807,6 +936,18 @@ export function normalizeMessageCreatedEventPayload(
   )
 }
 
+export function normalizeMessageCreatedEventNotificationMuted(
+  payload: unknown
+) {
+  if (!isObject(payload)) {
+    throw new ClientDataRequestError("消息推送格式不正确")
+  }
+
+  return Boolean(
+    (payload as MessageCreatedEventPayloadResponse).notification_muted
+  )
+}
+
 export function normalizeMessageUpdatedEventPayload(
   payload: unknown
 ): ClientMessage {
@@ -907,6 +1048,60 @@ export function normalizeConversationMemberMentionedEventPayload(
   }
 }
 
+export function normalizeConversationMemberChoiceReceivedEventPayload(
+  payload: unknown
+) {
+  if (!isObject(payload)) {
+    throw new ClientDataRequestError("选择消息提醒推送格式不正确")
+  }
+
+  const event = payload as ConversationMemberChoiceReceivedEventPayloadResponse
+  if (
+    typeof event.conversation_id !== "string" ||
+    event.conversation_id.trim() === "" ||
+    typeof event.last_choice_seq !== "number"
+  ) {
+    throw new ClientDataRequestError("选择消息提醒推送格式不正确")
+  }
+
+  return {
+    conversationId: event.conversation_id,
+    lastChoiceSeq: event.last_choice_seq,
+  }
+}
+
+export function normalizeMessageChoiceUpdatedEventPayload(
+  payload: unknown
+): MessageChoiceUpdatedEvent {
+  if (!isObject(payload)) {
+    throw new ClientDataRequestError("选择消息更新推送格式不正确")
+  }
+
+  const event = payload as MessageChoiceUpdatedEventPayloadResponse
+  if (
+    typeof event.conversation_id !== "string" ||
+    event.conversation_id.trim() === "" ||
+    typeof event.message_id !== "string" ||
+    event.message_id.trim() === "" ||
+    typeof event.actor_user_id !== "string" ||
+    event.actor_user_id.trim() === "" ||
+    !Array.isArray(event.actor_option_ids) ||
+    !event.actor_option_ids.every(
+      (optionId) => typeof optionId === "string" && optionId !== ""
+    )
+  ) {
+    throw new ClientDataRequestError("选择消息更新推送格式不正确")
+  }
+
+  return {
+    actorOptionIds: [...event.actor_option_ids],
+    actorUserId: event.actor_user_id,
+    choice: normalizeMessageChoiceState(event.choice),
+    conversationId: event.conversation_id,
+    messageId: event.message_id,
+  }
+}
+
 export function normalizeTopicEventPayload(payload: unknown) {
   if (!isObject(payload)) {
     throw new ClientDataRequestError("话题推送格式不正确")
@@ -936,6 +1131,14 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
     return formatMarkdownMessageSummary(body.content)
   }
 
+  if (body.type === "choice") {
+    const content =
+      body.contentType === "markdown"
+        ? formatMarkdownMessageSummary(body.content)
+        : body.content
+    return `[选择] ${content}`
+  }
+
   if (body.type === "link") {
     return `[链接] ${body.title}`
   }
@@ -953,7 +1156,14 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
   }
 
   if (body.type === "image") {
-    return "[图片]"
+    if (!body.caption) {
+      return "[图片]"
+    }
+    const caption =
+      body.captionType === "markdown"
+        ? formatMarkdownMessageSummary(body.caption)
+        : body.caption
+    return caption ? `[图片] ${caption}` : "[图片]"
   }
 
   if (body.type === "voice") {
@@ -1009,6 +1219,12 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
 
   if (body.event === "group_name_updated") {
     return `${body.actor.displayName} 修改群聊名称为 ${body.name}`
+  }
+
+  if (body.event === "group_announcement_updated") {
+    return body.announcement
+      ? `${body.actor.displayName} 更新了群公告`
+      : `${body.actor.displayName} 清空了群公告`
   }
 
   return `${body.inviter.displayName} 邀请 ${body.invitees
@@ -1075,6 +1291,7 @@ export function isClientMessageInitiatedByUser(
     message.body.event === "group_member_left" ||
     message.body.event === "group_member_removed" ||
     message.body.event === "group_name_updated" ||
+    message.body.event === "group_announcement_updated" ||
     message.body.event === "message_revoked" ||
     message.body.event === "topic_closed"
   ) {

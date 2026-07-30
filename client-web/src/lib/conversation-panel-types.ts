@@ -8,6 +8,7 @@ export type ConversationPanelMessage = {
   author: string
   avatar: string
   body: ClientMessage["body"]
+  choice?: ClientMessage["choice"]
   canRevoke: boolean
   createdAt: string
   delegatedByName: string
@@ -61,6 +62,7 @@ export type ConversationPanelReplyTarget = ConversationDraftReplyTarget
 
 export type ConversationPanelComposerHandle = {
   focus: () => void
+  focusAtEnd: () => void
   insertMention: (target: ConversationPanelMentionTarget) => void
   openDroppedFile: (file: File) => void
 }

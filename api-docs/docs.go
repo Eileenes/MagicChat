@@ -575,6 +575,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/dashboard": {
+            "get": {
+                "description": "返回用户访问、实时在线、消息和活跃会话的 24 小时及 7 天统计。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理仪表盘"
+                ],
+                "summary": "获取管理仪表盘统计",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/admin.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admin.dashboardStatsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/settings/email-login": {
             "get": {
                 "description": "管理员读取邮箱验证码登录和完整 SMTP 设置，包括已保存的 SMTP 密码。",
@@ -1406,7 +1450,7 @@ const docTemplate = `{
         },
         "/api/admin/users": {
             "get": {
-                "description": "管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；sort 仅支持 email、created_at、status；order 仅支持 asc、desc。",
+                "description": "管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；online 仅支持 true、false；sort 仅支持 email、created_at、status；order 仅支持 asc、desc。",
                 "produces": [
                     "application/json"
                 ],
@@ -1419,6 +1463,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "搜索关键字，匹配邮箱、名称、昵称或手机号",
                         "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "在线状态，true 表示在线，false 表示不在线",
+                        "name": "online",
                         "in": "query"
                     },
                     {
@@ -2847,7 +2897,7 @@ const docTemplate = `{
         },
         "/api/client/conversations": {
             "get": {
-                "description": "普通用户获取自己参与的最近 100 个会话。茉莉固定第一，其他置顶会话和未置顶会话分别按照最后消息时间倒序排列。",
+                "description": "普通用户获取最近 100 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。",
                 "produces": [
                     "application/json"
                 ],
@@ -2855,6 +2905,14 @@ const docTemplate = `{
                     "客户端会话"
                 ],
                 "summary": "列出当前用户会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "即使话题超过活跃时间，也包含这个当前正在查看的会话 ID",
+                        "name": "include_conversation_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3203,6 +3261,89 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/groups/{conversation_id}/announcement": {
+            "patch": {
+                "description": "群主或管理员修改 active 群聊公告。内容会去除首尾空白，最多 200 个 Unicode 字符；空内容会清空公告。修改后生成系统消息。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "修改群公告",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "群公告",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.updateGroupConversationAnnouncementRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/client.errorEnvelope"
                         }
@@ -3728,6 +3869,77 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/conversations/{conversation_id}": {
+            "delete": {
+                "description": "仅从当前用户的列表暂时移除会话，不删除消息或成员关系；出现新消息后会自动恢复。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "从当前用户的对话列表移除会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.dismissConversationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/conversations/{conversation_id}/avatar": {
             "post": {
                 "description": "群主或管理员上传裁切后的 WebP 群头像。头像必须是 256x256，文件会写入 public bucket，并生成一条系统消息。",
@@ -3817,7 +4029,7 @@ const docTemplate = `{
         },
         "/api/client/conversations/{conversation_id}/members": {
             "post": {
-                "description": "普通用户向自己参与的 active 群聊添加成员，并生成一条系统邀请消息。",
+                "description": "普通用户向自己参与的 active 群聊添加用户成员；只有群主或管理员可以添加应用成员。成功后生成一条系统邀请消息。",
                 "consumes": [
                     "application/json"
                 ],
@@ -4092,6 +4304,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/conversations/{conversation_id}/messages/choices/query": {
+            "post": {
+                "description": "返回当前用户视角下至多 100 条 choice 消息的聚合结果和本人答案，用于客户端断线恢复。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "批量查询选择消息状态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "选择消息 ID 列表",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.listChoiceSnapshotsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.listChoiceSnapshotsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/conversations/{conversation_id}/messages/files": {
             "post": {
                 "description": "普通用户上传最大 200MiB 的文件并发送为会话文件消息。文件写入 temporary bucket，消息 body 保存 file_id、文件名和文件大小。",
@@ -4295,7 +4560,7 @@ const docTemplate = `{
         },
         "/api/client/conversations/{conversation_id}/messages/images": {
             "post": {
-                "description": "普通用户上传 WebP 或 PNG 图片并发送为会话图片消息。PNG 会在服务端转换为 WebP，图片写入 temporary bucket，消息 body 只保存 file_id。",
+                "description": "普通用户上传 WebP 或 PNG 图片并发送为会话图片消息，可附带 text 或 markdown 图片说明。PNG 会在服务端转换为 WebP，图片写入 temporary bucket。",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -4320,6 +4585,24 @@ const docTemplate = `{
                         "name": "client_message_id",
                         "in": "formData",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "引用消息 ID",
+                        "name": "reply_to_message_id",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "图片说明，最多 5000 个字符，支持与文本消息相同的 @ token",
+                        "name": "caption",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "图片说明类型：text 或 markdown，默认 text",
+                        "name": "caption_type",
+                        "in": "formData"
                     },
                     {
                         "type": "file",
@@ -4536,6 +4819,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "string",
+                        "description": "语音识别文字，最多 5000 个字符",
+                        "name": "transcript",
+                        "in": "formData"
+                    },
+                    {
                         "type": "file",
                         "description": "WebM/Opus 语音文件",
                         "name": "voice",
@@ -4612,6 +4901,114 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/messages/{message_id}/choice-response": {
+            "put": {
+                "description": "当前用户为一条可见且未撤回的 choice 消息提交一次单选或多选答案；重复提交相同答案按幂等请求处理。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "回复选择消息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "选择消息 ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "所选选项",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.submitChoiceResponseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.submitChoiceResponseResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.submitChoiceResponseResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/client.errorEnvelope"
                         }
@@ -4802,7 +5199,7 @@ const docTemplate = `{
         },
         "/api/client/conversations/{conversation_id}/messages/{message_id}/revoke": {
             "post": {
-                "description": "普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息只返回元信息，并创建一条系统消息。",
+                "description": "普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息不返回 body；仅当用户撤回本人发送的 text/markdown 消息时返回 editable_body，并创建一条系统消息。",
                 "produces": [
                     "application/json"
                 ],
@@ -4871,6 +5268,146 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/mute": {
+            "put": {
+                "description": "为当前用户开启一个有权访问会话的消息免打扰。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "开启会话消息免打扰",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.setConversationMuteResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "为当前用户恢复一个有权访问会话的消息提醒。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "取消会话消息免打扰",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.setConversationMuteResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/client.errorEnvelope"
                         }
@@ -5233,6 +5770,77 @@ const docTemplate = `{
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/client.markConversationReadResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/restore": {
+            "post": {
+                "description": "用户主动打开一个之前从列表移除的会话时恢复它，不影响消息、成员关系和免打扰状态。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "将会话恢复到当前用户的对话列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.restoreConversationResponse"
                                         }
                                     }
                                 }
@@ -6737,6 +7345,95 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/search/messages": {
+            "get": {
+                "description": "在滚动最近一年内搜索当前用户有权查看的聊天记录。keyword 必填，其他过滤条件可选，按消息时间倒序最多返回 10 条。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端搜索"
+                ],
+                "summary": "搜索聊天记录",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "消息关键词，至少 2 个字符",
+                        "name": "keyword",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "发送者 ID",
+                        "name": "sender_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间，RFC3339，必须在最近一年内",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间，RFC3339，必须在最近一年内",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.searchMessagesResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/temporary-files": {
             "post": {
                 "security": [
@@ -7070,6 +7767,43 @@ const docTemplate = `{
                 },
                 "user": {
                     "$ref": "#/definitions/admin.userResponse"
+                }
+            }
+        },
+        "admin.dashboardStatsResponse": {
+            "type": "object",
+            "properties": {
+                "active_conversations_24_hours": {
+                    "type": "integer",
+                    "example": 27
+                },
+                "active_conversations_7_days": {
+                    "type": "integer",
+                    "example": 74
+                },
+                "messages_24_hours": {
+                    "type": "integer",
+                    "example": 326
+                },
+                "messages_7_days": {
+                    "type": "integer",
+                    "example": 1842
+                },
+                "online_users": {
+                    "type": "integer",
+                    "example": 18
+                },
+                "total_users": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "visited_users_24_hours": {
+                    "type": "integer",
+                    "example": 32
+                },
+                "visited_users_7_days": {
+                    "type": "integer",
+                    "example": 86
                 }
             }
         },
@@ -7543,6 +8277,26 @@ const docTemplate = `{
                 }
             }
         },
+        "client.choiceResponseResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "option_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.clientAppCredentialResponse": {
             "type": "object",
             "properties": {
@@ -7731,9 +8485,31 @@ const docTemplate = `{
                 }
             }
         },
+        "client.conversationLastMessageSenderResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
         "client.conversationListItemResponse": {
             "type": "object",
             "properties": {
+                "announcement": {
+                    "type": "string",
+                    "example": "本周五 18:00 发布，请及时更新任务状态。"
+                },
                 "avatar": {
                     "type": "string",
                     "example": "/assets/avatars/builtin/07.webp"
@@ -7750,6 +8526,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 },
+                "last_choice_seq": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "last_mentioned_seq": {
                     "type": "integer",
                     "example": 0
@@ -7761,6 +8541,9 @@ const docTemplate = `{
                 "last_message_id": {
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_message_sender": {
+                    "$ref": "#/definitions/client.conversationLastMessageSenderResponse"
                 },
                 "last_message_seq": {
                     "type": "integer",
@@ -7787,6 +8570,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "张三"
+                },
+                "notification_muted": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "pinned": {
                     "type": "boolean",
@@ -8131,6 +8918,15 @@ const docTemplate = `{
                 }
             }
         },
+        "client.dismissConversationResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                }
+            }
+        },
         "client.dissolveGroupConversationResponse": {
             "type": "object",
             "properties": {
@@ -8250,6 +9046,10 @@ const docTemplate = `{
         "client.groupConversationResponse": {
             "type": "object",
             "properties": {
+                "announcement": {
+                    "type": "string",
+                    "example": "本周五 18:00 发布，请及时更新任务状态。"
+                },
                 "avatar": {
                     "type": "string",
                     "example": "/assets/avatars/groups/07.webp"
@@ -8266,6 +9066,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 },
+                "last_choice_seq": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "last_mentioned_seq": {
                     "type": "integer",
                     "example": 0
@@ -8277,6 +9081,9 @@ const docTemplate = `{
                 "last_message_id": {
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_message_sender": {
+                    "$ref": "#/definitions/client.conversationLastMessageSenderResponse"
                 },
                 "last_message_seq": {
                     "type": "integer",
@@ -8366,6 +9173,31 @@ const docTemplate = `{
                 },
                 "message": {
                     "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.listChoiceSnapshotsRequest": {
+            "type": "object",
+            "properties": {
+                "message_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "client.listChoiceSnapshotsResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "snapshots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageChoiceSnapshotResponse"
+                    }
                 }
             }
         },
@@ -8548,6 +9380,51 @@ const docTemplate = `{
                 }
             }
         },
+        "client.messageChoiceOptionStateResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "response_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.messageChoiceSnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "choice": {
+                    "$ref": "#/definitions/client.messageChoiceStateResponse"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.messageChoiceStateResponse": {
+            "type": "object",
+            "properties": {
+                "my_option_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageChoiceOptionStateResponse"
+                    }
+                },
+                "response_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "client.messageDelegatedByResponse": {
             "type": "object",
             "properties": {
@@ -8656,6 +9533,9 @@ const docTemplate = `{
                 "body": {
                     "type": "object"
                 },
+                "choice": {
+                    "$ref": "#/definitions/client.messageChoiceStateResponse"
+                },
                 "client_message_id": {
                     "type": "string",
                     "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
@@ -8670,6 +9550,9 @@ const docTemplate = `{
                 },
                 "delegated_by": {
                     "$ref": "#/definitions/client.messageDelegatedByResponse"
+                },
+                "editable_body": {
+                    "type": "object"
                 },
                 "id": {
                     "type": "string",
@@ -8705,6 +9588,107 @@ const docTemplate = `{
                 "seq": {
                     "type": "integer",
                     "example": 13
+                },
+                "topic": {
+                    "$ref": "#/definitions/client.messageTopicResponse"
+                }
+            }
+        },
+        "client.messageSearchConversationResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.messageSearchItemResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/client.messageSearchConversationResponse"
+                },
+                "message": {
+                    "$ref": "#/definitions/client.messageSearchMessageResponse"
+                }
+            }
+        },
+        "client.messageSearchMessageResponse": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "object"
+                },
+                "choice": {
+                    "$ref": "#/definitions/client.messageChoiceStateResponse"
+                },
+                "client_message_id": {
+                    "type": "string",
+                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
+                },
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "delegated_by": {
+                    "$ref": "#/definitions/client.messageDelegatedByResponse"
+                },
+                "editable_body": {
+                    "type": "object"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "reaction_version": {
+                    "type": "integer"
+                },
+                "reactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageReactionResponse"
+                    }
+                },
+                "reply_to": {
+                    "$ref": "#/definitions/client.messageReplyToResponse"
+                },
+                "reply_to_message_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "revoked_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "revoked_by_user_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "sender": {
+                    "$ref": "#/definitions/client.messageSenderResponse"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "seq": {
+                    "type": "integer",
+                    "example": 13
+                },
+                "summary": {
+                    "type": "string"
                 },
                 "topic": {
                     "$ref": "#/definitions/client.messageTopicResponse"
@@ -9025,6 +10009,14 @@ const docTemplate = `{
                 }
             }
         },
+        "client.restoreConversationResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/client.conversationListItemResponse"
+                }
+            }
+        },
         "client.revokeConversationMessageResponse": {
             "type": "object",
             "properties": {
@@ -9033,6 +10025,30 @@ const docTemplate = `{
                 },
                 "system_message": {
                     "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.searchMessagesResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageSearchItemResponse"
+                    }
+                }
+            }
+        },
+        "client.setConversationMuteResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "muted": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -9077,6 +10093,37 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/client.messageReactionResponse"
                     }
+                }
+            }
+        },
+        "client.submitChoiceResponseRequest": {
+            "type": "object",
+            "properties": {
+                "option_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "client.submitChoiceResponseResponse": {
+            "type": "object",
+            "properties": {
+                "choice": {
+                    "$ref": "#/definitions/client.messageChoiceStateResponse"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "created": {
+                    "type": "boolean"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "response": {
+                    "$ref": "#/definitions/client.choiceResponseResponse"
                 }
             }
         },
@@ -9286,6 +10333,18 @@ const docTemplate = `{
                 },
                 "visibility": {
                     "type": "string"
+                }
+            }
+        },
+        "client.updateGroupConversationAnnouncementRequest": {
+            "type": "object",
+            "required": [
+                "announcement"
+            ],
+            "properties": {
+                "announcement": {
+                    "type": "string",
+                    "example": "本周五 18:00 发布，请及时更新任务状态。"
                 }
             }
         },

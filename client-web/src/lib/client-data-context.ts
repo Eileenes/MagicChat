@@ -3,9 +3,11 @@ import { createContext, useContext } from "react"
 import {
   type ClientConversation,
   type ClientDataRequestError,
+  type ImageCaptionType,
   type MarkConversationReadOptions,
   type ClientMessage,
   type MessageReactionsUpdatedEvent,
+  type MessageChoiceUpdatedEvent,
   type MessageReactionSnapshot,
   type ClientMessageTopic,
   type ClientCardSendInput,
@@ -23,16 +25,31 @@ import type { VoiceMessageRecording } from "@/lib/voice-message"
 
 export type ClientConversationMessageState = {
   error: string | null
+  focus: ClientConversationMessageFocus | null
   loaded: boolean
   loading: boolean
+  loadingAfter: boolean
   loadingBefore: boolean
+  latestKnownSeq: number
   messages: ClientMessage[]
   page: ClientMessagePage | null
+  pendingLatestMessageCount: number
   sending: boolean
+  viewMode: "latest" | "history"
+}
+
+export type ClientConversationMessageFocus = {
+  messageId: string
+  requestKey: number
 }
 
 export type SendConversationMessageOptions = {
   replyToMessageId?: string
+}
+
+export type SendConversationImageOptions = SendConversationMessageOptions & {
+  caption?: string
+  captionType?: ImageCaptionType
 }
 
 export type ClientDataContextValue = {
@@ -70,12 +87,25 @@ export type ClientDataContextValue = {
     groupIds?: string[]
   ) => Promise<ClientProjectDetail>
   dissolveGroupConversation: (conversationId: string) => Promise<void>
+  dismissConversation: (conversationId: string) => Promise<void>
+  compactConversationMessages: (conversationId: string) => void
+  registerConversationMessageView: (conversationId: string) => () => void
   ensureConversationMessages: (conversationId: string) => void
+  focusConversationMessage: (
+    conversationId: string,
+    target: { messageId: string; seq: number }
+  ) => Promise<void>
+  consumeConversationMessageFocus: (
+    conversationId: string,
+    requestKey: number
+  ) => void
   getConversation: (conversationId: string) => ClientConversation | null
   getConversationMessageState: (
     conversationId: string
   ) => ClientConversationMessageState
   loadBeforeConversationMessages: (conversationId: string) => void
+  loadAfterConversationMessages: (conversationId: string) => void
+  returnToLatestConversationMessages: (conversationId: string) => void
   markConversationRead: (
     conversationId: string,
     options?: MarkConversationReadOptions
@@ -84,6 +114,10 @@ export type ClientDataContextValue = {
     conversationId: string,
     pinned: boolean
   ) => Promise<void>
+  setConversationMuted: (
+    conversationId: string,
+    muted: boolean
+  ) => Promise<void>
   handleIncomingConversationMessage: (
     message: ClientMessage,
     options?: { activeConversationId?: string; visible?: boolean }
@@ -91,6 +125,16 @@ export type ClientDataContextValue = {
   handleIncomingConversationMessageUpdate: (message: ClientMessage) => void
   handleIncomingMessageReactionsUpdate: (
     event: MessageReactionsUpdatedEvent
+  ) => void
+  handleIncomingMessageChoiceUpdate: (event: MessageChoiceUpdatedEvent) => void
+  respondToChoice: (
+    conversationId: string,
+    messageId: string,
+    optionIds: string[]
+  ) => Promise<void>
+  updateConversationLastChoiceSeq: (
+    conversationId: string,
+    lastChoiceSeq: number
   ) => void
   updateConversationLastMentionedSeq: (
     conversationId: string,
@@ -107,6 +151,7 @@ export type ClientDataContextValue = {
   ) => void
   openDirectConversation: (userId: string) => Promise<ClientConversation>
   openAppConversation: (appId: string) => Promise<ClientConversation>
+  restoreConversation: (conversationId: string) => Promise<ClientConversation>
   joinGroupConversation: (conversationId: string) => Promise<ClientConversation>
   leaveGroupConversation: (conversationId: string) => Promise<void>
   removeConversation: (conversationId: string) => void
@@ -134,6 +179,10 @@ export type ClientDataContextValue = {
   updateGroupConversationName: (
     conversationId: string,
     name: string
+  ) => Promise<ClientConversation>
+  updateGroupConversationAnnouncement: (
+    conversationId: string,
+    announcement: string
   ) => Promise<ClientConversation>
   refreshConversations: () => Promise<void>
   refreshContacts: () => Promise<void>
@@ -168,7 +217,7 @@ export type ClientDataContextValue = {
   sendConversationImage: (
     conversationId: string,
     image: File,
-    options?: SendConversationMessageOptions
+    options?: SendConversationImageOptions
   ) => Promise<ClientMessage | null>
   sendConversationVoice: (
     conversationId: string,
@@ -179,6 +228,7 @@ export type ClientDataContextValue = {
   syncLoadedConversationMessages: () => void
   updateConversationLastMessage: (message: ClientMessage) => void
   updateConversationPinned: (conversationId: string, pinned: boolean) => void
+  updateConversationMuted: (conversationId: string, muted: boolean) => void
   updateGroupConversationAvatar: (
     conversationId: string,
     file: File

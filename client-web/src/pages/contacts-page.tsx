@@ -26,7 +26,9 @@ import type {
   ContactUser,
 } from "@/lib/client-data-api"
 import {
+  deleteClientApp,
   getClientAppCredentials,
+  getClientAppProfile,
   type ClientAppCredentials,
   type ClientOwnedApp,
 } from "@/lib/client-api/apps"
@@ -49,6 +51,7 @@ export function ContactsPage() {
     openDirectConversation,
     refreshContacts,
     refreshConversations,
+    restoreConversation,
   } = useClientData()
   const location = useLocation()
   const navigate = useNavigate()
@@ -181,9 +184,7 @@ export function ContactsPage() {
     try {
       setAppCredentials(await getClientAppCredentials(app.id))
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "加载应用接入信息失败"
-      )
+      toast.error(error instanceof Error ? error.message : "加载开发指南失败")
     } finally {
       setLoadingAccessInfoAppId("")
     }
@@ -199,8 +200,7 @@ export function ContactsPage() {
 
     setLoadingProfileAppId(app.id)
     try {
-      const credentials = await getClientAppCredentials(app.id)
-      setAppProfile(credentials.app)
+      setAppProfile(await getClientAppProfile(app.id))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "加载应用资料失败")
     } finally {
@@ -210,19 +210,15 @@ export function ContactsPage() {
 
   async function openOrJoinGroupConversation(group: ContactGroup) {
     const itemKey = directoryItemKey("group", group.id)
-
-    if (group.joined) {
-      navigate(`/chat/${encodeURIComponent(group.id)}`)
-      return
-    }
-
     setOpeningDirectoryItemKey(itemKey)
 
     try {
-      const conversation = await joinGroupConversation(group.id)
+      const conversation = group.joined
+        ? await restoreConversation(group.id)
+        : await joinGroupConversation(group.id)
       navigate(`/chat/${encodeURIComponent(conversation.id)}`)
     } catch {
-      toast.error("无法加入群聊")
+      toast.error(group.joined ? "无法打开群聊" : "无法加入群聊")
     } finally {
       setOpeningDirectoryItemKey((currentItemKey) =>
         currentItemKey === itemKey ? "" : currentItemKey
@@ -295,6 +291,19 @@ export function ContactsPage() {
               app={activeItem.app}
               developer={getAppDeveloper(activeItem.app, contacts, me)}
               editingProfile={loadingProfileAppId === activeItem.app.id}
+              onDelete={
+                activeItem.app.creatorUserId?.toLowerCase() ===
+                me.id.toLowerCase()
+                  ? async () => {
+                      await deleteClientApp(activeItem.app.id)
+                      navigate("/contacts", { replace: true })
+                      await Promise.allSettled([
+                        refreshContacts(),
+                        refreshConversations(),
+                      ])
+                    }
+                  : undefined
+              }
               onEditProfile={
                 activeItem.app.creatorUserId?.toLowerCase() ===
                 me.id.toLowerCase()

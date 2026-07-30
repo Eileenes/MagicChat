@@ -108,9 +108,23 @@ export async function getClientAppCredentials(
   return requestClientAppCredentials(
     `/api/client/apps/${encodeURIComponent(appId)}`,
     "GET",
-    "加载应用接入信息失败",
+    "加载开发指南失败",
     fetcher
   )
+}
+
+export async function getClientAppProfile(
+  appId: string,
+  fetcher: ClientDataFetch = fetch
+) {
+  const credentials = await requestClientAppCredentials(
+    `/api/client/apps/${encodeURIComponent(appId)}`,
+    "GET",
+    "加载应用资料失败",
+    fetcher
+  )
+
+  return credentials.app
 }
 
 export async function regenerateClientAppSecret(
@@ -168,6 +182,26 @@ export async function updateClientApp(
   )?.data
 
   return normalizeClientApp(data?.app)
+}
+
+export async function deleteClientApp(
+  appId: string,
+  fetcher: ClientDataFetch = fetch
+) {
+  const response = await fetcher(
+    `/api/client/apps/${encodeURIComponent(appId)}`,
+    {
+      credentials: "include",
+      method: "DELETE",
+    }
+  )
+  const payload = await readJson<
+    ClientDataErrorEnvelope | ClientDataSuccessEnvelope<Record<string, never>>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "删除应用失败")
+  }
 }
 
 export async function uploadClientAppAvatar(

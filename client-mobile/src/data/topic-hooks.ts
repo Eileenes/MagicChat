@@ -4,12 +4,12 @@ import {
   archiveConversationTopic,
   fetchConversationTopic,
 } from "@/data/conversations-api"
+import { messageManager } from "@/data/messages"
 import type {
   ClientConversation,
   ClientTopicDetail,
 } from "@/data/models"
 import { queryKeys, type AuthenticatedTarget } from "@/data/query"
-import { updateCachedMessageTopic } from "@/data/topic-cache"
 
 export function useConversationTopic(
   target: AuthenticatedTarget,
@@ -58,7 +58,7 @@ export function useArchiveConversationTopic(
       )
 
       if (topic) {
-        updateCachedMessageTopic(queryClient, target, {
+        void messageManager.updateMessageTopic(target, {
           archived: true,
           conversationId,
           parentConversationId: topic.parentConversationId,

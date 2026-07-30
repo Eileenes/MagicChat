@@ -10,12 +10,17 @@ import { useMessageSelection } from "@/hooks/use-message-selection"
 import {
   createConversationTopic,
   forwardConversationMessages,
+  getConversationTopic,
   type ClientConversation,
+  type ImageCaptionType,
   type ClientMessage,
+  type ClientMessageSearchResult,
+  type ClientTopicSourceMessage,
   type ContactApp,
   type ContactUser,
 } from "@/lib/client-data-api"
 import { getClientDataErrorMessage } from "@/lib/client-data-state"
+import type { DirectorySearchItem } from "@/lib/local-search"
 import { createClientMessageId } from "@/lib/message-id"
 import {
   clearLastConversationId,
@@ -27,6 +32,7 @@ import {
   type ConversationDraftMention,
 } from "@/lib/conversation-drafts"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
+import { isTopicSourceMessageSelectable } from "@/lib/topic-source-message"
 import {
   formatConversationMessageSummary,
   toConversationPanelMessage,
@@ -37,8 +43,8 @@ import { ConversationSidebar } from "@/components/conversation/conversation-side
 import {
   TopicArchiveAction,
   TopicDrawer,
-  TopicSourceBanner,
 } from "@/components/conversation/topic-drawer"
+import { TopicSourceBanner } from "@/components/conversation/topic-source-banner"
 import {
   ConversationPanel,
   type ConversationPanelForwardMode,
@@ -68,6 +74,38 @@ type ForwardOperation = {
 type CreateTopicOperation = {
   conversationId: string
   message: ConversationPanelMessage
+}
+
+type DirectoryConversationActions = {
+  joinGroupConversation: (groupId: string) => Promise<ClientConversation>
+  openAppConversation: (appId: string) => Promise<ClientConversation>
+  openDirectConversation: (userId: string) => Promise<ClientConversation>
+  restoreConversation: (conversationId: string) => Promise<ClientConversation>
+}
+
+function openDirectoryItemConversation(
+  item: DirectorySearchItem,
+  actions: DirectoryConversationActions
+) {
+  if (item.type === "user") {
+    return actions.openDirectConversation(item.id)
+  }
+  if (item.type === "app") {
+    return actions.openAppConversation(item.id)
+  }
+  return item.joined
+    ? actions.restoreConversation(item.id)
+    : actions.joinGroupConversation(item.id)
+}
+
+function getDirectoryItemOpenError(item: DirectorySearchItem) {
+  if (item.type === "user") {
+    return "无法发起单聊"
+  }
+  if (item.type === "app") {
+    return "无法发起应用会话"
+  }
+  return item.joined ? "无法打开群聊" : "无法加入群聊"
 }
 
 function normalizeSingleLinkMessageURL(content: string) {
@@ -100,16 +138,27 @@ export function ChatPage() {
   const { conversationId } = useParams<{ conversationId?: string }>()
   const {
     contactApps,
+    contactGroups,
     contacts,
     conversations,
+    compactConversationMessages,
+    consumeConversationMessageFocus,
     createGroupConversation,
+    dismissConversation,
     ensureConversationMessages,
+    focusConversationMessage,
     getConversation,
     getConversationMessageState,
+    loadAfterConversationMessages,
     loadBeforeConversationMessages,
     markConversationRead,
     me,
     mergeIncomingConversationMessage,
+    registerConversationMessageView,
+    joinGroupConversation,
+    openAppConversation,
+    openDirectConversation,
+    respondToChoice,
     refreshConversations,
     revokeConversationMessage,
     sendConversationFile,
@@ -119,8 +168,11 @@ export function ChatPage() {
     sendConversationText,
     sendConversationVoice,
     setConversationPinned,
+    setConversationMuted,
     setMessageReaction,
     setForegroundConversationId,
+    restoreConversation,
+    returnToLatestConversationMessages,
     updateMessageTopic,
   } = useClientData()
   const {
@@ -139,6 +191,10 @@ export function ChatPage() {
   const [creatingTopic, setCreatingTopic] = React.useState(false)
   const [topicDrawerConversationId, setTopicDrawerConversationId] =
     React.useState("")
+  const [loadedTopicSource, setLoadedTopicSource] = React.useState<{
+    conversationId: string
+    message: ClientTopicSourceMessage
+  } | null>(null)
   React.useEffect(
     () => () => setForegroundConversationId?.(""),
     [setForegroundConversationId]
@@ -161,6 +217,33 @@ export function ChatPage() {
   )
 
   const activeConversationId = activeConversation?.id ?? ""
+  const activeConversationType = activeConversation?.type
+  const compactActiveConversationMessages = React.useCallback(() => {
+    compactConversationMessages(activeConversationId)
+  }, [activeConversationId, compactConversationMessages])
+  const openTopicDrawer = React.useCallback(
+    (nextConversationId: string) => {
+      setTopicDrawerConversationId(nextConversationId)
+      setForegroundConversationId?.(nextConversationId)
+    },
+    [setForegroundConversationId]
+  )
+  const closeTopicDrawer = React.useCallback(() => {
+    setTopicDrawerConversationId("")
+    setForegroundConversationId?.("")
+  }, [setForegroundConversationId])
+  const requestCreateTopic = React.useCallback(
+    (message: ConversationPanelMessage) => {
+      if (!activeConversationId || activeConversationType === "topic") {
+        return
+      }
+      setCreateTopicOperation({
+        conversationId: activeConversationId,
+        message,
+      })
+    },
+    [activeConversationId, activeConversationType]
+  )
   const messageSelection = useMessageSelection(activeConversationId)
   const {
     maxSelectedMessages,
@@ -184,6 +267,31 @@ export function ChatPage() {
     activeMessageState &&
     !activeMessageState.loaded &&
     !activeMessageState.error
+  )
+  const activeHistoryNavigation = React.useMemo(
+    () =>
+      activeMessageState
+        ? {
+            focus: activeMessageState.focus,
+            loadingAfter: activeMessageState.loadingAfter,
+            onFocusHandled: (requestKey: number) =>
+              consumeConversationMessageFocus(activeConversationId, requestKey),
+            onLoadAfterMessages: () =>
+              loadAfterConversationMessages(activeConversationId),
+            onReturnToLatest: () =>
+              returnToLatestConversationMessages(activeConversationId),
+            pendingLatestMessageCount:
+              activeMessageState.pendingLatestMessageCount,
+            viewMode: activeMessageState.viewMode,
+          }
+        : undefined,
+    [
+      activeConversationId,
+      activeMessageState,
+      consumeConversationMessageFocus,
+      loadAfterConversationMessages,
+      returnToLatestConversationMessages,
+    ]
   )
   const activeConversationReadOnlyReason =
     activeConversation?.canSend === false && !activeConversation.topic?.archived
@@ -274,25 +382,45 @@ export function ChatPage() {
       me,
     ]
   )
-  const selectedClientMessages = React.useMemo(
-    () =>
-      activeClientMessages.filter(
-        (message) =>
-          selectedMessageIds.has(message.id) &&
-          message.body.type !== "revoked" &&
-          message.body.type !== "unsupported" &&
-          message.body.type !== "system_event"
-      ),
-    [activeClientMessages, selectedMessageIds]
+  const activeTopicSource =
+    loadedTopicSource?.conversationId === activeConversationId
+      ? loadedTopicSource.message
+      : null
+  const activeTopicSourceSelectable = Boolean(
+    activeTopicSource && isTopicSourceMessageSelectable(activeTopicSource)
   )
+  const selectedForwardMessageIds = React.useMemo(() => {
+    const messageIds: string[] = []
+    if (
+      activeTopicSourceSelectable &&
+      activeTopicSource &&
+      selectedMessageIds.has(activeTopicSource.id)
+    ) {
+      messageIds.push(activeTopicSource.id)
+    }
+    for (const message of activeClientMessages) {
+      if (
+        selectedMessageIds.has(message.id) &&
+        message.body.type !== "revoked" &&
+        message.body.type !== "unsupported" &&
+        message.body.type !== "system_event"
+      ) {
+        messageIds.push(message.id)
+      }
+    }
+    return messageIds
+  }, [
+    activeClientMessages,
+    activeTopicSource,
+    activeTopicSourceSelectable,
+    selectedMessageIds,
+  ])
   const visibleMessageSelection = React.useMemo(
     () => ({
       active: messageSelection.active,
-      selectedMessageIds: new Set(
-        selectedClientMessages.map((message) => message.id)
-      ),
+      selectedMessageIds: new Set(selectedForwardMessageIds),
     }),
-    [messageSelection.active, selectedClientMessages]
+    [messageSelection.active, selectedForwardMessageIds]
   )
 
   React.useEffect(() => {
@@ -342,7 +470,11 @@ export function ChatPage() {
   }, [activeConversationId, ensureConversationMessages])
 
   React.useEffect(() => {
-    if (!activeConversationId || !activeConversationHasUnreadProgress) {
+    if (
+      !activeConversationId ||
+      !activeConversationHasUnreadProgress ||
+      activeMessageState?.viewMode === "history"
+    ) {
       return
     }
 
@@ -370,6 +502,7 @@ export function ChatPage() {
   }, [
     activeConversationId,
     activeConversationHasUnreadProgress,
+    activeMessageState?.viewMode,
     markConversationRead,
   ])
 
@@ -432,17 +565,17 @@ export function ChatPage() {
   )
 
   const openForwardOperation = React.useCallback(
-    (messages: ClientMessage[], mode: ConversationPanelForwardMode) => {
-      if (!activeConversationId || messages.length === 0) {
+    (messageIds: string[], mode: ConversationPanelForwardMode) => {
+      if (!activeConversationId || messageIds.length === 0) {
         return
       }
-      if (mode === "merged" && messages.length < 2) {
+      if (mode === "merged" && messageIds.length < 2) {
         return
       }
 
       setForwardOperation({
         clientForwardId: createClientMessageId(),
-        messageIds: messages.map((message) => message.id),
+        messageIds,
         mode,
         sourceConversationId: activeConversationId,
       })
@@ -454,7 +587,7 @@ export function ChatPage() {
     (message: ConversationPanelMessage) => {
       const clientMessage = activeClientMessagesByIdRef.current.get(message.id)
       if (clientMessage) {
-        openForwardOperation([clientMessage], "separate")
+        openForwardOperation([clientMessage.id], "separate")
       }
     },
     [openForwardOperation]
@@ -465,23 +598,107 @@ export function ChatPage() {
     [startSelectingMessage]
   )
 
-  const toggleMessageSelection = React.useCallback(
-    (message: ConversationPanelMessage) => {
-      const selected = selectedMessageIds.has(message.id)
+  const toggleSelectableMessage = React.useCallback(
+    (messageId: string) => {
+      const selected = selectedMessageIds.has(messageId)
       if (!selected && selectedMessageIds.size >= maxSelectedMessages) {
         toast.warning(`一次最多选择 ${maxSelectedMessages} 条消息`)
         return
       }
-      toggleSelectedMessage(message.id)
+      toggleSelectedMessage(messageId)
     },
     [maxSelectedMessages, selectedMessageIds, toggleSelectedMessage]
+  )
+  const toggleMessageSelection = React.useCallback(
+    (message: ConversationPanelMessage) => toggleSelectableMessage(message.id),
+    [toggleSelectableMessage]
+  )
+
+  const recordTopicSourceMessage = React.useCallback(
+    (message: ClientTopicSourceMessage) => {
+      if (!activeConversationId || activeConversationType !== "topic") {
+        return
+      }
+      setLoadedTopicSource((current) =>
+        current?.conversationId === activeConversationId &&
+        current.message === message
+          ? current
+          : { conversationId: activeConversationId, message }
+      )
+    },
+    [activeConversationId, activeConversationType]
+  )
+
+  const forwardTopicSourceMessage = React.useCallback(
+    (message: ClientTopicSourceMessage) => {
+      if (activeTopicSourceSelectable && activeTopicSource?.id === message.id) {
+        openForwardOperation([message.id], "separate")
+      }
+    },
+    [activeTopicSource, activeTopicSourceSelectable, openForwardOperation]
+  )
+
+  const startTopicSourceSelection = React.useCallback(
+    (message: ClientTopicSourceMessage) => {
+      if (activeTopicSourceSelectable && activeTopicSource?.id === message.id) {
+        startSelectingMessage(message.id)
+      }
+    },
+    [activeTopicSource, activeTopicSourceSelectable, startSelectingMessage]
+  )
+
+  const toggleTopicSourceSelection = React.useCallback(
+    (message: ClientTopicSourceMessage) => {
+      if (activeTopicSourceSelectable && activeTopicSource?.id === message.id) {
+        toggleSelectableMessage(message.id)
+      }
+    },
+    [activeTopicSource, activeTopicSourceSelectable, toggleSelectableMessage]
   )
 
   const forwardSelectedMessages = React.useCallback(
     (mode: ConversationPanelForwardMode) => {
-      openForwardOperation(selectedClientMessages, mode)
+      openForwardOperation(selectedForwardMessageIds, mode)
     },
-    [openForwardOperation, selectedClientMessages]
+    [openForwardOperation, selectedForwardMessageIds]
+  )
+
+  const activeHistoryHeader = React.useMemo(
+    () =>
+      activeConversation?.type === "topic" ? (
+        <TopicSourceBanner
+          conversationId={activeConversation.id}
+          currentUserId={me.id}
+          mentionLabelResolver={activeMentionLabelResolver}
+          onForward={forwardTopicSourceMessage}
+          onMultiSelect={startTopicSourceSelection}
+          onSourceMessageLoaded={recordTopicSourceMessage}
+          onToggleSelected={toggleTopicSourceSelection}
+          reactionConversationId={
+            activeConversation.topic?.parentConversationId
+          }
+          selected={Boolean(
+            activeTopicSource &&
+            visibleMessageSelection.selectedMessageIds.has(activeTopicSource.id)
+          )}
+          selectionMode={visibleMessageSelection.active}
+          showChoiceResponseCounts={
+            activeConversation.topic?.parentConversationType === "group"
+          }
+          sourceMessage={activeTopicSource ?? undefined}
+        />
+      ) : undefined,
+    [
+      activeConversation,
+      activeMentionLabelResolver,
+      activeTopicSource,
+      forwardTopicSourceMessage,
+      me.id,
+      recordTopicSourceMessage,
+      startTopicSourceSelection,
+      toggleTopicSourceSelection,
+      visibleMessageSelection,
+    ]
   )
 
   async function submitForwardOperation(targetConversationIds: string[]) {
@@ -568,7 +785,11 @@ export function ChatPage() {
     return message
   }
 
-  async function sendImageMessage(image: File) {
+  async function sendImageMessage(
+    image: File,
+    caption: string,
+    captionType: ImageCaptionType
+  ) {
     if (!activeConversationId || activeMessageState?.sending) {
       return null
     }
@@ -576,6 +797,8 @@ export function ChatPage() {
     const sendingConversationId = activeConversationId
     const sendingReplyToMessageId = replyTarget?.id
     const message = await sendConversationImage(sendingConversationId, image, {
+      caption,
+      captionType,
       replyToMessageId: sendingReplyToMessageId,
     })
     if (message) {
@@ -607,6 +830,76 @@ export function ChatPage() {
     navigate(`/chat/${encodeURIComponent(conversationId)}`, { replace: true })
   }
 
+  async function selectDirectoryItem(item: DirectorySearchItem) {
+    try {
+      const conversation = await openDirectoryItemConversation(item, {
+        joinGroupConversation,
+        openAppConversation,
+        openDirectConversation,
+        restoreConversation,
+      })
+      if (conversation) {
+        selectConversation(conversation.id)
+      }
+    } catch {
+      toast.error(getDirectoryItemOpenError(item))
+    }
+  }
+
+  async function selectMessageSearchResult(result: ClientMessageSearchResult) {
+    try {
+      const existing = getConversation(result.conversation.id)
+      if (result.conversation.type === "topic") {
+        if (existing && !existing.topic?.archived) {
+          selectConversation(existing.id)
+          await focusConversationMessage(existing.id, {
+            messageId: result.message.id,
+            seq: result.message.seq,
+          })
+          return
+        }
+        const detail = await getConversationTopic(result.conversation.id)
+        if (!getConversation(detail.parentConversation.id)) {
+          await restoreConversation(detail.parentConversation.id)
+        }
+        selectConversation(detail.parentConversation.id)
+        openTopicDrawer(detail.conversation.id)
+        await focusConversationMessage(detail.conversation.id, {
+          messageId: result.message.id,
+          seq: result.message.seq,
+        })
+        return
+      }
+      if (existing) {
+        selectConversation(existing.id)
+        await focusConversationMessage(existing.id, {
+          messageId: result.message.id,
+          seq: result.message.seq,
+        })
+        return
+      }
+      const conversation = await restoreConversation(result.conversation.id)
+      selectConversation(conversation.id)
+      await focusConversationMessage(conversation.id, {
+        messageId: result.message.id,
+        seq: result.message.seq,
+      })
+    } catch (error) {
+      toast.error(getClientDataErrorMessage(error, "无法打开搜索结果"))
+    }
+  }
+
+  async function deleteConversation(conversationId: string) {
+    await dismissConversation(conversationId)
+    clearConversationDraft(conversationId)
+    if (readLastConversationId(me.id) === conversationId) {
+      clearLastConversationId(me.id)
+    }
+    if (activeConversationId === conversationId) {
+      navigate("/chat", { replace: true })
+    }
+  }
+
   async function startGroupConversation(
     name: string,
     memberIds: string[],
@@ -615,16 +908,6 @@ export function ChatPage() {
     const conversation = await createGroupConversation(name, memberIds, appIds)
     flushDrafts()
     navigate(`/chat/${encodeURIComponent(conversation.id)}`)
-  }
-
-  function requestCreateTopic(message: ConversationPanelMessage) {
-    if (!activeConversation || activeConversation.type === "topic") {
-      return
-    }
-    setCreateTopicOperation({
-      conversationId: activeConversation.id,
-      message,
-    })
   }
 
   async function confirmCreateTopic() {
@@ -653,16 +936,6 @@ export function ChatPage() {
     }
   }
 
-  function openTopicDrawer(conversationId: string) {
-    setTopicDrawerConversationId(conversationId)
-    setForegroundConversationId?.(conversationId)
-  }
-
-  function closeTopicDrawer() {
-    setTopicDrawerConversationId("")
-    setForegroundConversationId?.("")
-  }
-
   return (
     <SidebarProvider
       className="min-h-0 min-w-0 flex-1"
@@ -675,12 +948,21 @@ export function ChatPage() {
       <ConversationSidebar
         activeConversationId={activeConversationId}
         appsById={contactAppsByLookup}
+        contactApps={contactApps}
+        contactGroups={contactGroups}
+        contacts={contacts}
         contactsById={contactsById}
         conversations={conversations}
         currentUser={me}
         drafts={drafts}
         onCreateGroup={() => setCreateGroupDialogOpen(true)}
+        onDismissConversation={deleteConversation}
+        onSelectDirectoryItem={(item) => void selectDirectoryItem(item)}
         onSelectConversation={selectConversation}
+        onSelectMessageResult={(result) =>
+          void selectMessageSearchResult(result)
+        }
+        onSetConversationMuted={setConversationMuted}
         onSetConversationPinned={setConversationPinned}
       />
 
@@ -694,18 +976,8 @@ export function ChatPage() {
         historyError={activeMessageState?.error ?? null}
         historyLoading={historyLoading}
         historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
-        historyHeader={
-          activeConversation?.type === "topic" ? (
-            <TopicSourceBanner
-              conversationId={activeConversation.id}
-              currentUserId={me.id}
-              mentionLabelResolver={activeMentionLabelResolver}
-              reactionConversationId={
-                activeConversation.topic?.parentConversationId
-              }
-            />
-          ) : undefined
-        }
+        historyNavigation={activeHistoryNavigation}
+        historyHeader={activeHistoryHeader}
         headerActions={
           activeConversation?.type === "topic" &&
           activeConversation.canSend !== false ? (
@@ -717,6 +989,8 @@ export function ChatPage() {
         messageSelection={visibleMessageSelection}
         onCancelMessageSelection={messageSelection.cancel}
         onCancelReply={clearReplyTarget}
+        onCompactMessages={compactActiveConversationMessages}
+        onRegisterMessageView={registerConversationMessageView}
         onDraftBlur={flushDrafts}
         onDraftChange={setDraft}
         onCreateTopic={
@@ -730,6 +1004,9 @@ export function ChatPage() {
         onReplyToMessage={replyToMessage}
         onRevokeMessage={revokeMessage}
         onSetMessageReaction={updateMessageReaction}
+        onRespondToChoice={(message, optionIds) =>
+          respondToChoice(activeConversationId, message.id, optionIds)
+        }
         onRichTextModeChange={setRichTextMode}
         onSendFile={sendFileMessage}
         onSendImage={sendImageMessage}
