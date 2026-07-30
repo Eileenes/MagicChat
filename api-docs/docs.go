@@ -4819,6 +4819,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "string",
+                        "description": "语音识别文字，最多 5000 个字符",
+                        "name": "transcript",
+                        "in": "formData"
+                    },
+                    {
                         "type": "file",
                         "description": "WebM/Opus 语音文件",
                         "name": "voice",
