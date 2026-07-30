@@ -132,6 +132,9 @@
   html {
     @apply font-sans;
     }
+  img {
+    dynamic-range-limit: standard;
+    }
 }
 
 @layer components {
