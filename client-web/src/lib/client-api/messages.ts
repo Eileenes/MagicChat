@@ -1167,9 +1167,7 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
   }
 
   if (body.type === "voice") {
-    const summary = `[语音] ${formatVoiceMessageDuration(body.durationMS)}`
-
-    return body.transcript ? `${summary} - ${body.transcript}` : summary
+    return body.transcript ? `[语音] ${body.transcript}` : "[语音]"
   }
 
   if (body.type === "forward_bundle") {
@@ -1239,12 +1237,6 @@ function truncateForwardBundleSummary(content: string) {
   }
 
   return `${characters.slice(0, 100).join("").trim()}…`
-}
-
-function formatVoiceMessageDuration(durationMS: number) {
-  const totalSeconds = Math.ceil(durationMS / 1_000)
-
-  return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`
 }
 
 function formatMarkdownMessageSummary(content: string) {
