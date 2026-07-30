@@ -17,7 +17,7 @@ npm run build
 npm run preview
 ```
 
-生产文件输出到 `dist/`。默认按 GitHub Pages 地址 `https://duke-yeah.github.io/MagicChat/` 生成 canonical、sitemap 与资源路径；正式部署时可通过以下变量覆盖：
+生产文件输出到 `dist/`。正式部署时设置站点域名和部署路径，用于生成 canonical、sitemap 与静态资源地址：
 
 ```bash
 SITE_URL=https://example.com PUBLIC_BASE_PATH=/ npm run build
@@ -32,8 +32,6 @@ PUBLIC_GA_ID=G-XXXXXXXXXX npm run build
 ```
 
 未设置或格式无效时不会加载 Google Analytics。启用后，页面会先以拒绝分析存储的 Consent Mode 初始化，访客允许后再更新授权状态。
-
-GitHub Pages 工作流会读取仓库变量 `GA_MEASUREMENT_ID`。在仓库 Settings → Secrets and variables → Actions → Variables 中添加该变量即可启用生产环境统计。
 
 ## SEO
 

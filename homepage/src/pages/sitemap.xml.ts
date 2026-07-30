@@ -3,7 +3,7 @@ import type { APIRoute } from 'astro';
 const paths = ['', 'privacy/'];
 
 export const GET: APIRoute = ({ site }) => {
-  const baseUrl = new URL(import.meta.env.BASE_URL, site);
+  const baseUrl = new URL(import.meta.env.BASE_URL, site ?? 'http://localhost');
   const urls = paths
     .map((path) => `<url><loc>${new URL(path, baseUrl).href}</loc><changefreq>${path ? 'yearly' : 'weekly'}</changefreq><priority>${path ? '0.3' : '1.0'}</priority></url>`)
     .join('');
