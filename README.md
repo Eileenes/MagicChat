@@ -45,7 +45,7 @@
 ## 产品主页
 
 - 访问地址：<https://duke-yeah.github.io/MagicChat/>
-- GitHub Pages 源码位于 [`website`](website)。
+- GitHub Pages 源码位于 [`homepage`](homepage)。
 - 推送到 `main` 分支后，GitHub Actions 会自动构建并部署产品主页。
 
 ## 未来方向
