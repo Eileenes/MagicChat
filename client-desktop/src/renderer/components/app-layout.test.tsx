@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { MemoryRouter, Route, Routes } from "react-router"
@@ -12,6 +12,7 @@ import { configureDesktopHost } from "@/lib/desktop-host"
 
 const mocks = vi.hoisted(() => ({
   clientData: {
+    clearMessageScope: vi.fn(),
     conversations: [] as Array<{ unreadCount: number }>,
     me: {
       avatar: "",
@@ -161,6 +162,28 @@ describe("AppLayout", () => {
     expect(await screen.findByRole("heading", { name: "即应 智能协作平台" })).toBeInTheDocument()
     expect(screen.queryByTestId("init-page")).not.toBeInTheDocument()
     expect(mocks.clientLogout).toHaveBeenCalledTimes(1)
+    expect(mocks.clientData.clearMessageScope).toHaveBeenCalledTimes(1)
+    expect(mocks.clientLogout.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.clientData.clearMessageScope.mock.invocationCallOrder[0],
+    )
+  })
+
+  it("远端退出失败时保留本地会话", async () => {
+    const user = userEvent.setup()
+    mocks.clientLogout.mockRejectedValue(new Error("network unavailable"))
+
+    render(<LogoutFlow />)
+
+    await user.click(screen.getByRole("button", { name: "用户菜单" }))
+    await user.click(screen.getByRole("menuitem", { name: "退出登录" }))
+    const dialog = await screen.findByRole("alertdialog", { name: "确认退出登录" })
+    await user.click(within(dialog).getByRole("button", { name: "退出登录" }))
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument())
+
+    expect(screen.queryByRole("heading", { name: "即应 智能协作平台" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "用户菜单" })).toBeInTheDocument()
+    expect(mocks.clientLogout).toHaveBeenCalledTimes(1)
+    expect(mocks.clientData.clearMessageScope).not.toHaveBeenCalled()
   })
 })
 

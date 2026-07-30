@@ -13,6 +13,7 @@ import {
   Server,
   ShieldCheck,
   Sparkles,
+  Trash2,
   UsersRound,
   XIcon,
 } from "lucide-react"
@@ -40,6 +41,8 @@ import { installDesktopLinkNavigation } from "@/lib/desktop-link-navigation"
 import { startRuntimeDiagnostics } from "@/lib/runtime-diagnostics"
 import { releaseChannelLabel } from "@/release-channel"
 import { BrandLoadingScreen } from "@/components/brand-loading-screen"
+import { clearManagedMessageCache, configureMessageCacheTarget } from "@/lib/messages"
+import type { MessageCacheStats } from "@shared/message-cache-contract"
 
 export function DesktopRoot() {
   return (
@@ -159,6 +162,7 @@ function DesktopWorkspace({
       {settingsOpen && (
         <DesktopSettingsPanel
           profile={profile}
+          target={target}
           updater={updater}
           onMessageSoundEnabledChange={onMessageSoundEnabledChange}
           onOpenChange={setSettingsOpen}
@@ -339,6 +343,7 @@ function DesktopHostedApp({
 
   useEffect(() => {
     const restoreFetch = installDesktopFetch(target)
+    const restoreMessageCacheTarget = configureMessageCacheTarget(target)
     const restoreHost = configureDesktopHost({
       cancelThirdPartyLogin: (transactionId) => window.desktop.auth.cancel(transactionId),
       createRealtimeClient: (options) =>
@@ -405,6 +410,7 @@ function DesktopHostedApp({
       unsubscribeNavigation()
       restoreHost()
       restoreFetch()
+      restoreMessageCacheTarget()
     }
   }, [onAuthenticated, onOpenSettings, profile, target])
 
@@ -417,6 +423,7 @@ function DesktopHostedApp({
 
 function DesktopSettingsPanel({
   profile,
+  target,
   updater,
   onMessageSoundEnabledChange,
   onOpenChange,
@@ -424,6 +431,7 @@ function DesktopSettingsPanel({
   onUpdaterChange,
 }: {
   profile: ServerProfile
+  target: AuthenticatedTarget
   updater: UpdaterState
   onMessageSoundEnabledChange(enabled: boolean): void
   onOpenChange(open: boolean): void
@@ -436,15 +444,35 @@ function DesktopSettingsPanel({
   const [busy, setBusy] = useState(false)
   const [removeError, setRemoveError] = useState("")
   const [settingsError, setSettingsError] = useState("")
+  const [cacheStats, setCacheStats] = useState<MessageCacheStats>()
+  const [cacheClearing, setCacheClearing] = useState(false)
 
   useEffect(() => {
-    void Promise.all([window.desktop.settings.get(), window.desktop.app.info()]).then(
-      ([nextSettings, nextInfo]) => {
-        setSettings(nextSettings)
-        setAppInfo(nextInfo)
-      },
-    )
-  }, [])
+    void Promise.all([
+      window.desktop.settings.get(),
+      window.desktop.app.info(),
+      window.desktop.messageCache.getStats(target).catch(() => undefined),
+    ]).then(([nextSettings, nextInfo, nextCacheStats]) => {
+      setSettings(nextSettings)
+      setAppInfo(nextInfo)
+      setCacheStats(nextCacheStats)
+    })
+  }, [target])
+
+  async function clearMessageCache() {
+    if (!window.confirm("清理当前账户的本地消息缓存？")) return
+    setCacheClearing(true)
+    setSettingsError("")
+    try {
+      const managed = await clearManagedMessageCache(target)
+      if (!managed) await window.desktop.messageCache.clearUser(target)
+      setCacheStats(await window.desktop.messageCache.getStats(target))
+    } catch {
+      setSettingsError("本地消息缓存清理失败，请重试")
+    } finally {
+      setCacheClearing(false)
+    }
+  }
 
   async function updateSettings(patch: DesktopSettingsPatch) {
     setSettingsError("")
@@ -616,6 +644,31 @@ function DesktopSettingsPanel({
             </section>
             <section className="desktop-setting-section">
               <div className="desktop-setting-section-heading">
+                <HardDriveDownload size={17} />
+                <div>
+                  <h3>本地消息缓存</h3>
+                  <p>最近消息的本机恢复数据</p>
+                </div>
+              </div>
+              <div className="desktop-setting-card">
+                <span>
+                  <strong>{formatCacheSize(cacheStats?.payloadBytes ?? 0)}</strong>
+                  <small>{cacheStatusText(cacheStats?.status)}</small>
+                </span>
+                <button
+                  aria-label="清理本地消息缓存"
+                  className="desktop-icon-action"
+                  disabled={cacheClearing}
+                  onClick={() => void clearMessageCache()}
+                  title="清理本地消息缓存"
+                  type="button"
+                >
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            </section>
+            <section className="desktop-setting-section">
+              <div className="desktop-setting-section-heading">
                 <Server size={17} />
                 <div>
                   <h3>工作空间</h3>
@@ -662,6 +715,19 @@ function DesktopSettingsPanel({
       </SheetContent>
     </Sheet>
   )
+}
+
+function formatCacheSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`
+}
+
+function cacheStatusText(status: MessageCacheStats["status"] | undefined): string {
+  if (status === "available") return "缓存可用，不包含附件文件"
+  if (status === "rebuilding") return "正在重建缓存，在线聊天不受影响"
+  if (status === "degraded") return "缓存暂不可用，已切换为内存模式"
+  return "正在读取缓存状态"
 }
 
 function DesktopAboutSettingsSection({

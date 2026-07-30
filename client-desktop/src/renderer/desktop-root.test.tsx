@@ -135,6 +135,46 @@ describe("桌面设置服务器管理", () => {
     await waitFor(() => expect(mocks.messageNotificationSoundEnabled?.()).toBe(false))
   })
 
+  it("将本地消息缓存展示在通知与隐私下方并右对齐清理按钮", async () => {
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+
+    const notificationHeading = screen.getByRole("heading", { name: "通知与隐私" })
+    const cacheHeading = screen.getByRole("heading", { name: "本地消息缓存" })
+    expect(
+      notificationHeading.compareDocumentPosition(cacheHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    const cacheButton = screen.getByRole("button", { name: "清理本地消息缓存" })
+    expect(cacheButton).toHaveClass("desktop-icon-action")
+
+    const source = await readFile(path.resolve(process.cwd(), "src/renderer/styles.css"), "utf8")
+    expect(source).toMatch(/\.desktop-icon-action\s*\{[^}]*justify-self:\s*end/)
+  })
+
+  it("确认后清理当前账户缓存并刷新统计", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await user.click(screen.getByRole("button", { name: "清理本地消息缓存" }))
+
+    await waitFor(() => expect(bridge.messageCache.clearUser).toHaveBeenCalledOnce())
+    expect(bridge.messageCache.clearUser).toHaveBeenCalledWith({
+      id: profile.id,
+      normalizedUrl: profile.normalizedUrl,
+      userId: profile.lastUserId ?? "anonymous",
+    })
+    expect(bridge.messageCache.getStats).toHaveBeenCalledTimes(2)
+  })
+
   it("设置保存失败时保留原值并显示错误", async () => {
     const bridge = createDesktopBridge()
     vi.mocked(bridge.settings.set).mockRejectedValueOnce(
@@ -641,6 +681,26 @@ function createDesktopBridge(
       openLocation: vi.fn(),
       pick: vi.fn(),
       upload: vi.fn(),
+    },
+    messageCache: {
+      clearConversation: vi.fn(),
+      clearUser: vi.fn(),
+      commitAfter: vi.fn(),
+      commitBefore: vi.fn(),
+      commitLatest: vi.fn(),
+      getById: vi.fn(),
+      getStats: vi.fn().mockResolvedValue({
+        conversationCount: 0,
+        messageCount: 0,
+        payloadBytes: 0,
+        status: "available",
+      }),
+      getSyncState: vi.fn(),
+      listSyncStates: vi.fn(),
+      readBefore: vi.fn(),
+      readRecent: vi.fn(),
+      removeMessage: vi.fn(),
+      upsert: vi.fn(),
     },
     navigation: {
       subscribe: vi.fn().mockReturnValue(unsubscribe),

@@ -35,6 +35,24 @@ const bridge: DesktopBridge = {
     pick: (options) => ipcRenderer.invoke(IPC.filesPick, options),
     upload: (target, path, fileId) => ipcRenderer.invoke(IPC.filesUpload, target, path, fileId),
   },
+  messageCache: {
+    clearConversation: (scope) => ipcRenderer.invoke(IPC.messageCacheClearConversation, scope),
+    clearUser: (target) => ipcRenderer.invoke(IPC.messageCacheClearUser, target),
+    commitAfter: (scope, input) => ipcRenderer.invoke(IPC.messageCacheCommitAfter, scope, input),
+    commitBefore: (scope, input) => ipcRenderer.invoke(IPC.messageCacheCommitBefore, scope, input),
+    commitLatest: (scope, input) => ipcRenderer.invoke(IPC.messageCacheCommitLatest, scope, input),
+    getById: (scope, messageId) => ipcRenderer.invoke(IPC.messageCacheGetById, scope, messageId),
+    getStats: (target) => ipcRenderer.invoke(IPC.messageCacheGetStats, target),
+    getSyncState: (scope) => ipcRenderer.invoke(IPC.messageCacheGetSyncState, scope),
+    listSyncStates: (target) => ipcRenderer.invoke(IPC.messageCacheListSyncStates, target),
+    readBefore: (scope, beforeSeq, limit) =>
+      ipcRenderer.invoke(IPC.messageCacheReadBefore, scope, beforeSeq, limit),
+    readRecent: (scope, limit) => ipcRenderer.invoke(IPC.messageCacheReadRecent, scope, limit),
+    removeMessage: (scope, messageId, generation) =>
+      ipcRenderer.invoke(IPC.messageCacheRemoveMessage, scope, messageId, generation),
+    upsert: (scope, records, generation) =>
+      ipcRenderer.invoke(IPC.messageCacheUpsert, scope, records, generation),
+  },
   notifications: { show: (input) => ipcRenderer.invoke(IPC.notificationShow, input) },
   navigation: {
     subscribe: (listener) => subscribe<string>(IPC.navigate, listener),

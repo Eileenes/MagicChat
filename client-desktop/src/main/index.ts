@@ -11,6 +11,7 @@ import { HttpTransport } from "@main/http-transport"
 import { registerIpc } from "@main/ipc"
 import { installLocalProtocol, registerPrivilegedSchemes } from "@main/local-protocol"
 import { NotificationService } from "@main/notification-service"
+import { MessageCacheService } from "@main/message-cache"
 import { RealtimeController } from "@main/realtime-controller"
 import { ProxyAuthPrompt } from "@main/proxy-auth"
 import { ServerProfiles } from "@main/server-profiles"
@@ -18,8 +19,10 @@ import { SessionController } from "@main/session-controller"
 import { runtimeIconPath, runtimeTrayIconPath, SystemIntegration } from "@main/system-integration"
 import { UpdaterService } from "@main/updater-service"
 import { StreamingUploadController } from "@main/streaming-upload"
+import { prepareUpdateInstall } from "@main/update-install-lifecycle"
 import { StartupHealth } from "@main/startup-health"
 import { WindowController } from "@main/window-controller"
+import messageCacheWorkerPath from "@main/message-cache/message-cache-worker?modulePath"
 
 registerPrivilegedSchemes()
 
@@ -49,6 +52,12 @@ async function start(): Promise<void> {
   const store = new ConfigStore(app.getPath("userData"))
   await store.load()
   const profiles = new ServerProfiles(store)
+  const messageCache = new MessageCacheService(
+    app.getPath("userData"),
+    messageCacheWorkerPath,
+    profiles,
+  )
+  await messageCache.initialize().catch(() => undefined)
   const sessions = new SessionController()
   installLocalProtocol(path.resolve(__dirname, "../renderer"), profiles, sessions)
   const files = new FileService(profiles, sessions)
@@ -97,10 +106,7 @@ async function start(): Promise<void> {
   const uploads = new StreamingUploadController(profiles, sessions)
   const updater = new UpdaterService({
     hasActiveTransfers: () => files.hasActiveTransfers() || uploads.hasActiveTransfers(),
-    prepareInstall: async () => {
-      windows.prepareToQuit()
-      return () => windows.cancelPrepareToQuit()
-    },
+    prepareInstall: () => prepareUpdateInstall({ messageCache, windows }),
   })
   const unregisterIpc = registerIpc({
     auth,
@@ -108,6 +114,7 @@ async function start(): Promise<void> {
     diagnostics,
     files,
     http,
+    messageCache,
     notifications,
     profiles,
     realtime,
@@ -169,13 +176,15 @@ async function start(): Promise<void> {
     auth.dispose()
     realtime.closeAll()
     event.preventDefault()
-    void files.cleanup().finally(() => {
+    void Promise.all([files.cleanup(), messageCache.close()]).finally(() => {
       updater.dispose()
-      unregisterIpc()
       app.quit()
     })
   })
-  app.once("will-quit", () => updater.dispose())
+  app.once("will-quit", () => {
+    unregisterIpc()
+    updater.dispose()
+  })
   process.on("uncaughtException", (error) => void diagnostics.record("main", error.name))
   process.on("unhandledRejection", () => void diagnostics.record("main", "unhandled-rejection"))
   app.on("child-process-gone", (_event, details) => {
