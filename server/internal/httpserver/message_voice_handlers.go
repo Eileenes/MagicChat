@@ -10,7 +10,6 @@ const (
 	maxVoiceMessageUploadBytes = 1 * 1024 * 1024
 	messageTypeVoice           = "voice"
 	voiceMessageContentType    = "audio/webm"
-	voiceMessageDemoTranscript = "这是一段语音消息的演示转写文字"
 )
 
 var webMHeader = []byte{0x1a, 0x45, 0xdf, 0xa3}

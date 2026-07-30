@@ -1302,6 +1302,7 @@ export type SendConversationVoiceMessageInput = {
   clientMessageId: string
   durationMS: number
   replyToMessageId?: string
+  transcript?: string
   voice: Blob
 }
 

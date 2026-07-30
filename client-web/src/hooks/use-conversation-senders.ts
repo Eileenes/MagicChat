@@ -327,6 +327,7 @@ export function useConversationSenders({
           clientMessageId,
           durationMS: voice.durationMS,
           replyToMessageId: options.replyToMessageId,
+          transcript: voice.transcript,
           voice: voice.blob,
         })
         mergeIncomingConversationMessage(message, { markLoaded: true })

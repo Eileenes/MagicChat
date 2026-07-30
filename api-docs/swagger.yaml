@@ -4578,6 +4578,10 @@ paths:
         name: duration_ms
         required: true
         type: integer
+      - description: 语音识别文字，最多 5000 个字符
+        in: formData
+        name: transcript
+        type: string
       - description: WebM/Opus 语音文件
         in: formData
         name: voice

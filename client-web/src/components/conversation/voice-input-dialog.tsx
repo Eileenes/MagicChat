@@ -40,7 +40,7 @@ export function VoiceInputDialog({
   sending,
 }: VoiceInputDialogProps) {
   const [transcript, setTranscript] = React.useState("")
-  const recording = useVoiceRecording()
+  const recording = useVoiceRecording({ onTranscript: setTranscript })
   const canChooseSendMethod = recording.status === "recorded"
 
   function handleOpenChange(nextOpen: boolean) {
@@ -66,7 +66,10 @@ export function VoiceInputDialog({
       return
     }
 
-    const message = await onSendVoice(recording.recording)
+    const message = await onSendVoice({
+      ...recording.recording,
+      transcript: transcript.trim(),
+    })
     if (message) {
       onOpenChange(false)
       setTranscript("")
@@ -106,6 +109,11 @@ export function VoiceInputDialog({
           {recording.error && (
             <p className="text-sm text-destructive">{recording.error}</p>
           )}
+          {recording.transcriptionError && (
+            <p className="text-sm text-muted-foreground">
+              {recording.transcriptionError}，仍可发送语音或手动填写文字
+            </p>
+          )}
           {recording.status !== "idle" && (
             <div className="grid gap-2">
               <label
@@ -121,8 +129,8 @@ export function VoiceInputDialog({
                 onChange={(event) => setTranscript(event.target.value)}
                 placeholder={
                   canChooseSendMethod
-                    ? "转写服务接入后，识别结果会显示在这里；现在可以手动填写"
-                    : "录音完成后，识别文字会显示在这里"
+                    ? "可以修改识别结果，或直接发送"
+                    : "正在识别语音内容"
                 }
                 value={transcript}
               />
@@ -157,10 +165,11 @@ export function VoiceInputDialog({
               结束录音
             </Button>
           )}
-          {recording.status === "processing" && (
+          {(recording.status === "processing" ||
+            recording.status === "transcribing") && (
             <Button disabled type="button">
               <LoaderCircle className="animate-spin" />
-              正在生成
+              {recording.status === "transcribing" ? "正在识别" : "正在结束"}
             </Button>
           )}
           {canChooseSendMethod && (

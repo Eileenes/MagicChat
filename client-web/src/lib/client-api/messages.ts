@@ -753,6 +753,9 @@ export async function sendConversationVoiceMessage(
   if (input.replyToMessageId) {
     formData.set("reply_to_message_id", input.replyToMessageId)
   }
+  if (input.transcript) {
+    formData.set("transcript", input.transcript)
+  }
   formData.set("voice", input.voice, "voice-message.webm")
 
   const response = await fetcher(

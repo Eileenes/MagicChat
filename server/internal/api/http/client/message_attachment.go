@@ -30,11 +30,11 @@ const (
 	maxImageMessageRequestBytes = maxImageMessageUploadBytes + 1*1024*1024
 	maxImageMessageDimension    = 1920
 
-	maxVoiceMessageDurationMS   = 60_000
-	maxVoiceMessageUploadBytes  = 1 * 1024 * 1024
-	maxVoiceMessageRequestBytes = maxVoiceMessageUploadBytes + 512*1024
-	voiceMessageContentType     = "audio/webm"
-	voiceMessageDemoTranscript  = "这是一段语音消息的演示转写文字"
+	maxVoiceMessageDurationMS       = 60_000
+	maxVoiceMessageUploadBytes      = 1 * 1024 * 1024
+	maxVoiceMessageRequestBytes     = maxVoiceMessageUploadBytes + 512*1024
+	maxVoiceMessageTranscriptLength = 5_000
+	voiceMessageContentType         = "audio/webm"
 )
 
 var (
@@ -266,6 +266,7 @@ func (a *MessageAPI) createImage(c echo.Context) error {
 // @Param client_message_id formData string true "客户端消息 ID"
 // @Param reply_to_message_id formData string false "引用消息 ID"
 // @Param duration_ms formData int true "语音时长（毫秒，最大 60000）"
+// @Param transcript formData string false "语音识别文字，最多 5000 个字符"
 // @Param voice formData file true "WebM/Opus 语音文件"
 // @Success 200 {object} successEnvelope{data=createMessageResponse}
 // @Success 201 {object} successEnvelope{data=createMessageResponse}
@@ -294,6 +295,10 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 	}
 	clientMessageID := c.FormValue("client_message_id")
 	replyToMessageID := c.FormValue("reply_to_message_id")
+	transcript, err := normalizeVoiceMessageTranscript(c.FormValue("transcript"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
 	if handled, err := a.prepareAttachmentUpload(c, current.ID, conversationID, clientMessageID, replyToMessageID); handled || err != nil {
 		return err
 	}
@@ -338,7 +343,7 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 	}
 	body, err := json.Marshal(voiceMessageBody{
 		Type: "voice", FileID: temporary.ID, DurationMS: durationMS, SizeBytes: temporary.SizeBytes,
-		ContentType: voiceMessageContentType, Transcript: voiceMessageDemoTranscript,
+		ContentType: voiceMessageContentType, Transcript: transcript,
 	})
 	if err != nil {
 		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
@@ -346,7 +351,7 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 	return a.createPreparedAttachment(c, messageapp.CreatePreparedCommand{
 		AccountID: current.ID, Body: body, ClientMessageID: clientMessageID,
 		ConversationID: conversationID, ReplyToMessageID: replyToMessageID,
-		Summary: voiceMessageSummary(durationMS, voiceMessageDemoTranscript),
+		Summary: voiceMessageSummary(durationMS, transcript),
 	})
 }
 
@@ -417,6 +422,14 @@ func normalizeVoiceMessageDuration(raw string) (int, error) {
 		return 0, errors.New("语音时长不能超过 60 秒")
 	}
 	return duration, nil
+}
+
+func normalizeVoiceMessageTranscript(raw string) (string, error) {
+	transcript := strings.TrimSpace(raw)
+	if len([]rune(transcript)) > maxVoiceMessageTranscriptLength {
+		return "", errors.New("语音转写不能超过 5000 个字符")
+	}
+	return transcript, nil
 }
 
 func readVoiceMessageUpload(reader io.Reader) ([]byte, error) {

@@ -17,6 +17,8 @@ import (
 	"app/internal/store"
 )
 
+const testVoiceTranscript = "这是识别后的语音文字"
+
 func TestClientCanSendConversationVoiceMessage(t *testing.T) {
 	s3Server, uploadedObjects := newFakeS3Server(t)
 	defer s3Server.Close()
@@ -70,8 +72,8 @@ func TestClientCanSendConversationVoiceMessage(t *testing.T) {
 	if messageBody["content_type"] != voiceMessageContentType {
 		t.Fatalf("message.body.content_type = %v, want %s", messageBody["content_type"], voiceMessageContentType)
 	}
-	if messageBody["transcript"] != voiceMessageDemoTranscript {
-		t.Fatalf("message.body.transcript = %v, want %s", messageBody["transcript"], voiceMessageDemoTranscript)
+	if messageBody["transcript"] != testVoiceTranscript {
+		t.Fatalf("message.body.transcript = %v, want %s", messageBody["transcript"], testVoiceTranscript)
 	}
 	var storedFile store.TemporaryFile
 	if err := db.First(&storedFile, "id = ?", fileID).Error; err != nil {
@@ -93,7 +95,7 @@ func TestClientCanSendConversationVoiceMessage(t *testing.T) {
 	if err := db.First(&storedMessage, "id = ?", message["id"]).Error; err != nil {
 		t.Fatalf("find stored message: %v", err)
 	}
-	expectedSummary := "[语音] 00:43 - " + voiceMessageDemoTranscript
+	expectedSummary := "[语音] 00:43 - " + testVoiceTranscript
 	if storedMessage.Summary != expectedSummary {
 		t.Fatalf("stored message summary = %q, want %q", storedMessage.Summary, expectedSummary)
 	}
@@ -109,7 +111,7 @@ func TestClientCanSendConversationVoiceMessage(t *testing.T) {
 	if pushedBody["type"] != messageTypeVoice ||
 		pushedBody["file_id"] != fileID ||
 		pushedBody["duration_ms"] != float64(42_800) ||
-		pushedBody["transcript"] != voiceMessageDemoTranscript {
+		pushedBody["transcript"] != testVoiceTranscript {
 		t.Fatalf("pushed voice body = %#v", pushedBody)
 	}
 }
@@ -245,6 +247,9 @@ func postMultipartVoiceMessage(
 	}
 	if err := writer.WriteField("duration_ms", strconv.Itoa(durationMS)); err != nil {
 		t.Fatalf("write duration: %v", err)
+	}
+	if err := writer.WriteField("transcript", testVoiceTranscript); err != nil {
+		t.Fatalf("write transcript: %v", err)
 	}
 	header := make(textproto.MIMEHeader)
 	header.Set("Content-Disposition", `form-data; name="voice"; filename="voice-message.webm"`)
