@@ -157,7 +157,7 @@ export function VoiceInputDialog({
           )}
           {recording.status === "recording" && (
             <Button
-              onClick={recording.stopRecording}
+              onClick={() => recording.stopRecording()}
               type="button"
               variant="destructive"
             >

@@ -470,6 +470,7 @@ function createClientDataValue(
     updateConversationLastMessage: vi.fn(),
     updateConversationPinned: vi.fn(),
     updateConversationMuted: vi.fn(),
+    updateGroupConversationAnnouncement: vi.fn(),
     updateGroupConversationAvatar: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,

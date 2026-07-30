@@ -12,6 +12,7 @@ import type {
   GroupMemberLeftSystemEventBodyResponse,
   GroupMemberRemovedSystemEventBodyResponse,
   GroupNameUpdatedSystemEventBodyResponse,
+  GroupAnnouncementUpdatedSystemEventBodyResponse,
   MessageRevokedSystemEventBodyResponse,
   TopicClosedSystemEventBodyResponse,
   MessageBodyResponse,
@@ -34,6 +35,7 @@ import type {
   ClientGroupMemberLeftSystemEventBody,
   ClientGroupMemberRemovedSystemEventBody,
   ClientGroupNameUpdatedSystemEventBody,
+  ClientGroupAnnouncementUpdatedSystemEventBody,
   ClientMessageRevokedSystemEventBody,
   ClientTopicClosedSystemEventBody,
   ClientMessageBody,
@@ -563,6 +565,7 @@ function normalizeSystemEventMessageBody(
     | GroupMemberLeftSystemEventBodyResponse
     | GroupMemberRemovedSystemEventBodyResponse
     | GroupNameUpdatedSystemEventBodyResponse
+    | GroupAnnouncementUpdatedSystemEventBodyResponse
     | MessageRevokedSystemEventBodyResponse
     | TopicClosedSystemEventBodyResponse
 ):
@@ -573,6 +576,7 @@ function normalizeSystemEventMessageBody(
   | ClientGroupMemberLeftSystemEventBody
   | ClientGroupMemberRemovedSystemEventBody
   | ClientGroupNameUpdatedSystemEventBody
+  | ClientGroupAnnouncementUpdatedSystemEventBody
   | ClientMessageRevokedSystemEventBody
   | ClientTopicClosedSystemEventBody {
   if (body.event === "topic_closed") {
