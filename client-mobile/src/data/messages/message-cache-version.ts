@@ -1,7 +1,7 @@
-export const MESSAGE_CACHE_DATABASE_VERSION = 3
+export const MESSAGE_CACHE_DATABASE_VERSION = 4
 
 export function requiresNormalizedMessageCacheReset(previousVersion: number) {
-  return previousVersion < 3
+  return previousVersion < 4
 }
 
 export function createMessageCacheMigrationSQL(previousVersion: number) {

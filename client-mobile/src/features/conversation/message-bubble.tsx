@@ -103,6 +103,12 @@ export function MessageBubble({
     message.body.type === "link" ||
     message.body.type === "card" ||
     message.body.type === "choice"
+  const structuredBubbleWidth =
+    message.body.type === "chart"
+      ? "82%"
+      : usesStructuredBubbleWidth
+        ? "66%"
+        : undefined
   const avatar = sender ? (
     <Button
       aria-label={`查看${fromMe ? "我的" : message.author}资料`}
@@ -155,7 +161,7 @@ export function MessageBubble({
         gap="$1"
         items={fromMe ? "flex-end" : "flex-start"}
         maxW="82%"
-        width={usesStructuredBubbleWidth ? "66%" : undefined}
+        width={structuredBubbleWidth}
       >
         <XStack gap="$2" items="center">
           <SizableText color="$color10" numberOfLines={1} size="$2">
@@ -183,7 +189,7 @@ export function MessageBubble({
           }
           style={{
             maxWidth: "100%",
-            width: usesStructuredBubbleWidth ? "100%" : undefined,
+            width: structuredBubbleWidth ? "100%" : undefined,
           }}
         >
           <YStack
@@ -203,7 +209,7 @@ export function MessageBubble({
             maxW="100%"
             overflow="hidden"
             p={flushImageBubble ? 0 : "$3"}
-            width={usesStructuredBubbleWidth ? "100%" : undefined}
+            width={structuredBubbleWidth ? "100%" : undefined}
           >
             {message.replyTo ? (
               <YStack
@@ -240,6 +246,7 @@ export function MessageBubble({
               <MessageBody
                 body={message.body}
                 currentUserId={currentUserId}
+                flushImage={flushImageBubble}
                 onImagePress={onImagePress}
                 onMentionPress={onMentionPress}
                 onResourceError={onResourceError}

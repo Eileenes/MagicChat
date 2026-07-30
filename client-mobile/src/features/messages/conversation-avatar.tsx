@@ -24,26 +24,36 @@ export function ConversationAvatar({
   conversation,
   server,
   surroundingBackground = "$color1",
+  topicSourceOnly = false,
 }: {
   conversation: ClientConversation
   server: ServerTarget
   surroundingBackground?: ColorTokens
+  topicSourceOnly?: boolean
 }) {
   const avatarName = getConversationAvatarName(conversation)
   const avatarType = getConversationAvatarType(conversation)
   const sourceSender =
     conversation.type === "topic" ? conversation.topic?.sourceSender : undefined
+  const usesTopicSourceAvatar = Boolean(topicSourceOnly && sourceSender)
 
   return (
-    <YStack height="$4" width="$4">
-      <BaseConversationAvatar
-        avatarName={avatarName}
-        avatarType={avatarType}
-        conversation={conversation}
-        server={server}
-      />
+    <YStack
+      height={usesTopicSourceAvatar ? 32 : "$4"}
+      width={usesTopicSourceAvatar ? 32 : "$4"}
+    >
+      {usesTopicSourceAvatar && sourceSender ? (
+        <TopicSourceAvatar server={server} sourceSender={sourceSender} />
+      ) : (
+        <BaseConversationAvatar
+          avatarName={avatarName}
+          avatarType={avatarType}
+          conversation={conversation}
+          server={server}
+        />
+      )}
 
-      {sourceSender ? (
+      {sourceSender && !usesTopicSourceAvatar ? (
         <YStack
           accessibilityLabel={`话题来源：${sourceSender.name}`}
           b={-4}
@@ -94,6 +104,33 @@ export function ConversationAvatar({
         </XStack>
       ) : null}
     </YStack>
+  )
+}
+
+function TopicSourceAvatar({
+  server,
+  sourceSender,
+}: {
+  server: ServerTarget
+  sourceSender: NonNullable<ClientConversation["topic"]>["sourceSender"]
+}) {
+  return (
+    <Avatar
+      accessibilityLabel={`话题来源：${sourceSender.name}`}
+      rounded="$10"
+      size={32}
+    >
+      <CachedAvatarImage avatar={sourceSender.avatar} server={server} />
+      <Avatar.Fallback bg="$backgroundFocus" items="center" justify="center">
+        {sourceSender.type === "app" ? (
+          <ThemedIcon icon={Bot} size={14} />
+        ) : (
+          <SizableText fontSize={13} fontWeight="600" lineHeight={16}>
+            {getConversationInitial(sourceSender.name)}
+          </SizableText>
+        )}
+      </Avatar.Fallback>
+    </Avatar>
   )
 }
 

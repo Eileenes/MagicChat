@@ -1,7 +1,7 @@
 import * as Haptics from "expo-haptics"
 import { useRef } from "react"
 import { FlatList, Platform, RefreshControl, StyleSheet } from "react-native"
-import { ListItem, SizableText, useTheme } from "tamagui"
+import { ListItem, SizableText, useTheme, XStack } from "tamagui"
 
 import { ContentState } from "@/components/feedback/content-state"
 import { InlineError } from "@/components/feedback/inline-error"
@@ -100,18 +100,24 @@ function ConversationListItem({
   return (
     <ListItem
       accessibilityLabel={`打开会话 ${conversation.name}`}
-      bg={conversation.pinned ? "$backgroundLight" : "transparent"}
+      bg={item.pinnedBackground ? "$backgroundLight" : "transparent"}
+      height={item.nested ? 52 : 64}
       icon={
-        <ConversationAvatar
-          conversation={conversation}
-          server={server}
-          surroundingBackground={
-            conversation.pinned ? "$backgroundLight" : "$color1"
-          }
-        />
+        <XStack ml={item.nested ? "$4" : undefined}>
+          <ConversationAvatar
+            conversation={conversation}
+            server={server}
+            surroundingBackground={
+              item.pinnedBackground ? "$backgroundLight" : "$color1"
+            }
+            topicSourceOnly={item.nested}
+          />
+        </XStack>
       }
       onLongPress={() => {
         didLongPressRef.current = true
+        if (conversation.type === "topic") return
+
         void performLongPressHaptic()
         onLongPress()
       }}
@@ -121,6 +127,7 @@ function ConversationListItem({
         onPressIn()
       }}
       pressStyle={{ bg: "$backgroundPress" }}
+      py={item.nested ? "$1" : undefined}
       size="$4"
       title={
         <ListItemContent
@@ -134,7 +141,10 @@ function ConversationListItem({
             ) : undefined
           }
           subtitleTrailing={
-            <ConversationPreferenceIndicators conversation={conversation} />
+            <ConversationPreferenceIndicators
+              conversation={conversation}
+              showPinned={!item.nested}
+            />
           }
           title={conversation.name}
         />

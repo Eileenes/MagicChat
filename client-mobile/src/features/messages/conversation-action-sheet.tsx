@@ -102,6 +102,7 @@ export function ConversationActionSheet({
                     conversation={conversation}
                     server={server}
                     surroundingBackground="$background"
+                    topicSourceOnly={conversation.type === "topic"}
                   />
                 }
                 pointerEvents="none"
@@ -120,6 +121,7 @@ export function ConversationActionSheet({
                     subtitleTrailing={
                       <ConversationPreferenceIndicators
                         conversation={conversation}
+                        showPinned={conversation.type !== "topic"}
                       />
                     }
                     title={conversation.name}
@@ -134,7 +136,8 @@ export function ConversationActionSheet({
                 overflow="hidden"
                 rounded="$4"
               >
-                {!isBuiltinAssistantConversation(conversation) ? (
+                {conversation.type !== "topic" &&
+                !isBuiltinAssistantConversation(conversation) ? (
                   <>
                     <ConversationActionItem
                       disabled={busy}

@@ -263,7 +263,15 @@ export function formatClientMessageBodySummary(
   if (body.type === "card") return `[卡片] ${body.title}`
   if (body.type === "chart") return `[图表] ${body.title}`
   if (body.type === "file") return `[文件] ${body.name}`
-  if (body.type === "image") return "[图片]"
+  if (body.type === "image") {
+    if (!body.caption) return "[图片]"
+    const caption =
+      body.captionType === "markdown"
+        ? formatMarkdownAsPlainText(body.caption)
+        : body.caption
+    const summary = formatMentionTemplateText(caption, resolveMentionLabel)
+    return summary ? `[图片] ${summary}` : "[图片]"
+  }
   if (body.type === "voice") {
     const summary = `[语音] ${formatVoiceDuration(body.durationMS)}`
     return body.transcript ? `${summary} - ${body.transcript}` : summary
