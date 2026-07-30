@@ -95,7 +95,7 @@ func TestClientCanSendConversationVoiceMessage(t *testing.T) {
 	if err := db.First(&storedMessage, "id = ?", message["id"]).Error; err != nil {
 		t.Fatalf("find stored message: %v", err)
 	}
-	expectedSummary := "[语音] 00:43 - " + testVoiceTranscript
+	expectedSummary := "[语音] " + testVoiceTranscript
 	if storedMessage.Summary != expectedSummary {
 		t.Fatalf("stored message summary = %q, want %q", storedMessage.Summary, expectedSummary)
 	}
@@ -113,6 +113,47 @@ func TestClientCanSendConversationVoiceMessage(t *testing.T) {
 		pushedBody["duration_ms"] != float64(42_800) ||
 		pushedBody["transcript"] != testVoiceTranscript {
 		t.Fatalf("pushed voice body = %#v", pushedBody)
+	}
+}
+
+func TestClientCanSendConversationM4AVoiceMessage(t *testing.T) {
+	s3Server, _ := newFakeS3Server(t)
+	defer s3Server.Close()
+
+	server, db := newTemporaryFileTestRouter(t, s3Server.URL, "assets.example.test")
+	defer server.Close()
+
+	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "voice-m4a@example.com", "Alice", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID},
+		now:             now,
+	})
+
+	voice := testM4AAACVoice()
+	resp, body := postMultipartVoiceMessage(
+		t,
+		server,
+		"/api/client/conversations/"+conversation.ID+"/messages/voices",
+		"client-m4a-voice-message",
+		2_500,
+		"audio/x-m4a",
+		voice,
+		loginAsUser(t, server, alice.Email),
+	)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("send M4A voice message status = %d, want 201: %#v", resp.StatusCode, body)
+	}
+
+	message := requireSuccess(t, body)["message"].(map[string]any)
+	messageBody := message["body"].(map[string]any)
+	if messageBody["content_type"] != voiceMessageMP4ContentType {
+		t.Fatalf("message.body.content_type = %v, want %s", messageBody["content_type"], voiceMessageMP4ContentType)
+	}
+	if messageBody["size_bytes"] != float64(len(voice)) {
+		t.Fatalf("message.body.size_bytes = %v, want %d", messageBody["size_bytes"], len(voice))
 	}
 }
 
@@ -136,6 +177,34 @@ func TestCreateConversationVoiceMessageValidatesUpload(t *testing.T) {
 			contentType: voiceMessageContentType,
 			durationMS:  1_000,
 			name:        "invalid webm",
+			status:      http.StatusBadRequest,
+		},
+		{
+			content:     testM4AAACVoice(),
+			contentType: voiceMessageMP4ContentType,
+			durationMS:  1_000,
+			name:        "valid m4a",
+			status:      http.StatusCreated,
+		},
+		{
+			content:     []byte("not m4a aac"),
+			contentType: voiceMessageMP4ContentType,
+			durationMS:  1_000,
+			name:        "invalid m4a",
+			status:      http.StatusBadRequest,
+		},
+		{
+			content:     testM4AAACVoice(),
+			contentType: voiceMessageContentType,
+			durationMS:  1_000,
+			name:        "m4a content declared as webm",
+			status:      http.StatusBadRequest,
+		},
+		{
+			content:     testWebMOpusVoice(),
+			contentType: voiceMessageMP4ContentType,
+			durationMS:  1_000,
+			name:        "webm content declared as m4a",
 			status:      http.StatusBadRequest,
 		},
 		{
@@ -252,7 +321,11 @@ func postMultipartVoiceMessage(
 		t.Fatalf("write transcript: %v", err)
 	}
 	header := make(textproto.MIMEHeader)
-	header.Set("Content-Disposition", `form-data; name="voice"; filename="voice-message.webm"`)
+	fileName := "voice-message.webm"
+	if contentType == voiceMessageMP4ContentType || contentType == "audio/x-m4a" || contentType == "audio/m4a" {
+		fileName = "voice-message.m4a"
+	}
+	header.Set("Content-Disposition", `form-data; name="voice"; filename="`+fileName+`"`)
 	header.Set("Content-Type", contentType)
 	part, err := writer.CreatePart(header)
 	if err != nil {
@@ -293,4 +366,14 @@ func testWebMOpusVoice() []byte {
 		),
 		[]byte("OpusHead\x01\x01\x00\x00\x80\xbb\x00\x00\x00\x00\x00")...,
 	)
+}
+
+func testM4AAACVoice() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p',
+		'M', '4', 'A', ' ', 0x00, 0x00, 0x00, 0x00,
+		'i', 's', 'o', 'm', 'm', 'p', '4', '2',
+		0x00, 0x00, 0x00, 0x0c, 'm', 'o', 'o', 'v',
+		'm', 'p', '4', 'a',
+	}
 }

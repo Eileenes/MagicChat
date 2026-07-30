@@ -9,24 +9,25 @@ describe("MessageCard", () => {
   it("renders an internal action as a router link", () => {
     renderCard(createCard("/projects/project-1?taskId=task-1"))
 
-    expect(screen.getByText("任务标题")).toBeInTheDocument()
-    expect(screen.getByText("任务说明")).toBeInTheDocument()
+    expect(screen.getByText("任务标题")).toHaveClass("truncate")
+    expect(screen.getByText("任务说明")).toHaveClass("whitespace-pre-wrap")
+    expect(screen.getByText("任务说明")).not.toHaveClass("truncate")
     expect(
       screen.getByRole("link", { name: "任务标题，查看详情" })
     ).toHaveAttribute("href", "/projects/project-1?taskId=task-1")
   })
 
-  it.each([
-    "http://example.com/tasks/1",
-    "https://example.com/tasks/1",
-  ])("opens external URL %s in a new window", (url) => {
-    renderCard(createCard(url))
+  it.each(["http://example.com/tasks/1", "https://example.com/tasks/1"])(
+    "opens external URL %s in a new window",
+    (url) => {
+      renderCard(createCard(url))
 
-    const link = screen.getByRole("link", { name: "任务标题，查看详情" })
-    expect(link).toHaveAttribute("href", url)
-    expect(link).toHaveAttribute("target", "_blank")
-    expect(link).toHaveAttribute("rel", "noopener noreferrer")
-  })
+      const link = screen.getByRole("link", { name: "任务标题，查看详情" })
+      expect(link).toHaveAttribute("href", url)
+      expect(link).toHaveAttribute("target", "_blank")
+      expect(link).toHaveAttribute("rel", "noopener noreferrer")
+    }
+  )
 
   it.each([
     "javascript:alert(1)",
@@ -45,7 +46,6 @@ describe("MessageCard", () => {
       screen.queryByRole("button", { name: /查看详情/ })
     ).not.toBeInTheDocument()
   })
-
 })
 
 function renderCard(card: ClientCardMessageBody) {

@@ -1207,17 +1207,18 @@ function ForwardBundleMessage({
     <Dialog>
       <DialogTrigger asChild>
         <button
-          className="flex w-80 max-w-full cursor-pointer items-center gap-3 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid w-80 max-w-full cursor-pointer gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           type="button"
         >
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground">
-            <MessagesSquare aria-hidden="true" className="size-5" />
+          <span className="flex min-w-0 items-center gap-3">
+            <MessagesSquare
+              aria-hidden="true"
+              className="size-4.5 shrink-0 text-muted-foreground"
+            />
+            <span className="min-w-0 flex-1 text-sm">聊天记录</span>
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="block font-medium">聊天记录</span>
-            <span className="block max-w-80 truncate text-xs text-muted-foreground">
-              {summary}
-            </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {summary}
           </span>
         </button>
       </DialogTrigger>

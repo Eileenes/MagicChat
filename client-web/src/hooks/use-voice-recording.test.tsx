@@ -43,7 +43,7 @@ describe("useVoiceRecording ASR fallback", () => {
     expect(asr.connect).toHaveBeenCalledOnce()
   })
 
-  it("shows processing and waits one second before flushing", async () => {
+  it("shows processing and waits 500 ms before flushing", async () => {
     const { result } = renderHook(() => useVoiceRecording())
     await act(async () => {
       await result.current.startRecording()
@@ -53,7 +53,7 @@ describe("useVoiceRecording ASR fallback", () => {
 
     act(() => result.current.stopRecording())
     expect(result.current.status).toBe("processing")
-    act(() => vi.advanceTimersByTime(999))
+    act(() => vi.advanceTimersByTime(499))
     expect(worklet.port.postMessage).not.toHaveBeenCalled()
 
     act(() => vi.advanceTimersByTime(1))
@@ -75,7 +75,7 @@ describe("useVoiceRecording ASR fallback", () => {
     act(() => result.current.stopRecording())
     expect(MockMediaRecorder.latest?.stop).not.toHaveBeenCalled()
 
-    act(() => vi.advanceTimersByTime(1_499))
+    act(() => vi.advanceTimersByTime(999))
     expect(MockMediaRecorder.latest?.stop).not.toHaveBeenCalled()
     act(() => vi.advanceTimersByTime(1))
     expect(MockMediaRecorder.latest?.stop).toHaveBeenCalledOnce()

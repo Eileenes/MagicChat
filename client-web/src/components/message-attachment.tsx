@@ -1,7 +1,6 @@
 import * as React from "react"
 import {
   Archive,
-  Download,
   File,
   FileCode2,
   FileImage,
@@ -16,7 +15,6 @@ import {
   type ClientFileMessageBody,
 } from "@/lib/client-data-api"
 import { formatFileSize } from "@/lib/file-format"
-import { Button } from "@/components/ui/button"
 
 type MessageAttachmentProps = {
   file: ClientFileMessageBody
@@ -53,34 +51,29 @@ export function MessageAttachment({ file }: MessageAttachmentProps) {
   }
 
   return (
-    <div className="flex w-120 max-w-full items-center gap-3">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/50 text-muted-foreground">
-        <AttachmentFileIcon fileName={file.name} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm leading-snug font-medium">
-          {file.name}
-        </div>
-        <div className="text-xs leading-snug text-muted-foreground">
-          {formatFileSize(file.sizeBytes)}
-        </div>
-      </div>
-      <Button
-        aria-disabled={downloading}
+    <div className="grid w-80 max-w-full gap-2">
+      <button
         aria-label={`下载 ${file.name}`}
-        className="hover:bg-background/70 data-[state=open]:bg-background/70 dark:hover:bg-background/70 dark:data-[state=open]:bg-background/70"
+        className="group/attachment-row flex min-w-0 cursor-pointer items-center gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait"
+        disabled={downloading}
         onClick={handleDownload}
-        size="icon-sm"
         title="下载"
         type="button"
-        variant="ghost"
       >
         {downloading ? (
-          <LoaderCircle className="size-4 animate-spin" />
+          <LoaderCircle className="size-4.5 shrink-0 animate-spin text-muted-foreground" />
         ) : (
-          <Download className="size-4" />
+          <div className="shrink-0 text-muted-foreground">
+            <AttachmentFileIcon fileName={file.name} />
+          </div>
         )}
-      </Button>
+        <div className="min-w-0 flex-1 truncate text-sm transition-colors group-hover/attachment-row:text-sky-500">
+          {file.name}
+        </div>
+      </button>
+      <div className="text-xs text-muted-foreground">
+        {formatFileSize(file.sizeBytes)}
+      </div>
     </div>
   )
 }
@@ -89,22 +82,22 @@ function AttachmentFileIcon({ fileName }: { fileName: string }) {
   const extension = getFileExtension(fileName)
 
   if (imageExtensions.has(extension)) {
-    return <FileImage className="size-5" />
+    return <FileImage className="size-4.5" />
   }
   if (spreadsheetExtensions.has(extension)) {
-    return <Table2 className="size-5" />
+    return <Table2 className="size-4.5" />
   }
   if (archiveExtensions.has(extension)) {
-    return <Archive className="size-5" />
+    return <Archive className="size-4.5" />
   }
   if (codeExtensions.has(extension)) {
-    return <FileCode2 className="size-5" />
+    return <FileCode2 className="size-4.5" />
   }
   if (textExtensions.has(extension)) {
-    return <FileText className="size-5" />
+    return <FileText className="size-4.5" />
   }
 
-  return <File className="size-5" />
+  return <File className="size-4.5" />
 }
 
 function getFileExtension(fileName: string) {

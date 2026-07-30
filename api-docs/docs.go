@@ -4779,7 +4779,7 @@ const docTemplate = `{
         },
         "/api/client/conversations/{conversation_id}/messages/voices": {
             "post": {
-                "description": "普通用户上传最长 60 秒的 WebM/Opus 音频并发送为会话语音消息。音频写入 temporary bucket，消息 body 保存 file_id、时长、文件大小、内容类型和转写文字。",
+                "description": "普通用户上传最长 60 秒的 WebM/Opus 或 M4A/AAC 音频并发送为会话语音消息。音频写入 temporary bucket，消息 body 保存 file_id、时长、文件大小、内容类型和转写文字。",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -4826,7 +4826,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "WebM/Opus 语音文件",
+                        "description": "WebM/Opus 或 M4A/AAC 语音文件",
                         "name": "voice",
                         "in": "formData",
                         "required": true

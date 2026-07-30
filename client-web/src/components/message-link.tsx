@@ -1,4 +1,4 @@
-import { Link as LinkIcon } from "lucide-react"
+import { SquareArrowOutUpRight } from "lucide-react"
 
 import type { ClientLinkMessageBody } from "@/lib/client-data-api"
 
@@ -9,21 +9,19 @@ type MessageLinkProps = {
 export function MessageLink({ link }: MessageLinkProps) {
   return (
     <a
-      className="flex w-80 max-w-full items-center gap-3 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="grid w-80 max-w-full gap-2 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       href={link.url}
       rel="noopener noreferrer"
       target="_blank"
     >
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/50 text-muted-foreground">
-        <LinkIcon className="size-5" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm leading-snug font-medium transition-colors group-hover/message-bubble:text-sky-500">
+      <div className="flex min-w-0 items-center gap-3">
+        <SquareArrowOutUpRight className="size-4.5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1 truncate text-sm leading-snug font-medium transition-colors group-hover/message-bubble:text-sky-500">
           {link.title}
         </div>
-        <div className="truncate text-xs leading-snug text-muted-foreground">
-          {link.url}
-        </div>
+      </div>
+      <div className="truncate text-xs leading-snug text-muted-foreground">
+        {link.url}
       </div>
     </a>
   )

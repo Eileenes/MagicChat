@@ -419,7 +419,7 @@ function normalizeMessageBody(
     typeof body.size_bytes === "number" &&
     body.size_bytes > 0 &&
     typeof body.content_type === "string" &&
-    body.content_type === "audio/webm"
+    (body.content_type === "audio/webm" || body.content_type === "audio/mp4")
   ) {
     const normalizedVoice: ClientVoiceMessageBody = {
       contentType: body.content_type,

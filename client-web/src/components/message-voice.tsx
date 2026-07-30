@@ -1,9 +1,8 @@
 import * as React from "react"
-import { AudioLines, LoaderCircle, Pause, Play } from "lucide-react"
+import { AudioLines, LoaderCircle } from "lucide-react"
 
 import type { ClientVoiceMessageBody } from "@/lib/client-data-api"
-import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider"
+import { cn } from "@/lib/utils"
 
 type MessageVoiceProps = {
   voice: ClientVoiceMessageBody
@@ -13,11 +12,10 @@ let activeVoiceAudio: HTMLAudioElement | null = null
 
 export function MessageVoice({ voice }: MessageVoiceProps) {
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
-  const [currentTime, setCurrentTime] = React.useState(0)
   const [error, setError] = React.useState(false)
+  const [expanded, setExpanded] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
   const [playing, setPlaying] = React.useState(false)
-  const durationSeconds = voice.durationMS / 1_000
 
   React.useEffect(
     () => () => {
@@ -32,9 +30,7 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
 
   async function handlePlayToggle() {
     const audio = audioRef.current
-    if (!audio || loading) {
-      return
-    }
+    if (!audio || loading) return
 
     if (!audio.paused) {
       audio.pause()
@@ -43,7 +39,6 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
 
     setLoading(true)
     setError(false)
-
     try {
       if (activeVoiceAudio && activeVoiceAudio !== audio) {
         activeVoiceAudio.pause()
@@ -58,66 +53,57 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
     }
   }
 
-  function handleSeek(value: number[]) {
-    const nextTime = value[0] ?? 0
-    const audio = audioRef.current
-
-    setCurrentTime(nextTime)
-    if (audio) {
-      audio.currentTime = nextTime
-    }
-  }
-
   return (
-    <div className="flex w-120 max-w-full items-center gap-3">
+    <div className="grid w-80 max-w-full gap-2">
       <audio
         ref={audioRef}
-        onEnded={() => {
-          setCurrentTime(0)
-          setPlaying(false)
-        }}
+        onEnded={() => setPlaying(false)}
         onPause={() => setPlaying(false)}
         onPlay={() => setPlaying(true)}
-        onTimeUpdate={(event) =>
-          setCurrentTime(event.currentTarget.currentTime)
-        }
         preload="none"
         src={`/api/client/temporary-files/${encodeURIComponent(voice.fileId)}/content`}
       />
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/50 text-muted-foreground">
-        <AudioLines className="size-5" />
-      </div>
-      <div className="grid min-w-0 flex-1 gap-1">
-        <Slider
-          aria-label="语音播放进度"
-          disabled={error}
-          max={durationSeconds}
-          min={0}
-          onValueChange={handleSeek}
-          step={0.01}
-          value={[Math.min(currentTime, durationSeconds)]}
-        />
-        <div className="text-xs leading-snug text-muted-foreground tabular-nums">
-          {error ? "加载失败" : `${Math.max(1, Math.ceil(durationSeconds))} 秒`}
-        </div>
-      </div>
-      <Button
+      <button
         aria-label={playing ? "暂停语音" : "播放语音"}
-        className="hover:bg-background/70 data-[state=open]:bg-background/70 dark:hover:bg-background/70 dark:data-[state=open]:bg-background/70"
+        className="group/voice-row flex min-w-0 cursor-pointer items-center gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait"
+        disabled={loading}
         onClick={() => void handlePlayToggle()}
-        size="icon-sm"
         title={playing ? "暂停" : "播放"}
         type="button"
-        variant="ghost"
       >
         {loading ? (
-          <LoaderCircle className="size-4 animate-spin" />
-        ) : playing ? (
-          <Pause className="size-4" />
+          <LoaderCircle className="size-4.5 shrink-0 animate-spin text-muted-foreground" />
         ) : (
-          <Play className="size-4" />
+          <AudioLines
+            className={cn(
+              "size-4.5 shrink-0 text-muted-foreground",
+              playing && "text-foreground"
+            )}
+          />
         )}
-      </Button>
+        <span className="min-w-0 flex-1 text-sm transition-colors group-hover/voice-row:text-sky-500">
+          {error ? "加载失败" : `语音 ${formatVoiceDuration(voice.durationMS)}`}
+        </span>
+      </button>
+      {voice.transcript && (
+        <button
+          aria-expanded={expanded}
+          aria-label={expanded ? "收起语音文字" : "展开语音文字"}
+          className={cn(
+            "w-full cursor-pointer text-left text-xs text-muted-foreground",
+            expanded ? "break-words whitespace-pre-wrap" : "truncate"
+          )}
+          onClick={() => setExpanded((current) => !current)}
+          type="button"
+        >
+          {voice.transcript}
+        </button>
+      )}
     </div>
   )
+}
+
+function formatVoiceDuration(durationMS: number) {
+  const totalSeconds = Math.max(1, Math.ceil(durationMS / 1_000))
+  return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`
 }
