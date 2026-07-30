@@ -1,0 +1,282 @@
+---
+import {
+  ArrowDown,
+  ArrowRight,
+  Bot,
+  Check,
+  FileText,
+  FolderKanban,
+  ListTodo,
+  MessageCircle,
+  Mic,
+  Paperclip,
+  Search,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from '@lucide/astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+
+const title = '即应｜让每个人拥有自己的 AI 工作助理';
+const description = '即应是面向企业团队的 AI 工作入口。个人助理茉莉帮助理解消息、整理上下文、提取任务，让沟通自然走向行动。';
+const pageUrl = new URL(import.meta.env.BASE_URL, Astro.site).href;
+const logoUrl = new URL(`${import.meta.env.BASE_URL}logo.webp`, Astro.site).href;
+
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: '即应',
+    url: pageUrl,
+    logo: logoUrl,
+    sameAs: ['https://github.com/duke-yeah/MagicChat'],
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: '即应',
+    alternateName: 'MagicChat',
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web, macOS, Windows, Linux, iOS, Android',
+    description,
+    url: pageUrl,
+  },
+];
+
+const capabilities = [
+  {
+    number: '01',
+    eyebrow: 'CONTACT',
+    title: '找到成员，也找到能帮忙的 AI',
+    body: '通讯录统一展示团队成员、内置应用、团队应用与公开群组。从一个清晰入口，开始人与 AI 的协作。',
+    icon: Users,
+    tone: 'mint',
+    size: 'wide',
+  },
+  {
+    number: '02',
+    eyebrow: 'CHAT',
+    title: '在熟悉的会话里，把背景说清楚',
+    body: '私聊、群聊和话题承载文字、Markdown、链接、文件、图片与语音。信息留在原处，后续行动不丢上下文。',
+    icon: MessageCircle,
+    tone: 'ink',
+    size: 'wide',
+  },
+  {
+    number: '03',
+    eyebrow: 'ASSISTANT',
+    title: '茉莉先接住，再把判断交还给你',
+    body: '整理消息、提炼重点、草拟回复。需要确认时，茉莉会带着原因和建议来找你。',
+    icon: Sparkles,
+    tone: 'violet',
+    size: 'third',
+  },
+  {
+    number: '04',
+    eyebrow: 'PROJECT',
+    title: '项目连接相关讨论',
+    body: '把群聊关联到项目，让成员、讨论背景和访问关系保持连续。',
+    icon: FolderKanban,
+    tone: 'paper',
+    size: 'third',
+  },
+  {
+    number: '05',
+    eyebrow: 'TASK',
+    title: '任务承接讨论结论',
+    body: '负责人、优先级、状态和截止时间清楚落位，进展随时可见。',
+    icon: ListTodo,
+    tone: 'coral',
+    size: 'third',
+  },
+];
+
+const steps = [
+  ['01', '请求进入会话', '团队成员在私聊或群聊中提出目标，相关消息、文件和讨论自然成为上下文。'],
+  ['02', '茉莉理解并整理', 'AI 助理先阅读上下文、提炼重点，给出草稿、摘要或下一步建议。'],
+  ['03', '项目与任务接住结果', '关键结论转成可追踪事项，明确负责人、状态与截止时间。'],
+  ['04', '需要判断时再找你', '茉莉带着原因、影响和可选动作发起确认，让每次打扰都值得。'],
+];
+---
+
+<BaseLayout title={title} description={description} schema={schema}>
+  <SiteHeader />
+  <main id="main-content">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow"><span class="status-dot"></span> AI WORK ASSISTANT</span>
+          <h1 id="hero-title">即应，让工作<br /><mark>有人先接住</mark></h1>
+          <p>每个人都有自己的 AI 助理「茉莉」。她理解消息、整理上下文、提取任务，让沟通自然走向行动。</p>
+          <div class="hero-actions">
+            <a class="button button-dark" href="https://chat.chaitin.net/" target="_blank" rel="noreferrer">
+              开始使用 <ArrowRight size={17} aria-hidden="true" />
+            </a>
+            <a class="button button-secondary" href="#product">
+              了解即应 <ArrowDown size={17} aria-hidden="true" />
+            </a>
+          </div>
+          <ul class="hero-checks" aria-label="产品特点">
+            <li><Check size={14} aria-hidden="true" /> 助理优先</li>
+            <li><Check size={14} aria-hidden="true" /> 人机协作</li>
+            <li><Check size={14} aria-hidden="true" /> 企业可控</li>
+          </ul>
+        </div>
+
+        <div class="product-scene" aria-label="即应产品界面示意图">
+          <div class="product-window">
+            <aside class="app-rail" aria-hidden="true">
+              <img src={`${import.meta.env.BASE_URL}logo.webp`} width="34" height="34" alt="" />
+              <span class="rail-icon active"><MessageCircle size={16} /></span>
+              <span class="rail-icon"><Users size={16} /></span>
+              <span class="rail-icon"><FolderKanban size={16} /></span>
+              <span class="rail-avatar">你</span>
+            </aside>
+            <aside class="conversation-list" aria-hidden="true">
+              <strong>协作空间</strong>
+              <div class="mock-search"><Search size={12} /> 搜索会话</div>
+              <small>置顶会话</small>
+              <div class="conversation active"><span class="avatar ai">茉</span><div><b>茉莉</b><em>已整理今天的待办</em></div></div>
+              <div class="conversation"><span class="avatar violet">产</span><div><b>产品研发群</b><em>林夏：收到</em></div></div>
+              <div class="conversation"><span class="avatar coral">设</span><div><b>设计评审</b><em>2 个新文件</em></div></div>
+            </aside>
+            <section class="chat-panel" aria-hidden="true">
+              <header><div><b>茉莉</b><small>你的个人 AI 工作助理</small></div><span class="online">在线</span></header>
+              <div class="message-flow">
+                <div class="message assistant-message">
+                  <span class="avatar ai">茉</span>
+                  <div><small>茉莉 · 09:42</small><p>我整理了产品研发群里与本周发布有关的讨论，目前有 3 项待办。</p></div>
+                </div>
+                <div class="task-summary">
+                  <div class="task-heading"><span><FileText size={13} /> 发布准备</span><b>3 项</b></div>
+                  <div class="task-row"><Check size={12} /> 确认桌面端发布范围 <span>已完成</span></div>
+                  <div class="task-row"><span class="task-open"></span> 补齐更新说明 <span>今天</span></div>
+                  <div class="task-row"><span class="task-open"></span> 完成多端回归 <span>周五</span></div>
+                </div>
+                <div class="message user-message"><div><small>你 · 09:44</small><p>把后两项建成任务，负责人沿用群里的分工。</p></div></div>
+              </div>
+              <div class="composer">给茉莉发消息… <span><Paperclip size={13} /><Mic size={13} /><i><Send size={12} /></i></span></div>
+            </section>
+          </div>
+          <div class="scene-note"><span></span> 茉莉正在整理上下文</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="capability-strip" aria-label="即应能力概览">
+      <div class="container strip-inner">
+        <strong>一处沟通，持续推进</strong>
+        <span>企业聊天</span><i></i><span>个人 AI 助理</span><i></i><span>项目协作</span><i></i><span>任务管理</span><i></i><span>多端同步</span>
+      </div>
+    </div>
+
+    <section class="section product-section" id="product">
+      <div class="container">
+        <div class="statement reveal">
+          <div><span class="eyebrow">WHY JIYING</span><h2>不是给聊天框<br />加一个 AI 按钮</h2></div>
+          <p>即应把 AI 放进工作的真实上下文。<strong>茉莉先接住请求</strong>，团队在会话里继续判断，项目和任务承接结果。</p>
+        </div>
+
+        <div class="product-demo reveal">
+          <div class="demo-tabs" role="tablist" aria-label="即应产品能力">
+            <button class="demo-tab active" type="button" role="tab" aria-selected="true" aria-controls="demo-chat" data-demo="chat">团队会话</button>
+            <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-agent" data-demo="agent">AI 助理</button>
+            <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-project" data-demo="project">项目任务</button>
+          </div>
+          <div class="demo-panels">
+            <article class="demo-panel active" id="demo-chat" role="tabpanel" data-panel="chat">
+              <div class="demo-copy"><span>01 · CONVERSATION</span><h3>让每一种沟通，都有合适的容器</h3><p>从私聊、群聊到独立话题，文字、链接、文件、图片和语音都在熟悉的消息体验中流动。</p><ul><li>私聊与群聊</li><li>话题讨论</li><li>多类型消息</li></ul></div>
+              <div class="demo-visual"><div class="topic-ui"><b># 产品上线准备</b><div><span class="avatar violet">林</span><p><strong>林夏</strong>桌面端发布范围已经确认，更新说明还差最后一版。</p></div><div><span class="avatar ai">茉</span><p><strong>茉莉</strong>我可以根据本次变更记录先整理一份草稿。</p></div><label>回复当前话题…</label></div></div>
+            </article>
+            <article class="demo-panel" id="demo-agent" role="tabpanel" data-panel="agent" hidden>
+              <div class="demo-copy"><span>02 · ASSISTANT</span><h3>AI 有身份，也知道自己的协作位置</h3><p>茉莉拥有独立身份，在会话上下文中帮你总结、草拟和整理；团队 AI 应用也可按访问范围参与协作。</p><ul><li>个人工作助理</li><li>团队 AI 应用</li><li>访问范围</li></ul></div>
+              <div class="demo-visual"><div class="agent-list"><div><span class="agent-face mint"><Sparkles size={18} /></span><p><b>茉莉</b><small>你的个人 AI 工作助理</small></p><em>在线</em></div><div><span class="agent-face violet"><Bot size={18} /></span><p><b>知识助手</b><small>在会话中检索团队知识</small></p><em>全员可见</em></div><div><span class="agent-face coral"><Bot size={18} /></span><p><b>运营助手</b><small>整理活动执行信息</small></p><em>运营组可见</em></div></div></div>
+            </article>
+            <article class="demo-panel" id="demo-project" role="tabpanel" data-panel="project" hidden>
+              <div class="demo-copy"><span>03 · PROJECT & TASK</span><h3>让讨论有去处，让进展有状态</h3><p>会话关联项目，任务明确负责人、优先级、状态和截止时间，让团队知道下一步由谁推进。</p><ul><li>项目关联群聊</li><li>任务状态</li><li>到期提醒</li></ul></div>
+              <div class="demo-visual"><div class="mini-board"><section><b>待处理 <em>2</em></b><p>补齐上线说明<small>今天 · 林夏</small></p><p>检查下载页<small>周四 · 陈屿</small></p></section><section><b>进行中 <em>1</em></b><p>发布前回归测试<small>周五 · QA</small></p></section><section><b>已完成 <em>1</em></b><p>确认版本范围<small>今天 · 完成</small></p></section></div></div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section capability-section" id="capabilities">
+      <div class="container">
+        <div class="section-heading reveal"><div><span class="eyebrow">CAPABILITIES</span><h2>从找到协作对象，<br />到把事情持续推进</h2></div><p>通讯录、会话、AI、项目和任务不是五座孤岛，而是一条连续的工作路径。</p></div>
+        <div class="capability-grid">
+          {capabilities.map(({ number, eyebrow, title: itemTitle, body, icon: Icon, tone, size }, index) => (
+            <article class:list={['capability-card', tone, size, 'reveal']} style={`--delay: ${index * 60}ms`}>
+              <div class="card-top"><span>{number} · {eyebrow}</span><Icon size={25} stroke-width={1.8} aria-hidden="true" /></div>
+              <div><h3>{itemTitle}</h3><p>{body}</p></div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="section workflow-section" id="workflow">
+      <div class="container">
+        <div class="section-heading reveal"><div><span class="eyebrow">HOW IT FLOWS</span><h2>从一句话开始，<br />到一件事完成</h2></div><p>有效的 AI 协作不是制造更多消息，而是理解上下文、参与推进，并在需要判断时给出明确请求。</p></div>
+        <div class="workflow-layout">
+          <aside class="workflow-note reveal"><span class="note-icon"><MessageCircle size={22} /></span><h3>沟通不再是终点</h3><p>聊天保留讨论中的信任，茉莉帮助处理信息，项目与任务把关键结论沉淀为持续可追踪的工作。</p><div><span>消息</span><ArrowRight size={13} /><span>协同</span><ArrowRight size={13} /><span>任务</span><ArrowRight size={13} /><span>结果</span></div></aside>
+          <div class="workflow-steps">
+            {steps.map(([number, stepTitle, body], index) => (
+              <article class="workflow-step reveal" style={`--delay: ${index * 70}ms`}><span>{number}</span><div><h3>{stepTitle}</h3><p>{body}</p></div></article>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section assistant-section" id="assistant">
+      <div class="container assistant-band reveal">
+        <div class="assistant-copy"><span class="eyebrow eyebrow-light">MEET MOLLY · 茉莉</span><h2>好的 AI 助理，<br />知道什么时候不打扰你</h2><p>每次需要你介入，茉莉都会说明为什么是现在、为什么是你、需要做什么，以及不处理会怎样。</p><div class="trust-points"><span><ShieldCheck size={17} /> 权限边界清晰</span><span><FileText size={17} /> 上下文完整</span></div></div>
+        <aside class="decision-panel" aria-label="茉莉发起的确认请求示例">
+          <header><span><span class="assistant-avatar">茉</span> 茉莉的确认请求</span><em>需要确认</em></header>
+          <h3>发布范围存在一项待确认风险</h3>
+          <dl><div><dt>01 为什么现在找我？</dt><dd>回归测试发现权限策略与发布范围不一致。</dd></div><div><dt>02 为什么是我？</dt><dd>你是当前版本的项目负责人。</dd></div><div><dt>03 我需要做什么？</dt><dd>确认缩小范围，或授权按原计划继续。</dd></div></dl>
+          <div class="decision-actions"><button type="button">查看详情</button><button type="button">确认缩小范围</button></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <SiteFooter />
+
+  <script>
+    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-demo]'));
+    const panels = Array.from(document.querySelectorAll<HTMLElement>('[data-panel]'));
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.demo;
+        tabs.forEach((item) => {
+          const active = item === tab;
+          item.classList.toggle('active', active);
+          item.setAttribute('aria-selected', String(active));
+        });
+        panels.forEach((panel) => {
+          const active = panel.dataset.panel === target;
+          panel.classList.toggle('active', active);
+          panel.hidden = !active;
+        });
+      });
+    });
+
+    const revealItems = document.querySelectorAll<HTMLElement>('.reveal');
+    if (!('IntersectionObserver' in window)) {
+      revealItems.forEach((item) => item.classList.add('visible'));
+    } else {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -36px' });
+      revealItems.forEach((item) => observer.observe(item));
+    }
+  </script>
+</BaseLayout>
