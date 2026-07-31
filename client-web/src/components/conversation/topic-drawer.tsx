@@ -83,17 +83,20 @@ function TopicDrawerContent({
 }: TopicDrawerProps) {
   const {
     compactConversationMessages,
+    consumeConversationMessageFocus,
     contactApps,
     contacts,
     ensureConversationMessages,
     getConversation,
     getConversationMessageState,
+    loadAfterConversationMessages,
     loadBeforeConversationMessages,
     markConversationRead,
     me,
     registerConversationMessageView,
     respondToChoice,
     refreshConversations,
+    returnToLatestConversationMessages,
     revokeConversationMessage,
     sendConversationFile,
     sendConversationImage,
@@ -251,6 +254,30 @@ function TopicDrawerContent({
     ? getConversationMessageState(conversation.id)
     : undefined
   const clientMessages = messageState?.messages ?? emptyMessages
+  const historyNavigation = React.useMemo(
+    () =>
+      conversation && messageState
+        ? {
+            focus: messageState.focus,
+            loadingAfter: messageState.loadingAfter,
+            onFocusHandled: (requestKey: number) =>
+              consumeConversationMessageFocus(conversation.id, requestKey),
+            onLoadAfterMessages: () =>
+              loadAfterConversationMessages(conversation.id),
+            onReturnToLatest: () =>
+              returnToLatestConversationMessages(conversation.id),
+            pendingLatestMessageCount: messageState.pendingLatestMessageCount,
+            viewMode: messageState.viewMode,
+          }
+        : undefined,
+    [
+      conversation,
+      consumeConversationMessageFocus,
+      loadAfterConversationMessages,
+      messageState,
+      returnToLatestConversationMessages,
+    ]
+  )
   const messagesById = React.useMemo(
     () => new Map(clientMessages.map((message) => [message.id, message])),
     [clientMessages]
@@ -309,12 +336,13 @@ function TopicDrawerContent({
       !conversation ||
       !conversation.topic?.participating ||
       !messageState?.loaded ||
+      messageState.viewMode === "history" ||
       conversation.lastReadSeq >= conversation.lastMessageSeq
     ) {
       return
     }
     void markConversationRead(conversation.id).catch(() => undefined)
-  }, [conversation, markConversationRead, messageState?.loaded, open])
+  }, [conversation, markConversationRead, messageState, open])
 
   function updateDraft(value: string, mentions: ConversationDraftMention[]) {
     setDraft(value)
@@ -525,6 +553,7 @@ function TopicDrawerContent({
               messageState && !messageState.loaded && !messageState.error
             )}
             historyLoadingBefore={Boolean(messageState?.loadingBefore)}
+            historyNavigation={historyNavigation}
             historyHeader={
               <TopicSourceBanner
                 reactionConversationId={sourceConversationId}

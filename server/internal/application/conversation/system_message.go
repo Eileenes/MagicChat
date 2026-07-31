@@ -20,6 +20,7 @@ const (
 	systemEventGroupMemberLeft          = "group_member_left"
 	systemEventGroupMemberRemoved       = "group_member_removed"
 	systemEventGroupNameUpdated         = "group_name_updated"
+	systemEventGroupAnnouncementUpdated = "group_announcement_updated"
 	systemEventTopicClosed              = "topic_closed"
 	groupMembersInvitedSummarySeparator = ","
 )
@@ -74,6 +75,13 @@ type groupNameUpdatedSystemEventBody struct {
 	Event string             `json:"event"`
 	Name  string             `json:"name"`
 	Type  string             `json:"type"`
+}
+
+type groupAnnouncementUpdatedSystemEventBody struct {
+	Actor        systemEventUserRef `json:"actor"`
+	Announcement string             `json:"announcement"`
+	Event        string             `json:"event"`
+	Type         string             `json:"type"`
 }
 
 type topicClosedSystemEventBody struct {
@@ -154,6 +162,24 @@ func createGroupNameUpdatedSystemMessage(db *gorm.DB, conversation *store.Conver
 		return store.Message{}, err
 	}
 	return createSystemMessage(db, conversation, body, displayName+" 修改群聊名称为 "+name, now)
+}
+
+func createGroupAnnouncementUpdatedSystemMessage(db *gorm.DB, conversation *store.Conversation, actor store.User, announcement string, now time.Time) (store.Message, error) {
+	displayName := userDisplayName(actor)
+	summary := displayName + " 更新了群公告"
+	if announcement == "" {
+		summary = displayName + " 清空了群公告"
+	}
+	body, err := json.Marshal(groupAnnouncementUpdatedSystemEventBody{
+		Actor:        systemEventUserRef{DisplayName: displayName, ID: actor.ID},
+		Announcement: announcement,
+		Event:        systemEventGroupAnnouncementUpdated,
+		Type:         messageTypeSystemEvent,
+	})
+	if err != nil {
+		return store.Message{}, err
+	}
+	return createSystemMessage(db, conversation, body, summary, now)
 }
 
 func createTopicClosedSystemMessage(db *gorm.DB, conversation *store.Conversation, actor store.User, now time.Time) (store.Message, error) {

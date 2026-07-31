@@ -27,6 +27,19 @@ type conversationOptionalStringSlice struct {
 	Value   []string
 }
 
+type conversationOptionalString struct {
+	Present bool
+	Value   string
+}
+
+func (value *conversationOptionalString) UnmarshalJSON(raw []byte) error {
+	value.Present = true
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return errors.New("字符串字段不能为 null")
+	}
+	return json.Unmarshal(raw, &value.Value)
+}
+
 func (value *conversationOptionalStringSlice) UnmarshalJSON(raw []byte) error {
 	value.Present = true
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
@@ -49,6 +62,10 @@ type addGroupConversationMembersRequest struct {
 
 type updateGroupConversationNameRequest struct {
 	Name string `json:"name" example:"产品讨论组"`
+}
+
+type updateGroupConversationAnnouncementRequest struct {
+	Announcement conversationOptionalString `json:"announcement" swaggertype:"string" binding:"required" example:"本周五 18:00 发布，请及时更新任务状态。"`
 }
 
 type createAppConversationRequest struct {
@@ -89,6 +106,7 @@ type conversationLastMessageSenderResponse struct {
 }
 
 type conversationListItemResponse struct {
+	Announcement       string                                 `json:"announcement" example:"本周五 18:00 发布，请及时更新任务状态。"`
 	Avatar             string                                 `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
 	CanSend            bool                                   `json:"can_send" example:"true"`
 	CreatedAt          time.Time                              `json:"created_at" format:"date-time"`
@@ -161,6 +179,7 @@ type createTopicResponse struct {
 }
 
 type groupConversationResponse struct {
+	Announcement       string                                 `json:"announcement" example:"本周五 18:00 发布，请及时更新任务状态。"`
 	Avatar             string                                 `json:"avatar" example:"/assets/avatars/groups/07.webp"`
 	CreatedAt          time.Time                              `json:"created_at" format:"date-time"`
 	CreatedByUserID    string                                 `json:"created_by_user_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
@@ -248,6 +267,7 @@ func (a *ConversationAPI) RegisterRoutes(group *echo.Group) {
 	group.POST("/conversations/apps", a.createApp)
 	group.POST("/conversations/direct", a.createDirect)
 	group.POST("/conversations/groups", a.createGroup)
+	group.PATCH("/conversations/groups/:conversation_id/announcement", a.updateAnnouncement)
 	group.PATCH("/conversations/groups/:conversation_id/name", a.updateName)
 	group.POST("/conversations/groups/:conversation_id/public", a.setPublic)
 	group.POST("/conversations/groups/:conversation_id/private", a.setPrivate)
@@ -750,6 +770,46 @@ func (a *ConversationAPI) updateName(c echo.Context) error {
 	return writeSuccess(c, http.StatusOK, newMutationResponse(result))
 }
 
+// updateAnnouncement godoc
+//
+// @Summary 修改群公告
+// @Description 群主或管理员修改 active 群聊公告。内容会去除首尾空白，最多 200 个 Unicode 字符；空内容会清空公告。修改后生成系统消息。
+// @Tags 客户端会话
+// @Accept json
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param body body updateGroupConversationAnnouncementRequest true "群公告"
+// @Success 200 {object} successEnvelope{data=addGroupConversationMembersResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/groups/{conversation_id}/announcement [patch]
+func (a *ConversationAPI) updateAnnouncement(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, 500, string(conversationapp.CodeInternal), "服务端错误")
+	}
+	if err := validateConversationPath(c.Param("conversation_id")); err != nil {
+		return writeFailure(c, 400, string(conversationapp.CodeInvalidRequest), err.Error())
+	}
+	var req updateGroupConversationAnnouncementRequest
+	if err := c.Bind(&req); err != nil {
+		return writeFailure(c, 400, string(conversationapp.CodeInvalidRequest), "请求格式错误")
+	}
+	if !req.Announcement.Present {
+		return writeFailure(c, 400, string(conversationapp.CodeInvalidRequest), "缺少群公告字段")
+	}
+	result, err := a.conversations.UpdateAnnouncement(c.Request().Context(), conversationapp.UpdateAnnouncementCommand{
+		Actor: conversationActor(current), Announcement: req.Announcement.Value, ConversationID: c.Param("conversation_id"),
+	})
+	if err != nil {
+		return writeConversationError(c, err)
+	}
+	return writeSuccess(c, http.StatusOK, newMutationResponse(result))
+}
+
 // setPublic godoc
 //
 // @Summary 设置公开群
@@ -1022,7 +1082,7 @@ func conversationActor(value account.Account) conversationapp.Actor {
 }
 
 func newConversationItemResponse(value conversationapp.Item) conversationListItemResponse {
-	result := conversationListItemResponse{Avatar: value.Avatar, CanSend: value.CanSend, CreatedAt: value.CreatedAt, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastChoiceSeq: value.LastChoiceSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, NotificationMuted: value.NotificationMuted, Pinned: value.Pinned, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	result := conversationListItemResponse{Announcement: value.Announcement, Avatar: value.Avatar, CanSend: value.CanSend, CreatedAt: value.CreatedAt, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastChoiceSeq: value.LastChoiceSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, NotificationMuted: value.NotificationMuted, Pinned: value.Pinned, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
 	if value.LastMessageSender != nil {
 		result.LastMessageSender = &conversationLastMessageSenderResponse{
 			ID: value.LastMessageSender.ID, Name: value.LastMessageSender.Name,
@@ -1065,7 +1125,7 @@ func newTopicDetailResponse(value conversationapp.TopicDetail) topicDetailRespon
 }
 
 func newGroupResponse(value conversationapp.Group) groupConversationResponse {
-	result := groupConversationResponse{Avatar: value.Avatar, CreatedAt: value.CreatedAt, CreatedByUserID: value.CreatedByUserID, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastChoiceSeq: value.LastChoiceSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, PostingPolicy: value.PostingPolicy, Status: value.Status, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	result := groupConversationResponse{Announcement: value.Announcement, Avatar: value.Avatar, CreatedAt: value.CreatedAt, CreatedByUserID: value.CreatedByUserID, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastChoiceSeq: value.LastChoiceSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, PostingPolicy: value.PostingPolicy, Status: value.Status, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
 	if value.LastMessageSender != nil {
 		result.LastMessageSender = &conversationLastMessageSenderResponse{
 			ID: value.LastMessageSender.ID, Name: value.LastMessageSender.Name,

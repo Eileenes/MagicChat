@@ -36,6 +36,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatActivityTime } from "@/lib/activity-time"
 import type {
   ClientConversation,
+  ClientMessageSearchResult,
   ClientUser,
   ContactApp,
   ContactGroup,
@@ -85,6 +86,7 @@ export function ConversationSidebar({
   onDismissConversation,
   onSelectDirectoryItem = noopSelectDirectoryItem,
   onSelectConversation,
+  onSelectMessageResult,
   onSetConversationMuted,
   onSetConversationPinned,
 }: {
@@ -101,6 +103,7 @@ export function ConversationSidebar({
   onDismissConversation?: (conversationId: string) => Promise<void>
   onSelectDirectoryItem?: (item: DirectorySearchItem) => void
   onSelectConversation: (conversationId: string) => void
+  onSelectMessageResult?: (result: ClientMessageSearchResult) => void
   onSetConversationMuted?: (
     conversationId: string,
     muted: boolean
@@ -244,6 +247,7 @@ export function ConversationSidebar({
               getConversationDescription={getSearchConversationDescription}
               onSelectDirectoryItem={onSelectDirectoryItem}
               onSelectConversation={onSelectConversation}
+              onSelectMessageResult={onSelectMessageResult}
             />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

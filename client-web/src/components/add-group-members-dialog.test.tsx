@@ -49,9 +49,7 @@ describe("AddGroupMembersDialog", () => {
     )
 
     await user.click(screen.getByRole("button", { name: "添加成员" }))
-    expect(
-      screen.queryByRole("tab", { name: "应用" })
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "应用" })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole("checkbox", { name: "Bob" }))
     await user.click(screen.getByRole("button", { name: "添加" }))
@@ -125,9 +123,11 @@ function createClientDataContextValue(
     registerConversationMessageView: vi.fn(() => vi.fn()),
     createGroupConversation: vi.fn(),
     createProject: vi.fn(),
+    consumeConversationMessageFocus: vi.fn(),
     dismissConversation: vi.fn(),
     dissolveGroupConversation: vi.fn(),
     ensureConversationMessages: vi.fn(),
+    focusConversationMessage: vi.fn(),
     getConversation: vi.fn(),
     getConversationMessageState: vi.fn(),
     handleIncomingConversationMessage: vi.fn(),
@@ -136,6 +136,7 @@ function createClientDataContextValue(
     handleIncomingMessageReactionsUpdate: vi.fn(),
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
+    loadAfterConversationMessages: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
     loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
@@ -151,6 +152,7 @@ function createClientDataContextValue(
     refreshProjects: vi.fn(),
     removeConversation: vi.fn(),
     removeGroupConversationMember: vi.fn(),
+    returnToLatestConversationMessages: vi.fn(),
     respondToChoice: vi.fn(),
     revokeConversationMessage: vi.fn(),
     setMessageReaction: vi.fn(),
@@ -169,6 +171,7 @@ function createClientDataContextValue(
     updateConversationLastMessage: vi.fn(),
     updateConversationPinned: vi.fn(),
     updateConversationMuted: vi.fn(),
+    updateGroupConversationAnnouncement: vi.fn(),
     updateGroupConversationAvatar: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,

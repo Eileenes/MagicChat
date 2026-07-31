@@ -15,12 +15,17 @@ export const conversationMessageRetentionLimit = 300
 
 export const emptyConversationMessageState: ClientConversationMessageState = {
   error: null,
+  focus: null,
   loaded: false,
   loading: false,
+  loadingAfter: false,
   loadingBefore: false,
+  latestKnownSeq: 0,
   messages: [],
   page: null,
+  pendingLatestMessageCount: 0,
   sending: false,
+  viewMode: "latest",
 }
 
 export function getMessageSummary(message: ClientMessage) {
@@ -145,12 +150,17 @@ export function applyMessageChoiceSnapshot(
 export function createConversationMessageState(): ClientConversationMessageState {
   return {
     error: null,
+    focus: null,
     loaded: false,
     loading: false,
+    loadingAfter: false,
     loadingBefore: false,
+    latestKnownSeq: 0,
     messages: [],
     page: null,
+    pendingLatestMessageCount: 0,
     sending: false,
+    viewMode: "latest",
   }
 }
 
@@ -276,6 +286,18 @@ export function updatePageWithMessage(
   }
 }
 
+export function mergeLatestConversationMessageWindow(
+  currentMessages: ClientMessage[],
+  resultMessages: ClientMessage[],
+  resultPage: ClientMessagePage
+) {
+  const messages = mergeConversationMessages(resultMessages, currentMessages)
+  return {
+    messages,
+    page: updatePageWithMessage(resultPage, messages),
+  }
+}
+
 export function mergePageWithBeforeResult(
   currentPage: ClientMessagePage | null,
   resultPage: ClientMessagePage,
@@ -308,6 +330,22 @@ export function mergePageWithAfterResult(
     newestSeq: lastMessage?.seq ?? resultPage.newestSeq,
     oldestSeq: firstMessage?.seq ?? currentPage?.oldestSeq ?? 0,
   }
+}
+
+export function reconcilePageWithPendingLatestMessages(
+  page: ClientMessagePage,
+  latestKnownSeq: number,
+  pendingLatestMessageCount: number
+): ClientMessagePage {
+  if (
+    page.hasMoreAfter ||
+    pendingLatestMessageCount === 0 ||
+    page.newestSeq >= latestKnownSeq
+  ) {
+    return page
+  }
+
+  return { ...page, hasMoreAfter: true }
 }
 
 export function getNewestMessageSeq(state: ClientConversationMessageState) {

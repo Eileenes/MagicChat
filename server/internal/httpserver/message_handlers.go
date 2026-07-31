@@ -87,6 +87,7 @@ type messageResponse struct {
 	ConversationID   string                      `json:"conversation_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	CreatedAt        time.Time                   `json:"created_at" format:"date-time"`
 	DelegatedBy      *messageDelegatedByResponse `json:"delegated_by,omitempty"`
+	EditableBody     json.RawMessage             `json:"editable_body,omitempty" swaggertype:"object"`
 	ID               string                      `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyToMessageID string                      `json:"reply_to_message_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyTo          *messageReplyToResponse     `json:"reply_to,omitempty"`

@@ -24,6 +24,7 @@ import {
   sendConversationTextMessage,
   setConversationPinned,
   setConversationMuted,
+  updateGroupConversationAnnouncement,
 } from "@/lib/client-data-api"
 
 describe("client data API", () => {
@@ -223,6 +224,7 @@ describe("client data API", () => {
 
     await expect(listClientConversations(fetcher)).resolves.toEqual([
       {
+        announcement: "",
         avatar: "/assets/avatars/builtin/03.webp",
         canSend: true,
         createdAt: "2026-07-03T07:00:00Z",
@@ -253,6 +255,50 @@ describe("client data API", () => {
       credentials: "include",
       method: "GET",
     })
+  })
+
+  it("updates and normalizes a group announcement", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            conversation: {
+              announcement: "本周五发布 🚀",
+              created_at: "2026-07-30T09:30:00Z",
+              id: "conversation-group-1",
+              name: "新品讨论组",
+              type: "group",
+            },
+            message: null,
+          },
+        }),
+        { headers: { "content-type": "application/json" }, status: 200 }
+      )
+    )
+
+    await expect(
+      updateGroupConversationAnnouncement(
+        "conversation-group-1",
+        { announcement: "  本周五发布 🚀  " },
+        fetcher
+      )
+    ).resolves.toMatchObject({
+      conversation: {
+        announcement: "本周五发布 🚀",
+        id: "conversation-group-1",
+      },
+      message: null,
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/conversations/groups/conversation-group-1/announcement",
+      {
+        body: JSON.stringify({ announcement: "  本周五发布 🚀  " }),
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      }
+    )
   })
 
   it("sets conversation pin state with credentials", async () => {
@@ -454,6 +500,7 @@ describe("client data API", () => {
         fetcher
       )
     ).resolves.toEqual({
+      announcement: "",
       avatar: "",
       canSend: true,
       createdAt: "2026-07-03T09:30:00Z",
@@ -1082,6 +1129,59 @@ describe("client data API", () => {
     })
   })
 
+  it("normalizes an editable body returned for an own revoked message", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            messages: [
+              {
+                id: "message-revoked",
+                conversation_id: "conversation-1",
+                seq: 12,
+                sender: {
+                  type: "user",
+                  id: "user-1",
+                },
+                created_at: "2026-07-03T08:00:00Z",
+                revoked_at: "2026-07-03T08:02:00Z",
+                revoked_by_user_id: "user-1",
+                editable_body: {
+                  content: "重新编辑这条消息",
+                  type: "text",
+                },
+              },
+            ],
+            page: {
+              limit: 20,
+              oldest_seq: 12,
+              newest_seq: 12,
+              has_more_before: false,
+              has_more_after: false,
+            },
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 200,
+        }
+      )
+    )
+
+    const result = await listConversationMessages("conversation-1", {}, fetcher)
+
+    expect(result.messages[0]?.body).toEqual({
+      editableBody: {
+        content: "重新编辑这条消息",
+        type: "text",
+      },
+      type: "revoked",
+    })
+  })
+
   it("keeps message history available when one message body is unsupported", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(
@@ -1174,6 +1274,30 @@ describe("client data API", () => {
       id: "message-realtime-unsupported",
       body: { type: "unsupported" },
     })
+  })
+
+  it("normalizes and summarizes group announcement system events", () => {
+    const updated = normalizeClientMessageBody({
+      actor: { display_name: "Alice", id: "user-1" },
+      announcement: "本周五发布",
+      event: "group_announcement_updated",
+      type: "system_event",
+    })
+    expect(updated).toEqual({
+      actor: { displayName: "Alice", id: "user-1" },
+      announcement: "本周五发布",
+      event: "group_announcement_updated",
+      type: "system_event",
+    })
+    expect(formatClientMessageBodySummary(updated)).toBe("Alice 更新了群公告")
+
+    const cleared = normalizeClientMessageBody({
+      actor: { display_name: "Alice", id: "user-1" },
+      announcement: "",
+      event: "group_announcement_updated",
+      type: "system_event",
+    })
+    expect(formatClientMessageBodySummary(cleared)).toBe("Alice 清空了群公告")
   })
 
   it("throws a typed unauthorized error", async () => {

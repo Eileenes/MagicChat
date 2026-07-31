@@ -119,6 +119,13 @@ export type ClientConversationTopic = {
   }
 }
 
+export type ClientConversationLastMessageSender = {
+  id: string
+  name: string
+  nickname: string
+  type: "user" | "app" | "system"
+}
+
 export type ClientConversation = {
   avatar: string
   canSend: boolean
@@ -127,6 +134,7 @@ export type ClientConversation = {
   lastMessageAt: string | null
   lastMessageId: string | null
   lastMessageSeq: number
+  lastMessageSender: ClientConversationLastMessageSender | null
   lastMessageSummary: string
   lastChoiceSeq: number
   lastMentionedSeq: number
@@ -275,13 +283,70 @@ export type ClientCardMessageBody = {
   url: string
 }
 
-export type ClientChartMessageBody = {
-  chartType: "line" | "bar" | "pie" | "radar"
-  data: Record<string, unknown>
+export type ClientChartSeries = {
+  name: string
+  values: (number | null)[]
+}
+
+export type ClientLineChartMessageBody = {
+  chartType: "line"
+  data: {
+    labels: string[]
+    series: ClientChartSeries[]
+  }
   description: string
   title: string
   type: "chart"
 }
+
+export type ClientBarChartMessageBody = {
+  chartType: "bar"
+  data: {
+    direction: "horizontal" | "vertical"
+    labels: string[]
+    mode: "grouped" | "stacked"
+    series: ClientChartSeries[]
+  }
+  description: string
+  title: string
+  type: "chart"
+}
+
+export type ClientPieChartMessageBody = {
+  chartType: "pie"
+  data: {
+    items: {
+      name: string
+      value: number
+    }[]
+  }
+  description: string
+  title: string
+  type: "chart"
+}
+
+export type ClientRadarChartMessageBody = {
+  chartType: "radar"
+  data: {
+    axes: {
+      max: number
+      name: string
+    }[]
+    series: {
+      name: string
+      values: number[]
+    }[]
+  }
+  description: string
+  title: string
+  type: "chart"
+}
+
+export type ClientChartMessageBody =
+  | ClientLineChartMessageBody
+  | ClientBarChartMessageBody
+  | ClientPieChartMessageBody
+  | ClientRadarChartMessageBody
 
 export type ClientFileMessageBody = {
   fileId: string
@@ -290,7 +355,11 @@ export type ClientFileMessageBody = {
   type: "file"
 }
 
+export type ImageCaptionType = "text" | "markdown"
+
 export type ClientImageMessageBody = {
+  caption?: string
+  captionType?: ImageCaptionType
   fileId: string
   height?: number
   type: "image"

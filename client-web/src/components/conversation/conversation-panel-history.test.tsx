@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { ClientConversation } from "@/lib/client-data-api"
 import type { ConversationPanelMessage } from "@/lib/conversation-panel-types"
-import { ConversationPanelHistory } from "@/components/conversation/conversation-panel-history"
+import {
+  ConversationPanelHistory,
+  type ConversationHistoryNavigation,
+} from "@/components/conversation/conversation-panel-history"
 import { formatConversationMessageTime } from "@/lib/conversation-message-presenter"
 
 const testState = vi.hoisted(() => ({
@@ -16,6 +19,7 @@ const testState = vi.hoisted(() => ({
 }))
 
 const defaultResizeObserver = window.ResizeObserver
+const defaultScrollIntoView = HTMLElement.prototype.scrollIntoView
 
 class ControlledResizeObserver implements ResizeObserver {
   constructor(callback: ResizeObserverCallback) {
@@ -115,6 +119,10 @@ describe("ConversationPanelHistory", () => {
       configurable: true,
       value: ControlledResizeObserver,
     })
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    })
   })
 
   afterEach(() => {
@@ -122,6 +130,10 @@ describe("ConversationPanelHistory", () => {
     Object.defineProperty(window, "ResizeObserver", {
       configurable: true,
       value: defaultResizeObserver,
+    })
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: defaultScrollIntoView,
     })
   })
 
@@ -384,7 +396,92 @@ describe("ConversationPanelHistory", () => {
       formatConversationMessageTime(moreThanOneHourLater.createdAt)
     )
   })
+
+  it("centers and highlights a message selected from search", () => {
+    const onReturnToLatest = vi.fn()
+    const onFocusHandled = vi.fn()
+    const message = createMessage("message-1", "other")
+    render(
+      <ConversationPanelHistory
+        {...createProps([message])}
+        navigation={createHistoryNavigation({
+          focus: { messageId: message.id, requestKey: 1 },
+          onFocusHandled,
+          onReturnToLatest,
+        })}
+      />
+    )
+
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({
+      block: "center",
+    })
+    expect(screen.getByTestId("message-message-1").parentElement).toHaveClass(
+      "ring-2"
+    )
+    expect(onFocusHandled).toHaveBeenCalledWith(1)
+    fireEvent.click(screen.getByRole("button", { name: "回到最新消息" }))
+    expect(onReturnToLatest).toHaveBeenCalledOnce()
+  })
+
+  it("loads newer messages when scrolling down in history mode", () => {
+    const onLoadAfterMessages = vi.fn()
+    render(
+      <ConversationPanelHistory
+        {...createProps([createMessage("message-1", "other")])}
+        navigation={createHistoryNavigation({ onLoadAfterMessages })}
+      />
+    )
+    const viewport = getViewport()
+    viewport.scrollTop = testState.scrollHeight - testState.clientHeight
+    fireEvent.scroll(viewport)
+
+    expect(onLoadAfterMessages).toHaveBeenCalledOnce()
+  })
+
+  it("does not treat the final newer history page as realtime messages", () => {
+    const initialMessages = [createMessage("message-1", "other")]
+    const props = createProps(initialMessages)
+    const { rerender } = render(
+      <ConversationPanelHistory
+        {...props}
+        navigation={createHistoryNavigation({ loadingAfter: true })}
+      />
+    )
+    const viewport = getViewport()
+    viewport.scrollTop = 100
+    fireEvent.scroll(viewport)
+
+    testState.scrollHeight = 1_100
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        messages={[...initialMessages, createMessage("message-2", "other")]}
+        navigation={createHistoryNavigation({
+          loadingAfter: false,
+          viewMode: "latest",
+        })}
+      />
+    )
+
+    expect(viewport.scrollTop).toBe(100)
+    expect(screen.queryByText(/条新消息/)).not.toBeInTheDocument()
+  })
 })
+
+function createHistoryNavigation(
+  overrides: Partial<ConversationHistoryNavigation> = {}
+): ConversationHistoryNavigation {
+  return {
+    focus: null,
+    loadingAfter: false,
+    onFocusHandled: vi.fn(),
+    onLoadAfterMessages: vi.fn(),
+    onReturnToLatest: vi.fn(),
+    pendingLatestMessageCount: 0,
+    viewMode: "history",
+    ...overrides,
+  }
+}
 
 function getViewport() {
   const viewport = document.querySelector<HTMLDivElement>(

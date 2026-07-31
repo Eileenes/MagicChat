@@ -30,6 +30,23 @@ func (s *Service) UpdateName(ctx context.Context, cmd UpdateNameCommand) (Conver
 	return s.finishMutation(ctx, actor.ID, conversation, message, userIDs)
 }
 
+func (s *Service) UpdateAnnouncement(ctx context.Context, cmd UpdateAnnouncementCommand) (ConversationMutationResult, error) {
+	conversationID, err := normalizeConversationID(cmd.ConversationID)
+	if err != nil {
+		return ConversationMutationResult{}, invalidRequest(err.Error(), err)
+	}
+	announcement, err := normalizeGroupAnnouncement(cmd.Announcement)
+	if err != nil {
+		return ConversationMutationResult{}, invalidRequest(err.Error(), err)
+	}
+	actor := actorUser(cmd.Actor)
+	conversation, message, userIDs, err := s.updateAnnouncement(s.db, actor, conversationID, announcement)
+	if err != nil {
+		return ConversationMutationResult{}, mapManagedGroupError(err)
+	}
+	return s.finishMutation(ctx, actor.ID, conversation, message, userIDs)
+}
+
 func (s *Service) UpdateVisibility(ctx context.Context, cmd UpdateVisibilityCommand) (ConversationMutationResult, error) {
 	conversationID, err := normalizeConversationID(cmd.ConversationID)
 	if err != nil {
@@ -68,6 +85,69 @@ func (s *Service) finishMutation(ctx context.Context, actorID string, conversati
 
 func (s *Service) updateName(db *gorm.DB, actor store.User, conversationID, name string) (store.Conversation, *store.Message, []string, error) {
 	return s.updateGroupField(db, actor, conversationID, name, false)
+}
+
+func (s *Service) updateAnnouncement(db *gorm.DB, actor store.User, conversationID, announcement string) (store.Conversation, *store.Message, []string, error) {
+	var conversation store.Conversation
+	var message *store.Message
+	userIDs := []string{}
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&conversation, "id = ?", conversationID).Error; err != nil {
+			return err
+		}
+		if conversation.Status != store.ConversationStatusActive {
+			return ErrAccessDenied
+		}
+		if conversation.Kind != store.ConversationKindGroup {
+			return ErrNotGroup
+		}
+		var current store.ConversationMember
+		if err := tx.First(&current, "conversation_id = ? AND member_type = ? AND member_id = ? AND left_at IS NULL", conversationID, store.ConversationMemberTypeUser, actor.ID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAccessDenied
+			}
+			return err
+		}
+		if !canManage(current.Role) {
+			return ErrAccessDenied
+		}
+		if conversation.Announcement == announcement {
+			ids, err := loadActiveUserIDs(tx, conversationID)
+			if err != nil {
+				return err
+			}
+			userIDs = ids
+			return nil
+		}
+
+		now := s.now().UTC()
+		if err := tx.Model(&store.Conversation{}).Where("id = ?", conversationID).Updates(map[string]any{
+			"announcement": announcement,
+			"updated_at":   now,
+		}).Error; err != nil {
+			return err
+		}
+		conversation.Announcement = announcement
+		conversation.UpdatedAt = now
+		created, err := createGroupAnnouncementUpdatedSystemMessage(tx, &conversation, actor, announcement, now)
+		if err != nil {
+			return err
+		}
+		message = &created
+		if err := advanceReadSeq(tx, conversationID, actor.ID, created.Seq); err != nil {
+			return err
+		}
+		ids, err := loadActiveUserIDs(tx, conversationID)
+		if err != nil {
+			return err
+		}
+		userIDs = ids
+		return nil
+	})
+	if err != nil {
+		return store.Conversation{}, nil, nil, err
+	}
+	return conversation, message, userIDs, nil
 }
 
 func (s *Service) updateVisibility(db *gorm.DB, actor store.User, conversationID, visibility string) (store.Conversation, *store.Message, []string, error) {

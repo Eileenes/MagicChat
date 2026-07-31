@@ -17,6 +17,7 @@ import {
   readLastConversationId,
   writeLastConversationId,
 } from "@/lib/last-conversation"
+import { createConversationMessageState } from "@/lib/client-data-state"
 
 const mocks = vi.hoisted(() => ({
   createConversationTopic: vi.fn(),
@@ -76,13 +77,9 @@ describe("ChatPage create topic confirmation", () => {
       {
         ...createConversationOverrides([conversation]),
         getConversationMessageState: vi.fn(() => ({
-          error: null,
+          ...createConversationMessageState(),
           loaded: true,
-          loading: false,
-          loadingBefore: false,
           messages: [sourceMessage],
-          page: null,
-          sending: false,
         })),
         updateMessageTopic: vi.fn(),
       },
@@ -186,23 +183,11 @@ describe("ChatPage topic source forwarding", () => {
         getConversationMessageState: vi.fn((conversationId: string) =>
           conversationId === topic.id
             ? {
-                error: null,
+                ...createConversationMessageState(),
                 loaded: true,
-                loading: false,
-                loadingBefore: false,
                 messages: [topicReply],
-                page: null,
-                sending: false,
               }
-            : {
-                error: null,
-                loaded: false,
-                loading: false,
-                loadingBefore: false,
-                messages: [],
-                page: null,
-                sending: false,
-              }
+            : createConversationMessageState()
         ),
       },
       `/chat/${topic.id}`
@@ -245,13 +230,9 @@ describe("ChatPage app direct access", () => {
       {
         ...createConversationOverrides([conversation]),
         getConversationMessageState: vi.fn(() => ({
-          error: null,
+          ...createConversationMessageState(),
           loaded: true,
-          loading: false,
-          loadingBefore: false,
           messages: [sourceMessage],
-          page: null,
-          sending: false,
         })),
       },
       `/chat/${conversation.id}`
@@ -370,6 +351,7 @@ function createConversationOverrides(
   return {
     conversations,
     ensureConversationMessages: vi.fn(),
+    focusConversationMessage: vi.fn(),
     getConversation: vi.fn(
       (conversationId: string) =>
         conversations.find(
@@ -439,10 +421,12 @@ function createClientDataValue(
     createGroupConversation: vi.fn(),
     createProject: vi.fn(),
     compactConversationMessages: vi.fn(),
+    consumeConversationMessageFocus: vi.fn(),
     registerConversationMessageView: vi.fn(() => vi.fn()),
     dismissConversation: vi.fn(),
     dissolveGroupConversation: vi.fn(),
     ensureConversationMessages: vi.fn(),
+    focusConversationMessage: vi.fn(),
     getConversation: vi.fn(() => null),
     getConversationMessageState: vi.fn(),
     handleIncomingConversationMessage: vi.fn(),
@@ -451,6 +435,7 @@ function createClientDataValue(
     handleIncomingMessageReactionsUpdate: vi.fn(),
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
+    loadAfterConversationMessages: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
     loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
@@ -466,6 +451,7 @@ function createClientDataValue(
     refreshProjects: vi.fn(),
     removeConversation: vi.fn(),
     removeGroupConversationMember: vi.fn(),
+    returnToLatestConversationMessages: vi.fn(),
     respondToChoice: vi.fn(),
     revokeConversationMessage: vi.fn(),
     setMessageReaction: vi.fn(),
@@ -484,6 +470,7 @@ function createClientDataValue(
     updateConversationLastMessage: vi.fn(),
     updateConversationPinned: vi.fn(),
     updateConversationMuted: vi.fn(),
+    updateGroupConversationAnnouncement: vi.fn(),
     updateGroupConversationAvatar: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,

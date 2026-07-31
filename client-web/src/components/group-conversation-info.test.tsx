@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { describe, expect, it, vi } from "vitest"
@@ -187,6 +193,108 @@ describe("GroupConversationInfo", () => {
     expect(memberList).not.toBeNull()
     expect(memberList).toHaveTextContent(/Owner.*Admin.*Moli.*Alice.*Bob/)
   })
+
+  it("lets an owner edit and clear the group announcement", async () => {
+    const user = userEvent.setup()
+    const conversation = createOwnedGroupConversation()
+    conversation.announcement = "旧公告"
+    const updateGroupConversationAnnouncement = vi
+      .fn()
+      .mockResolvedValue(conversation)
+
+    render(
+      <MemoryRouter>
+        <ClientDataContext.Provider
+          value={createClientDataContextValue({
+            conversations: [conversation],
+            getConversation: vi.fn(() => conversation),
+            updateGroupConversationAnnouncement,
+          })}
+        >
+          <Sheet open>
+            <SheetContent showCloseButton={false}>
+              <GroupConversationInfo conversationId={conversation.id} />
+            </SheetContent>
+          </Sheet>
+        </ClientDataContext.Provider>
+      </MemoryRouter>
+    )
+
+    expect(screen.getByText("旧公告")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "修改群公告" }))
+    const editor = screen.getByLabelText("群公告")
+    fireEvent.change(editor, {
+      target: { value: `${" ".repeat(10)}${"群".repeat(195)}` },
+    })
+    expect(editor).toHaveValue(`${" ".repeat(10)}${"群".repeat(195)}`)
+    expect(screen.getByText("195/200")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "保存" }))
+    await waitFor(() =>
+      expect(updateGroupConversationAnnouncement).toHaveBeenCalledWith(
+        conversation.id,
+        "群".repeat(195)
+      )
+    )
+
+    await user.click(screen.getByRole("button", { name: "修改群公告" }))
+    const reopenedEditor = screen.getByLabelText("群公告")
+    fireEvent.change(reopenedEditor, {
+      target: { value: "群".repeat(201) },
+    })
+    expect(reopenedEditor).toHaveValue("群".repeat(201))
+    expect(reopenedEditor).toHaveAttribute("aria-invalid", "true")
+    expect(screen.getByText("201/200")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled()
+
+    await user.click(screen.getByRole("button", { name: "清空公告" }))
+    const clearConfirm = screen.getByRole("alertdialog")
+    expect(clearConfirm).toHaveTextContent(
+      "确定要清空当前群公告吗？清空后，群聊页面将不再展示公告。"
+    )
+    expect(updateGroupConversationAnnouncement).toHaveBeenCalledTimes(1)
+    await user.click(within(clearConfirm).getByRole("button", { name: "取消" }))
+    expect(updateGroupConversationAnnouncement).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole("button", { name: "清空公告" }))
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "清空公告",
+      })
+    )
+    await waitFor(() =>
+      expect(updateGroupConversationAnnouncement).toHaveBeenLastCalledWith(
+        conversation.id,
+        ""
+      )
+    )
+  })
+
+  it("shows the group announcement read-only to regular members", () => {
+    const conversation = createGroupConversation()
+    conversation.announcement = "成员可查看公告"
+
+    render(
+      <MemoryRouter>
+        <ClientDataContext.Provider
+          value={createClientDataContextValue({
+            conversations: [conversation],
+            getConversation: vi.fn(() => conversation),
+          })}
+        >
+          <Sheet open>
+            <SheetContent showCloseButton={false}>
+              <GroupConversationInfo conversationId={conversation.id} />
+            </SheetContent>
+          </Sheet>
+        </ClientDataContext.Provider>
+      </MemoryRouter>
+    )
+
+    expect(screen.getByText("成员可查看公告")).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "修改群公告" })
+    ).not.toBeInTheDocument()
+  })
 })
 
 function createClientDataContextValue(
@@ -229,8 +337,10 @@ function createClientDataContextValue(
     registerConversationMessageView: vi.fn(() => vi.fn()),
     createGroupConversation: vi.fn(),
     createProject: vi.fn(),
+    consumeConversationMessageFocus: vi.fn(),
     dismissConversation: vi.fn(),
     ensureConversationMessages: vi.fn(),
+    focusConversationMessage: vi.fn(),
     dissolveGroupConversation: vi.fn(),
     getConversation: vi.fn((conversationId: string) =>
       conversationId === conversation.id ? conversation : null
@@ -242,6 +352,7 @@ function createClientDataContextValue(
     handleIncomingMessageReactionsUpdate: vi.fn(),
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
+    loadAfterConversationMessages: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
     loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
@@ -257,6 +368,7 @@ function createClientDataContextValue(
     refreshProjects: vi.fn(),
     removeConversation: vi.fn(),
     removeGroupConversationMember: vi.fn(),
+    returnToLatestConversationMessages: vi.fn(),
     respondToChoice: vi.fn(),
     revokeConversationMessage: vi.fn(),
     setMessageReaction: vi.fn(),
@@ -276,6 +388,7 @@ function createClientDataContextValue(
     updateConversationPinned: vi.fn(),
     updateConversationMuted: vi.fn(),
     updateGroupConversationAvatar: vi.fn(),
+    updateGroupConversationAnnouncement: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,
   }

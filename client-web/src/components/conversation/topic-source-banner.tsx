@@ -104,6 +104,7 @@ export function TopicSourceBanner({
   )
   const messageActionOptions: MessageActionOptions = {
     copyDisabled: true,
+    hideCopy: loadedSource.body.type === "image",
     onForward: onForward ? () => onForward(loadedSource) : undefined,
     onMultiSelect: onMultiSelect
       ? () => onMultiSelect(loadedSource)

@@ -40,6 +40,8 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00025_add_message_reactions.sql",
 		"00026_add_conversation_user_preferences.sql",
 		"00027_add_message_choices.sql",
+		"00028_add_message_search_indexes.sql",
+		"00029_add_group_announcements.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -47,6 +49,22 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	for index, match := range matches {
 		if got := filepath.Base(match); got != want[index] {
 			t.Fatalf("migration file %d = %q, want %q", index, got, want[index])
+		}
+	}
+}
+
+func TestGroupAnnouncementsMigration(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00029_add_group_announcements.sql")
+	if err != nil {
+		t.Fatalf("read group announcements migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"add column announcement text not null default ''",
+		"drop column announcement",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("group announcements migration missing %q", required)
 		}
 	}
 }
@@ -783,6 +801,36 @@ func TestTemporaryFileExpirationMigrationDefinesTieredRetention(t *testing.T) {
 		if !strings.Contains(sql, required) {
 			t.Fatalf("temporary file expiration migration missing %q", required)
 		}
+	}
+}
+
+func TestMessageSearchMigrationAddsDisposableOrderingIndexes(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00028_add_message_search_indexes.sql")
+	if err != nil {
+		t.Fatalf("read message search migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+
+	for _, required := range []string{
+		"-- +goose no transaction",
+		"-- +goose up",
+		"create index concurrently message_registry_sender_search_order_index",
+		"on message_registry (sender_id, partition_year desc, created_at desc, id desc)",
+		"where sender_id is not null",
+		"create index concurrently message_registry_conversation_search_order_index",
+		"on message_registry (conversation_id, partition_year desc, created_at desc, id desc)",
+		"and revoked_at is null",
+		"and sender_type in ('user', 'app')",
+		"-- +goose down",
+		"drop index concurrently if exists message_registry_conversation_search_order_index",
+		"drop index concurrently if exists message_registry_sender_search_order_index",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("message search migration missing %q", required)
+		}
+	}
+	if strings.Contains(sql, "message_registry_search_order_index") {
+		t.Fatal("message search migration still defines the unused global ordering index")
 	}
 }
 

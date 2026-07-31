@@ -24,6 +24,7 @@ import { messageHoverActionButtonClassName } from "@/components/conversation/mes
 export type MessageActionOptions = {
   canRevoke?: boolean
   copyDisabled?: boolean
+  hideCopy?: boolean
   onCopy?: () => void
   onCreateTopic?: () => void
   onForward?: () => void
@@ -50,6 +51,7 @@ export function MessageActionMenu({
   canRevoke = false,
   children,
   copyDisabled = false,
+  hideCopy = false,
   onCopy,
   onCreateTopic,
   onForward,
@@ -60,6 +62,7 @@ export function MessageActionMenu({
   const actions = resolveMessageActions({
     canRevoke,
     copyDisabled,
+    hideCopy,
     onCopy,
     onCreateTopic,
     onForward,
@@ -150,6 +153,7 @@ export function MessageMoreActionsMenu({
 function resolveMessageActions({
   canRevoke = false,
   copyDisabled = false,
+  hideCopy = false,
   onCopy,
   onCreateTopic,
   onForward,
@@ -157,14 +161,19 @@ function resolveMessageActions({
   onReply,
   onRevoke,
 }: MessageActionOptions): MessageActionItem[] {
-  const actions: MessageActionItem[] = [
-    {
+  const actions: MessageActionItem[] = []
+
+  if (!hideCopy) {
+    actions.push({
       disabled: copyDisabled,
       icon: Copy,
       key: "copy",
       label: "复制",
       onSelect: onCopy,
-    },
+    })
+  }
+
+  actions.push(
     {
       disabled: !onReply,
       icon: Reply,
@@ -185,8 +194,8 @@ function resolveMessageActions({
       key: "multi-select",
       label: "多选",
       onSelect: onMultiSelect,
-    },
-  ]
+    }
+  )
 
   if (onCreateTopic) {
     actions.push({

@@ -1,16 +1,13 @@
 package httpserver
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 const (
 	maxVoiceMessageDurationMS  = 60_000
 	maxVoiceMessageUploadBytes = 1 * 1024 * 1024
 	messageTypeVoice           = "voice"
+	voiceMessageMP4ContentType = "audio/mp4"
 	voiceMessageContentType    = "audio/webm"
-	voiceMessageDemoTranscript = "这是一段语音消息的演示转写文字"
 )
 
 var webMHeader = []byte{0x1a, 0x45, 0xdf, 0xa3}
@@ -24,12 +21,10 @@ type voiceMessageBody struct {
 	Transcript  string `json:"transcript"`
 }
 
-func voiceMessageSummary(durationMS int, transcript string) string {
-	totalSeconds := (durationMS + 999) / 1000
-	summary := fmt.Sprintf("[语音] %02d:%02d", totalSeconds/60, totalSeconds%60)
+func voiceMessageSummary(_ int, transcript string) string {
 	transcript = strings.TrimSpace(transcript)
 	if transcript == "" {
-		return summary
+		return "[语音]"
 	}
-	return summary + " - " + transcript
+	return "[语音] " + transcript
 }

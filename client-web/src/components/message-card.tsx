@@ -1,6 +1,5 @@
 import { Link } from "react-router"
 
-import { Separator } from "@/components/ui/separator"
 import type { ClientCardMessageBody } from "@/lib/client-data-api"
 
 export function MessageCard({
@@ -12,7 +11,7 @@ export function MessageCard({
 }) {
   const target = interactive ? getCardTarget(card.url) : null
   const className =
-    "grid w-120 max-w-full gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    "grid w-80 max-w-full gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
   const content = <CardContent card={card} />
 
   if (target?.type === "internal") {
@@ -53,16 +52,11 @@ export function MessageCard({
 function CardContent({ card }: { card: ClientCardMessageBody }) {
   return (
     <>
-      <div className="truncate text-sm leading-snug font-medium">
-        {card.title}
-      </div>
+      <div className="truncate text-sm">{card.title}</div>
       {card.description.trim() && (
-        <>
-          <Separator className="bg-foreground/10" />
-          <div className="text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
-            {card.description}
-          </div>
-        </>
+        <div className="text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          {card.description}
+        </div>
       )}
     </>
   )

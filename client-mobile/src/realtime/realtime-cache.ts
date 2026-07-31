@@ -243,6 +243,7 @@ function markActiveConversationMessageRead(
           lastMessageAt: message.createdAt,
           lastMessageId: message.id,
           lastMessageSeq: message.seq,
+          lastMessageSender: getLastMessageSender(conversation, message),
           lastMessageSummary: formatClientMessageBodySummary(
             message.body,
             () => undefined
@@ -257,6 +258,32 @@ function markActiveConversationMessageRead(
     updatedConversation,
     ...conversations.filter((item) => item.id !== message.conversationId),
   ]
+}
+
+function getLastMessageSender(
+  conversation: ClientConversation,
+  message: ClientMessage
+): ClientConversation["lastMessageSender"] {
+  if (message.sender.type === "system") {
+    return {
+      id: message.sender.id,
+      name: "系统",
+      nickname: "",
+      type: "system",
+    }
+  }
+
+  const member = conversation.members?.find(
+    (item) =>
+      item.id === message.sender.id && item.type === message.sender.type
+  )
+
+  return {
+    id: message.sender.id,
+    name: member?.name ?? "",
+    nickname: member?.nickname ?? "",
+    type: message.sender.type,
+  }
 }
 
 function invalidateConversations(

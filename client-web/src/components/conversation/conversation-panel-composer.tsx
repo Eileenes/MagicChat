@@ -2,6 +2,7 @@ import * as React from "react"
 import {
   ImageIcon,
   LoaderCircle,
+  Mic,
   Paperclip,
   Send,
   Smile,
@@ -37,9 +38,7 @@ import {
 } from "@/lib/conversation-composer"
 import { type ExpressionItem } from "@/components/expression-picker"
 import { ExpressionPickerPopover } from "@/components/expression-picker-popover"
-import { SendVoiceMessageDialog } from "@/components/conversation/send-voice-message-dialog"
-import { SmartVoiceInputDialog } from "@/components/conversation/smart-voice-input-dialog"
-import { ConversationVoiceMenu } from "@/components/conversation/conversation-voice-menu"
+import { VoiceInputDialog } from "@/components/conversation/voice-input-dialog"
 import { MentionCandidateMenu } from "@/components/conversation/mention-candidate-menu"
 import { MarkdownIcon } from "@/components/icons/markdown-icon"
 import { Button } from "@/components/ui/button"
@@ -103,8 +102,7 @@ export const ConversationPanelComposer = React.forwardRef<
   const [fileDialogOpen, setFileDialogOpen] = React.useState(false)
   const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
   const [imagePreparing, setImagePreparing] = React.useState(false)
-  const [sendVoiceDialogOpen, setSendVoiceDialogOpen] = React.useState(false)
-  const [smartVoiceDialogOpen, setSmartVoiceDialogOpen] = React.useState(false)
+  const [voiceInputDialogOpen, setVoiceInputDialogOpen] = React.useState(false)
   const [mentionTrigger, setMentionTrigger] =
     React.useState<MentionTrigger | null>(null)
   const [selectedMentionIndex, setSelectedMentionIndex] = React.useState(0)
@@ -133,6 +131,17 @@ export const ConversationPanelComposer = React.forwardRef<
     focus() {
       window.requestAnimationFrame(() => {
         textareaRef.current?.focus()
+      })
+    },
+    focusAtEnd() {
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current
+        if (!textarea) {
+          return
+        }
+
+        textarea.focus()
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length)
       })
     },
     insertMention(target) {
@@ -365,21 +374,6 @@ export const ConversationPanelComposer = React.forwardRef<
 
   function handleImageButtonClick() {
     imageInputRef.current?.click()
-  }
-
-  function handleSmartVoiceInputAccept(transcript: string) {
-    const textarea = textareaRef.current
-
-    if (textarea) {
-      insertTextareaText(textarea, transcript, handleTextareaValueChange)
-    } else {
-      handleTextareaValueChange(draft + transcript)
-    }
-
-    setSmartVoiceDialogOpen(false)
-    window.requestAnimationFrame(() => {
-      textareaRef.current?.focus()
-    })
   }
 
   function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -649,11 +643,17 @@ export const ConversationPanelComposer = React.forwardRef<
             </Toggle>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <ConversationVoiceMenu
+            <Button
+              aria-label="语音输入"
               disabled={sending}
-              onSendVoiceMessage={() => setSendVoiceDialogOpen(true)}
-              onSmartVoiceInput={() => setSmartVoiceDialogOpen(true)}
-            />
+              onClick={() => setVoiceInputDialogOpen(true)}
+              size="icon"
+              title="语音输入"
+              type="button"
+              variant="outline"
+            >
+              <Mic className="size-4" />
+            </Button>
             <Button
               type="button"
               aria-label="发送消息"
@@ -689,17 +689,12 @@ export const ConversationPanelComposer = React.forwardRef<
         open={imageDialogOpen}
         sending={sending}
       />
-      <SendVoiceMessageDialog
-        conversationName={conversation.name}
-        onConfirm={onSendVoice}
-        onOpenChange={setSendVoiceDialogOpen}
-        open={sendVoiceDialogOpen}
+      <VoiceInputDialog
+        onSendText={onSendMessage}
+        onSendVoice={onSendVoice}
+        onOpenChange={setVoiceInputDialogOpen}
+        open={voiceInputDialogOpen}
         sending={sending}
-      />
-      <SmartVoiceInputDialog
-        onAccept={handleSmartVoiceInputAccept}
-        onOpenChange={setSmartVoiceDialogOpen}
-        open={smartVoiceDialogOpen}
       />
     </footer>
   )

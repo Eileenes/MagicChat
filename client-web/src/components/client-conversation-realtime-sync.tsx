@@ -57,6 +57,7 @@ export function ClientConversationRealtimeSync() {
           message.body.type === "system_event" &&
           (message.body.event === "group_avatar_updated" ||
             message.body.event === "group_name_updated" ||
+            message.body.event === "group_announcement_updated" ||
             message.body.event === "group_member_left" ||
             message.body.event === "group_member_removed")
         ) {

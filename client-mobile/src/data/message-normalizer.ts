@@ -1,4 +1,5 @@
 import { ApiRequestError } from "@/data/api-client"
+import { normalizeChartMessageBody } from "@/data/chart-message-normalizer"
 import type {
   ClientForwardableMessageBody,
   ClientMessage,
@@ -338,22 +339,7 @@ function normalizeMessageBody(
   }
 
   if (type === "chart") {
-    const chartType = asString(body.chart_type)
-    const data = asRecord(body.data)
-    const description = asString(body.description)
-    const title = asString(body.title)
-    if (
-      !data ||
-      (chartType !== "line" &&
-        chartType !== "bar" &&
-        chartType !== "pie" &&
-        chartType !== "radar") ||
-      description === undefined ||
-      title === undefined
-    ) {
-      throw new Error("invalid message body")
-    }
-    return { chartType, data, description, title, type }
+    return normalizeChartMessageBody(body)
   }
 
   if (type === "file") {
@@ -370,6 +356,12 @@ function normalizeMessageBody(
     const fileId = asString(body.file_id)
     if (!fileId) throw new Error("invalid message body")
     const image: Extract<ClientMessageBody, { type: "image" }> = { fileId, type }
+    const caption = asString(body.caption)?.trim() ?? ""
+    if (caption) {
+      image.caption = caption
+      image.captionType =
+        body.caption_type === "markdown" ? "markdown" : "text"
+    }
     const width = asNumber(body.width)
     const height = asNumber(body.height)
     if (width !== undefined && width > 0) image.width = width

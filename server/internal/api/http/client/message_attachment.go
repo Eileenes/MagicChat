@@ -2,9 +2,9 @@ package client
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"image/png"
 	"io"
 	"mime"
@@ -30,11 +30,12 @@ const (
 	maxImageMessageRequestBytes = maxImageMessageUploadBytes + 1*1024*1024
 	maxImageMessageDimension    = 1920
 
-	maxVoiceMessageDurationMS   = 60_000
-	maxVoiceMessageUploadBytes  = 1 * 1024 * 1024
-	maxVoiceMessageRequestBytes = maxVoiceMessageUploadBytes + 512*1024
-	voiceMessageContentType     = "audio/webm"
-	voiceMessageDemoTranscript  = "这是一段语音消息的演示转写文字"
+	maxVoiceMessageDurationMS       = 60_000
+	maxVoiceMessageUploadBytes      = 1 * 1024 * 1024
+	maxVoiceMessageRequestBytes     = maxVoiceMessageUploadBytes + 512*1024
+	maxVoiceMessageTranscriptLength = 5_000
+	voiceMessageMP4ContentType      = "audio/mp4"
+	voiceMessageWebMContentType     = "audio/webm"
 )
 
 var (
@@ -258,7 +259,7 @@ func (a *MessageAPI) createImage(c echo.Context) error {
 // createVoice godoc
 //
 // @Summary 发送语音消息
-// @Description 普通用户上传最长 60 秒的 WebM/Opus 音频并发送为会话语音消息。音频写入 temporary bucket，消息 body 保存 file_id、时长、文件大小、内容类型和转写文字。
+// @Description 普通用户上传最长 60 秒的 WebM/Opus 或 M4A/AAC 音频并发送为会话语音消息。音频写入 temporary bucket，消息 body 保存 file_id、时长、文件大小、内容类型和转写文字。
 // @Tags 客户端消息
 // @Accept multipart/form-data
 // @Produce json
@@ -266,7 +267,8 @@ func (a *MessageAPI) createImage(c echo.Context) error {
 // @Param client_message_id formData string true "客户端消息 ID"
 // @Param reply_to_message_id formData string false "引用消息 ID"
 // @Param duration_ms formData int true "语音时长（毫秒，最大 60000）"
-// @Param voice formData file true "WebM/Opus 语音文件"
+// @Param transcript formData string false "语音识别文字，最多 5000 个字符"
+// @Param voice formData file true "WebM/Opus 或 M4A/AAC 语音文件"
 // @Success 200 {object} successEnvelope{data=createMessageResponse}
 // @Success 201 {object} successEnvelope{data=createMessageResponse}
 // @Failure 400 {object} errorEnvelope
@@ -294,6 +296,10 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 	}
 	clientMessageID := c.FormValue("client_message_id")
 	replyToMessageID := c.FormValue("reply_to_message_id")
+	transcript, err := normalizeVoiceMessageTranscript(c.FormValue("transcript"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
 	if handled, err := a.prepareAttachmentUpload(c, current.ID, conversationID, clientMessageID, replyToMessageID); handled || err != nil {
 		return err
 	}
@@ -315,15 +321,16 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "语音文件不能为空")
 	}
 	contentType, _, err := mime.ParseMediaType(strings.TrimSpace(fileHeader.Header.Get("Content-Type")))
-	if err != nil || !strings.EqualFold(contentType, voiceMessageContentType) {
-		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "语音文件必须是 WebM/Opus 格式")
+	contentType, validContentType := normalizeVoiceMessageContentType(contentType)
+	if err != nil || !validContentType {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "语音文件必须是 WebM/Opus 或 M4A/AAC 格式")
 	}
 	file, err := fileHeader.Open()
 	if err != nil {
 		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "读取语音文件失败")
 	}
 	defer file.Close()
-	content, err := readVoiceMessageUpload(file)
+	content, err := readVoiceMessageUpload(file, contentType)
 	if err != nil {
 		if errors.Is(err, errVoiceMessageTooLarge) {
 			return writeFailure(c, http.StatusRequestEntityTooLarge, string(messageapp.CodeRequestTooLarge), "语音文件不能超过 1MiB")
@@ -331,14 +338,14 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
 	}
 	temporary, err := a.files.UploadTemporary(c.Request().Context(), fileapp.UploadTemporaryCommand{
-		Content: bytes.NewReader(content), ContentType: voiceMessageContentType, SizeBytes: int64(len(content)),
+		Content: bytes.NewReader(content), ContentType: contentType, SizeBytes: int64(len(content)),
 	})
 	if err != nil {
 		return writeMessageFileError(c, err)
 	}
 	body, err := json.Marshal(voiceMessageBody{
 		Type: "voice", FileID: temporary.ID, DurationMS: durationMS, SizeBytes: temporary.SizeBytes,
-		ContentType: voiceMessageContentType, Transcript: voiceMessageDemoTranscript,
+		ContentType: contentType, Transcript: transcript,
 	})
 	if err != nil {
 		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
@@ -346,7 +353,7 @@ func (a *MessageAPI) createVoice(c echo.Context) error {
 	return a.createPreparedAttachment(c, messageapp.CreatePreparedCommand{
 		AccountID: current.ID, Body: body, ClientMessageID: clientMessageID,
 		ConversationID: conversationID, ReplyToMessageID: replyToMessageID,
-		Summary: voiceMessageSummary(durationMS, voiceMessageDemoTranscript),
+		Summary: voiceMessageSummary(durationMS, transcript),
 	})
 }
 
@@ -419,7 +426,26 @@ func normalizeVoiceMessageDuration(raw string) (int, error) {
 	return duration, nil
 }
 
-func readVoiceMessageUpload(reader io.Reader) ([]byte, error) {
+func normalizeVoiceMessageTranscript(raw string) (string, error) {
+	transcript := strings.TrimSpace(raw)
+	if len([]rune(transcript)) > maxVoiceMessageTranscriptLength {
+		return "", errors.New("语音转写不能超过 5000 个字符")
+	}
+	return transcript, nil
+}
+
+func normalizeVoiceMessageContentType(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case voiceMessageWebMContentType:
+		return voiceMessageWebMContentType, true
+	case voiceMessageMP4ContentType, "audio/x-m4a", "audio/m4a":
+		return voiceMessageMP4ContentType, true
+	default:
+		return "", false
+	}
+}
+
+func readVoiceMessageUpload(reader io.Reader, contentType string) ([]byte, error) {
 	content, err := io.ReadAll(io.LimitReader(reader, maxVoiceMessageUploadBytes+1))
 	if err != nil {
 		return nil, errors.New("读取语音文件失败")
@@ -430,18 +456,56 @@ func readVoiceMessageUpload(reader io.Reader) ([]byte, error) {
 	if len(content) == 0 {
 		return nil, errors.New("语音文件不能为空")
 	}
-	if !bytes.HasPrefix(content, webMHeader) || !bytes.Contains(content, []byte("webm")) || !bytes.Contains(content, []byte("OpusHead")) {
-		return nil, errors.New("语音文件必须是 WebM/Opus 格式")
+	valid := false
+	switch contentType {
+	case voiceMessageWebMContentType:
+		valid = isWebMOpusVoice(content)
+	case voiceMessageMP4ContentType:
+		valid = isM4AAACVoice(content)
+	}
+	if !valid {
+		return nil, errors.New("语音文件必须是 WebM/Opus 或 M4A/AAC 格式")
 	}
 	return content, nil
 }
 
-func voiceMessageSummary(durationMS int, transcript string) string {
-	totalSeconds := (durationMS + 999) / 1000
-	summary := fmt.Sprintf("[语音] %02d:%02d", totalSeconds/60, totalSeconds%60)
+func isWebMOpusVoice(content []byte) bool {
+	return bytes.HasPrefix(content, webMHeader) &&
+		bytes.Contains(content, []byte("webm")) &&
+		bytes.Contains(content, []byte("OpusHead"))
+}
+
+func isM4AAACVoice(content []byte) bool {
+	if len(content) < 16 || !bytes.Equal(content[4:8], []byte("ftyp")) {
+		return false
+	}
+	ftypSize := int(binary.BigEndian.Uint32(content[:4]))
+	if ftypSize < 16 || ftypSize > len(content) || ftypSize%4 != 0 {
+		return false
+	}
+	if !containsM4ABrand(content[8:ftypSize]) {
+		return false
+	}
+	return bytes.Contains(content[ftypSize:], []byte("mp4a"))
+}
+
+func containsM4ABrand(ftyp []byte) bool {
+	if len(ftyp) < 8 {
+		return false
+	}
+	for offset := 0; offset+4 <= len(ftyp); offset += 4 {
+		switch string(ftyp[offset : offset+4]) {
+		case "M4A ", "M4B ", "mp41", "mp42", "isom", "iso2", "iso5", "iso6":
+			return true
+		}
+	}
+	return false
+}
+
+func voiceMessageSummary(_ int, transcript string) string {
 	transcript = strings.TrimSpace(transcript)
 	if transcript == "" {
-		return summary
+		return "[语音]"
 	}
-	return summary + " - " + transcript
+	return "[语音] " + transcript
 }

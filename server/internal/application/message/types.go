@@ -44,6 +44,7 @@ type Message struct {
 	ConversationID   string
 	CreatedAt        time.Time
 	DelegatedBy      *Identity
+	EditableBody     json.RawMessage
 	ID               string
 	ReplyTo          *Reply
 	ReplyToMessageID string

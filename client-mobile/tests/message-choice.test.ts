@@ -88,6 +88,7 @@ function conversation(
     lastMessageAt: null,
     lastMessageId: null,
     lastMessageSeq: 0,
+    lastMessageSender: null,
     lastMessageSummary: "",
     lastReadSeq: 0,
     memberCount: 0,
@@ -371,10 +372,10 @@ test("choice unread wins mention ties and removes duplicate choice prefix", () =
   )
 })
 
-test("cache v3 resets old normalized message rows once", () => {
-  assert.equal(MESSAGE_CACHE_DATABASE_VERSION, 3)
-  assert.equal(requiresNormalizedMessageCacheReset(2), true)
-  assert.equal(requiresNormalizedMessageCacheReset(3), false)
+test("cache v4 resets old normalized message rows once", () => {
+  assert.equal(MESSAGE_CACHE_DATABASE_VERSION, 4)
+  assert.equal(requiresNormalizedMessageCacheReset(3), true)
+  assert.equal(requiresNormalizedMessageCacheReset(4), false)
 
   const database = new DatabaseSync(":memory:")
   try {
@@ -390,7 +391,7 @@ test("cache v3 resets old normalized message rows once", () => {
       ) VALUES ('server', 'user', 'conversation', 1);
     `)
 
-    database.exec(createMessageCacheMigrationSQL(3))
+    database.exec(createMessageCacheMigrationSQL(4))
     assert.equal(
       database.prepare("SELECT COUNT(*) AS count FROM cached_messages").get()
         ?.count,
@@ -402,8 +403,8 @@ test("cache v3 resets old normalized message rows once", () => {
       1
     )
 
-    database.exec("PRAGMA user_version = 2")
-    database.exec(createMessageCacheMigrationSQL(2))
+    database.exec("PRAGMA user_version = 3")
+    database.exec(createMessageCacheMigrationSQL(3))
     assert.equal(
       database.prepare("SELECT COUNT(*) AS count FROM cached_messages").get()
         ?.count,

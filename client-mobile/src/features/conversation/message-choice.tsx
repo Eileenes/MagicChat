@@ -57,6 +57,8 @@ export function MessageChoice({
     ? (choice?.myOptionIds ?? [])
     : draftOptionIds
   const disabled = !canRespond || answered || submitting
+  const hasSubmittableSelection =
+    canRespond && Boolean(onRespond) && selectedOptionIds.length > 0
   const countsByOptionId = new Map(
     choice?.options.map((option) => [option.id, option.responseCount]) ?? []
   )
@@ -178,13 +180,24 @@ export function MessageChoice({
           <Separator borderColor="$borderColor" />
           <AppButton
             accessibilityLabel="提交选择"
-            disabled={
-              !canRespond || submitting || selectedOptionIds.length === 0
+            bg={hasSubmittableSelection ? "$color9" : "transparent"}
+            borderColor={
+              hasSubmittableSelection ? "$color9" : "$borderColor"
             }
+            color={hasSubmittableSelection ? "$white" : "$color"}
+            disabled={!hasSubmittableSelection || submitting}
+            disabledStyle={{
+              opacity: hasSubmittableSelection ? 0.72 : 0.45,
+            }}
             onPress={() => void submitResponse()}
+            pressStyle={
+              hasSubmittableSelection
+                ? { bg: "$color10", borderColor: "$color10" }
+                : undefined
+            }
             size="$3"
-            theme="gray"
-            variant="outlined"
+            theme={hasSubmittableSelection ? "teal" : "gray"}
+            variant={hasSubmittableSelection ? undefined : "outlined"}
             width="100%"
           >
             {submitting ? "提交中…" : "提交"}

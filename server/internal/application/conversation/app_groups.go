@@ -25,6 +25,7 @@ type ApplicationGroupIdentity struct {
 }
 
 type ApplicationGroupDetail struct {
+	Announcement   string
 	Avatar         string
 	CreatedAt      time.Time
 	CreatedBy      ApplicationGroupIdentity
@@ -102,6 +103,12 @@ type UpdateGroupNameAsApplicationCommand struct {
 	AppID          string
 	ConversationID string
 	Name           string
+}
+
+type UpdateGroupAnnouncementAsApplicationCommand struct {
+	Announcement   string
+	AppID          string
+	ConversationID string
 }
 
 type DissolveGroupAsApplicationCommand struct {
@@ -654,6 +661,65 @@ func (s *Service) UpdateGroupNameAsApplication(ctx context.Context, cmd UpdateGr
 	return s.loadApplicationGroupMutationResult(ctx, appID, conversationID, storedMessage)
 }
 
+func (s *Service) UpdateGroupAnnouncementAsApplication(ctx context.Context, cmd UpdateGroupAnnouncementAsApplicationCommand) (ApplicationGroupMutationResult, error) {
+	appID, conversationID, err := normalizeApplicationGroupSelector(cmd.AppID, cmd.ConversationID)
+	if err != nil {
+		return ApplicationGroupMutationResult{}, err
+	}
+	announcement, err := normalizeGroupAnnouncement(cmd.Announcement)
+	if err != nil {
+		return ApplicationGroupMutationResult{}, invalidRequest(err.Error(), err)
+	}
+	var storedMessage *store.Message
+	userIDs := []string{}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		actor, err := appapp.LockUsableApp(tx, appID)
+		if err != nil {
+			return err
+		}
+		conversation, current, err := loadApplicationGroupMembership(tx, appID, conversationID, true)
+		if err != nil {
+			return err
+		}
+		if !canManage(current.Role) {
+			return ErrAccessDenied
+		}
+		if conversation.Announcement == announcement {
+			ids, err := loadActiveUserIDs(tx, conversationID)
+			if err != nil {
+				return err
+			}
+			userIDs = ids
+			return nil
+		}
+		now := s.now().UTC()
+		if err := tx.Model(&store.Conversation{}).Where("id = ?", conversationID).
+			Updates(map[string]any{"announcement": announcement, "updated_at": now}).Error; err != nil {
+			return err
+		}
+		conversation.Announcement = announcement
+		conversation.UpdatedAt = now
+		created, err := createGroupAnnouncementUpdatedByApplicationSystemMessage(tx, &conversation, actor, announcement, now)
+		if err != nil {
+			return err
+		}
+		storedMessage = &created
+		ids, err := loadActiveUserIDs(tx, conversationID)
+		if err != nil {
+			return err
+		}
+		userIDs = ids
+		return nil
+	})
+	if err != nil {
+		return ApplicationGroupMutationResult{}, mapApplicationGroupMutationError(err)
+	}
+	if storedMessage != nil && s.notifications != nil {
+		s.notifications.PublishConversationMessage(ctx, userIDs, newMessage(*storedMessage))
+	}
+	return s.loadApplicationGroupMutationResult(ctx, appID, conversationID, storedMessage)
+}
+
 func (s *Service) DissolveGroupAsApplication(ctx context.Context, cmd DissolveGroupAsApplicationCommand) (DissolveResult, error) {
 	appID, conversationID, err := normalizeApplicationGroupSelector(cmd.AppID, cmd.ConversationID)
 	if err != nil {
@@ -832,7 +898,7 @@ func loadApplicationGroupDetail(db *gorm.DB, appID, conversationID string) (Appl
 		return ApplicationGroupDetail{}, err
 	}
 	return ApplicationGroupDetail{
-		Avatar: conversation.Avatar, CreatedAt: conversation.CreatedAt, CreatedBy: createdBy,
+		Announcement: conversation.Announcement, Avatar: conversation.Avatar, CreatedAt: conversation.CreatedAt, CreatedBy: createdBy,
 		CurrentAppRole: current.Role, ID: conversation.ID, MemberCount: memberCount,
 		Name: conversation.Name, Owner: ownerIdentity, PostingPolicy: conversation.PostingPolicy,
 		Status: conversation.Status, UpdatedAt: conversation.UpdatedAt, Visibility: conversation.Visibility,
@@ -988,4 +1054,19 @@ func createGroupNameUpdatedByApplicationSystemMessage(db *gorm.DB, conversation 
 		return store.Message{}, err
 	}
 	return createSystemMessage(db, conversation, body, actor.Name+" 修改群聊名称为 "+name, now)
+}
+
+func createGroupAnnouncementUpdatedByApplicationSystemMessage(db *gorm.DB, conversation *store.Conversation, actor store.App, announcement string, now time.Time) (store.Message, error) {
+	summary := actor.Name + " 更新了群公告"
+	if announcement == "" {
+		summary = actor.Name + " 清空了群公告"
+	}
+	body, err := json.Marshal(groupAnnouncementUpdatedSystemEventBody{
+		Actor: applicationSystemRef(actor), Announcement: announcement,
+		Event: systemEventGroupAnnouncementUpdated, Type: messageTypeSystemEvent,
+	})
+	if err != nil {
+		return store.Message{}, err
+	}
+	return createSystemMessage(db, conversation, body, summary, now)
 }

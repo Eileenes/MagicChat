@@ -40,6 +40,13 @@ type ConversationTopicResponse = {
   }
 }
 
+type ConversationLastMessageSenderResponse = {
+  id?: string
+  name?: string
+  nickname?: string
+  type?: string
+}
+
 type ConversationResponse = {
   avatar?: string
   can_send?: boolean
@@ -48,6 +55,7 @@ type ConversationResponse = {
   last_message_at?: string | null
   last_message_id?: string | null
   last_message_seq?: number
+  last_message_sender?: ConversationLastMessageSenderResponse | null
   last_message_summary?: string
   last_choice_seq?: number
   last_mentioned_seq?: number
@@ -311,6 +319,9 @@ function normalizeConversation(
     lastMessageAt: conversation.last_message_at ?? null,
     lastMessageId: conversation.last_message_id ?? null,
     lastMessageSeq: conversation.last_message_seq ?? 0,
+    lastMessageSender: normalizeConversationLastMessageSender(
+      conversation.last_message_sender
+    ),
     lastMessageSummary: conversation.last_message_summary ?? "",
     lastChoiceSeq: conversation.last_choice_seq ?? 0,
     lastMentionedSeq: conversation.last_mentioned_seq ?? 0,
@@ -339,6 +350,22 @@ function normalizeConversation(
   }
 
   return normalized
+}
+
+function normalizeConversationLastMessageSender(
+  sender: ConversationResponse["last_message_sender"]
+): ClientConversation["lastMessageSender"] {
+  if (!sender) {
+    return null
+  }
+
+  return {
+    id: sender.id ?? "",
+    name: sender.name ?? "",
+    nickname: sender.nickname ?? "",
+    type:
+      sender.type === "app" || sender.type === "system" ? sender.type : "user",
+  }
 }
 
 function normalizeConversationTopic(

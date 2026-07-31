@@ -40,12 +40,14 @@ export function VoiceRecordingPanel({
           {status === "requesting"
             ? "正在连接麦克风"
             : status === "processing"
-              ? "正在生成语音"
-              : status === "recording"
-                ? "正在录音"
-                : status === "recorded"
-                  ? "录音完成"
-                  : "准备录音"}
+              ? "正在结束录音"
+              : status === "transcribing"
+                ? "正在完成识别"
+                : status === "recording"
+                  ? "正在录音"
+                  : status === "recorded"
+                    ? "录音完成"
+                    : "准备录音"}
         </span>
         <span className="font-mono tabular-nums">
           {formatVoiceRecordingDuration(elapsedSeconds)}

@@ -60,6 +60,7 @@ services:
       PRIVATE_ASSETS_HOSTNAME: ${PRIVATE_ASSETS_HOSTNAME:-private-assets.localhost}
       TEMPORARY_ASSETS_HOSTNAME: ${TEMPORARY_ASSETS_HOSTNAME:-temporary-assets.localhost}
       AI_ASSISTANT_SECRET: ${AI_ASSISTANT_SECRET:-change-me}
+      ASRMODEL_API_KEY: ${ASRMODEL_API_KEY:-change-me}
       AWS_ENDPOINT_URL_S3: ${AWS_ENDPOINT_URL_S3:-https://s3.example.com}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-change-me}

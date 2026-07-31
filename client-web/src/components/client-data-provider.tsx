@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { matchPath, useLocation, useNavigate } from "react-router"
-import { toast } from "sonner"
 
 import {
   ClientDataRequestError,
@@ -11,7 +10,6 @@ import {
   listClientConversations,
   listConversationMessageChoiceSnapshots,
   listConversationMessageReactionSnapshots,
-  listConversationMessages,
   markConversationRead as markConversationReadRequest,
   setConversationMessageReaction as setConversationMessageReactionRequest,
   submitConversationMessageChoiceResponse,
@@ -43,13 +41,9 @@ import {
   applyMessageReactionSnapshot,
   applyMessageChoiceState,
   applyMessageReactionsUpdate,
-  getClientDataErrorMessage,
   getMessageSummary,
   getNewestMessageSeq,
   mergeConversationMessages,
-  mergePageWithAfterResult,
-  mergePageWithBeforeResult,
-  messagePageLimit,
   orderConversations,
   updatePageWithMessage,
 } from "@/lib/client-data-state"
@@ -63,6 +57,7 @@ import { Button } from "@/components/ui/button"
 import { ClientLoadingPage } from "@/components/client-loading-page"
 import { useConversationActions } from "@/hooks/use-conversation-actions"
 import { useConversationMessageRetention } from "@/hooks/use-conversation-message-retention"
+import { useConversationMessageWindow } from "@/hooks/use-conversation-message-window"
 import { useConversationSenders } from "@/hooks/use-conversation-senders"
 import { useAppInfo } from "@/lib/app-info-context"
 
@@ -120,8 +115,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const conversationMessageStatesRef = useRef(conversationMessageStates)
   const conversationsRef = useRef(conversations)
   const mountedRef = useRef(true)
-  const loadingConversationIdsRef = useRef<Set<string>>(new Set())
-  const syncingAfterConversationIdsRef = useRef<Set<string>>(new Set())
   const refreshingReactionSnapshotKeysRef = useRef<Set<string>>(new Set())
   const reactionSnapshotMinimumVersionsRef = useRef<Map<string, number>>(
     new Map()
@@ -328,6 +321,17 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [applyConversationMessageRetention]
   )
 
+  const consumeConversationMessageFocus = useCallback(
+    (conversationId: string, requestKey: number) => {
+      updateConversationMessageState(conversationId, (currentState) =>
+        currentState.focus?.requestKey === requestKey
+          ? { ...currentState, focus: null }
+          : currentState
+      )
+    },
+    [updateConversationMessageState]
+  )
+
   const compactConversationMessages = useCallback((conversationId: string) => {
     if (!conversationId) {
       return
@@ -414,6 +418,28 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [applyConversationMessageToList]
   )
 
+  const getConversationLatestSeq = useCallback(
+    (conversationId: string) =>
+      conversationsRef.current.find(
+        (conversation) => conversation.id === conversationId
+      )?.lastMessageSeq ?? 0,
+    []
+  )
+  const {
+    ensureConversationMessages,
+    focusConversationMessage,
+    loadAfterConversationMessages,
+    loadBeforeConversationMessages,
+    returnToLatestConversationMessages,
+    syncAfterConversationMessages,
+  } = useConversationMessageWindow({
+    conversationMessageStates,
+    conversationMessageStatesRef,
+    getConversationLatestSeq,
+    rememberConversationMessage,
+    updateConversationMessageState,
+  })
+
   const updateTopicSourcePreview = useCallback((message: ClientMessage) => {
     const topicConversation = conversationsRef.current.find(
       (conversation) =>
@@ -474,14 +500,31 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       options: { markLoaded?: boolean; updateList?: boolean } = {}
     ) => {
       updateConversationMessageState(message.conversationId, (state) => {
+        if (
+          state.viewMode === "history" &&
+          message.seq > (state.page?.newestSeq ?? 0)
+        ) {
+          const isNewLatestMessage = message.seq > state.latestKnownSeq
+          return {
+            ...state,
+            error: null,
+            latestKnownSeq: Math.max(state.latestKnownSeq, message.seq),
+            pendingLatestMessageCount:
+              state.pendingLatestMessageCount + (isNewLatestMessage ? 1 : 0),
+          }
+        }
         const messages = mergeConversationMessages(state.messages, [message])
 
         return {
           ...state,
           error: null,
+          latestKnownSeq: Math.max(state.latestKnownSeq, message.seq),
           loaded: options.markLoaded ? true : state.loaded,
           messages,
-          page: updatePageWithMessage(state.page, messages),
+          page:
+            state.viewMode === "history"
+              ? state.page
+              : updatePageWithMessage(state.page, messages),
         }
       })
       updateTopicSourcePreview(message)
@@ -607,11 +650,12 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       const fromCurrentUser =
         currentUserId !== "" &&
         isClientMessageInitiatedByUser(message, currentUserId)
-      const visibleInActiveConversation =
-        Boolean(options.visible) &&
-        options.activeConversationId === message.conversationId
       const messageState =
         conversationMessageStatesRef.current[message.conversationId]
+      const visibleInActiveConversation =
+        messageState?.viewMode !== "history" &&
+        Boolean(options.visible) &&
+        options.activeConversationId === message.conversationId
       const activeConversation =
         options.activeConversationId === message.conversationId
       const shouldCacheMessage =
@@ -1041,160 +1085,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [handleError]
   )
 
-  const ensureConversationMessages = useCallback(
-    (conversationId: string) => {
-      if (!conversationId) {
-        return
-      }
-
-      const state = conversationMessageStatesRef.current[conversationId]
-      if (
-        state?.loaded ||
-        state?.loading ||
-        loadingConversationIdsRef.current.has(conversationId)
-      ) {
-        return
-      }
-
-      loadingConversationIdsRef.current.add(conversationId)
-      updateConversationMessageState(conversationId, (currentState) => ({
-        ...currentState,
-        error: null,
-        loading: true,
-      }))
-
-      void listConversationMessages(conversationId, {
-        limit: messagePageLimit,
-      })
-        .then((result) => {
-          updateConversationMessageState(conversationId, (currentState) => ({
-            ...currentState,
-            error: null,
-            loaded: true,
-            loading: false,
-            messages: mergeConversationMessages(
-              currentState.messages,
-              result.messages
-            ),
-            page: result.page,
-          }))
-        })
-        .catch((error: unknown) => {
-          const message = getClientDataErrorMessage(error, "加载消息失败")
-          updateConversationMessageState(conversationId, (currentState) => ({
-            ...currentState,
-            error: message,
-            loaded: false,
-            loading: false,
-          }))
-          toast.error(message)
-        })
-        .finally(() => {
-          loadingConversationIdsRef.current.delete(conversationId)
-        })
-    },
-    [updateConversationMessageState]
-  )
-
-  const loadBeforeConversationMessages = useCallback(
-    (conversationId: string) => {
-      const state = conversationMessageStatesRef.current[conversationId]
-      if (!state?.page?.hasMoreBefore || !state.loaded || state.loadingBefore) {
-        return
-      }
-
-      const beforeSeq = state.page.oldestSeq
-      updateConversationMessageState(conversationId, (currentState) => ({
-        ...currentState,
-        error: null,
-        loadingBefore: true,
-      }))
-
-      void listConversationMessages(conversationId, {
-        beforeSeq,
-        limit: messagePageLimit,
-      })
-        .then((result) => {
-          updateConversationMessageState(conversationId, (currentState) => {
-            const messages = mergeConversationMessages(
-              currentState.messages,
-              result.messages
-            )
-
-            return {
-              ...currentState,
-              error: null,
-              loaded: true,
-              loadingBefore: false,
-              messages,
-              page: mergePageWithBeforeResult(
-                currentState.page,
-                result.page,
-                messages
-              ),
-            }
-          })
-        })
-        .catch((error: unknown) => {
-          const message = getClientDataErrorMessage(error, "加载更早消息失败")
-          updateConversationMessageState(conversationId, (currentState) => ({
-            ...currentState,
-            error: message,
-            loadingBefore: false,
-          }))
-          toast.error(message)
-        })
-    },
-    [updateConversationMessageState]
-  )
-
-  const syncAfterConversationMessages = useCallback(
-    (conversationId: string, afterSeq: number) => {
-      if (syncingAfterConversationIdsRef.current.has(conversationId)) {
-        return
-      }
-
-      syncingAfterConversationIdsRef.current.add(conversationId)
-
-      void listConversationMessages(conversationId, {
-        afterSeq,
-        limit: messagePageLimit,
-      })
-        .then((result) => {
-          const lastReceivedMessage =
-            result.messages[result.messages.length - 1]
-          updateConversationMessageState(conversationId, (currentState) => {
-            const messages = mergeConversationMessages(
-              currentState.messages,
-              result.messages
-            )
-
-            return {
-              ...currentState,
-              error: null,
-              messages,
-              page: mergePageWithAfterResult(
-                currentState.page,
-                result.page,
-                messages
-              ),
-            }
-          })
-
-          if (lastReceivedMessage) {
-            rememberConversationMessage(lastReceivedMessage)
-          }
-        })
-        .catch((error: unknown) => {
-          toast.error(getClientDataErrorMessage(error, "同步新消息失败"))
-        })
-        .finally(() => {
-          syncingAfterConversationIdsRef.current.delete(conversationId)
-        })
-    },
-    [rememberConversationMessage, updateConversationMessageState]
-  )
-
   const syncLoadedConversationMessages = useCallback(() => {
     for (const [conversationId, state] of Object.entries(
       conversationMessageStatesRef.current
@@ -1264,6 +1154,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   } = useConversationActions({
     conversations,
@@ -1424,6 +1315,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     contactApps,
     contactGroups,
     compactConversationMessages,
+    consumeConversationMessageFocus,
     conversations,
     contacts,
     contactsError,
@@ -1434,11 +1326,13 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     dissolveGroupConversation,
     dismissConversation,
     ensureConversationMessages,
+    focusConversationMessage,
     foregroundConversationId,
     getConversation,
     getConversationMessageState,
     joinGroupConversation,
     leaveGroupConversation,
+    loadAfterConversationMessages,
     loadBeforeConversationMessages,
     markConversationRead,
     setConversationPinned,
@@ -1471,6 +1365,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     removeConversation,
     restoreConversation,
     removeGroupConversationMember,
+    returnToLatestConversationMessages,
     revokeConversationMessage,
     setMessageReaction,
     sendConversationFile,
@@ -1491,6 +1386,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     updateConversationMuted,
     updateMessageTopic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   }
 

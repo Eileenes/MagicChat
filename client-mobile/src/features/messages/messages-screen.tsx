@@ -28,6 +28,7 @@ import { buildConversationHref } from "@/navigation/conversations"
 
 const MESSAGE_PAGE_SIZE = 20
 const PREWARM_CONVERSATION_COUNT = 30
+const CONVERSATION_LIST_CLOCK_INTERVAL_MS = 60_000
 
 export function MessagesScreen() {
   const router = useRouter()
@@ -70,10 +71,12 @@ export function MessagesScreen() {
   const [actionSheetOpen, setActionSheetOpen] = useState(false)
   const [dismissCandidate, setDismissCandidate] =
     useState<ClientConversation | null>(null)
+  const [listNow, setListNow] = useState(() => new Date())
   const {
     contacts,
     conversations,
     conversationsError,
+    currentUser,
     isConversationsRefreshing,
     refreshConversations,
   } = useClientData()
@@ -82,10 +85,20 @@ export function MessagesScreen() {
       buildConversationListItems({
         contacts,
         conversations,
+        currentUserId: currentUser?.id ?? session.userId,
         keyword: "",
+        now: listNow,
       }),
-    [contacts, conversations]
+    [contacts, conversations, currentUser?.id, listNow, session.userId]
   )
+
+  useEffect(() => {
+    const interval = setInterval(
+      () => setListNow(new Date()),
+      CONVERSATION_LIST_CLOCK_INTERVAL_MS
+    )
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     for (const item of items.slice(0, PREWARM_CONVERSATION_COUNT)) {
@@ -107,6 +120,8 @@ export function MessagesScreen() {
   }
 
   function handleConversationLongPress(item: ConversationListItemModel) {
+    if (item.conversation.type === "topic") return
+
     pendingDismissCandidateRef.current = null
     setActionItem(item)
     setActionSheetOpen(true)
@@ -124,7 +139,14 @@ export function MessagesScreen() {
   }
 
   async function handlePinnedChange(pinned: boolean) {
-    if (!actionItem || pinMutation.isPending || muteMutation.isPending) return
+    if (
+      !actionItem ||
+      actionItem.conversation.type === "topic" ||
+      pinMutation.isPending ||
+      muteMutation.isPending
+    ) {
+      return
+    }
 
     try {
       await pinMutation.mutateAsync({

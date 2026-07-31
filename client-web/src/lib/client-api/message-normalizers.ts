@@ -12,6 +12,7 @@ import type {
   GroupMemberLeftSystemEventBodyResponse,
   GroupMemberRemovedSystemEventBodyResponse,
   GroupNameUpdatedSystemEventBodyResponse,
+  GroupAnnouncementUpdatedSystemEventBodyResponse,
   MessageRevokedSystemEventBodyResponse,
   TopicClosedSystemEventBodyResponse,
   MessageBodyResponse,
@@ -34,6 +35,7 @@ import type {
   ClientGroupMemberLeftSystemEventBody,
   ClientGroupMemberRemovedSystemEventBody,
   ClientGroupNameUpdatedSystemEventBody,
+  ClientGroupAnnouncementUpdatedSystemEventBody,
   ClientMessageRevokedSystemEventBody,
   ClientTopicClosedSystemEventBody,
   ClientMessageBody,
@@ -88,7 +90,7 @@ export function normalizeMessage(
 
   const normalized: ClientMessage = {
     body: revokedAt
-      ? { type: "revoked" }
+      ? normalizeRevokedMessageBody(message.editable_body)
       : normalizeClientMessageBody(message.body),
     clientMessageId: message.client_message_id ?? "",
     conversationId: message.conversation_id,
@@ -136,6 +138,17 @@ export function normalizeMessage(
   }
 
   return normalized
+}
+
+function normalizeRevokedMessageBody(
+  editableBody: MessageResponse["editable_body"]
+): Extract<ClientMessageBody, { type: "revoked" }> {
+  const normalizedEditableBody = normalizeClientMessageBody(editableBody)
+
+  return normalizedEditableBody.type === "text" ||
+    normalizedEditableBody.type === "markdown"
+    ? { editableBody: normalizedEditableBody, type: "revoked" }
+    : { type: "revoked" }
 }
 
 export function normalizeMessageReactions(
@@ -406,7 +419,7 @@ function normalizeMessageBody(
     typeof body.size_bytes === "number" &&
     body.size_bytes > 0 &&
     typeof body.content_type === "string" &&
-    body.content_type === "audio/webm"
+    (body.content_type === "audio/webm" || body.content_type === "audio/mp4")
   ) {
     const normalizedVoice: ClientVoiceMessageBody = {
       contentType: body.content_type,
@@ -552,6 +565,7 @@ function normalizeSystemEventMessageBody(
     | GroupMemberLeftSystemEventBodyResponse
     | GroupMemberRemovedSystemEventBodyResponse
     | GroupNameUpdatedSystemEventBodyResponse
+    | GroupAnnouncementUpdatedSystemEventBodyResponse
     | MessageRevokedSystemEventBodyResponse
     | TopicClosedSystemEventBodyResponse
 ):
@@ -562,6 +576,7 @@ function normalizeSystemEventMessageBody(
   | ClientGroupMemberLeftSystemEventBody
   | ClientGroupMemberRemovedSystemEventBody
   | ClientGroupNameUpdatedSystemEventBody
+  | ClientGroupAnnouncementUpdatedSystemEventBody
   | ClientMessageRevokedSystemEventBody
   | ClientTopicClosedSystemEventBody {
   if (body.event === "topic_closed") {
@@ -668,6 +683,23 @@ function normalizeSystemEventMessageBody(
       actor: normalizeSystemEventUserRef(body.actor),
       event: "group_name_updated",
       name: body.name,
+      type: "system_event",
+    }
+  }
+
+  if (body.event === "group_announcement_updated") {
+    if (
+      !("actor" in body) ||
+      !isSystemEventUserRefResponse(body.actor) ||
+      typeof body.announcement !== "string"
+    ) {
+      throw new ClientDataRequestError("消息响应格式不正确")
+    }
+
+    return {
+      actor: normalizeSystemEventUserRef(body.actor),
+      announcement: body.announcement,
+      event: "group_announcement_updated",
       type: "system_event",
     }
   }

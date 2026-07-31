@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -6,14 +6,29 @@ import { GlobalSearchCommand } from "@/components/global-search-command"
 import type {
   ClientConversation,
   ClientConversationMember,
+  ClientMessageSearchResult,
   ContactApp,
   ContactGroup,
   ContactUser,
 } from "@/lib/client-data-api"
+import type { MessageSearchProvider } from "@/lib/client-search"
 import type { DirectorySearchItem } from "@/lib/local-search"
 
 describe("GlobalSearchCommand", () => {
-  it("switches between combined, directory, conversation, and pending scopes", async () => {
+  it("opens and focuses search with Ctrl+F", async () => {
+    renderSearch([])
+
+    const eventAccepted = fireEvent.keyDown(window, {
+      ctrlKey: true,
+      key: "f",
+    })
+
+    expect(eventAccepted).toBe(false)
+    expect(screen.getByRole("dialog", { name: "全局搜索" })).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "搜索所有内容" })).toHaveFocus()
+  })
+
+  it("switches between combined, directory, conversation, and message scopes", async () => {
     const user = userEvent.setup()
     renderSearch([createConversation({ name: "产品对话" })], vi.fn(), {
       contacts: [createContact({ name: "产品联系人" })],
@@ -28,8 +43,12 @@ describe("GlobalSearchCommand", () => {
       screen.getByRole("combobox", { name: "搜索所有内容" }),
       "产品"
     )
-    expect(screen.getByRole("group", { name: "通讯录" })).toBeInTheDocument()
-    expect(screen.getByRole("group", { name: "会话" })).toBeInTheDocument()
+    expect(
+      await screen.findByRole("group", { name: "通讯录" })
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole("group", { name: "会话" })
+    ).toBeInTheDocument()
 
     await user.click(screen.getByRole("tab", { name: "通讯录" }))
     expect(screen.getByRole("group", { name: "通讯录" })).toBeInTheDocument()
@@ -44,7 +63,7 @@ describe("GlobalSearchCommand", () => {
     expect(screen.getByRole("group", { name: "会话" })).toBeInTheDocument()
 
     await user.click(screen.getByRole("tab", { name: "聊天记录" }))
-    expect(screen.getByText("待完善")).toBeInTheDocument()
+    expect(await screen.findByText("未找到相关内容")).toBeInTheDocument()
     expect(screen.queryByRole("option")).not.toBeInTheDocument()
   })
 
@@ -59,7 +78,7 @@ describe("GlobalSearchCommand", () => {
       screen.getByRole("combobox", { name: "搜索所有内容" }),
       "lxm"
     )
-    const result = screen.getByRole("option", { name: /小明/ })
+    const result = await screen.findByRole("option", { name: /小明/ })
     expect(result).toHaveTextContent(contact.email)
     await user.click(result)
 
@@ -93,7 +112,9 @@ describe("GlobalSearchCommand", () => {
       screen.getByRole("combobox", { name: "搜索所有内容" }),
       "会话"
     )
-    expect(screen.getByRole("group", { name: "会话" })).toBeInTheDocument()
+    expect(
+      await screen.findByRole("group", { name: "会话" })
+    ).toBeInTheDocument()
     expect(screen.getAllByRole("option")[0]).toHaveTextContent("最近会话")
   })
 
@@ -128,7 +149,7 @@ describe("GlobalSearchCommand", () => {
     )
 
     expect(
-      screen.getByRole("option", { name: /发布计划 - 产品群/ })
+      await screen.findByRole("option", { name: /发布计划 - 产品群/ })
     ).toBeVisible()
   })
 
@@ -155,7 +176,7 @@ describe("GlobalSearchCommand", () => {
       "xz"
     )
 
-    const result = screen.getByRole("option", { name: /产品搭档/ })
+    const result = await screen.findByRole("option", { name: /产品搭档/ })
     expect(result).toHaveTextContent("匹配成员：小张")
     await user.click(result)
 
@@ -177,6 +198,7 @@ describe("GlobalSearchCommand", () => {
     await openSearch(user)
     const input = screen.getByRole("combobox", { name: "搜索所有内容" })
     await user.type(input, "项目")
+    await screen.findByRole("group", { name: "会话" })
     await user.keyboard("{ArrowDown}{Enter}")
 
     expect(onSelectConversation).toHaveBeenCalledWith("second")
@@ -198,11 +220,87 @@ describe("GlobalSearchCommand", () => {
       "不存在"
     )
 
-    expect(screen.getByText("未找到相关内容")).toBeInTheDocument()
+    expect(await screen.findByText("未找到相关内容")).toBeInTheDocument()
     expect(
       screen.getByText("未找到相关内容").closest("[data-slot=empty]")
     ).toBeInTheDocument()
     expect(screen.queryByRole("option")).not.toBeInTheDocument()
+  })
+
+  it("searches chat history through the API provider", async () => {
+    const user = userEvent.setup()
+    const onSelectMessageResult = vi.fn()
+    const messageSearch = vi.fn(async () => [createMessageSearchResult()])
+    renderSearch([], vi.fn(), { messageSearch, onSelectMessageResult })
+
+    await openSearch(user)
+    await user.click(screen.getByRole("tab", { name: "聊天记录" }))
+    await user.type(
+      screen.getByRole("combobox", { name: "搜索所有内容" }),
+      "发布计划"
+    )
+
+    const result = await screen.findByRole("option", {
+      name: /发布群.*张三：发布计划已确认/,
+    })
+    expect(messageSearch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ keyword: "发布计划" })
+    )
+    await user.click(result)
+
+    expect(onSelectMessageResult).toHaveBeenCalledWith(
+      createMessageSearchResult()
+    )
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
+  it("keeps current results when conversation data refreshes", async () => {
+    vi.useFakeTimers()
+    const conversation = createConversation({ name: "产品对话" })
+    const messageSearch = vi.fn(async () => [])
+    const staticProps = {
+      contactApps: [] as ContactApp[],
+      contactGroups: [] as ContactGroup[],
+      contacts: [] as ContactUser[],
+      currentUserId: "current-user",
+      getConversationDescription,
+      messageSearch,
+      onSelectConversation: vi.fn(),
+      onSelectDirectoryItem: vi.fn(),
+      searchDebounceMs: 500,
+    }
+
+    try {
+      const view = render(
+        <GlobalSearchCommand {...staticProps} conversations={[conversation]} />
+      )
+      fireEvent.click(screen.getByRole("button", { name: "全局搜索" }))
+      fireEvent.change(screen.getByRole("combobox", { name: "搜索所有内容" }), {
+        target: { value: "产品" },
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500)
+      })
+
+      expect(screen.getByRole("option", { name: /产品对话/ })).toBeVisible()
+      expect(messageSearch).toHaveBeenCalledTimes(1)
+
+      view.rerender(
+        <GlobalSearchCommand
+          {...staticProps}
+          conversations={[{ ...conversation }]}
+        />
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+
+      expect(screen.getByRole("option", { name: /产品对话/ })).toBeVisible()
+      expect(messageSearch).toHaveBeenCalledTimes(1)
+      expect(screen.queryByText("正在搜索")).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -217,12 +315,16 @@ function renderSearch(
     contactApps = [],
     contactGroups = [],
     contacts = [],
+    messageSearch = vi.fn(async () => []),
     onSelectDirectoryItem = vi.fn(),
+    onSelectMessageResult,
   }: {
     contactApps?: ContactApp[]
     contactGroups?: ContactGroup[]
     contacts?: ContactUser[]
+    messageSearch?: MessageSearchProvider
     onSelectDirectoryItem?: (item: DirectorySearchItem) => void
+    onSelectMessageResult?: (result: ClientMessageSearchResult) => void
   } = {}
 ) {
   return render(
@@ -233,10 +335,37 @@ function renderSearch(
       conversations={conversations}
       currentUserId="current-user"
       getConversationDescription={getConversationDescription}
+      messageSearch={messageSearch}
       onSelectDirectoryItem={onSelectDirectoryItem}
       onSelectConversation={onSelectConversation}
+      onSelectMessageResult={onSelectMessageResult}
+      searchDebounceMs={0}
     />
   )
+}
+
+function createMessageSearchResult(): ClientMessageSearchResult {
+  return {
+    conversation: {
+      avatar: "",
+      id: "conversation-message",
+      name: "发布群",
+      type: "group",
+    },
+    message: {
+      body: { content: "发布计划已确认", type: "text" },
+      clientMessageId: "",
+      conversationId: "conversation-message",
+      createdAt: "2026-07-29T10:00:00Z",
+      id: "message-search-1",
+      reactionVersion: 0,
+      reactions: [],
+      sender: { id: "user-1", type: "user" },
+      seq: 12,
+    },
+    senderName: "张三",
+    summary: "发布计划已确认",
+  }
 }
 
 function createContact(overrides: Partial<ContactUser> = {}): ContactUser {
