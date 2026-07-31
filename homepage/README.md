@@ -49,6 +49,8 @@ GitHub Actions 在 `main` 分支和版本标签更新时构建并推送官网镜
 ghcr.io/chaitin/magicchat/homepage
 ```
 
+生产服务器默认通过 `ghcr.1ms.run/chaitin/magicchat/homepage:latest` 镜像代理拉取。
+
 部署前确保 `jiying.chat` 的 A/AAAA 记录指向服务器，并开放 TCP 80 和 443。然后在服务器保存 `compose.yml`，创建持久化目录并启动：
 
 ```bash
@@ -77,4 +79,25 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
 ```bash
 docker compose pull
 docker compose up -d
+```
+
+## 自动更新
+
+仓库提供 systemd oneshot 服务和定时器，每小时检查一次 `latest` 镜像 digest。镜像没有变化时保留当前容器；有变化时执行 `docker compose up -d --pull always --remove-orphans`，证书与日志挂载不受影响。
+
+在服务器安装并启用：
+
+```bash
+sudo install -m 0755 systemd/jiying-homepage-update /usr/local/sbin/jiying-homepage-update
+sudo install -m 0644 systemd/jiying-homepage-update.service /etc/systemd/system/jiying-homepage-update.service
+sudo install -m 0644 systemd/jiying-homepage-update.timer /etc/systemd/system/jiying-homepage-update.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now jiying-homepage-update.timer
+```
+
+查看下次执行时间和运行日志：
+
+```bash
+systemctl list-timers jiying-homepage-update.timer
+journalctl -u jiying-homepage-update.service
 ```

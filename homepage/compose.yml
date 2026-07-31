@@ -3,7 +3,7 @@ name: jiying-homepage
 services:
   homepage:
     container_name: jiying-homepage
-    image: ${HOMEPAGE_IMAGE:-ghcr.io/chaitin/magicchat/homepage}:${IMAGE_TAG:-latest}
+    image: ${HOMEPAGE_IMAGE:-ghcr.1ms.run/chaitin/magicchat/homepage}:${IMAGE_TAG:-latest}
     pull_policy: always
     restart: unless-stopped
     environment:
