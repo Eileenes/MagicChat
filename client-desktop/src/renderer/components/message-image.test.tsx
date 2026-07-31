@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { MessageImage } from "@/components/message-image"
+import { getImageThumbnailFrame } from "@/lib/image-message"
 
 const { readTemporaryFileURLsMock } = vi.hoisted(() => ({
   readTemporaryFileURLsMock: vi.fn(),
@@ -25,6 +26,16 @@ describe("MessageImage", () => {
         url: "https://example.com/image.png",
       },
     ])
+  })
+
+  it("为有效尺寸计算稳定框架并让旧消息回退到 256x256", () => {
+    expect(getImageThumbnailFrame({ height: 100, width: 400 })).toEqual({ height: 80, width: 320 })
+    expect(getImageThumbnailFrame({ height: 800, width: 100 })).toEqual({ height: 360, width: 160 })
+    expect(getImageThumbnailFrame({})).toEqual({
+      height: 256,
+      width: 256,
+    })
+    expect(getImageThumbnailFrame({ height: -1, width: 100 })).toEqual({ height: 256, width: 256 })
   })
 
   it("allows the native preview context menu without bubbling to message actions", async () => {

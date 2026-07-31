@@ -45,6 +45,9 @@ export default defineConfig({
   main: {
     build: {
       externalizeDeps: true,
+      rollupOptions: {
+        external: ["electron", "electron-log", "electron-updater", "https-proxy-agent", "ws"],
+      },
     },
     define: {
       "process.env.MAGICCHAT_RELEASE_CHANNEL": JSON.stringify(releaseChannel),

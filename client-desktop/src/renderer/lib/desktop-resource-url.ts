@@ -1,4 +1,5 @@
 import type { ServerProfile } from "@shared/bridge"
+import { isAllowedDesktopMediaPath } from "@shared/media-resource-path"
 
 export function resolveDesktopResourceUrl(profile: ServerProfile, value: string): string {
   try {
@@ -6,10 +7,7 @@ export function resolveDesktopResourceUrl(profile: ServerProfile, value: string)
     if (["blob:", "data:"].includes(resolved.protocol)) return resolved.toString()
     const server = new URL(profile.normalizedUrl)
     if (resolved.origin === server.origin) {
-      if (isBundledDesktopResource(resolved.pathname)) {
-        return `${resolved.pathname}${resolved.search}`
-      }
-      return resolved.pathname.startsWith("/api/client/")
+      return isAllowedDesktopMediaPath(resolved.pathname)
         ? `magicchat-media://asset/${encodeURIComponent(profile.id)}${resolved.pathname}${resolved.search}`
         : ""
     }
@@ -17,11 +15,4 @@ export function resolveDesktopResourceUrl(profile: ServerProfile, value: string)
   } catch {
     return ""
   }
-}
-
-function isBundledDesktopResource(pathname: string): boolean {
-  return (
-    /^\/assets\/avatars\/builtin\/(?:0[1-9]|[1-5][0-9]|6[0-4])\.webp$/.test(pathname) ||
-    pathname === "/assets/apps/assistant.webp"
-  )
 }

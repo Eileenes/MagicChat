@@ -1,5 +1,5 @@
 import * as React from "react"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { ClientConversation } from "@/lib/client-data-api"
@@ -12,6 +12,7 @@ const testState = vi.hoisted(() => ({
   bubbleRenderCount: 0,
   clientHeight: 400,
   resizeObserverCallback: null as ResizeObserverCallback | null,
+  scrollIntoView: vi.fn(),
   scrollHeight: 1_000,
 }))
 
@@ -80,6 +81,7 @@ vi.mock("@/components/conversation/conversation-message", () => ({
         ref={(node) => {
           if (node) {
             node.getBoundingClientRect = () => ({ top: testState.anchorTop }) as DOMRect
+            node.scrollIntoView = testState.scrollIntoView
           }
         }}
       >
@@ -102,6 +104,7 @@ describe("ConversationPanelHistory", () => {
     testState.bubbleRenderCount = 0
     testState.clientHeight = 400
     testState.resizeObserverCallback = null
+    testState.scrollIntoView.mockReset()
     testState.scrollHeight = 1_000
     Object.defineProperty(window, "ResizeObserver", {
       configurable: true,
@@ -110,6 +113,7 @@ describe("ConversationPanelHistory", () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     Object.defineProperty(window, "ResizeObserver", {
       configurable: true,
       value: defaultResizeObserver,
@@ -257,6 +261,144 @@ describe("ConversationPanelHistory", () => {
     expect(testState.bubbleRenderCount).toBe(1)
   })
 
+  it("定位焦点消费后，向后分页不会再次滚回目标消息", async () => {
+    const focus = { messageId: "message-1", requestKey: 1 }
+    const onConsumeFocus = vi.fn()
+    const messages = [createMessage("message-1", "other")]
+    const props = {
+      ...createProps(messages),
+      focus,
+      historyMode: true,
+      onConsumeFocus,
+    }
+    const { rerender } = render(<ConversationPanelHistory {...props} />)
+    await act(async () => {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+
+    expect(testState.scrollIntoView).toHaveBeenCalledOnce()
+    expect(testState.scrollIntoView).toHaveBeenCalledWith({ block: "center" })
+    expect(onConsumeFocus).toHaveBeenCalledWith(focus)
+
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        focus={null}
+        messages={[...messages, createMessage("message-2", "other")]}
+      />,
+    )
+    await act(async () => {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+
+    expect(testState.scrollIntoView).toHaveBeenCalledOnce()
+  })
+
+  it("新的 requestKey 可以重新定位同一条消息", async () => {
+    const onConsumeFocus = vi.fn()
+    const messages = [createMessage("message-1", "other")]
+    const props = {
+      ...createProps(messages),
+      focus: { messageId: "message-1", requestKey: 1 },
+      historyMode: true,
+      onConsumeFocus,
+    }
+    const { rerender } = render(<ConversationPanelHistory {...props} />)
+
+    await act(async () => {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+    rerender(
+      <ConversationPanelHistory {...props} focus={{ messageId: "message-1", requestKey: 2 }} />,
+    )
+    await act(async () => {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+
+    expect(onConsumeFocus).toHaveBeenNthCalledWith(1, {
+      messageId: "message-1",
+      requestKey: 1,
+    })
+    expect(onConsumeFocus).toHaveBeenNthCalledWith(2, {
+      messageId: "message-1",
+      requestKey: 2,
+    })
+  })
+
+  it("从历史模式返回最新时等待列表恢复并校准到真实底部", async () => {
+    const historyMessages = [createMessage("message-1", "other")]
+    const props = {
+      ...createProps(historyMessages),
+      historyMode: true,
+    }
+    const { rerender } = render(<ConversationPanelHistory {...props} />)
+    const viewport = getViewport()
+    viewport.scrollTop = 120
+
+    rerender(<ConversationPanelHistory {...props} historyMode={false} loading />)
+
+    testState.scrollHeight = 1_200
+    rerender(<ConversationPanelHistory {...props} historyMode={false} />)
+    const latestViewport = getViewport()
+
+    expect(latestViewport.scrollTop).toBe(1_200)
+
+    testState.scrollHeight = 1_400
+    await act(async () => {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+
+    expect(latestViewport.scrollTop).toBe(1_400)
+
+    testState.scrollHeight = 1_600
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        historyMode={false}
+        messages={[...historyMessages, createMessage("message-2", "other")]}
+      />,
+    )
+
+    expect(latestViewport.scrollTop).toBe(1_600)
+  })
+
+  it("protects prepended history for three minutes without resetting for new messages", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-28T10:00:00Z"))
+    const onCompactMessages = vi.fn()
+    const originalMessages = Array.from({ length: 300 }, (_, index) =>
+      createMessage(`message-${index + 2}`, "other"),
+    )
+    const props = { ...createProps(originalMessages), onCompactMessages }
+    const { rerender } = render(<ConversationPanelHistory {...props} />)
+
+    rerender(<ConversationPanelHistory {...props} loadingBefore />)
+    const prependedMessages = [createMessage("message-1", "other"), ...originalMessages]
+    rerender(<ConversationPanelHistory {...props} loadingBefore messages={prependedMessages} />)
+    rerender(<ConversationPanelHistory {...props} messages={prependedMessages} />)
+    expect(onCompactMessages).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000)
+    })
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        messages={[...prependedMessages, createMessage("message-302", "other")]}
+      />,
+    )
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000 - 1)
+    })
+    expect(onCompactMessages).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(onCompactMessages).toHaveBeenCalledOnce()
+  })
+
   it("marks the newer message when adjacent messages are more than one hour apart", () => {
     const firstMessage = createMessage("message-1", "other", "2026-07-21T10:00:00Z")
     const exactlyOneHourLater = createMessage("message-2", "other", "2026-07-21T11:00:00Z")
@@ -310,6 +452,7 @@ function createConversation(): ClientConversation {
     lastMessageId: "message-1",
     lastMessageSeq: 1,
     lastMessageSummary: "测试消息",
+    lastChoiceSeq: 0,
     lastReadSeq: 1,
     memberCount: 2,
     name: "测试会话",

@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
-import { useNavigate } from "react-router"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { matchPath, useLocation, useNavigate } from "react-router"
 import { toast } from "sonner"
 
 import {
   ClientDataRequestError,
+  dismissConversation as dismissConversationRequest,
   getCurrentClientUser,
   isClientMessageInitiatedByUser,
   listClientContacts,
   listClientConversations,
+  listConversationMessageChoiceSnapshots,
   listConversationMessageReactionSnapshots,
   listConversationMessages,
   markConversationRead as markConversationReadRequest,
@@ -26,6 +28,7 @@ import {
   type MessageReactionsUpdatedEvent,
   type MessageChoiceUpdatedEvent,
   type MessageReactionSnapshot,
+  type MessageChoiceSnapshot,
 } from "@/lib/client-data-api"
 import {
   ClientDataContext,
@@ -34,6 +37,8 @@ import {
 } from "@/lib/client-data-context"
 import {
   createConversationMessageState,
+  applyMessageChoiceSnapshot,
+  applyMessageChoiceState,
   applyMessageReactionSnapshot,
   applyMessageReactionsUpdate,
   getClientDataErrorMessage,
@@ -44,6 +49,8 @@ import {
   mergePageWithBeforeResult,
   messagePageLimit,
   orderConversations,
+  compactConversationMessageState,
+  consumeConversationMessageFocus as consumeMessageFocusState,
   updatePageWithMessage,
 } from "@/lib/client-data-state"
 import {
@@ -56,18 +63,33 @@ import { ClientDataErrorPage } from "@/components/client-data-error-page"
 import { ClientLoadingPage } from "@/components/client-loading-page"
 import { useConversationActions } from "@/hooks/use-conversation-actions"
 import { useConversationSenders } from "@/hooks/use-conversation-senders"
+import { useConversationMessageRetention } from "@/hooks/use-conversation-message-retention"
 import { useAppInfo } from "@/lib/app-info-context"
 import { startStaggeredRefresh } from "@/lib/staggered-refresh"
 import { trackDiagnosticRefresh, updateDiagnosticData } from "@/lib/runtime-diagnostics"
+import {
+  DesktopMessageRepository,
+  catchUpConversationMessages,
+  getMessageCacheTarget,
+  isMessageOperationCancelled,
+  messageCacheTargetKey,
+  MessageManager,
+  prioritizeConversationSyncs,
+  registerMessageCacheClearHandler,
+  type MessageOperationToken,
+} from "@/lib/messages"
 
 type BootstrapState = "loading" | "ready" | "error"
 
 const minimumBootstrapLoadingMs = 1_000
 const refreshIntervalMs = 15_000
 const reactionSnapshotBatchSize = 100
+const choiceSnapshotBatchSize = 100
 const maxReactionSnapshotCatchUpAttempts = 3
+const messageCacheFallbackNotice = "本地消息缓存暂时不可用，已从服务器加载"
 
 export function ClientDataProvider({ children }: { children: ReactNode }) {
+  const location = useLocation()
   const navigate = useNavigate()
   const { setAuthenticated } = useAppInfo()
   const [bootstrapError, setBootstrapError] = useState<ClientDataRequestError | null>(null)
@@ -76,7 +98,10 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const [conversationMessageStates, setConversationMessageStates] = useState<
     Record<string, ClientConversationMessageState>
   >({})
-  const [foregroundConversationId, setForegroundConversationId] = useState("")
+  const [foregroundConversationId, setForegroundConversationIdState] = useState("")
+  const routeConversationId =
+    matchPath("/chat/:conversationId", location.pathname)?.params.conversationId ?? ""
+  const includedConversationId = foregroundConversationId || routeConversationId
   const [contactApps, setContactApps] = useState<ContactApp[]>([])
   const [contactGroups, setContactGroups] = useState<ContactGroup[]>([])
   const [contacts, setContacts] = useState<ContactUser[]>([])
@@ -97,10 +122,48 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const conversationMessageStatesRef = useRef(conversationMessageStates)
   const conversationsRef = useRef(conversations)
   const mountedRef = useRef(true)
-  const loadingConversationIdsRef = useRef<Set<string>>(new Set())
-  const syncingAfterConversationIdsRef = useRef<Set<string>>(new Set())
+  const loadingConversationOperationsRef = useRef<Map<string, symbol>>(new Map())
+  const conversationsNeedingServerRefreshRef = useRef<Set<string>>(new Set())
+  const syncingAfterConversationOperationsRef = useRef<Map<string, symbol>>(new Map())
+  const historyRequestVersionsRef = useRef<Map<string, number>>(new Map())
+  const historyRequestControllersRef = useRef<Map<string, AbortController>>(new Map())
+  const historyFocusRequestKeyRef = useRef(0)
   const refreshingReactionSnapshotKeysRef = useRef<Set<string>>(new Set())
   const reactionSnapshotMinimumVersionsRef = useRef<Map<string, number>>(new Map())
+  const messageManagerRef = useRef<{ key: string; manager: MessageManager } | null>(null)
+  const includedConversationIdRef = useRef(includedConversationId)
+  const conversationRefreshEpochRef = useRef(0)
+  const { applyConversationMessageRetention, registerConversationMessageView } =
+    useConversationMessageRetention()
+  const cacheTarget = getMessageCacheTarget()
+  const cacheTargetKey = cacheTarget ? messageCacheTargetKey(cacheTarget) : ""
+  if (
+    cacheTarget &&
+    cacheTarget.userId !== "anonymous" &&
+    messageManagerRef.current?.key !== cacheTargetKey
+  ) {
+    messageManagerRef.current = {
+      key: cacheTargetKey,
+      manager: new MessageManager(new DesktopMessageRepository(cacheTarget)),
+    }
+  }
+  const messageManager = messageManagerRef.current?.manager ?? null
+
+  useEffect(() => {
+    if (!cacheTarget || !messageManager) return
+    return registerMessageCacheClearHandler(cacheTarget, async () => {
+      await messageManager.clearPersistentCache()
+      const conversationsNeedingServerRefresh = conversationsNeedingServerRefreshRef.current
+      conversationsNeedingServerRefresh.clear()
+      for (const [conversationId, state] of Object.entries(conversationMessageStatesRef.current)) {
+        if (state.loaded) conversationsNeedingServerRefresh.add(conversationId)
+      }
+    })
+  }, [cacheTarget, messageManager])
+
+  useEffect(() => {
+    conversationsNeedingServerRefreshRef.current.clear()
+  }, [cacheTargetKey])
 
   useEffect(() => {
     conversationMessageStatesRef.current = conversationMessageStates
@@ -109,6 +172,17 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     conversationsRef.current = conversations
   }, [conversations])
+
+  useLayoutEffect(() => {
+    if (includedConversationIdRef.current !== includedConversationId) {
+      conversationRefreshEpochRef.current += 1
+    }
+    includedConversationIdRef.current = includedConversationId
+  }, [includedConversationId])
+
+  const markConversationsMutated = useCallback(() => {
+    conversationRefreshEpochRef.current += 1
+  }, [])
 
   useEffect(() => {
     const loadedStates = Object.values(conversationMessageStates)
@@ -123,9 +197,12 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     mountedRef.current = true
+    const historyRequestControllers = historyRequestControllersRef.current
 
     return () => {
       mountedRef.current = false
+      for (const controller of historyRequestControllers.values()) controller.abort()
+      historyRequestControllers.clear()
       updateDiagnosticData({
         contacts: 0,
         conversations: 0,
@@ -149,6 +226,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         }
 
         setAuthenticated(false)
+        void messageManager?.clear().catch(() => undefined)
         setConversations([])
         setConversationMessageStates({})
         setContactApps([])
@@ -162,7 +240,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
       return requestError
     },
-    [navigate, setAuthenticated],
+    [messageManager, navigate, setAuthenticated],
   )
 
   const refreshMe = useCallback(
@@ -216,9 +294,15 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const refreshConversations = useCallback(
     () =>
       trackDiagnosticRefresh("conversations", async () => {
+        const requestEpoch = ++conversationRefreshEpochRef.current
         try {
-          setConversations(orderConversations(await listClientConversations()))
+          const nextConversations = await listClientConversations(undefined, {
+            includeConversationId: includedConversationIdRef.current,
+          })
+          if (conversationRefreshEpochRef.current !== requestEpoch) return
+          setConversations(orderConversations(nextConversations))
         } catch (error) {
+          if (conversationRefreshEpochRef.current !== requestEpoch) return
           throw handleError(error, "加载会话列表失败")
         }
       }),
@@ -307,7 +391,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     ) => {
       setConversationMessageStates((currentStates) => {
         const previousState = currentStates[conversationId] ?? createConversationMessageState()
-        const nextState = updater(previousState)
+        const nextState = applyConversationMessageRetention(conversationId, updater(previousState))
 
         return {
           ...currentStates,
@@ -315,8 +399,94 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         }
       })
     },
-    [],
+    [applyConversationMessageRetention],
   )
+
+  useEffect(() => {
+    if (!messageManager) return
+    return messageManager.subscribe((event) => {
+      if (event.kind === "scope-cleared") {
+        conversationsNeedingServerRefreshRef.current.clear()
+        setConversationMessageStates({})
+        return
+      }
+      if (event.kind === "conversation-cleared") {
+        conversationsNeedingServerRefreshRef.current.delete(event.conversationId)
+        setConversationMessageStates((currentStates) => {
+          if (!(event.conversationId in currentStates)) return currentStates
+          const nextStates = { ...currentStates }
+          delete nextStates[event.conversationId]
+          return nextStates
+        })
+        return
+      }
+      if (event.kind === "sync-error") {
+        updateConversationMessageState(event.conversationId, (state) => ({
+          ...state,
+          error: state.error ?? "本地消息缓存暂时不可用，已切换为内存模式",
+        }))
+        return
+      }
+      if (event.kind === "history-window-changed") {
+        updateConversationMessageState(event.conversationId, (state) => {
+          if (
+            state.viewMode !== "history" ||
+            !state.historyTarget ||
+            event.snapshot.target?.messageId !== state.historyTarget.messageId
+          ) {
+            return state
+          }
+          const messages = [...event.snapshot.messages]
+          return {
+            ...state,
+            error: null,
+            messages,
+            page: {
+              hasMoreAfter: event.snapshot.hasMoreAfter,
+              hasMoreBefore: event.snapshot.hasMoreBefore,
+              limit: messagePageLimit,
+              newestSeq: event.snapshot.newestSeq,
+              oldestSeq: event.snapshot.oldestSeq,
+            },
+          }
+        })
+        return
+      }
+      updateConversationMessageState(event.conversationId, (state) => {
+        const latestKnownSeq = Math.max(state.latestKnownSeq, event.messages.at(-1)?.seq ?? 0)
+        if (state.viewMode === "history") {
+          return { ...state, latestKnownSeq }
+        }
+        return {
+          ...state,
+          error: null,
+          latestKnownSeq,
+          messages: event.messages,
+          page: updatePageWithMessage(state.page, event.messages),
+        }
+      })
+    })
+  }, [messageManager, updateConversationMessageState])
+
+  const compactConversationMessages = useCallback(
+    (conversationId: string) => {
+      if (!conversationId) return
+      messageManager?.compact(conversationId, 300)
+      setConversationMessageStates((currentStates) => {
+        const currentState = currentStates[conversationId]
+        if (!currentState) return currentStates
+        const nextState = compactConversationMessageState(currentState)
+        return nextState === currentState
+          ? currentStates
+          : { ...currentStates, [conversationId]: nextState }
+      })
+    },
+    [messageManager],
+  )
+
+  const clearMessageScope = useCallback(() => {
+    void messageManager?.clear().catch(() => undefined)
+  }, [messageManager])
 
   const applyConversationMessageToList = useCallback(
     (message: ClientMessage, options: { countUnread?: boolean } = {}) => {
@@ -433,23 +603,37 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
   const mergeIncomingConversationMessage = useCallback(
     (message: ClientMessage, options: { markLoaded?: boolean; updateList?: boolean } = {}) => {
-      updateConversationMessageState(message.conversationId, (state) => {
-        const messages = mergeConversationMessages(state.messages, [message])
-
-        return {
-          ...state,
-          error: null,
-          loaded: options.markLoaded ? true : state.loaded,
-          messages,
-          page: updatePageWithMessage(state.page, messages),
+      if (messageManager) {
+        void messageManager.ingest("local", [message]).catch(() => undefined)
+        if (options.markLoaded) {
+          updateConversationMessageState(message.conversationId, (state) => ({
+            ...state,
+            loaded: true,
+          }))
         }
-      })
+      } else {
+        updateConversationMessageState(message.conversationId, (state) => {
+          const messages = mergeConversationMessages(state.messages, [message])
+          return {
+            ...state,
+            error: null,
+            loaded: options.markLoaded ? true : state.loaded,
+            messages,
+            page: updatePageWithMessage(state.page, messages),
+          }
+        })
+      }
       updateTopicSourcePreview(message)
       if (options.updateList !== false) {
         rememberConversationMessage(message)
       }
     },
-    [rememberConversationMessage, updateConversationMessageState, updateTopicSourcePreview],
+    [
+      messageManager,
+      rememberConversationMessage,
+      updateConversationMessageState,
+      updateTopicSourcePreview,
+    ],
   )
 
   const currentUserId = me?.id ?? ""
@@ -476,27 +660,33 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
             let snapshots: MessageReactionSnapshot[]
             try {
               snapshots = await listConversationMessageReactionSnapshots(conversationId, batch)
-              setConversationMessageStates((currentStates) => {
-                const state = currentStates[conversationId]
-                if (!state) return currentStates
-                const snapshotsByMessageId = new Map(
-                  snapshots.map((snapshot) => [snapshot.messageId, snapshot]),
+              if (messageManager) {
+                await Promise.all(
+                  snapshots.map((snapshot) => messageManager.applyReactionSnapshot(snapshot)),
                 )
-                let changed = false
-                const messages = state.messages.map((message) => {
-                  const snapshot = snapshotsByMessageId.get(message.id)
-                  if (!snapshot) return message
-                  const nextMessage = applyMessageReactionSnapshot(message, snapshot)
-                  if (nextMessage !== message) changed = true
-                  return nextMessage
+              } else {
+                setConversationMessageStates((currentStates) => {
+                  const state = currentStates[conversationId]
+                  if (!state) return currentStates
+                  const snapshotsByMessageId = new Map(
+                    snapshots.map((snapshot) => [snapshot.messageId, snapshot]),
+                  )
+                  let changed = false
+                  const messages = state.messages.map((message) => {
+                    const snapshot = snapshotsByMessageId.get(message.id)
+                    if (!snapshot) return message
+                    const nextMessage = applyMessageReactionSnapshot(message, snapshot)
+                    if (nextMessage !== message) changed = true
+                    return nextMessage
+                  })
+                  return changed
+                    ? {
+                        ...currentStates,
+                        [conversationId]: { ...state, messages },
+                      }
+                    : currentStates
                 })
-                return changed
-                  ? {
-                      ...currentStates,
-                      [conversationId]: { ...state, messages },
-                    }
-                  : currentStates
-              })
+              }
             } catch (error) {
               for (const messageId of batch) {
                 reactionSnapshotMinimumVersionsRef.current.delete(`${conversationId}:${messageId}`)
@@ -527,7 +717,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         }),
       )
     },
-    [],
+    [messageManager],
   )
 
   const handleIncomingConversationMessage = useCallback(
@@ -537,47 +727,81 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     ) => {
       const fromCurrentUser =
         currentUserId !== "" && isClientMessageInitiatedByUser(message, currentUserId)
+      const messageState = conversationMessageStatesRef.current[message.conversationId]
+      const activeConversation = options.activeConversationId === message.conversationId
       const visibleInActiveConversation =
-        Boolean(options.visible) && options.activeConversationId === message.conversationId
+        Boolean(options.visible) && activeConversation && messageState?.viewMode !== "history"
+      const shouldCacheMessage = activeConversation || messageState?.loaded || messageState?.loading
 
-      mergeIncomingConversationMessage(message, { updateList: false })
+      if (shouldCacheMessage) {
+        mergeIncomingConversationMessage(message, { updateList: false })
+      } else {
+        updateTopicSourcePreview(message)
+        void messageManager?.persist([message])
+      }
+      if (
+        messageState?.viewMode === "history" &&
+        message.seq > (messageState.page?.newestSeq ?? 0)
+      ) {
+        updateConversationMessageState(message.conversationId, (state) => ({
+          ...state,
+          latestKnownSeq: Math.max(state.latestKnownSeq, message.seq),
+          pendingLatestMessageCount: state.pendingLatestMessageCount + 1,
+        }))
+      }
       applyConversationMessageToList(message, {
         countUnread: !fromCurrentUser && !visibleInActiveConversation,
       })
     },
-    [applyConversationMessageToList, currentUserId, mergeIncomingConversationMessage],
+    [
+      applyConversationMessageToList,
+      currentUserId,
+      messageManager,
+      mergeIncomingConversationMessage,
+      updateConversationMessageState,
+      updateTopicSourcePreview,
+    ],
   )
 
   const handleIncomingConversationMessageUpdate = useCallback(
     (message: ClientMessage) => {
-      setConversationMessageStates((currentStates) => {
-        const state = currentStates[message.conversationId]
-        if (!state?.messages.some((existing) => existing.id === message.id)) {
-          return currentStates
-        }
-
-        const messages = mergeConversationMessages(state.messages, [message])
-
-        return {
-          ...currentStates,
-          [message.conversationId]: {
-            ...state,
-            error: null,
-            messages,
-            page: updatePageWithMessage(state.page, messages),
-          },
-        }
-      })
+      if (messageManager) {
+        const state = conversationMessageStatesRef.current[message.conversationId]
+        if (state?.messages.some((existing) => existing.id === message.id))
+          void messageManager.ingest("realtime", [message]).catch(() => undefined)
+        else void messageManager.persist([message])
+      } else {
+        setConversationMessageStates((currentStates) => {
+          const state = currentStates[message.conversationId]
+          if (!state?.messages.some((existing) => existing.id === message.id)) {
+            return currentStates
+          }
+          const messages = mergeConversationMessages(state.messages, [message])
+          return {
+            ...currentStates,
+            [message.conversationId]: {
+              ...state,
+              error: null,
+              messages,
+              page: updatePageWithMessage(state.page, messages),
+            },
+          }
+        })
+      }
       updateTopicSourcePreview(message)
     },
-    [updateTopicSourcePreview],
+    [messageManager, updateTopicSourcePreview],
   )
 
   const handleIncomingMessageReactionsUpdate = useCallback(
     (event: MessageReactionsUpdatedEvent) => {
       const state = conversationMessageStatesRef.current[event.conversationId]
       const message = state?.messages.find((candidate) => candidate.id === event.messageId)
-      if (!message || message.reactionVersion >= event.reactionVersion) {
+      if (!message) {
+        void messageManager?.applyReaction(event, currentUserId).catch(() => undefined)
+        return
+      }
+      if (message.reactionVersion >= event.reactionVersion) {
         return
       }
       if (event.reactionVersion > message.reactionVersion + 1) {
@@ -590,50 +814,113 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         void refreshMessageReactions(event.conversationId, [event.messageId]).catch(() => undefined)
         return
       }
-      setConversationMessageStates((currentStates) => {
-        const state = currentStates[event.conversationId]
-        if (!state) {
-          return currentStates
-        }
-        const messageIndex = state.messages.findIndex((message) => message.id === event.messageId)
-        if (
-          messageIndex < 0 ||
-          (state.messages[messageIndex].reactionVersion ?? 0) >= event.reactionVersion
-        ) {
-          return currentStates
-        }
-        const messages = [...state.messages]
-        messages[messageIndex] = applyMessageReactionsUpdate(
-          messages[messageIndex],
-          event,
-          currentUserId,
-        )
-        return {
-          ...currentStates,
-          [event.conversationId]: { ...state, messages },
-        }
-      })
+      if (messageManager) {
+        void messageManager.applyReaction(event, currentUserId).catch(() => undefined)
+      } else {
+        setConversationMessageStates((currentStates) => {
+          const state = currentStates[event.conversationId]
+          if (!state) {
+            return currentStates
+          }
+          const messageIndex = state.messages.findIndex((message) => message.id === event.messageId)
+          if (
+            messageIndex < 0 ||
+            (state.messages[messageIndex].reactionVersion ?? 0) >= event.reactionVersion
+          ) {
+            return currentStates
+          }
+          const messages = [...state.messages]
+          messages[messageIndex] = applyMessageReactionsUpdate(
+            messages[messageIndex],
+            event,
+            currentUserId,
+          )
+          return {
+            ...currentStates,
+            [event.conversationId]: { ...state, messages },
+          }
+        })
+      }
     },
-    [currentUserId, refreshMessageReactions],
+    [currentUserId, messageManager, refreshMessageReactions],
   )
 
-  const handleIncomingMessageChoiceUpdate = useCallback((event: MessageChoiceUpdatedEvent) => {
-    setConversationMessageStates((currentStates) => {
-      const state = currentStates[event.conversationId]
-      if (!state) return currentStates
-      const messageIndex = state.messages.findIndex((message) => message.id === event.messageId)
-      if (messageIndex < 0) return currentStates
-      const messages = [...state.messages]
-      messages[messageIndex] = {
-        ...messages[messageIndex],
-        choice: event.choice,
+  const applyChoiceSnapshots = useCallback(
+    (
+      snapshots: MessageChoiceSnapshot[],
+      expectedChoices?: ReadonlyMap<string, ClientMessage["choice"]>,
+    ) => {
+      if (snapshots.length === 0) return
+      const snapshotsByMessageId = new Map(
+        snapshots.map((snapshot) => [snapshot.messageId, snapshot]),
+      )
+      if (!messageManager) {
+        setConversationMessageStates((currentStates) => {
+          let statesChanged = false
+          const nextStates = { ...currentStates }
+          for (const [conversationId, state] of Object.entries(currentStates)) {
+            let messagesChanged = false
+            const messages = state.messages
+              .map((message) => {
+                const snapshot = snapshotsByMessageId.get(message.id)
+                if (!snapshot || snapshot.conversationId !== conversationId) return message
+                const nextMessage = applyMessageChoiceSnapshot(
+                  message,
+                  snapshot,
+                  expectedChoices?.has(message.id)
+                    ? { expectedChoice: expectedChoices.get(message.id) }
+                    : undefined,
+                )
+                if (nextMessage !== message) messagesChanged = true
+                return nextMessage
+              })
+              .filter((message): message is ClientMessage => message !== null)
+            if (messagesChanged) {
+              statesChanged = true
+              nextStates[conversationId] = { ...state, messages }
+            }
+          }
+          return statesChanged ? nextStates : currentStates
+        })
       }
-      return {
-        ...currentStates,
-        [event.conversationId]: { ...state, messages },
+      if (messageManager) {
+        for (const snapshot of snapshots) {
+          void messageManager
+            .applyChoice(snapshot, expectedChoices?.get(snapshot.messageId))
+            .catch(() => undefined)
+        }
       }
-    })
-  }, [])
+    },
+    [messageManager],
+  )
+
+  const handleIncomingMessageChoiceUpdate = useCallback(
+    (event: MessageChoiceUpdatedEvent) => {
+      if (messageManager) {
+        void messageManager.applyChoiceUpdate(event, currentUserId).catch(() => undefined)
+      } else {
+        setConversationMessageStates((currentStates) => {
+          const state = currentStates[event.conversationId]
+          if (!state) return currentStates
+          const messageIndex = state.messages.findIndex((message) => message.id === event.messageId)
+          if (messageIndex < 0) return currentStates
+          const previousMessage = state.messages[messageIndex]
+          const nextMessage = applyMessageChoiceState(previousMessage, {
+            ...event.choice,
+            myOptionIds:
+              event.actorUserId === currentUserId
+                ? event.actorOptionIds
+                : (previousMessage.choice?.myOptionIds ?? []),
+          })
+          if (nextMessage === previousMessage) return currentStates
+          const messages = [...state.messages]
+          messages[messageIndex] = nextMessage
+          return { ...currentStates, [event.conversationId]: { ...state, messages } }
+        })
+      }
+    },
+    [currentUserId, messageManager],
+  )
 
   const setMessageReaction = useCallback(
     async (conversationId: string, messageId: string, text: string, reacted: boolean) => {
@@ -641,54 +928,57 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         reacted,
         text,
       })
-      setConversationMessageStates((currentStates) => {
-        const state = currentStates[result.conversationId]
-        if (!state) {
-          return currentStates
-        }
-        const messageIndex = state.messages.findIndex((message) => message.id === result.messageId)
-        if (messageIndex < 0) {
-          return currentStates
-        }
-        const messages = [...state.messages]
-        messages[messageIndex] = applyMessageReactionSnapshot(messages[messageIndex], result)
-        if (messages[messageIndex] === state.messages[messageIndex]) {
-          return currentStates
-        }
-        return {
-          ...currentStates,
-          [result.conversationId]: { ...state, messages },
-        }
-      })
+      if (messageManager) {
+        await messageManager.applyReactionSnapshot(result)
+      } else {
+        setConversationMessageStates((currentStates) => {
+          const state = currentStates[result.conversationId]
+          if (!state) {
+            return currentStates
+          }
+          const messageIndex = state.messages.findIndex(
+            (message) => message.id === result.messageId,
+          )
+          if (messageIndex < 0) {
+            return currentStates
+          }
+          const messages = [...state.messages]
+          messages[messageIndex] = applyMessageReactionSnapshot(messages[messageIndex], result)
+          if (messages[messageIndex] === state.messages[messageIndex]) {
+            return currentStates
+          }
+          return {
+            ...currentStates,
+            [result.conversationId]: { ...state, messages },
+          }
+        })
+      }
       return result
     },
-    [],
+    [messageManager],
   )
 
   const respondToChoice = useCallback(
     async (conversationId: string, messageId: string, optionIds: string[]) => {
-      const result = await setConversationChoiceResponseRequest(
-        conversationId,
-        messageId,
-        optionIds,
-      )
-      setConversationMessageStates((currentStates) => {
-        const state = currentStates[result.conversationId]
-        if (!state) return currentStates
-        const messageIndex = state.messages.findIndex((message) => message.id === result.messageId)
-        if (messageIndex < 0) return currentStates
-        const messages = [...state.messages]
-        messages[messageIndex] = {
-          ...messages[messageIndex],
-          choice: result.choice,
-        }
-        return {
-          ...currentStates,
-          [result.conversationId]: { ...state, messages },
-        }
-      })
+      try {
+        const result = await setConversationChoiceResponseRequest(
+          conversationId,
+          messageId,
+          optionIds,
+        )
+        applyChoiceSnapshots([
+          {
+            choice: result.choice,
+            conversationId: result.conversationId,
+            messageId: result.messageId,
+            status: "active",
+          },
+        ])
+      } catch (error) {
+        throw handleError(error, "提交选择失败")
+      }
     },
-    [],
+    [applyChoiceSnapshots, handleError],
   )
 
   const updateConversationLastMentionedSeq = useCallback(
@@ -703,6 +993,23 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
             ? {
                 ...conversation,
                 lastMentionedSeq: Math.max(conversation.lastMentionedSeq, lastMentionedSeq),
+              }
+            : conversation,
+        ),
+      )
+    },
+    [],
+  )
+
+  const updateConversationLastChoiceSeq = useCallback(
+    (conversationId: string, lastChoiceSeq: number) => {
+      if (!conversationId || lastChoiceSeq <= 0) return
+      setConversations((currentConversations) =>
+        currentConversations.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                lastChoiceSeq: Math.max(conversation.lastChoiceSeq, lastChoiceSeq),
               }
             : conversation,
         ),
@@ -836,6 +1143,221 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [handleError],
   )
 
+  const beginHistoryWindowRequest = useCallback((conversationId: string) => {
+    historyRequestControllersRef.current.get(conversationId)?.abort()
+    const controller = new AbortController()
+    historyRequestControllersRef.current.set(conversationId, controller)
+    const version = (historyRequestVersionsRef.current.get(conversationId) ?? 0) + 1
+    historyRequestVersionsRef.current.set(conversationId, version)
+    return { controller, version }
+  }, [])
+
+  const historyRequestIsCurrent = useCallback(
+    (conversationId: string, version: number) =>
+      historyRequestVersionsRef.current.get(conversationId) === version &&
+      !historyRequestControllersRef.current.get(conversationId)?.signal.aborted,
+    [],
+  )
+
+  const replaceWithLatestMessages = useCallback(
+    (conversationId: string) => {
+      if (!conversationId) return
+      const { controller, version } = beginHistoryWindowRequest(conversationId)
+      void messageManager?.clearHistoryWindow(conversationId).catch(() => undefined)
+      updateConversationMessageState(conversationId, (state) => ({
+        ...state,
+        error: null,
+        focus: null,
+        historyTarget: null,
+        loaded: false,
+        loading: true,
+        loadingAfter: false,
+        loadingBefore: false,
+        messages: messageManager?.getMessages(conversationId) ?? [],
+        page: null,
+        pendingLatestMessageCount: 0,
+        viewMode: "latest",
+      }))
+
+      void (async () => {
+        try {
+          const result = await listConversationMessages(conversationId, {
+            limit: messagePageLimit,
+            signal: controller.signal,
+          })
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          const operation = messageManager?.beginConversationOperation(conversationId)
+          const messages = messageManager
+            ? await messageManager.commitLatest(operation!, result.messages, result.page)
+            : result.messages
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          updateConversationMessageState(conversationId, (state) => ({
+            ...state,
+            error: null,
+            loaded: true,
+            loading: false,
+            latestKnownSeq: Math.max(state.latestKnownSeq, result.page.newestSeq),
+            messages,
+            page: {
+              ...result.page,
+              newestSeq: messages.at(-1)?.seq ?? result.page.newestSeq,
+              oldestSeq: messages[0]?.seq ?? result.page.oldestSeq,
+            },
+          }))
+        } catch (error) {
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          updateConversationMessageState(conversationId, (state) => ({
+            ...state,
+            error: getClientDataErrorMessage(error, "加载最新消息失败"),
+            loading: false,
+          }))
+        }
+      })()
+    },
+    [
+      beginHistoryWindowRequest,
+      historyRequestIsCurrent,
+      messageManager,
+      updateConversationMessageState,
+    ],
+  )
+
+  const focusConversationMessage = useCallback(
+    async (conversationId: string, target: { messageId: string; seq: number }) => {
+      if (!conversationId || !target.messageId || target.seq < 1) return
+      const { controller, version } = beginHistoryWindowRequest(conversationId)
+      const requestKey = ++historyFocusRequestKeyRef.current
+      const guard = () =>
+        historyRequestIsCurrent(conversationId, version) &&
+        conversationMessageStatesRef.current[conversationId]?.historyTarget?.messageId ===
+          target.messageId
+      updateConversationMessageState(conversationId, (state) => ({
+        ...state,
+        error: null,
+        focus: { messageId: target.messageId, requestKey },
+        historyTarget: target,
+        latestKnownSeq: Math.max(state.latestKnownSeq, target.seq),
+        loaded: false,
+        loading: true,
+        loadingAfter: false,
+        loadingBefore: false,
+        messages: [],
+        page: null,
+        pendingLatestMessageCount: 0,
+        viewMode: "history",
+      }))
+
+      try {
+        const operation = messageManager?.beginConversationOperation(conversationId)
+        if (messageManager && operation) {
+          const cached = await messageManager.hydrateHistoryAround(
+            operation,
+            target,
+            messagePageLimit * 2,
+            guard,
+          )
+          if (cached && guard()) {
+            updateConversationMessageState(conversationId, (state) => ({
+              ...state,
+              loaded: true,
+              loading: true,
+              messages: [...cached.messages],
+              page: {
+                hasMoreAfter: cached.hasMoreAfter,
+                hasMoreBefore: cached.hasMoreBefore,
+                limit: messagePageLimit,
+                newestSeq: cached.newestSeq,
+                oldestSeq: cached.oldestSeq,
+              },
+            }))
+          }
+        }
+        const [before, after] = await Promise.all([
+          listConversationMessages(conversationId, {
+            beforeSeq: target.seq + 1,
+            limit: messagePageLimit,
+            signal: controller.signal,
+          }),
+          listConversationMessages(conversationId, {
+            afterSeq: target.seq,
+            limit: messagePageLimit,
+            signal: controller.signal,
+          }),
+        ])
+        if (!historyRequestIsCurrent(conversationId, version)) return
+        const messages = mergeConversationMessages(before.messages, after.messages)
+        if (!messages.some((message) => message.id === target.messageId)) {
+          throw new Error("目标消息已删除或不可见")
+        }
+        if (messageManager) {
+          await messageManager.replaceHistoryWindow(
+            operation!,
+            target,
+            messages,
+            {
+              hasMoreAfter: after.page.hasMoreAfter,
+              hasMoreBefore: before.page.hasMoreBefore,
+            },
+            guard,
+          )
+        }
+        if (!historyRequestIsCurrent(conversationId, version)) return
+        updateConversationMessageState(conversationId, (state) => ({
+          ...state,
+          error: null,
+          loaded: true,
+          loading: false,
+          latestKnownSeq: Math.max(state.latestKnownSeq, after.page.newestSeq),
+          messages: messageManager
+            ? [...messageManager.getHistoryWindow(conversationId).messages]
+            : messages,
+          page: messageManager
+            ? {
+                hasMoreAfter: messageManager.getHistoryWindow(conversationId).hasMoreAfter,
+                hasMoreBefore: messageManager.getHistoryWindow(conversationId).hasMoreBefore,
+                limit: messagePageLimit,
+                newestSeq: messageManager.getHistoryWindow(conversationId).newestSeq,
+                oldestSeq: messageManager.getHistoryWindow(conversationId).oldestSeq,
+              }
+            : {
+                hasMoreAfter: after.page.hasMoreAfter,
+                hasMoreBefore: before.page.hasMoreBefore,
+                limit: messagePageLimit,
+                newestSeq: messages.at(-1)?.seq ?? 0,
+                oldestSeq: messages[0]?.seq ?? 0,
+              },
+        }))
+      } catch (error) {
+        if (!historyRequestIsCurrent(conversationId, version)) return
+        const message = getClientDataErrorMessage(error, "定位消息失败")
+        updateConversationMessageState(conversationId, (state) => ({
+          ...state,
+          error: message,
+          loaded: false,
+          loading: false,
+        }))
+        toast.error(message)
+        replaceWithLatestMessages(conversationId)
+      }
+    },
+    [
+      beginHistoryWindowRequest,
+      historyRequestIsCurrent,
+      messageManager,
+      replaceWithLatestMessages,
+      updateConversationMessageState,
+    ],
+  )
+
+  const consumeConversationMessageFocus = useCallback(
+    (conversationId: string, consumedFocus: { messageId: string; requestKey: number }) => {
+      updateConversationMessageState(conversationId, (state) =>
+        consumeMessageFocusState(state, consumedFocus),
+      )
+    },
+    [updateConversationMessageState],
+  )
+
   const ensureConversationMessages = useCallback(
     (conversationId: string) => {
       if (!conversationId) {
@@ -843,49 +1365,97 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       }
 
       const state = conversationMessageStatesRef.current[conversationId]
+      const needsServerRefresh = conversationsNeedingServerRefreshRef.current.has(conversationId)
       if (
-        state?.loaded ||
+        (state?.loaded && !needsServerRefresh) ||
         state?.loading ||
-        loadingConversationIdsRef.current.has(conversationId)
+        loadingConversationOperationsRef.current.has(conversationId)
       ) {
         return
       }
+      const wasLoaded = state?.loaded === true
 
-      loadingConversationIdsRef.current.add(conversationId)
+      let operation: MessageOperationToken | undefined
+      try {
+        operation = messageManager?.beginConversationOperation(conversationId)
+      } catch (error) {
+        if (isMessageOperationCancelled(error)) return
+        throw error
+      }
+
+      const loadingOperation = Symbol(conversationId)
+      loadingConversationOperationsRef.current.set(conversationId, loadingOperation)
       updateConversationMessageState(conversationId, (currentState) => ({
         ...currentState,
         error: null,
         loading: true,
       }))
 
-      void listConversationMessages(conversationId, {
-        limit: messagePageLimit,
-      })
-        .then((result) => {
+      void (async () => {
+        let restoredFromCache = false
+        let cacheReadFailed = false
+        try {
+          if (messageManager) {
+            try {
+              const cached = await messageManager.hydrateRecent(operation!, messagePageLimit)
+              if (cached.length > 0) {
+                restoredFromCache = true
+                updateConversationMessageState(conversationId, (currentState) => ({
+                  ...currentState,
+                  error: null,
+                  loaded: true,
+                  loading: true,
+                  messages: cached,
+                  page: updatePageWithMessage(currentState.page, cached),
+                }))
+              }
+            } catch (error) {
+              if (isMessageOperationCancelled(error)) throw error
+              cacheReadFailed = true
+            }
+          }
+
+          const result = await listConversationMessages(conversationId, {
+            limit: messagePageLimit,
+          })
+          const messages = messageManager
+            ? await messageManager.commitLatest(operation!, result.messages, result.page)
+            : mergeConversationMessages(
+                conversationMessageStatesRef.current[conversationId]?.messages ?? [],
+                result.messages,
+              )
+          if (operation) messageManager?.assertOperationCurrent(operation)
+          conversationsNeedingServerRefreshRef.current.delete(conversationId)
           updateConversationMessageState(conversationId, (currentState) => ({
             ...currentState,
-            error: null,
+            error: cacheReadFailed ? messageCacheFallbackNotice : null,
             loaded: true,
             loading: false,
-            messages: mergeConversationMessages(currentState.messages, result.messages),
-            page: result.page,
+            messages,
+            page: {
+              ...result.page,
+              newestSeq: messages.at(-1)?.seq ?? result.page.newestSeq,
+              oldestSeq: messages[0]?.seq ?? result.page.oldestSeq,
+            },
           }))
-        })
-        .catch((error: unknown) => {
+        } catch (error) {
+          if (isMessageOperationCancelled(error)) return
           const message = getClientDataErrorMessage(error, "加载消息失败")
           updateConversationMessageState(conversationId, (currentState) => ({
             ...currentState,
             error: message,
-            loaded: false,
+            loaded: wasLoaded || restoredFromCache,
             loading: false,
           }))
-          toast.error(message)
-        })
-        .finally(() => {
-          loadingConversationIdsRef.current.delete(conversationId)
-        })
+          if (!wasLoaded && !restoredFromCache) toast.error(message)
+        } finally {
+          if (loadingConversationOperationsRef.current.get(conversationId) === loadingOperation) {
+            loadingConversationOperationsRef.current.delete(conversationId)
+          }
+        }
+      })()
     },
-    [updateConversationMessageState],
+    [messageManager, updateConversationMessageState],
   )
 
   const loadBeforeConversationMessages = useCallback(
@@ -895,32 +1465,139 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      if (state.viewMode === "history") {
+        const version = historyRequestVersionsRef.current.get(conversationId) ?? 0
+        const controller = historyRequestControllersRef.current.get(conversationId)
+        const targetId = state.historyTarget?.messageId
+        if (!controller || !targetId) return
+        updateConversationMessageState(conversationId, (current) => ({
+          ...current,
+          error: null,
+          loadingBefore: true,
+        }))
+        void (async () => {
+          try {
+            const result = await listConversationMessages(conversationId, {
+              beforeSeq: state.page!.oldestSeq,
+              limit: messagePageLimit,
+              signal: controller.signal,
+            })
+            if (!historyRequestIsCurrent(conversationId, version)) return
+            const current = conversationMessageStatesRef.current[conversationId]
+            if (current?.historyTarget?.messageId !== targetId) return
+            const operation = messageManager?.beginConversationOperation(conversationId)
+            const guard = () =>
+              historyRequestIsCurrent(conversationId, version) &&
+              conversationMessageStatesRef.current[conversationId]?.historyTarget?.messageId ===
+                targetId
+            const snapshot = messageManager
+              ? await messageManager.mergeHistoryBefore(
+                  operation!,
+                  result.messages,
+                  result.page.hasMoreBefore,
+                  guard,
+                )
+              : null
+            if (!historyRequestIsCurrent(conversationId, version)) return
+            const messages = snapshot
+              ? [...snapshot.messages]
+              : mergeConversationMessages(current.messages, result.messages)
+            updateConversationMessageState(conversationId, (latest) => ({
+              ...latest,
+              error: null,
+              loaded: true,
+              loadingBefore: false,
+              messages,
+              page: snapshot
+                ? {
+                    hasMoreAfter: snapshot.hasMoreAfter,
+                    hasMoreBefore: snapshot.hasMoreBefore,
+                    limit: messagePageLimit,
+                    newestSeq: snapshot.newestSeq,
+                    oldestSeq: snapshot.oldestSeq,
+                  }
+                : mergePageWithBeforeResult(latest.page, result.page, messages),
+            }))
+          } catch (error) {
+            if (!historyRequestIsCurrent(conversationId, version)) return
+            updateConversationMessageState(conversationId, (current) => ({
+              ...current,
+              error: getClientDataErrorMessage(error, "加载更早消息失败"),
+              loadingBefore: false,
+            }))
+          }
+        })()
+        return
+      }
+
       const beforeSeq = state.page.oldestSeq
+      let operation: MessageOperationToken | undefined
+      try {
+        operation = messageManager?.beginConversationOperation(conversationId)
+      } catch (error) {
+        if (isMessageOperationCancelled(error)) return
+        throw error
+      }
       updateConversationMessageState(conversationId, (currentState) => ({
         ...currentState,
         error: null,
         loadingBefore: true,
       }))
 
-      void listConversationMessages(conversationId, {
-        beforeSeq,
-        limit: messagePageLimit,
-      })
-        .then((result) => {
-          updateConversationMessageState(conversationId, (currentState) => {
-            const messages = mergeConversationMessages(currentState.messages, result.messages)
-
-            return {
-              ...currentState,
-              error: null,
-              loaded: true,
-              loadingBefore: false,
-              messages,
-              page: mergePageWithBeforeResult(currentState.page, result.page, messages),
+      void (async () => {
+        let cacheReadFailed = false
+        try {
+          if (messageManager) {
+            try {
+              const cached = await messageManager.hydrateBefore(
+                operation!,
+                beforeSeq,
+                messagePageLimit,
+              )
+              if (cached.hit) {
+                updateConversationMessageState(conversationId, (currentState) => ({
+                  ...currentState,
+                  error: null,
+                  loaded: true,
+                  loadingBefore: false,
+                  messages: cached.messages,
+                  page: {
+                    hasMoreAfter: currentState.page?.hasMoreAfter ?? false,
+                    hasMoreBefore: cached.hasMoreBefore,
+                    limit: currentState.page?.limit ?? messagePageLimit,
+                    newestSeq: cached.messages.at(-1)?.seq ?? 0,
+                    oldestSeq: cached.messages[0]?.seq ?? 0,
+                  },
+                }))
+                return
+              }
+            } catch (error) {
+              if (isMessageOperationCancelled(error)) throw error
+              cacheReadFailed = true
             }
+          }
+
+          const result = await listConversationMessages(conversationId, {
+            beforeSeq,
+            limit: messagePageLimit,
           })
-        })
-        .catch((error: unknown) => {
+          const messages = messageManager
+            ? await messageManager.commitBefore(operation!, beforeSeq, result.messages, result.page)
+            : mergeConversationMessages(
+                conversationMessageStatesRef.current[conversationId]?.messages ?? [],
+                result.messages,
+              )
+          if (operation) messageManager?.assertOperationCurrent(operation)
+          updateConversationMessageState(conversationId, (currentState) => ({
+            ...currentState,
+            error: cacheReadFailed ? messageCacheFallbackNotice : null,
+            loaded: true,
+            loadingBefore: false,
+            messages,
+            page: mergePageWithBeforeResult(currentState.page, result.page, messages),
+          }))
+        } catch (error) {
+          if (isMessageOperationCancelled(error)) return
           const message = getClientDataErrorMessage(error, "加载更早消息失败")
           updateConversationMessageState(conversationId, (currentState) => ({
             ...currentState,
@@ -928,51 +1605,227 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
             loadingBefore: false,
           }))
           toast.error(message)
-        })
+        }
+      })()
     },
-    [updateConversationMessageState],
+    [historyRequestIsCurrent, messageManager, updateConversationMessageState],
+  )
+
+  const loadAfterConversationMessages = useCallback(
+    (conversationId: string) => {
+      const state = conversationMessageStatesRef.current[conversationId]
+      if (
+        state?.viewMode !== "history" ||
+        !state.page?.hasMoreAfter ||
+        !state.loaded ||
+        state.loadingAfter ||
+        !state.historyTarget
+      ) {
+        return
+      }
+      const version = historyRequestVersionsRef.current.get(conversationId) ?? 0
+      const controller = historyRequestControllersRef.current.get(conversationId)
+      const targetId = state.historyTarget.messageId
+      if (!controller) return
+      updateConversationMessageState(conversationId, (current) => ({
+        ...current,
+        error: null,
+        loadingAfter: true,
+      }))
+      void (async () => {
+        try {
+          const result = await listConversationMessages(conversationId, {
+            afterSeq: state.page!.newestSeq,
+            limit: messagePageLimit,
+            signal: controller.signal,
+          })
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          const current = conversationMessageStatesRef.current[conversationId]
+          if (current?.historyTarget?.messageId !== targetId) return
+          const operation = messageManager?.beginConversationOperation(conversationId)
+          const guard = () =>
+            historyRequestIsCurrent(conversationId, version) &&
+            conversationMessageStatesRef.current[conversationId]?.historyTarget?.messageId ===
+              targetId
+          const snapshot = messageManager
+            ? await messageManager.mergeHistoryAfter(
+                operation!,
+                result.messages,
+                result.page.hasMoreAfter,
+                guard,
+              )
+            : null
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          const messages = snapshot
+            ? [...snapshot.messages]
+            : mergeConversationMessages(current.messages, result.messages)
+          updateConversationMessageState(conversationId, (latest) => ({
+            ...latest,
+            error: null,
+            loaded: true,
+            loadingAfter: false,
+            messages,
+            page: snapshot
+              ? {
+                  hasMoreAfter: snapshot.hasMoreAfter,
+                  hasMoreBefore: snapshot.hasMoreBefore,
+                  limit: messagePageLimit,
+                  newestSeq: snapshot.newestSeq,
+                  oldestSeq: snapshot.oldestSeq,
+                }
+              : mergePageWithAfterResult(latest.page, result.page, messages),
+          }))
+        } catch (error) {
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          updateConversationMessageState(conversationId, (current) => ({
+            ...current,
+            error: getClientDataErrorMessage(error, "加载更新消息失败"),
+            loadingAfter: false,
+          }))
+        }
+      })()
+    },
+    [historyRequestIsCurrent, messageManager, updateConversationMessageState],
   )
 
   const syncAfterConversationMessages = useCallback(
-    (conversationId: string, afterSeq: number) => {
-      if (syncingAfterConversationIdsRef.current.has(conversationId)) {
-        return
+    (conversationId: string, afterSeq: number): Promise<void> => {
+      if (syncingAfterConversationOperationsRef.current.has(conversationId)) {
+        return Promise.resolve()
       }
 
-      syncingAfterConversationIdsRef.current.add(conversationId)
+      let operation: MessageOperationToken | undefined
+      try {
+        operation = messageManager?.beginConversationOperation(conversationId)
+      } catch (error) {
+        if (isMessageOperationCancelled(error)) return Promise.resolve()
+        return Promise.reject(error)
+      }
 
-      void listConversationMessages(conversationId, {
-        afterSeq,
-        limit: messagePageLimit,
-      })
-        .then((result) => {
-          const lastReceivedMessage = result.messages[result.messages.length - 1]
-          updateConversationMessageState(conversationId, (currentState) => {
-            const messages = mergeConversationMessages(currentState.messages, result.messages)
+      const syncingOperation = Symbol(conversationId)
+      syncingAfterConversationOperationsRef.current.set(conversationId, syncingOperation)
 
-            return {
+      return (async () => {
+        try {
+          const initialCursor = messageManager
+            ? await messageManager.getSyncCursor(operation!, afterSeq)
+            : afterSeq
+          if (messageManager) {
+            await messageManager.catchUp(operation!, initialCursor, (cursor) =>
+              listConversationMessages(conversationId, {
+                afterSeq: cursor,
+                limit: messagePageLimit,
+              }),
+            )
+            messageManager.assertOperationCurrent(operation!)
+            const messages = messageManager.getMessages(conversationId)
+            updateConversationMessageState(conversationId, (currentState) => ({
               ...currentState,
               error: null,
               messages,
-              page: mergePageWithAfterResult(currentState.page, result.page, messages),
-            }
-          })
-
-          if (lastReceivedMessage) {
-            rememberConversationMessage(lastReceivedMessage)
+              page: mergePageWithAfterResult(
+                currentState.page,
+                {
+                  hasMoreAfter: false,
+                  hasMoreBefore: currentState.page?.hasMoreBefore ?? false,
+                  limit: messagePageLimit,
+                  newestSeq: messages.at(-1)?.seq ?? initialCursor,
+                  oldestSeq: messages[0]?.seq ?? 0,
+                },
+                messages,
+              ),
+            }))
+          } else {
+            let accumulatedMessages =
+              conversationMessageStatesRef.current[conversationId]?.messages ?? []
+            await catchUpConversationMessages({
+              afterSeq: initialCursor,
+              conversationId,
+              fetchPage: (cursor) =>
+                listConversationMessages(conversationId, {
+                  afterSeq: cursor,
+                  limit: messagePageLimit,
+                }),
+              commit: async (result, cursor) => {
+                accumulatedMessages = mergeConversationMessages(
+                  accumulatedMessages,
+                  result.messages,
+                )
+                updateConversationMessageState(conversationId, (currentState) => ({
+                  ...currentState,
+                  error: null,
+                  messages: accumulatedMessages,
+                  page: mergePageWithAfterResult(
+                    currentState.page,
+                    result.page,
+                    accumulatedMessages,
+                  ),
+                }))
+                return result.messages.reduce(
+                  (maximum, message) => Math.max(maximum, message.seq),
+                  cursor,
+                )
+              },
+            })
           }
-        })
-        .catch((error: unknown) => {
+          const lastMessage = conversationMessageStatesRef.current[conversationId]?.messages.at(-1)
+          if (lastMessage) rememberConversationMessage(lastMessage)
+        } catch (error) {
+          if (isMessageOperationCancelled(error)) return
+          if (messageManager) {
+            const messages = messageManager.getMessages(conversationId)
+            if (messages.length > 0)
+              updateConversationMessageState(conversationId, (currentState) => ({
+                ...currentState,
+                messages,
+              }))
+          }
           toast.error(getClientDataErrorMessage(error, "同步新消息失败"))
-        })
-        .finally(() => {
-          syncingAfterConversationIdsRef.current.delete(conversationId)
-        })
+        } finally {
+          if (
+            syncingAfterConversationOperationsRef.current.get(conversationId) === syncingOperation
+          ) {
+            syncingAfterConversationOperationsRef.current.delete(conversationId)
+          }
+        }
+      })()
     },
-    [rememberConversationMessage, updateConversationMessageState],
+    [messageManager, rememberConversationMessage, updateConversationMessageState],
   )
 
   const syncLoadedConversationMessages = useCallback(() => {
+    if (messageManager) {
+      void messageManager
+        .listSyncStates()
+        .then(async (syncStates) => {
+          const statesByConversationId = new Map(
+            syncStates.map((state) => [state.conversationId, state]),
+          )
+          const candidates = prioritizeConversationSyncs(
+            conversationsRef.current.filter((conversation) => {
+              const syncState = statesByConversationId.get(conversation.id)
+              return (
+                syncState !== undefined &&
+                conversation.lastMessageSeq > syncState.httpSyncedThroughSeq
+              )
+            }),
+            includedConversationIdRef.current,
+          )
+          let nextIndex = 0
+          const runNext = async () => {
+            for (;;) {
+              const conversation = candidates[nextIndex]
+              nextIndex += 1
+              if (!conversation) return
+              const state = statesByConversationId.get(conversation.id)
+              if (!state) continue
+              await syncAfterConversationMessages(conversation.id, state.httpSyncedThroughSeq)
+            }
+          }
+          await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, runNext))
+        })
+        .catch(() => undefined)
+    }
     for (const [conversationId, state] of Object.entries(conversationMessageStatesRef.current)) {
       if (!state.loaded) {
         continue
@@ -980,14 +1833,29 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
       const newestSeq = getNewestMessageSeq(state)
       if (newestSeq > 0) {
-        syncAfterConversationMessages(conversationId, newestSeq)
+        void syncAfterConversationMessages(conversationId, newestSeq)
       }
       void refreshMessageReactions(
         conversationId,
         state.messages.map((message) => message.id),
       ).catch(() => undefined)
+      const choiceMessages = state.messages.filter((message) => message.body.type === "choice")
+      for (let index = 0; index < choiceMessages.length; index += choiceSnapshotBatchSize) {
+        const batch = choiceMessages.slice(index, index + choiceSnapshotBatchSize)
+        const expectedChoices = new Map(batch.map((message) => [message.id, message.choice]))
+        void listConversationMessageChoiceSnapshots(
+          conversationId,
+          batch.map((message) => message.id),
+        )
+          .then((snapshots) => applyChoiceSnapshots(snapshots, expectedChoices))
+          .catch(() => undefined)
+      }
     }
-  }, [refreshMessageReactions, syncAfterConversationMessages])
+  }, [applyChoiceSnapshots, messageManager, refreshMessageReactions, syncAfterConversationMessages])
+
+  const setForegroundConversationId = useCallback((conversationId: string) => {
+    setForegroundConversationIdState(conversationId)
+  }, [])
 
   const {
     sendConversationFile,
@@ -1014,11 +1882,13 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     openAppConversation,
     openDirectConversation,
     removeConversation,
+    restoreConversation,
     removeGroupConversationMember,
     revokeConversationMessage,
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   } = useConversationActions({
     conversations,
@@ -1026,10 +1896,32 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     handleError,
     mergeIncomingConversationMessage,
     navigate,
+    onConversationsMutated: markConversationsMutated,
+    onConversationRemoved: (conversationId) => {
+      conversationsNeedingServerRefreshRef.current.delete(conversationId)
+      loadingConversationOperationsRef.current.delete(conversationId)
+      syncingAfterConversationOperationsRef.current.delete(conversationId)
+      void messageManager?.clearConversation(conversationId).catch(() => undefined)
+    },
+    onConversationRestored: (conversationId) => {
+      messageManager?.activateConversation(conversationId)
+    },
     refreshContacts,
     setConversationMessageStates,
     setConversations,
   })
+
+  const dismissConversation = useCallback(
+    async (conversationId: string) => {
+      try {
+        const result = await dismissConversationRequest(conversationId)
+        removeConversation(result.conversationId)
+      } catch (error) {
+        throw handleError(error, "删除对话失败")
+      }
+    },
+    [handleError, removeConversation],
+  )
 
   const bootstrap = useCallback(async () => {
     const minimumLoading = wait(minimumBootstrapLoadingMs)
@@ -1038,7 +1930,9 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       const [nextMe, nextContacts, nextConversations, nextProjects] = await Promise.all([
         getCurrentClientUser(),
         listClientContacts(),
-        listClientConversations(),
+        listClientConversations(undefined, {
+          includeConversationId: includedConversationIdRef.current,
+        }),
         listClientProjects({ limit: 100 }),
       ])
 
@@ -1170,14 +2064,20 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     contactsRefreshing,
     createGroupConversation,
     createProject,
+    compactConversationMessages,
+    consumeConversationMessageFocus,
+    clearMessageScope,
     dissolveGroupConversation,
+    dismissConversation,
     ensureConversationMessages,
+    focusConversationMessage,
     foregroundConversationId,
     getConversation,
     getConversationMessageState,
     joinGroupConversation,
     leaveGroupConversation,
     loadBeforeConversationMessages,
+    loadAfterConversationMessages,
     markConversationRead,
     setConversationPinned,
     setConversationMuted,
@@ -1203,8 +2103,11 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshContacts,
     refreshMe,
     refreshProjects,
+    replaceWithLatestMessages,
+    registerConversationMessageView,
     loadMoreProjects,
     removeConversation,
+    restoreConversation,
     removeGroupConversationMember,
     revokeConversationMessage,
     respondToChoice,
@@ -1222,10 +2125,12 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     syncLoadedConversationMessages,
     updateConversationLastMessage,
     updateConversationLastMentionedSeq,
+    updateConversationLastChoiceSeq,
     updateConversationPinned,
     updateConversationMuted,
     updateMessageTopic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   }
 

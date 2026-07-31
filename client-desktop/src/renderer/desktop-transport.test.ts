@@ -10,6 +10,8 @@ describe("installDesktopFetch", () => {
   const streamChunk = vi.fn()
   const streamFinish = vi.fn()
   const streamAbort = vi.fn()
+  const cancel = vi.fn()
+  const request = vi.fn()
 
   beforeEach(() => {
     vi.useFakeTimers()
@@ -22,11 +24,15 @@ describe("installDesktopFetch", () => {
       status: 201,
     })
     streamAbort.mockReset().mockResolvedValue(undefined)
+    cancel.mockReset().mockResolvedValue(undefined)
+    request.mockReset().mockResolvedValue({ body: { ok: true }, headers: {}, status: 200 })
     Object.defineProperty(window, "desktop", {
       configurable: true,
       value: {
         diagnostics: { reportRuntime },
         transport: {
+          cancel,
+          request,
           streamAbort,
           streamChunk,
           streamFinish,
@@ -132,5 +138,81 @@ describe("installDesktopFetch", () => {
 
     stopDiagnostics()
     restoreFetch()
+  })
+
+  it("预取消的普通和 Multipart 请求不发送 IPC", async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const restoreFetch = installDesktopFetch({
+      id: "server",
+      normalizedUrl: "https://chat.example.com",
+      userId: "user",
+    })
+
+    await expect(
+      window.fetch("http://localhost/api/client/me", { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" })
+    const body = new FormData()
+    body.append("file", new Blob(["content"]), "test.txt")
+    await expect(
+      window.fetch("http://localhost/api/client/temporary-files", {
+        body,
+        method: "POST",
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" })
+    expect(request).not.toHaveBeenCalled()
+    expect(streamStart).not.toHaveBeenCalled()
+    expect(cancel).not.toHaveBeenCalled()
+    restoreFetch()
+  })
+
+  it("把在途 AbortSignal 映射为相同 requestId 的取消并保留原因", async () => {
+    let resolveRequest:
+      | ((value: { body: unknown; headers: Record<string, string>; status: number }) => void)
+      | undefined
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRequest = resolve
+        }),
+    )
+    const controller = new AbortController()
+    const reason = new DOMException("停止搜索", "AbortError")
+    const restoreFetch = installDesktopFetch({
+      id: "server",
+      normalizedUrl: "https://chat.example.com",
+      userId: "user",
+    })
+    const response = window.fetch("http://localhost/api/client/search/messages", {
+      signal: controller.signal,
+    })
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
+    const requestId = request.mock.calls[0]?.[1].requestId
+    controller.abort(reason)
+
+    await expect(response).rejects.toBe(reason)
+    expect(cancel).toHaveBeenCalledWith(requestId)
+    resolveRequest?.({ body: { stale: true }, headers: {}, status: 200 })
+    restoreFetch()
+  })
+
+  it("卸载 adapter 会取消全部活动请求并阻止旧结果提交", async () => {
+    request.mockImplementation(() => new Promise(() => undefined))
+    const restoreFetch = installDesktopFetch({
+      id: "server",
+      normalizedUrl: "https://chat.example.com",
+      userId: "user",
+    })
+    const first = window.fetch("http://localhost/api/client/me")
+    const second = window.fetch("http://localhost/api/client/conversations")
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+    restoreFetch()
+
+    await expect(first).rejects.toMatchObject({ name: "AbortError" })
+    await expect(second).rejects.toMatchObject({ name: "AbortError" })
+    expect(new Set(cancel.mock.calls.map(([requestId]) => requestId))).toEqual(
+      new Set(request.mock.calls.map(([, value]) => value.requestId)),
+    )
   })
 })

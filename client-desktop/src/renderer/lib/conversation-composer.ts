@@ -4,7 +4,11 @@ import type { ConversationDraftMention } from "@/lib/conversation-drafts"
 import { getConversationMemberMentionLabel } from "@/lib/conversation-mention-labels"
 import type { ClientConversationMember } from "@/lib/client-data-api"
 import type { ConversationPanelMentionTarget } from "@/lib/conversation-panel-types"
-import { createMentionToken } from "@/lib/message-mentions"
+import {
+  createMentionToken,
+  parseMentionTemplate,
+  type MentionLabelResolver,
+} from "@/lib/message-mentions"
 import { createPinyinSearchText, normalizePinyinSearchQuery } from "@/lib/pinyin-search"
 
 const maxMentionCandidateResults = 50
@@ -52,7 +56,9 @@ export function insertTextareaText(
   onChange(nextValue, nextCursor)
 }
 
-export function isImeCompositionKeyEvent(event: KeyboardEvent<HTMLTextAreaElement>) {
+export function isImeCompositionKeyEvent(
+  event: KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>,
+) {
   return event.nativeEvent.isComposing || event.keyCode === 229
 }
 
@@ -131,6 +137,35 @@ export function getMentionTrigger(value: string, cursor: number): MentionTrigger
     query,
     start,
   }
+}
+
+export function insertDraftMention(
+  value: string,
+  mentions: ConversationDraftMention[],
+  target: ConversationPanelMentionTarget,
+  selectionStart: number,
+  selectionEnd: number,
+) {
+  const mentionText = `@${target.label}`
+  const insertedText = `${mentionText} `
+  const nextValue = value.slice(0, selectionStart) + insertedText + value.slice(selectionEnd)
+  const nextMention: ConversationDraftMention = {
+    end: selectionStart + mentionText.length,
+    id: target.id,
+    label: target.label,
+    start: selectionStart,
+    targetType: target.targetType,
+  }
+  const nextMentions = [
+    ...syncDraftMentions(
+      mentions.filter((mention) => mention.end <= selectionStart || mention.start >= selectionEnd),
+      value,
+      nextValue,
+    ),
+    nextMention,
+  ].sort((left, right) => left.start - right.start)
+
+  return { cursor: selectionStart + insertedText.length, mentions: nextMentions, value: nextValue }
 }
 
 export function syncDraftMentions(
@@ -236,6 +271,33 @@ export function createDraftMentionTemplate(value: string, mentions: Conversation
   }
 
   return content
+}
+
+export function createDraftFromMessageContent(
+  content: string,
+  mentionLabelResolver: MentionLabelResolver,
+) {
+  const mentions: ConversationDraftMention[] = []
+  let text = ""
+
+  for (const part of parseMentionTemplate(content, mentionLabelResolver)) {
+    if (part.type === "text") {
+      text += part.text
+      continue
+    }
+
+    const start = text.length
+    text += part.label
+    mentions.push({
+      end: text.length,
+      id: part.id,
+      label: part.label.slice(1),
+      start,
+      targetType: part.targetType,
+    })
+  }
+
+  return { mentions, text }
 }
 
 function getDraftMentionText(mention: Pick<ConversationDraftMention, "label">) {

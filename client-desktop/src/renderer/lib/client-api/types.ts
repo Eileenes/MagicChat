@@ -85,6 +85,7 @@ export type ContactGroupAvatarMemberResponse = {
 }
 
 export type ConversationResponse = {
+  announcement?: string
   avatar?: string
   can_send?: boolean
   created_at?: string
@@ -94,6 +95,7 @@ export type ConversationResponse = {
   last_message_seq?: number
   last_message_sender?: ConversationLastMessageSenderResponse | null
   last_message_summary?: string
+  last_choice_seq?: number
   last_mentioned_seq?: number
   last_read_seq?: number
   member_count?: number
@@ -196,6 +198,14 @@ export type SetConversationPinResponse = {
 export type SetConversationMuteResponse = {
   conversation_id?: string
   muted?: boolean
+}
+
+export type DismissConversationResponse = {
+  conversation_id?: string
+}
+
+export type RestoreConversationResponse = {
+  conversation?: ConversationResponse
 }
 
 export type CreateDirectConversationResponse = {
@@ -318,6 +328,8 @@ export type FileMessageBodyResponse = {
 }
 
 export type ImageMessageBodyResponse = {
+  caption?: string
+  caption_type?: "text" | "markdown"
   file_id?: string
   height?: number
   type?: "image"
@@ -409,6 +421,13 @@ export type GroupNameUpdatedSystemEventBodyResponse = {
   type?: "system_event"
 }
 
+export type GroupAnnouncementUpdatedSystemEventBodyResponse = {
+  actor?: SystemEventUserRefResponse
+  announcement?: string
+  event?: "group_announcement_updated"
+  type?: "system_event"
+}
+
 export type MessageRevokedSystemEventBodyResponse = {
   actor?: SystemEventUserRefResponse
   event?: "message_revoked"
@@ -439,6 +458,7 @@ export type MessageBodyResponse =
   | GroupMemberLeftSystemEventBodyResponse
   | GroupMemberRemovedSystemEventBodyResponse
   | GroupNameUpdatedSystemEventBodyResponse
+  | GroupAnnouncementUpdatedSystemEventBodyResponse
   | MessageRevokedSystemEventBodyResponse
   | TopicClosedSystemEventBodyResponse
 
@@ -449,6 +469,7 @@ export type MessageResponse = {
   conversation_id?: string
   created_at?: string
   delegated_by?: MessageDelegatedByResponse | null
+  editable_body?: TextMessageBodyResponse | MarkdownMessageBodyResponse
   id?: string
   reply_to?: MessageReplyToResponse | null
   reply_to_message_id?: string
@@ -491,6 +512,17 @@ export type SetChoiceResponse = {
     option_ids?: string[]
     user_id?: string
   }
+}
+
+export type MessageChoiceSnapshotResponse = {
+  choice?: ChoiceStateResponse
+  message_id?: string
+  status?: "active" | "deleted" | "revoked"
+}
+
+export type ListChoiceSnapshotsResponse = {
+  conversation_id?: string
+  snapshots?: MessageChoiceSnapshotResponse[]
 }
 
 export type MessageReactionSnapshotResponse = {
@@ -610,6 +642,11 @@ export type ConversationMemberMentionedEventPayloadResponse = {
   last_mentioned_seq?: number
 }
 
+export type ConversationMemberChoiceReceivedEventPayloadResponse = {
+  conversation_id?: string
+  last_choice_seq?: number
+}
+
 export type ConversationPinUpdatedEventPayloadResponse = {
   conversation_id?: string
   pinned?: boolean
@@ -696,6 +733,7 @@ export type ClientContacts = {
 }
 
 export type ClientConversation = {
+  announcement?: string
   avatar: string
   canSend?: boolean
   createdAt: string
@@ -705,6 +743,7 @@ export type ClientConversation = {
   lastMessageSeq: number
   lastMessageSender?: ClientConversationLastMessageSender | null
   lastMessageSummary: string
+  lastChoiceSeq: number
   lastMentionedSeq: number
   lastReadSeq: number
   memberCount: number
@@ -935,7 +974,11 @@ export type ClientFileMessageBody = {
   type: "file"
 }
 
+export type ImageCaptionType = "text" | "markdown"
+
 export type ClientImageMessageBody = {
+  caption?: string
+  captionType?: ImageCaptionType
   fileId: string
   height?: number
   type: "image"
@@ -977,6 +1020,7 @@ export type ClientForwardBundleMessageBody = {
 }
 
 export type ClientRevokedMessageBody = {
+  editableBody?: ClientTextMessageBody | ClientMarkdownMessageBody
   type: "revoked"
 }
 
@@ -1035,6 +1079,13 @@ export type ClientGroupNameUpdatedSystemEventBody = {
   type: "system_event"
 }
 
+export type ClientGroupAnnouncementUpdatedSystemEventBody = {
+  actor: ClientSystemEventUserRef
+  announcement: string
+  event: "group_announcement_updated"
+  type: "system_event"
+}
+
 export type ClientMessageRevokedSystemEventBody = {
   actor: ClientSystemEventUserRef
   event: "message_revoked"
@@ -1067,6 +1118,7 @@ export type ClientMessageBody =
   | ClientGroupMemberLeftSystemEventBody
   | ClientGroupMemberRemovedSystemEventBody
   | ClientGroupNameUpdatedSystemEventBody
+  | ClientGroupAnnouncementUpdatedSystemEventBody
   | ClientMessageRevokedSystemEventBody
   | ClientTopicClosedSystemEventBody
 
@@ -1126,6 +1178,13 @@ export type SetChoiceResult = {
   }
 }
 
+export type MessageChoiceSnapshot = {
+  choice: ClientChoiceState | null
+  conversationId: string
+  messageId: string
+  status: "active" | "deleted" | "revoked"
+}
+
 export type MessageReactionsUpdatedEvent = {
   actorReacted: boolean
   actorText: string
@@ -1178,6 +1237,7 @@ export type ListConversationMessagesOptions = {
   afterSeq?: number
   beforeSeq?: number
   limit?: number
+  signal?: AbortSignal
 }
 
 export type SendConversationTextMessageInput = {
@@ -1226,6 +1286,8 @@ export type SendConversationFileMessageInput = {
 }
 
 export type SendConversationImageMessageInput = {
+  caption?: string
+  captionType?: ImageCaptionType
   clientMessageId: string
   image: File
   replyToMessageId?: string
@@ -1235,6 +1297,7 @@ export type SendConversationVoiceMessageInput = {
   clientMessageId: string
   durationMS: number
   replyToMessageId?: string
+  transcript?: string
   voice: Blob
 }
 
@@ -1290,6 +1353,10 @@ export type AddGroupConversationMembersInput = {
 
 export type UpdateGroupConversationNameInput = {
   name: string
+}
+
+export type UpdateGroupConversationAnnouncementInput = {
+  announcement: string
 }
 
 export type AddGroupConversationMembersResult = {

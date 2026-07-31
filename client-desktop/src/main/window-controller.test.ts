@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { getMainWindowTitleBarOptions } from "@main/window-controller"
 
 describe("主窗口标题栏", () => {
-  it("在 macOS 使用保留交通灯的内容式标题栏", () => {
+  it("在 macOS 使用保留原生交通灯的内容式标题栏", () => {
     expect(getMainWindowTitleBarOptions("darwin")).toEqual({
       titleBarStyle: "hiddenInset",
       trafficLightPosition: { x: 14, y: 13 },

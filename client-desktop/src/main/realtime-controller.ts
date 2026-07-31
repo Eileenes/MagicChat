@@ -220,7 +220,7 @@ export class RealtimeController extends EventEmitter {
   }
 }
 
-async function resolveProxy(
+export async function resolveProxy(
   networkSession: import("electron").Session,
   target: URL,
 ): Promise<string | undefined> {
@@ -232,7 +232,7 @@ async function resolveProxy(
   return `${kind === "HTTPS" ? "https" : "http"}://${address}`
 }
 
-function withProxyCredentials(
+export function withProxyCredentials(
   proxy: string,
   credentials?: { password: string; username: string },
 ): string {
@@ -243,7 +243,7 @@ function withProxyCredentials(
   return url.toString()
 }
 
-function systemCertificateAuthorities(): string[] | undefined {
+export function systemCertificateAuthorities(): string[] | undefined {
   const getCertificates = (tls as typeof tls & { getCACertificates?: (type: "system") => string[] })
     .getCACertificates
   const certificates = getCertificates?.("system")

@@ -6,6 +6,7 @@ import {
   type AuthenticatedTarget,
   type ClientRequest,
   type ClientResponse,
+  targetKey,
 } from "@shared/client-contract"
 import { ServerProfiles } from "@main/server-profiles"
 import { SessionController } from "@main/session-controller"
@@ -20,22 +21,32 @@ const ALLOWED_HEADERS = new Set([
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
 export class HttpTransport {
-  private readonly pending = new Map<string, { controller: AbortController; ownerId: number }>()
+  private readonly pending = new Map<string, PendingHttpRequest>()
 
   constructor(
     private readonly profiles: ServerProfiles,
     private readonly sessions: SessionController,
   ) {}
 
-  cancel(requestId: string, ownerId?: number): void {
-    const pending = this.pending.get(requestId)
-    if (pending && (ownerId === undefined || pending.ownerId === ownerId))
-      pending.controller.abort()
+  cancel(requestId: string, ownerId: number): void {
+    this.terminate(this.pending.get(pendingKey(ownerId, requestId)), "aborted")
   }
 
   cancelOwner(ownerId: number): void {
-    for (const [id, pending] of this.pending)
-      if (pending.ownerId === ownerId) this.cancel(id, ownerId)
+    this.cancelWhere((pending) => pending.ownerId === ownerId)
+  }
+
+  cancelTarget(target: AuthenticatedTarget): void {
+    const key = targetKey(target)
+    this.cancelWhere((pending) => pending.targetKey === key)
+  }
+
+  cancelServer(serverId: string): void {
+    this.cancelWhere((pending) => pending.serverId === serverId)
+  }
+
+  cancelAll(): void {
+    this.cancelWhere(() => true)
   }
 
   async request<T>(
@@ -47,25 +58,32 @@ export class HttpTransport {
     const profile = this.profiles.require(target.id)
     if (profile.normalizedUrl !== target.normalizedUrl)
       throw new ClientTransportError("invalid_request", "认证目标已失效")
-    if (this.pending.has(request.requestId))
-      throw new ClientTransportError("invalid_request", "请求标识重复")
+    const key = pendingKey(ownerId, request.requestId)
+    if (this.pending.has(key)) throw new ClientTransportError("invalid_request", "请求标识重复")
     const controller = new AbortController()
-    this.pending.set(request.requestId, { controller, ownerId })
+    const pending: PendingHttpRequest = {
+      controller,
+      ownerId,
+      requestId: request.requestId,
+      serverId: target.id,
+      targetKey: targetKey(target),
+    }
+    this.pending.set(key, pending)
     const timeout = setTimeout(
-      () => controller.abort(new Error("timeout")),
+      () => this.terminate(pending, "timeout"),
       clampTimeout(request.timeoutMs),
     )
     try {
-      const response = await this.sessions
-        .for(profile)
-        .fetch(`${profile.normalizedUrl}${assertClientPath(request.path)}`, {
-          body: encodeBody(request),
-          credentials: "include",
-          headers: filterHeaders(request.headers),
-          method: request.method,
-          redirect: "manual",
-          signal: controller.signal,
-        })
+      const requestUrl = `${profile.normalizedUrl}${assertClientPath(request.path)}`
+      const response = await this.sessions.for(profile).fetch(requestUrl, {
+        body: encodeBody(request),
+        credentials: "same-origin",
+        headers: filterHeaders(request.headers),
+        method: request.method,
+        redirect: "follow",
+        signal: controller.signal,
+      })
+      assertAllowedResponseUrl(response.url, requestUrl, profile.normalizedUrl)
       const bytes = await readLimited(response, MAX_RESPONSE_BYTES)
       const contentType = response.headers.get("content-type") ?? ""
       const body = contentType.includes("application/json")
@@ -83,9 +101,7 @@ export class HttpTransport {
       }
     } catch (error) {
       if (controller.signal.aborted) {
-        const timeoutError =
-          controller.signal.reason instanceof Error &&
-          controller.signal.reason.message === "timeout"
+        const timeoutError = pending.terminationReason === "timeout"
         throw new ClientTransportError(
           timeoutError ? "timeout" : "aborted",
           timeoutError ? "请求超时" : "请求已取消",
@@ -97,9 +113,37 @@ export class HttpTransport {
       throw normalizeTransportError(error)
     } finally {
       clearTimeout(timeout)
-      this.pending.delete(request.requestId)
+      if (this.pending.get(key) === pending) this.pending.delete(key)
     }
   }
+
+  private cancelWhere(predicate: (pending: PendingHttpRequest) => boolean): void {
+    for (const pending of this.pending.values()) {
+      if (predicate(pending)) this.terminate(pending, "aborted")
+    }
+  }
+
+  private terminate(
+    pending: PendingHttpRequest | undefined,
+    reason: NonNullable<PendingHttpRequest["terminationReason"]>,
+  ): void {
+    if (!pending || pending.controller.signal.aborted) return
+    pending.terminationReason = reason
+    pending.controller.abort()
+  }
+}
+
+type PendingHttpRequest = {
+  controller: AbortController
+  ownerId: number
+  requestId: string
+  serverId: string
+  targetKey: string
+  terminationReason?: "aborted" | "timeout"
+}
+
+function pendingKey(ownerId: number, requestId: string): string {
+  return `${ownerId}:${requestId}`
 }
 
 function isAuthenticationResponse(
@@ -178,6 +222,20 @@ function responseHeaders(headers: Headers): Record<string, string> {
     if (value) result[name] = value
   }
   return result
+}
+
+function assertAllowedResponseUrl(
+  responseUrl: string,
+  requestUrl: string,
+  serverUrl: string,
+): void {
+  // 测试构造的 Response 没有关联 URL；真实 Electron 响应始终提供最终 URL。
+  if (!responseUrl || responseUrl === requestUrl) return
+  const response = new URL(responseUrl)
+  const server = new URL(serverUrl)
+  if (response.origin !== server.origin || !response.pathname.startsWith("/api/client/")) {
+    throw new ClientTransportError("invalid_request", "服务器重定向超出允许范围")
+  }
 }
 
 function clampTimeout(value?: number): number {

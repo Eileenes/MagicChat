@@ -1,20 +1,33 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ChatPage } from "@/pages/chat-page"
-import type { ClientConversation, ClientMessage, ClientUser } from "@/lib/client-data-api"
+import type {
+  ClientConversation,
+  ClientMessage,
+  ClientTopicSourceMessage,
+  ClientUser,
+} from "@/lib/client-data-api"
 import { ClientDataContext, type ClientDataContextValue } from "@/lib/client-data-context"
 import { readLastConversationId, writeLastConversationId } from "@/lib/last-conversation"
+import { RealtimeContext } from "@/lib/realtime-context"
 
 const mocks = vi.hoisted(() => ({
   createConversationTopic: vi.fn(),
+  getConversationTopic: vi.fn(),
+  listConversationMessageReactionSnapshots: vi.fn(),
 }))
 
 vi.mock("@/lib/client-data-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/client-data-api")>()
-  return { ...actual, createConversationTopic: mocks.createConversationTopic }
+  return {
+    ...actual,
+    createConversationTopic: mocks.createConversationTopic,
+    getConversationTopic: mocks.getConversationTopic,
+    listConversationMessageReactionSnapshots: mocks.listConversationMessageReactionSnapshots,
+  }
 })
 
 describe("ChatPage create group dialog", () => {
@@ -52,12 +65,18 @@ describe("ChatPage create topic confirmation", () => {
         ...createConversationOverrides([conversation]),
         getConversationMessageState: vi.fn(() => ({
           error: null,
+          focus: null,
+          historyTarget: null,
+          latestKnownSeq: sourceMessage.seq,
           loaded: true,
           loading: false,
+          loadingAfter: false,
           loadingBefore: false,
           messages: [sourceMessage],
           page: null,
+          pendingLatestMessageCount: 0,
           sending: false,
+          viewMode: "latest" as const,
         })),
         updateMessageTopic: vi.fn(),
       },
@@ -96,12 +115,18 @@ describe("ChatPage app direct access", () => {
         ...createConversationOverrides([conversation]),
         getConversationMessageState: vi.fn(() => ({
           error: null,
+          focus: null,
+          historyTarget: null,
+          latestKnownSeq: sourceMessage.seq,
           loaded: true,
           loading: false,
+          loadingAfter: false,
           loadingBefore: false,
           messages: [sourceMessage],
           page: null,
+          pendingLatestMessageCount: 0,
           sending: false,
+          viewMode: "latest" as const,
         })),
       },
       `/chat/${conversation.id}`,
@@ -109,6 +134,103 @@ describe("ChatPage app direct access", () => {
 
     expect(await screen.findByText("你当前无权直接使用此应用")).toBeVisible()
     expect(screen.queryByTestId("conversation-panel-composer")).not.toBeInTheDocument()
+  })
+})
+
+describe("ChatPage topic source parity", () => {
+  it("wires reactions, forwarding, and multi-select on the full topic page", async () => {
+    const parentConversation = createConversation("conversation-parent", "产品群")
+    const topicConversation = createTopicConversation(parentConversation.id)
+    const sourceMessage = createTopicSourceMessage()
+    mocks.getConversationTopic.mockReset()
+    mocks.getConversationTopic.mockResolvedValue({
+      canArchive: false,
+      canParticipate: false,
+      conversation: topicConversation,
+      parentConversation: {
+        id: parentConversation.id,
+        name: parentConversation.name,
+        type: "group",
+      },
+      sourceMessage,
+    })
+    mocks.listConversationMessageReactionSnapshots.mockReset()
+    mocks.listConversationMessageReactionSnapshots.mockResolvedValue([
+      {
+        conversationId: parentConversation.id,
+        messageId: sourceMessage.id,
+        reactionVersion: 2,
+        reactions: [
+          {
+            count: 1,
+            reactedByMe: false,
+            text: "👍",
+            users: [{ id: "user-2", name: "Bob" }],
+          },
+        ],
+      },
+    ])
+
+    renderChatPage(
+      {
+        ...createConversationOverrides([parentConversation, topicConversation]),
+        getConversationMessageState: vi.fn(() => ({
+          error: null,
+          focus: null,
+          historyTarget: null,
+          latestKnownSeq: 0,
+          loaded: true,
+          loading: false,
+          loadingAfter: false,
+          loadingBefore: false,
+          messages: [],
+          page: null,
+          pendingLatestMessageCount: 0,
+          sending: false,
+          viewMode: "latest" as const,
+        })),
+      },
+      `/chat/${topicConversation.id}`,
+    )
+
+    expect(await screen.findByRole("button", { name: "添加表情 👍" })).toBeVisible()
+    fireEvent.contextMenu(screen.getByTestId("topic-source-message-bubble"))
+    expect(screen.getByRole("menuitem", { name: "转发" })).toBeVisible()
+    expect(screen.getByRole("menuitem", { name: "多选" })).toBeVisible()
+    expect(mocks.listConversationMessageReactionSnapshots).toHaveBeenCalledWith(
+      parentConversation.id,
+      [sourceMessage.id],
+    )
+  })
+})
+
+describe("ChatPage global search navigation", () => {
+  it("does not let a pending directory result override a later conversation selection", async () => {
+    const user = userEvent.setup()
+    const existingConversation = createConversation("conversation-1", "产品群")
+    const openedConversation = createConversation("conversation-2", "Bob")
+    const pendingOpen = createDeferred<ClientConversation>()
+    const openDirectConversation = vi.fn(() => pendingOpen.promise)
+    renderChatPage(
+      {
+        ...createConversationOverrides([existingConversation]),
+        openDirectConversation,
+      },
+      `/chat/${existingConversation.id}`,
+    )
+
+    await user.click(screen.getByRole("button", { name: "全局搜索" }))
+    await user.type(screen.getByRole("combobox", { name: "搜索所有内容" }), "Bob")
+    await user.click(screen.getByRole("option", { name: /Bob/ }))
+    expect(openDirectConversation).toHaveBeenCalledWith("user-2")
+
+    await user.click(screen.getByRole("option", { name: /产品群/ }))
+    expect(screen.getByTestId("chat-location")).toHaveTextContent("/chat/conversation-1")
+
+    await act(async () => {
+      pendingOpen.resolve(openedConversation)
+    })
+    expect(screen.getByTestId("chat-location")).toHaveTextContent("/chat/conversation-1")
   })
 })
 
@@ -169,19 +291,28 @@ async function openCreateGroupDialog(user: ReturnType<typeof userEvent.setup>) {
 function renderChatPage(overrides: Partial<ClientDataContextValue> = {}, initialEntry = "/chat") {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <ClientDataContext.Provider value={createClientDataValue(overrides)}>
-        <Routes>
-          <Route
-            path="/chat/:conversationId?"
-            element={
-              <>
-                <ChatPage />
-                <LocationProbe />
-              </>
-            }
-          />
-        </Routes>
-      </ClientDataContext.Provider>
+      <RealtimeContext.Provider
+        value={{
+          ready: true,
+          sendRealtimeRequest: vi.fn(),
+          status: "connected",
+          subscribeRealtimeEvent: vi.fn(() => vi.fn()),
+        }}
+      >
+        <ClientDataContext.Provider value={createClientDataValue(overrides)}>
+          <Routes>
+            <Route
+              path="/chat/:conversationId?"
+              element={
+                <>
+                  <ChatPage />
+                  <LocationProbe />
+                </>
+              }
+            />
+          </Routes>
+        </ClientDataContext.Provider>
+      </RealtimeContext.Provider>
     </MemoryRouter>,
   )
 }
@@ -196,6 +327,8 @@ function createConversationOverrides(
   return {
     conversations,
     ensureConversationMessages: vi.fn(),
+    compactConversationMessages: vi.fn(),
+    registerConversationMessageView: vi.fn(() => vi.fn()),
     getConversation: vi.fn(
       (conversationId: string) =>
         conversations.find((conversation) => conversation.id === conversationId) ?? null,
@@ -217,6 +350,7 @@ function createClientDataValue(overrides: Partial<ClientDataContextValue>): Clie
   }
 
   return {
+    clearMessageScope: vi.fn(),
     contactApps: [
       {
         avatar: "/assets/apps/assistant.webp",
@@ -261,6 +395,7 @@ function createClientDataValue(overrides: Partial<ClientDataContextValue>): Clie
     createGroupConversation: vi.fn(),
     createProject: vi.fn(),
     dissolveGroupConversation: vi.fn(),
+    dismissConversation: vi.fn(),
     ensureConversationMessages: vi.fn(),
     getConversation: vi.fn(() => null),
     getConversationMessageState: vi.fn(),
@@ -270,6 +405,10 @@ function createClientDataValue(overrides: Partial<ClientDataContextValue>): Clie
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
+    loadAfterConversationMessages: vi.fn(),
+    consumeConversationMessageFocus: vi.fn(),
+    focusConversationMessage: vi.fn(),
+    replaceWithLatestMessages: vi.fn(),
     loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
     setConversationMuted: vi.fn(),
@@ -277,6 +416,7 @@ function createClientDataValue(overrides: Partial<ClientDataContextValue>): Clie
     mergeIncomingConversationMessage: vi.fn(),
     openAppConversation: vi.fn(),
     openDirectConversation: vi.fn(),
+    restoreConversation: vi.fn(),
     refreshContacts: vi.fn(),
     refreshConversations: vi.fn(),
     refreshMe: vi.fn(),
@@ -296,10 +436,12 @@ function createClientDataValue(overrides: Partial<ClientDataContextValue>): Clie
     setGroupConversationPublic: vi.fn(),
     syncLoadedConversationMessages: vi.fn(),
     updateConversationLastMentionedSeq: vi.fn(),
+    updateConversationLastChoiceSeq: vi.fn(),
     updateConversationLastMessage: vi.fn(),
     updateConversationPinned: vi.fn(),
     updateConversationMuted: vi.fn(),
     updateGroupConversationAvatar: vi.fn(),
+    updateGroupConversationAnnouncement: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,
   }
@@ -346,6 +488,7 @@ function createConversation(id: string, name: string): ClientConversation {
     lastMessageId: null,
     lastMessageSeq: 0,
     lastMessageSummary: "",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 1,
@@ -355,6 +498,53 @@ function createConversation(id: string, name: string): ClientConversation {
     unreadCount: 0,
     visibility: "private",
   }
+}
+
+function createTopicConversation(parentConversationId: string): ClientConversation {
+  return {
+    ...createConversation("topic-1", "发布计划"),
+    topic: {
+      archived: false,
+      parentConversationId,
+      parentConversationName: "产品群",
+      parentConversationType: "group",
+      participating: true,
+      sourceMessageId: "source-message-1",
+      sourceMessageSeq: 8,
+      sourceSender: {
+        avatar: "",
+        id: "user-2",
+        name: "Bob",
+        type: "user",
+      },
+    },
+    type: "topic",
+  }
+}
+
+function createTopicSourceMessage(): ClientTopicSourceMessage {
+  return {
+    body: { content: "完整来源消息", type: "text" },
+    createdAt: "2026-07-20T04:00:00Z",
+    id: "source-message-1",
+    revokedAt: null,
+    sender: {
+      avatar: "",
+      id: "user-2",
+      name: "Bob",
+      type: "user",
+    },
+    seq: 8,
+    summary: "完整来源消息",
+  }
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
 }
 
 function createSourceMessage(conversationId: string): ClientMessage {

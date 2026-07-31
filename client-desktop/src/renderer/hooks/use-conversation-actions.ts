@@ -13,10 +13,12 @@ import {
   leaveGroupConversation as leaveGroupConversationRequest,
   openAppConversation as openAppConversationRequest,
   removeGroupConversationMember as removeGroupConversationMemberRequest,
+  restoreConversation as restoreConversationRequest,
   revokeConversationMessage as revokeConversationMessageRequest,
   setGroupConversationPrivate as setGroupConversationPrivateRequest,
   setGroupConversationPublic as setGroupConversationPublicRequest,
   updateGroupConversationName as updateGroupConversationNameRequest,
+  updateGroupConversationAnnouncement as updateGroupConversationAnnouncementRequest,
   uploadGroupConversationAvatar as uploadGroupConversationAvatarRequest,
 } from "@/lib/client-data-api"
 import type {
@@ -31,6 +33,9 @@ export function useConversationActions({
   handleError,
   mergeIncomingConversationMessage,
   navigate,
+  onConversationsMutated,
+  onConversationRemoved,
+  onConversationRestored,
   refreshContacts,
   setConversationMessageStates,
   setConversations,
@@ -40,6 +45,9 @@ export function useConversationActions({
   handleError: (error: unknown, fallbackMessage: string) => ClientDataRequestError
   mergeIncomingConversationMessage: ClientDataContextValue["mergeIncomingConversationMessage"]
   navigate: NavigateFunction
+  onConversationsMutated: () => void
+  onConversationRemoved?: (conversationId: string) => void
+  onConversationRestored?: (conversationId: string) => void
   refreshContacts: ClientDataContextValue["refreshContacts"]
   setConversationMessageStates: Dispatch<
     SetStateAction<Record<string, ClientConversationMessageState>>
@@ -62,6 +70,7 @@ export function useConversationActions({
 
   const upsertConversation = useCallback(
     (conversation: ClientConversation) => {
+      onConversationsMutated()
       setConversations((currentConversations) => {
         const currentConversation = currentConversations.find((item) => item.id === conversation.id)
         const nextConversation =
@@ -75,11 +84,12 @@ export function useConversationActions({
         ])
       })
     },
-    [setConversations],
+    [onConversationsMutated, setConversations],
   )
 
   const removeConversation = useCallback(
     (conversationId: string) => {
+      onConversationsMutated()
       setConversations((currentConversations) =>
         currentConversations.filter((conversation) => conversation.id !== conversationId),
       )
@@ -89,8 +99,9 @@ export function useConversationActions({
 
         return nextStates
       })
+      onConversationRemoved?.(conversationId)
     },
-    [setConversationMessageStates, setConversations],
+    [onConversationRemoved, onConversationsMutated, setConversationMessageStates, setConversations],
   )
 
   const openDirectConversation = useCallback(
@@ -117,6 +128,20 @@ export function useConversationActions({
       }
     },
     [handleError, upsertConversation],
+  )
+
+  const restoreConversation = useCallback(
+    async (conversationId: string) => {
+      try {
+        const conversation = await restoreConversationRequest(conversationId)
+        onConversationRestored?.(conversation.id)
+        upsertConversation(conversation)
+        return conversation
+      } catch (error) {
+        throw handleError(error, "恢复对话失败")
+      }
+    },
+    [handleError, onConversationRestored, upsertConversation],
   )
 
   const createGroupConversation = useCallback(
@@ -211,6 +236,15 @@ export function useConversationActions({
     [applyGroupConversationAction],
   )
 
+  const updateGroupConversationAnnouncement = useCallback(
+    async (conversationId: string, announcement: string) =>
+      applyGroupConversationAction(
+        () => updateGroupConversationAnnouncementRequest(conversationId, { announcement }),
+        "修改群公告失败",
+      ),
+    [applyGroupConversationAction],
+  )
+
   const leaveGroupConversation = useCallback(
     async (conversationId: string) => {
       try {
@@ -291,11 +325,13 @@ export function useConversationActions({
     openAppConversation,
     openDirectConversation,
     removeConversation,
+    restoreConversation,
     removeGroupConversationMember,
     revokeConversationMessage,
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   }
 }

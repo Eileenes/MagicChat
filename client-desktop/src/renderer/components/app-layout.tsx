@@ -10,13 +10,12 @@ import {
   SunMoon,
   UserRound,
 } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router"
 import { toast } from "sonner"
 
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
 import type { CroppedAvatar } from "@/components/custom-avatar-picker"
-import { ClientDownloadDialog } from "@/components/client-download-dialog"
 import { useTheme } from "@/components/theme-provider"
 import { UserSettingsDialog } from "@/components/user-settings-dialog"
 import {
@@ -65,8 +64,8 @@ const themeItems = [
 
 type ThemeValue = (typeof themeItems)[number]["value"]
 
-export function AppLayout() {
-  const { conversations, me, refreshMe } = useClientData()
+export function AppLayout({ footerAction }: { footerAction?: ReactNode }) {
+  const { clearMessageScope, conversations, me, refreshMe } = useClientData()
   const totalUnreadCount = getTotalUnreadCount(conversations)
   const notifiableUnreadCount = getNotifiableUnreadCount(conversations)
   const hasUnreadMessages = totalUnreadCount > 0
@@ -104,9 +103,9 @@ export function AppLayout() {
   }
 
   return (
-    <div className="app-green-shell flex h-svh min-h-0 pt-10 text-foreground">
-      <aside className="brand-sidebar flex w-14 shrink-0 flex-col items-center border-r py-3">
-        <UserAvatarMenu user={me} refreshMe={refreshMe} />
+    <div className="flex h-svh min-h-0 bg-background pt-10 text-foreground">
+      <aside className="flex w-12 shrink-0 flex-col items-center border-r bg-sidebar py-3">
+        <UserAvatarMenu clearMessageScope={clearMessageScope} user={me} refreshMe={refreshMe} />
         <nav aria-label="主导航" className="flex flex-1 flex-col gap-2">
           {navItems.map((item) => (
             <MainNavItem
@@ -120,9 +119,10 @@ export function AppLayout() {
           ))}
         </nav>
         <div className="flex flex-col items-center gap-2">
+          {footerAction}
           <GithubLink />
-          <ClientDownloadDialog />
           <ThemeSwitcher />
+          <SidebarSettingsButton />
         </div>
       </aside>
       <Outlet />
@@ -130,27 +130,32 @@ export function AppLayout() {
   )
 }
 
-function UserAvatarMenu({ refreshMe, user }: { refreshMe: () => Promise<void>; user: ClientUser }) {
+function UserAvatarMenu({
+  clearMessageScope,
+  refreshMe,
+  user,
+}: {
+  clearMessageScope: () => void
+  refreshMe: () => Promise<void>
+  user: ClientUser
+}) {
   const navigate = useNavigate()
   const { setAuthenticated } = useAppInfo()
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [logoutPending, setLogoutPending] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const displayName = getUserDisplayName(user)
-
-  function handleSettingsOpen() {
-    if (!openHostSettings()) setSettingsOpen(true)
-  }
 
   async function handleLogout() {
     setLogoutPending(true)
 
     try {
       await clientLogout()
+      clearMessageScope()
       setAuthenticated(false)
       navigate("/login", { replace: true })
     } catch (error) {
+      setLogoutConfirmOpen(false)
       toast.error(getLogoutErrorMessage(error))
     } finally {
       setLogoutPending(false)
@@ -219,10 +224,6 @@ function UserAvatarMenu({ refreshMe, user }: { refreshMe: () => Promise<void>; u
             <UserRound className="size-4" />
             个人资料
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={handleSettingsOpen}>
-            <Settings className="size-4" />
-            设置
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             disabled={logoutPending}
@@ -241,7 +242,6 @@ function UserAvatarMenu({ refreshMe, user }: { refreshMe: () => Promise<void>; u
           onNicknameSave={handleNicknameSave}
           user={user}
         />
-        <UserSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </DropdownMenu>
 
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
@@ -266,6 +266,31 @@ function UserAvatarMenu({ refreshMe, user }: { refreshMe: () => Promise<void>; u
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  )
+}
+
+function SidebarSettingsButton() {
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  function handleSettingsOpen() {
+    if (!openHostSettings()) setSettingsOpen(true)
+  }
+
+  return (
+    <>
+      <Button
+        aria-label="设置"
+        className="rounded-md hover:bg-transparent hover:text-teal-500 aria-expanded:bg-transparent aria-expanded:text-teal-500 dark:hover:bg-transparent"
+        onClick={handleSettingsOpen}
+        size="icon-sm"
+        title="设置"
+        type="button"
+        variant="ghost"
+      >
+        <Settings className="size-4" />
+      </Button>
+      <UserSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </>
   )
 }

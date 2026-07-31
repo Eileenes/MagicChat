@@ -12,12 +12,49 @@ body,
 }
 .desktop-titlebar-drag-region {
   -webkit-app-region: drag;
+  background: color-mix(in oklch, var(--background) 90%, var(--muted));
+  box-shadow: 0 6px 18px oklch(0 0 0 / 5%);
+  box-sizing: border-box;
   height: 40px;
   left: 0;
   position: fixed;
   right: 0;
   top: 0;
   z-index: 50;
+}
+.dark .desktop-titlebar-drag-region {
+  box-shadow: 0 6px 18px oklch(0 0 0 / 22%);
+}
+.desktop-update-prompt {
+  -webkit-app-region: no-drag;
+  align-items: center;
+  background: color-mix(in oklch, var(--primary) 10%, var(--background));
+  border: 1px solid color-mix(in oklch, var(--primary) 28%, var(--border));
+  border-radius: 6px;
+  color: color-mix(in oklch, var(--primary) 82%, var(--foreground));
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  font: inherit;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+.desktop-update-prompt:hover:not([aria-disabled="true"]) {
+  background: color-mix(in oklch, var(--primary) 16%, var(--background));
+  border-color: color-mix(in oklch, var(--primary) 44%, var(--border));
+}
+.desktop-update-prompt:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 35%, transparent);
+  outline: none;
+}
+.desktop-update-prompt[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.72;
+}
+.desktop-update-prompt > svg {
+  flex: none;
 }
 .desktop-icon-button {
   -webkit-app-region: no-drag;
@@ -591,6 +628,7 @@ body,
 .desktop-icon-action {
   border: 0 !important;
   height: 32px;
+  justify-self: end;
   min-height: 32px !important;
   padding: 0 !important;
   width: 32px;

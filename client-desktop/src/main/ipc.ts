@@ -5,6 +5,7 @@ import {
   ipcMain,
   nativeImage,
   shell,
+  webContents,
   type IpcMainInvokeEvent,
 } from "electron"
 import type { AuthenticatedTarget, ClientRequest } from "@shared/client-contract"
@@ -16,6 +17,7 @@ import { Diagnostics, releaseChannel } from "@main/diagnostics"
 import { FileService } from "@main/file-service"
 import { HttpTransport } from "@main/http-transport"
 import { NotificationService } from "@main/notification-service"
+import { MessageCacheService } from "@main/message-cache"
 import { RealtimeController } from "@main/realtime-controller"
 import { ServerProfiles } from "@main/server-profiles"
 import { SessionController } from "@main/session-controller"
@@ -26,13 +28,19 @@ import { assertTrustedIpcSender } from "@main/ipc-security"
 import { parseDesktopSettingsPatch } from "@main/settings-validation"
 import { registerRuntimeDiagnosticsIpc } from "@main/runtime-diagnostics-ipc"
 import { parseTrayMessages } from "@main/tray-message-validation"
+import { removeServerResources } from "@main/server-removal"
+import { handleUnauthorizedCacheLifecycle } from "@main/authentication-cache-lifecycle"
+import { ASRController } from "@main/asr-controller"
+import type { ASREvent } from "@shared/asr-contract"
 
 export type IpcDependencies = {
   auth: AuthController
+  asr: ASRController
   credentials: CredentialStore
   diagnostics: Diagnostics
   files: FileService
   http: HttpTransport
+  messageCache: MessageCacheService
   notifications: NotificationService
   profiles: ServerProfiles
   realtime: RealtimeController
@@ -49,8 +57,13 @@ export function registerIpc(deps: IpcDependencies): () => void {
       if (!window.isDestroyed()) window.webContents.send(channel, payload)
   }
   const markUnauthorized = (authTarget: AuthenticatedTarget) => {
-    deps.realtime.close(authTarget)
-    broadcast(IPC.realtimeUnauthorized, authTarget)
+    deps.asr.closeTarget(authTarget)
+    handleUnauthorizedCacheLifecycle(authTarget, {
+      broadcastUnauthorized: (target) => broadcast(IPC.realtimeUnauthorized, target),
+      clearUserBestEffort: (target) => deps.messageCache.clearUserBestEffort(target),
+      cancelHttp: (target) => deps.http.cancelTarget(target),
+      closeRealtime: (target) => deps.realtime.close(target),
+    })
   }
   const register = (
     channel: string,
@@ -70,6 +83,18 @@ export function registerIpc(deps: IpcDependencies): () => void {
     platform: process.platform,
     version: app.getVersion(),
   }))
+  register(IPC.asrConnect, (event, rawTarget) =>
+    deps.asr.connect(event.sender.id, target(rawTarget)),
+  )
+  register(IPC.asrSendFrame, (event, sessionId, frame) =>
+    deps.asr.sendFrame(event.sender.id, asString(sessionId, 128), frame),
+  )
+  register(IPC.asrCommit, (event, sessionId) =>
+    deps.asr.commit(event.sender.id, asString(sessionId, 128)),
+  )
+  register(IPC.asrClose, (event, sessionId) =>
+    deps.asr.close(event.sender.id, asString(sessionId, 128)),
+  )
   register(IPC.appearanceThemeSet, (_event, source) =>
     deps.system.setThemeSource(themeSource(source)),
   )
@@ -100,14 +125,7 @@ export function registerIpc(deps: IpcDependencies): () => void {
   register(IPC.serversRemove, async (_event, rawId) => {
     const id = asId(rawId)
     const profile = deps.profiles.require(id)
-    deps.realtime.closeServer(id)
-    deps.uploads.cleanupServer(id)
-    await Promise.all([
-      deps.files.cleanupServer(id),
-      deps.sessions.remove(profile),
-      deps.credentials.removeServer(id),
-    ])
-    await deps.store.removeServer(id)
+    await removeServerResources(deps, id, profile)
   })
   register(IPC.settingsGet, () => deps.store.getSettings())
   register(IPC.settingsSet, async (_event, rawPatch) => {
@@ -120,8 +138,21 @@ export function registerIpc(deps: IpcDependencies): () => void {
   })
   register(IPC.transportRequest, async (event, rawTarget, rawRequest) => {
     const authTarget = target(rawTarget)
-    const response = await deps.http.request(event.sender.id, authTarget, request(rawRequest))
+    const clientRequest = request(rawRequest)
+    const isLogout =
+      clientRequest.method === "POST" &&
+      clientRequest.path.split("?", 1)[0] === "/api/client/auth/logout"
+    const response = await deps.http.request(event.sender.id, authTarget, clientRequest)
     if (response.status === 401) markUnauthorized(authTarget)
+    const failedEnvelope =
+      response.body !== null &&
+      typeof response.body === "object" &&
+      "success" in response.body &&
+      response.body.success === false
+    if (isLogout && response.status >= 200 && response.status < 300 && !failedEnvelope) {
+      deps.http.cancelTarget(authTarget)
+      deps.messageCache.clearUserBestEffort(authTarget)
+    }
     return response
   })
   register(IPC.transportCancel, (event, requestId) =>
@@ -184,18 +215,64 @@ export function registerIpc(deps: IpcDependencies): () => void {
   register(IPC.updaterOpenManual, () => deps.updater.openManualDownload())
   register(IPC.updaterOpenRelease, () => deps.updater.openReleasePage())
   register(IPC.diagnosticsExport, () => deps.diagnostics.export())
+  register(IPC.messageCacheClearConversation, (_event, scope) =>
+    deps.messageCache.clearConversation(scope),
+  )
+  register(IPC.messageCacheClearUser, (_event, cacheTarget) =>
+    deps.messageCache.clearUser(cacheTarget),
+  )
+  register(IPC.messageCacheCommitAfter, (_event, scope, commit) =>
+    deps.messageCache.commitAfter(scope, commit),
+  )
+  register(IPC.messageCacheCommitBefore, (_event, scope, commit) =>
+    deps.messageCache.commitBefore(scope, commit),
+  )
+  register(IPC.messageCacheCommitLatest, (_event, scope, commit) =>
+    deps.messageCache.commitLatest(scope, commit),
+  )
+  register(IPC.messageCacheGetById, (_event, scope, messageId) =>
+    deps.messageCache.getById(scope, messageId),
+  )
+  register(IPC.messageCacheGetStats, (_event, cacheTarget) =>
+    deps.messageCache.getStats(cacheTarget),
+  )
+  register(IPC.messageCacheGetSyncState, (_event, scope) => deps.messageCache.getSyncState(scope))
+  register(IPC.messageCacheListSyncStates, (_event, cacheTarget) =>
+    deps.messageCache.listSyncStates(cacheTarget),
+  )
+  register(IPC.messageCacheReadAround, (_event, scope, targetSeq, limit) =>
+    deps.messageCache.readAround(scope, targetSeq, limit),
+  )
+  register(IPC.messageCacheReadBefore, (_event, scope, beforeSeq, limit) =>
+    deps.messageCache.readBefore(scope, beforeSeq, limit),
+  )
+  register(IPC.messageCacheReadRecent, (_event, scope, limit) =>
+    deps.messageCache.readRecent(scope, limit),
+  )
+  register(IPC.messageCacheRemoveMessage, (_event, scope, messageId, generation) =>
+    deps.messageCache.removeMessage(scope, messageId, generation),
+  )
+  register(IPC.messageCacheUpsert, (_event, scope, records, generation) =>
+    deps.messageCache.upsert(scope, records, generation),
+  )
 
   const unregisterRuntimeDiagnostics = registerRuntimeDiagnosticsIpc(deps.diagnostics)
 
   const envelopeListener = (payload: unknown) => broadcast(IPC.realtimeEvent, payload)
+  const asrListener = (ownerId: number, event: ASREvent) => {
+    const owner = webContents.fromId(ownerId)
+    if (owner && !owner.isDestroyed()) owner.send(IPC.asrEvent, event)
+  }
   const unauthorizedListener = (authTarget: AuthenticatedTarget) => markUnauthorized(authTarget)
   const updaterUnsubscribe = deps.updater.subscribe((state) => broadcast(IPC.updaterState, state))
   deps.realtime.on("envelope", envelopeListener)
   deps.realtime.on("unauthorized", unauthorizedListener)
+  deps.asr.on("event", asrListener)
 
   app.on("web-contents-created", (_event, contents) =>
     contents.once("destroyed", () => {
       deps.http.cancelOwner(contents.id)
+      deps.asr.closeOwner(contents.id)
       deps.files.releaseOwner(contents.id)
       deps.uploads.releaseOwner(contents.id)
     }),
@@ -205,6 +282,7 @@ export function registerIpc(deps: IpcDependencies): () => void {
     for (const channel of Object.values(IPC)) ipcMain.removeHandler(channel)
     deps.realtime.off("envelope", envelopeListener)
     deps.realtime.off("unauthorized", unauthorizedListener)
+    deps.asr.off("event", asrListener)
     updaterUnsubscribe()
     unregisterRuntimeDiagnostics()
   }

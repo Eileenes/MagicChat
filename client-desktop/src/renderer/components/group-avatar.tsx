@@ -1,6 +1,7 @@
 import { UsersRound } from "lucide-react"
 
 import type { ClientConversationMember } from "@/lib/client-data-api"
+import { resolveHostResourceUrl } from "@/lib/desktop-host"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
@@ -64,7 +65,12 @@ function GroupAvatarTile({
       )}
     >
       {avatar ? (
-        <img alt="" className="size-full object-cover" draggable={false} src={avatar} />
+        <img
+          alt=""
+          className="size-full object-cover"
+          draggable={false}
+          src={resolveHostResourceUrl(avatar)}
+        />
       ) : (
         <span aria-hidden="true">{getInitial(displayName)}</span>
       )}

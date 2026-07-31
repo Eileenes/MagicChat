@@ -1,7 +1,76 @@
 import { describe, expect, it } from "vitest"
 
 import type { ClientConversation, ClientMessage } from "@/lib/client-data-api"
-import { mergeConversationMessages, orderConversations } from "@/lib/client-data-state"
+import {
+  applyMessageChoiceSnapshot,
+  consumeConversationMessageFocus,
+  mergeConversationMessages,
+  orderConversations,
+} from "@/lib/client-data-state"
+import type { ClientConversationMessageState } from "@/lib/client-data-context"
+
+describe("consumeConversationMessageFocus", () => {
+  it("仅消费完全匹配的定位请求", () => {
+    const focus = { messageId: "message-1", requestKey: 2 }
+    const state = { focus } as ClientConversationMessageState
+
+    expect(consumeConversationMessageFocus(state, { messageId: "message-1", requestKey: 1 })).toBe(
+      state,
+    )
+    expect(consumeConversationMessageFocus(state, { messageId: "message-2", requestKey: 2 })).toBe(
+      state,
+    )
+    expect(consumeConversationMessageFocus(state, focus)).toEqual({ focus: null })
+  })
+})
+
+describe("applyMessageChoiceSnapshot", () => {
+  it("does not apply a snapshot when the choice changed after the request started", () => {
+    const expectedChoice = {
+      myOptionIds: ["option-a"],
+      options: [
+        { id: "option-a", responseCount: 1 },
+        { id: "option-b", responseCount: 0 },
+      ],
+      responseCount: 1,
+    }
+    const currentChoice = {
+      myOptionIds: ["option-b"],
+      options: [
+        { id: "option-a", responseCount: 0 },
+        { id: "option-b", responseCount: 1 },
+      ],
+      responseCount: 1,
+    }
+    const message: ClientMessage = {
+      ...createMessage("message-choice", 1),
+      body: {
+        content: "选择项目",
+        contentType: "text",
+        options: [
+          { id: "option-a", label: "项目 A" },
+          { id: "option-b", label: "项目 B" },
+        ],
+        selection: "single",
+        type: "choice",
+      },
+      choice: currentChoice,
+    }
+
+    expect(
+      applyMessageChoiceSnapshot(
+        message,
+        {
+          choice: expectedChoice,
+          conversationId: message.conversationId,
+          messageId: message.id,
+          status: "active",
+        },
+        { expectedChoice },
+      ),
+    ).toBe(message)
+  })
+})
 
 describe("mergeConversationMessages", () => {
   it("appends newer messages in sequence order", () => {
@@ -145,6 +214,7 @@ function createConversation(
     lastMessageId: `message-${id}`,
     lastMessageSeq: 1,
     lastMessageSummary: id,
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 1,
     memberCount: members?.length ?? 2,

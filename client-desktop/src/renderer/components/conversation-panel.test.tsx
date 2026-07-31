@@ -10,29 +10,31 @@ import { ClientDataContext, type ClientDataContextValue } from "@/lib/client-dat
 describe("ConversationPanel", () => {
   it("treats a history header as the first message instead of showing an empty state", () => {
     render(
-      <ConversationPanel
-        conversation={createConversation("topic-1")}
-        currentUserId="user-1"
-        draft=""
-        historyError={null}
-        historyHeader={<div>话题来源消息</div>}
-        historyLoading={false}
-        historyLoadingBefore={false}
-        messages={[]}
-        onCancelReply={vi.fn()}
-        onDraftChange={vi.fn()}
-        onLoadBeforeMessages={vi.fn()}
-        onReplyToMessage={vi.fn()}
-        onRevokeMessage={vi.fn()}
-        onRichTextModeChange={vi.fn()}
-        onSendFile={async () => null}
-        onSendImage={async () => null}
-        onSendVoice={async () => null}
-        onSendMessage={vi.fn()}
-        replyTarget={null}
-        richTextMode={false}
-        sending={false}
-      />,
+      <ClientDataContext.Provider value={createClientDataValue()}>
+        <ConversationPanel
+          conversation={createConversation("topic-1")}
+          currentUserId="user-1"
+          draft=""
+          historyError={null}
+          historyHeader={<div>话题来源消息</div>}
+          historyLoading={false}
+          historyLoadingBefore={false}
+          messages={[]}
+          onCancelReply={vi.fn()}
+          onDraftChange={vi.fn()}
+          onLoadBeforeMessages={vi.fn()}
+          onReplyToMessage={vi.fn()}
+          onRevokeMessage={vi.fn()}
+          onRichTextModeChange={vi.fn()}
+          onSendFile={async () => null}
+          onSendImage={async () => null}
+          onSendVoice={async () => null}
+          onSendMessage={vi.fn()}
+          replyTarget={null}
+          richTextMode={false}
+          sending={false}
+        />
+      </ClientDataContext.Provider>,
     )
 
     expect(screen.getByText("话题来源消息")).toBeInTheDocument()
@@ -42,51 +44,55 @@ describe("ConversationPanel", () => {
 
   it("shows a closed-topic system message without a locked composer footer", () => {
     render(
-      <ConversationPanel
-        conversation={createConversation("topic-1")}
-        currentUserId="user-1"
-        draft=""
-        historyError={null}
-        historyLoading={false}
-        historyLoadingBefore={false}
-        messages={[
-          {
-            author: "系统",
-            avatar: "",
-            body: {
-              actor: { displayName: "Alice", id: "user-1" },
-              event: "topic_closed",
-              type: "system_event",
-            },
-            canRevoke: false,
-            createdAt: "2026-07-20T12:00:00Z",
-            delegatedByName: "",
-            id: "message-1",
-            mentionTarget: null,
-            reactionVersion: 0,
-            reactions: [],
-            role: "system",
-            senderAppId: null,
-            senderAppProfile: null,
-            senderUserId: null,
-            time: "12:00",
-          },
-        ]}
-        onCancelReply={vi.fn()}
-        onDraftChange={vi.fn()}
-        onLoadBeforeMessages={vi.fn()}
-        onReplyToMessage={vi.fn()}
-        onRevokeMessage={vi.fn()}
-        onRichTextModeChange={vi.fn()}
-        onSendFile={async () => null}
-        onSendImage={async () => null}
-        onSendVoice={async () => null}
-        onSendMessage={vi.fn()}
-        readOnly
-        replyTarget={null}
-        richTextMode={false}
-        sending={false}
-      />,
+      <MemoryRouter>
+        <ClientDataContext.Provider value={createClientDataValue()}>
+          <ConversationPanel
+            conversation={createConversation("topic-1")}
+            currentUserId="user-1"
+            draft=""
+            historyError={null}
+            historyLoading={false}
+            historyLoadingBefore={false}
+            messages={[
+              {
+                author: "系统",
+                avatar: "",
+                body: {
+                  actor: { displayName: "Alice", id: "user-1" },
+                  event: "topic_closed",
+                  type: "system_event",
+                },
+                canRevoke: false,
+                createdAt: "2026-07-20T12:00:00Z",
+                delegatedByName: "",
+                id: "message-1",
+                mentionTarget: null,
+                reactionVersion: 0,
+                reactions: [],
+                role: "system",
+                senderAppId: null,
+                senderAppProfile: null,
+                senderUserId: null,
+                time: "12:00",
+              },
+            ]}
+            onCancelReply={vi.fn()}
+            onDraftChange={vi.fn()}
+            onLoadBeforeMessages={vi.fn()}
+            onReplyToMessage={vi.fn()}
+            onRevokeMessage={vi.fn()}
+            onRichTextModeChange={vi.fn()}
+            onSendFile={async () => null}
+            onSendImage={async () => null}
+            onSendVoice={async () => null}
+            onSendMessage={vi.fn()}
+            readOnly
+            replyTarget={null}
+            richTextMode={false}
+            sending={false}
+          />
+        </ClientDataContext.Provider>
+      </MemoryRouter>,
     )
 
     expect(screen.getByText("Alice 已将话题关闭")).toBeInTheDocument()
@@ -244,28 +250,30 @@ describe("ConversationPanel", () => {
     const onSendMessage = vi.fn()
 
     render(
-      <ConversationPanel
-        conversation={createConversation("conversation-1")}
-        currentUserId="user-1"
-        draft="nihao"
-        historyError={null}
-        historyLoading={false}
-        historyLoadingBefore={false}
-        messages={[]}
-        onCancelReply={vi.fn()}
-        onDraftChange={vi.fn()}
-        onLoadBeforeMessages={vi.fn()}
-        onReplyToMessage={vi.fn()}
-        onRevokeMessage={vi.fn()}
-        onRichTextModeChange={vi.fn()}
-        onSendFile={async () => null}
-        onSendImage={async () => null}
-        onSendVoice={async () => null}
-        onSendMessage={onSendMessage}
-        replyTarget={null}
-        richTextMode={false}
-        sending={false}
-      />,
+      <ClientDataContext.Provider value={createClientDataValue()}>
+        <ConversationPanel
+          conversation={createConversation("conversation-1")}
+          currentUserId="user-1"
+          draft="nihao"
+          historyError={null}
+          historyLoading={false}
+          historyLoadingBefore={false}
+          messages={[]}
+          onCancelReply={vi.fn()}
+          onDraftChange={vi.fn()}
+          onLoadBeforeMessages={vi.fn()}
+          onReplyToMessage={vi.fn()}
+          onRevokeMessage={vi.fn()}
+          onRichTextModeChange={vi.fn()}
+          onSendFile={async () => null}
+          onSendImage={async () => null}
+          onSendVoice={async () => null}
+          onSendMessage={onSendMessage}
+          replyTarget={null}
+          richTextMode={false}
+          sending={false}
+        />
+      </ClientDataContext.Provider>,
     )
 
     const composer = screen.getByPlaceholderText("输入消息")
@@ -352,6 +360,55 @@ describe("ConversationPanel", () => {
     expect(screen.getByText("在线")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "发消息" })).toBeInTheDocument()
   })
+
+  it("restores an owned revoked Markdown message for re-editing", async () => {
+    const user = userEvent.setup()
+    const onCancelReply = vi.fn()
+    const onDraftChange = vi.fn()
+    const onRichTextModeChange = vi.fn()
+    const message: ConversationPanelMessage = {
+      ...createAppPanelMessage({ appId: "", author: "我", avatar: "" }),
+      body: { editableBody: { content: "**再次编辑**", type: "markdown" }, type: "revoked" },
+      role: "me",
+      senderAppId: null,
+      senderUserId: "user-1",
+    }
+
+    render(
+      <MemoryRouter>
+        <ClientDataContext.Provider value={createClientDataValue()}>
+          <ConversationPanel
+            conversation={createConversation("conversation-1")}
+            currentUserId="user-1"
+            draft="旧草稿"
+            historyError={null}
+            historyLoading={false}
+            historyLoadingBefore={false}
+            messages={[message]}
+            onCancelReply={onCancelReply}
+            onDraftChange={onDraftChange}
+            onLoadBeforeMessages={vi.fn()}
+            onReplyToMessage={vi.fn()}
+            onRevokeMessage={vi.fn()}
+            onRichTextModeChange={onRichTextModeChange}
+            onSendFile={async () => null}
+            onSendImage={async () => null}
+            onSendVoice={async () => null}
+            onSendMessage={vi.fn()}
+            replyTarget={null}
+            richTextMode={false}
+            sending={false}
+          />
+        </ClientDataContext.Provider>
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByRole("button", { name: "重新编辑" }))
+    expect(onCancelReply).toHaveBeenCalledOnce()
+    expect(onDraftChange).toHaveBeenCalledWith("**再次编辑**", [])
+    expect(onRichTextModeChange).toHaveBeenCalledWith(true)
+    await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus())
+  })
 })
 
 function createConversation(id: string): ClientConversation {
@@ -363,6 +420,7 @@ function createConversation(id: string): ClientConversation {
     lastMessageId: null,
     lastMessageSeq: 0,
     lastMessageSummary: "",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 2,

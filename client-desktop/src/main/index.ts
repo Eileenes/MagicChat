@@ -2,6 +2,7 @@ import path from "node:path"
 import { app, dialog, powerMonitor } from "electron"
 import { IPC } from "@shared/bridge"
 import { AuthController } from "@main/auth-controller"
+import { ASRController } from "@main/asr-controller"
 import { ConfigStore } from "@main/config-store"
 import { CredentialStore } from "@main/credential-store"
 import { Diagnostics } from "@main/diagnostics"
@@ -11,6 +12,7 @@ import { HttpTransport } from "@main/http-transport"
 import { registerIpc } from "@main/ipc"
 import { installLocalProtocol, registerPrivilegedSchemes } from "@main/local-protocol"
 import { NotificationService } from "@main/notification-service"
+import { MessageCacheService } from "@main/message-cache"
 import { RealtimeController } from "@main/realtime-controller"
 import { ProxyAuthPrompt } from "@main/proxy-auth"
 import { ServerProfiles } from "@main/server-profiles"
@@ -18,8 +20,10 @@ import { SessionController } from "@main/session-controller"
 import { runtimeIconPath, runtimeTrayIconPath, SystemIntegration } from "@main/system-integration"
 import { UpdaterService } from "@main/updater-service"
 import { StreamingUploadController } from "@main/streaming-upload"
+import { prepareUpdateInstall } from "@main/update-install-lifecycle"
 import { StartupHealth } from "@main/startup-health"
 import { WindowController } from "@main/window-controller"
+import messageCacheWorkerPath from "@main/message-cache/message-cache-worker?modulePath"
 
 registerPrivilegedSchemes()
 
@@ -49,6 +53,12 @@ async function start(): Promise<void> {
   const store = new ConfigStore(app.getPath("userData"))
   await store.load()
   const profiles = new ServerProfiles(store)
+  const messageCache = new MessageCacheService(
+    app.getPath("userData"),
+    messageCacheWorkerPath,
+    profiles,
+  )
+  await messageCache.initialize().catch(() => undefined)
   const sessions = new SessionController()
   installLocalProtocol(path.resolve(__dirname, "../renderer"), profiles, sessions)
   const files = new FileService(profiles, sessions)
@@ -64,6 +74,7 @@ async function start(): Promise<void> {
   const system = new SystemIntegration(store, windows)
   const proxyAuth = new ProxyAuthPrompt(windows, iconPath)
   const realtime = new RealtimeController(profiles, sessions, proxyAuth)
+  const asr = new ASRController(profiles, sessions, proxyAuth)
   const trayAvailable = system.createTray(trayIconPath)
   if (
     !trayAvailable &&
@@ -97,17 +108,16 @@ async function start(): Promise<void> {
   const uploads = new StreamingUploadController(profiles, sessions)
   const updater = new UpdaterService({
     hasActiveTransfers: () => files.hasActiveTransfers() || uploads.hasActiveTransfers(),
-    prepareInstall: async () => {
-      windows.prepareToQuit()
-      return () => windows.cancelPrepareToQuit()
-    },
+    prepareInstall: () => prepareUpdateInstall({ messageCache, windows }),
   })
   const unregisterIpc = registerIpc({
     auth,
+    asr,
     credentials,
     diagnostics,
     files,
     http,
+    messageCache,
     notifications,
     profiles,
     realtime,
@@ -121,6 +131,7 @@ async function start(): Promise<void> {
   const hidden = process.argv.includes("--hidden") && store.getSettings().autoLaunch
   const mainWindow = windows.create(hidden)
   mainWindow.webContents.once("did-finish-load", () => void startupHealth.markHealthy())
+  powerMonitor.on("suspend", () => asr.closeAll())
   powerMonitor.on("resume", () => realtime.reconnectAll())
   powerMonitor.on("unlock-screen", () => realtime.reconnectAll())
   app.on("activate", () => windows.show())
@@ -146,6 +157,8 @@ async function start(): Promise<void> {
   let transferExitConfirmed = false
   app.on("before-quit", (event) => {
     if (updater.isInstallIntent()) {
+      http.cancelAll()
+      asr.closeAll()
       auth.dispose()
       realtime.closeAll()
       void files.cleanup()
@@ -166,16 +179,20 @@ async function start(): Promise<void> {
     }
     cleanupStarted = true
     windows.prepareToQuit()
+    http.cancelAll()
+    asr.closeAll()
     auth.dispose()
     realtime.closeAll()
     event.preventDefault()
-    void files.cleanup().finally(() => {
+    void Promise.all([files.cleanup(), messageCache.close()]).finally(() => {
       updater.dispose()
-      unregisterIpc()
       app.quit()
     })
   })
-  app.once("will-quit", () => updater.dispose())
+  app.once("will-quit", () => {
+    unregisterIpc()
+    updater.dispose()
+  })
   process.on("uncaughtException", (error) => void diagnostics.record("main", error.name))
   process.on("unhandledRejection", () => void diagnostics.record("main", "unhandled-rejection"))
   app.on("child-process-gone", (_event, details) => {

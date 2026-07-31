@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { MessageBubble, SystemMessageBadge } from "@/components/conversation/conversation-message"
 import { formatConversationMessageTime } from "@/lib/conversation-message-presenter"
+import { conversationMessageRetentionLimit } from "@/lib/client-data-state"
 import type {
   ConversationPanelMentionTarget,
   ConversationPanelMessage,
@@ -18,41 +19,60 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
   conversation,
   currentUserId,
   error,
+  focus = null,
+  historyMode = false,
   loading,
+  loadingAfter = false,
   loadingBefore,
   header,
   mentionLabelResolver,
   messages,
   messageSelection,
+  onCompactMessages = noop,
+  onConsumeFocus,
+  onRegisterMessageView = noopRegistration,
   onForwardMessage,
   onCreateTopic,
+  onLoadAfterMessages,
   onLoadBeforeMessages,
   onStartMessageSelection,
   onInsertMention,
   onOpenTopic,
+  onReeditRevokedMessage,
   onReplyToMessage,
+  onReturnToLatestMessages,
   onRevokeMessage,
   onRespondToChoice,
   onSetMessageReaction,
   onToggleMessageSelection,
+  pendingLatestMessageCount: externalPendingLatestMessageCount = 0,
 }: {
   canReply?: boolean
   conversation: ClientConversation
   currentUserId: string
   error: string | null
+  focus?: { messageId: string; requestKey: number } | null
+  historyMode?: boolean
   loading: boolean
+  loadingAfter?: boolean
   loadingBefore: boolean
   header?: React.ReactNode
   mentionLabelResolver: MentionLabelResolver
   messages: ConversationPanelMessage[]
   messageSelection?: ConversationPanelMessageSelection
+  onCompactMessages?: () => void
+  onConsumeFocus?: (focus: { messageId: string; requestKey: number }) => void
+  onRegisterMessageView?: (conversationId: string) => () => void
   onForwardMessage?: (message: ConversationPanelMessage) => void
   onCreateTopic?: (message: ConversationPanelMessage) => void
+  onLoadAfterMessages?: () => void
   onLoadBeforeMessages: () => void
   onStartMessageSelection?: (message: ConversationPanelMessage) => void
   onInsertMention: (target: ConversationPanelMentionTarget) => void
   onOpenTopic?: (conversationId: string) => void
+  onReeditRevokedMessage?: (message: ConversationPanelMessage) => void
   onReplyToMessage: (message: ConversationPanelMessage) => void
+  onReturnToLatestMessages?: () => void
   onRevokeMessage?: (message: ConversationPanelMessage) => void
   onRespondToChoice?: (message: ConversationPanelMessage, optionIds: string[]) => Promise<void>
   onSetMessageReaction?: (
@@ -61,38 +81,147 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
     reacted: boolean,
   ) => Promise<void>
   onToggleMessageSelection?: (message: ConversationPanelMessage) => void
+  pendingLatestMessageCount?: number
 }) {
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
   const contentResizeObserverRef = React.useRef<ResizeObserver | null>(null)
   const nearBottomRef = React.useRef(true)
   const previousConversationIdRef = React.useRef<string | null>(null)
+  const previousHistoryModeRef = React.useRef(historyMode)
+  const scrollToLatestPendingRef = React.useRef(false)
   const previousFirstMessageIdRef = React.useRef<string | null>(null)
   const previousLastMessageIdRef = React.useRef<string | null>(null)
   const previousMessagesLengthRef = React.useRef(0)
   const beforeLoadSnapshotRef = React.useRef<ScrollSnapshot | null>(null)
+  const previousLoadingBeforeRef = React.useRef(loadingBefore)
+  const historyLoadStartFirstMessageIdRef = React.useRef<string | null>(
+    loadingBefore ? (messages[0]?.id ?? null) : null,
+  )
+  const lastHistoryLoadedAtRef = React.useRef(0)
+  const [viewportNearBottom, setViewportNearBottom] = React.useState(true)
   const [pendingNewMessageCount, setPendingNewMessageCount] = React.useState(0)
+  const highlightTimeoutRef = React.useRef<number | null>(null)
+  const compactRef = React.useRef(onCompactMessages)
 
-  const setHistoryContentRef = React.useCallback((content: HTMLDivElement | null) => {
-    contentResizeObserverRef.current?.disconnect()
-    contentResizeObserverRef.current = null
+  React.useEffect(() => {
+    compactRef.current = onCompactMessages
+  }, [onCompactMessages])
 
-    if (!content) {
+  React.useEffect(
+    () => onRegisterMessageView(conversation.id),
+    [conversation.id, onRegisterMessageView],
+  )
+
+  React.useEffect(
+    () => () => {
+      compactRef.current()
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current)
+      }
+    },
+    [],
+  )
+
+  React.useEffect(() => {
+    const wasLoadingBefore = previousLoadingBeforeRef.current
+    if (!wasLoadingBefore && loadingBefore) {
+      historyLoadStartFirstMessageIdRef.current = messages[0]?.id ?? null
+    } else if (wasLoadingBefore && !loadingBefore) {
+      const firstMessageId = messages[0]?.id ?? null
+      if (firstMessageId !== historyLoadStartFirstMessageIdRef.current) {
+        lastHistoryLoadedAtRef.current = Date.now()
+      }
+      historyLoadStartFirstMessageIdRef.current = null
+    }
+    previousLoadingBeforeRef.current = loadingBefore
+  }, [loadingBefore, messages])
+
+  React.useEffect(() => {
+    if (
+      messages.length <= conversationMessageRetentionLimit ||
+      historyMode ||
+      !viewportNearBottom ||
+      loadingBefore ||
+      messageSelection?.active
+    ) {
       return
     }
 
-    const observer = new ResizeObserver(() => {
-      const viewport = viewportRef.current
-      if (!viewport || !nearBottomRef.current) {
+    const remainingProtectionMs = Math.max(
+      lastHistoryLoadedAtRef.current + historyRetentionMs - Date.now(),
+      0,
+    )
+    if (remainingProtectionMs === 0) {
+      onCompactMessages()
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (nearBottomRef.current) {
+        compactRef.current()
+      }
+    }, remainingProtectionMs)
+    return () => window.clearTimeout(timeout)
+  }, [
+    historyMode,
+    loadingBefore,
+    messageSelection?.active,
+    messages.length,
+    onCompactMessages,
+    viewportNearBottom,
+  ])
+
+  const setHistoryContentRef = React.useCallback(
+    (content: HTMLDivElement | null) => {
+      contentResizeObserverRef.current?.disconnect()
+      contentResizeObserverRef.current = null
+
+      if (!content) {
         return
       }
 
-      scrollToBottom(viewport)
+      const observer = new ResizeObserver(() => {
+        const viewport = viewportRef.current
+        if (!viewport || historyMode || !nearBottomRef.current) {
+          return
+        }
+
+        scrollToBottom(viewport)
+      })
+      observer.observe(content)
+      contentResizeObserverRef.current = observer
+    },
+    [historyMode],
+  )
+
+  React.useEffect(() => {
+    if (!historyMode || !focus) return
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const frame = window.requestAnimationFrame(() => {
+      const element = findMessageElement(viewport, focus.messageId)
+      if (!element) return
+      element.scrollIntoView({ block: "center" })
+      onConsumeFocus?.(focus)
+      element.classList.add(...historyHighlightClasses)
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current)
+      }
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        element.classList.remove(...historyHighlightClasses)
+        highlightTimeoutRef.current = null
+      }, historyHighlightDurationMs)
     })
-    observer.observe(content)
-    contentResizeObserverRef.current = observer
-  }, [])
+    return () => window.cancelAnimationFrame(frame)
+  }, [focus, historyMode, messages, onConsumeFocus])
 
   React.useLayoutEffect(() => {
+    const returnedToLatest = previousHistoryModeRef.current && !historyMode
+    previousHistoryModeRef.current = historyMode
+    if (returnedToLatest) {
+      scrollToLatestPendingRef.current = true
+    }
+
     const viewport = viewportRef.current
     if (!viewport) {
       return
@@ -105,12 +234,23 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
     const previousLastMessageId = previousLastMessageIdRef.current
     const previousMessagesLength = previousMessagesLengthRef.current
     const changedConversation = previousConversationId !== conversation.id
+    const shouldScrollToLatest = !historyMode && scrollToLatestPendingRef.current
 
-    if (changedConversation) {
-      scrollToBottom(viewport)
-      nearBottomRef.current = true
+    if (changedConversation || shouldScrollToLatest) {
+      if (!historyMode) scrollToBottom(viewport)
+      nearBottomRef.current = !historyMode
+      setViewportNearBottom(!historyMode)
       beforeLoadSnapshotRef.current = null
       setPendingNewMessageCount(0)
+      if (shouldScrollToLatest) {
+        scrollToLatestPendingRef.current = false
+        const frame = window.requestAnimationFrame(() => scrollToBottom(viewport))
+        previousConversationIdRef.current = conversation.id
+        previousFirstMessageIdRef.current = firstMessageId
+        previousLastMessageIdRef.current = lastMessageId
+        previousMessagesLengthRef.current = messages.length
+        return () => window.cancelAnimationFrame(frame)
+      }
     } else {
       if (
         firstMessageId &&
@@ -119,11 +259,14 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
         beforeLoadSnapshotRef.current
       ) {
         restoreScrollPositionAfterPrepend(viewport, beforeLoadSnapshotRef.current)
-        nearBottomRef.current = isNearBottom(viewport)
+        const nearBottom = isNearBottom(viewport)
+        nearBottomRef.current = nearBottom
+        setViewportNearBottom(nearBottom)
         beforeLoadSnapshotRef.current = null
       }
 
       if (
+        !historyMode &&
         lastMessageId &&
         previousLastMessageId !== lastMessageId &&
         messages.length >= previousMessagesLength
@@ -155,14 +298,15 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
     previousFirstMessageIdRef.current = firstMessageId
     previousLastMessageIdRef.current = lastMessageId
     previousMessagesLengthRef.current = messages.length
-  }, [conversation.id, messages])
+  }, [conversation.id, historyMode, loading, messages])
 
   function handleViewportScroll(event: React.UIEvent<HTMLDivElement>) {
     const viewport = event.currentTarget
     const nearBottom = isNearBottom(viewport)
 
     nearBottomRef.current = nearBottom
-    if (nearBottom) {
+    setViewportNearBottom(nearBottom)
+    if (nearBottom && !historyMode) {
       setPendingNewMessageCount((currentCount) => (currentCount === 0 ? currentCount : 0))
     }
 
@@ -174,15 +318,24 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
       return
     }
 
-    if (viewport.scrollTop > 80) {
-      return
+    if (viewport.scrollTop <= 80) {
+      beforeLoadSnapshotRef.current = createScrollSnapshot(viewport, messages[0]?.id ?? null)
+      onLoadBeforeMessages()
     }
-
-    beforeLoadSnapshotRef.current = createScrollSnapshot(viewport, messages[0]?.id ?? null)
-    onLoadBeforeMessages()
+    if (
+      historyMode &&
+      !loadingAfter &&
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 80
+    ) {
+      onLoadAfterMessages?.()
+    }
   }
 
   function handleJumpToLatest() {
+    if (historyMode) {
+      onReturnToLatestMessages?.()
+      return
+    }
     const viewport = viewportRef.current
     if (!viewport) {
       return
@@ -190,6 +343,7 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
 
     scrollToBottom(viewport)
     nearBottomRef.current = true
+    setViewportNearBottom(true)
     setPendingNewMessageCount(0)
   }
 
@@ -325,6 +479,7 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
                   onCreateTopic={onCreateTopic}
                   onInsertMention={onInsertMention}
                   onOpenTopic={onOpenTopic}
+                  onReeditRevoked={onReeditRevokedMessage}
                   onMultiSelect={isMessageAvailable(message) ? onStartMessageSelection : undefined}
                   onReply={onReplyToMessage}
                   onRevoke={onRevokeMessage}
@@ -338,9 +493,18 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
               )}
             </React.Fragment>
           ))}
+          {loadingAfter && (
+            <div
+              className="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+              data-testid="conversation-history-loading-after"
+            >
+              <LoaderCircle className="size-3.5 animate-spin" />
+              <span>正在加载更新消息</span>
+            </div>
+          )}
         </div>
       </ScrollArea>
-      {pendingNewMessageCount > 0 && (
+      {(historyMode || pendingNewMessageCount > 0) && (
         <Button
           className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full shadow-md"
           onClick={handleJumpToLatest}
@@ -349,7 +513,11 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
           variant="secondary"
         >
           <ArrowDown className="size-4" />
-          {pendingNewMessageCount} 条新消息
+          {historyMode
+            ? externalPendingLatestMessageCount > 0
+              ? `返回最新消息（${externalPendingLatestMessageCount} 条新消息）`
+              : "返回最新消息"
+            : `${pendingNewMessageCount} 条新消息`}
         </Button>
       )}
     </div>
@@ -357,10 +525,23 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
 })
 
 function isMessageAvailable(message: ConversationPanelMessage) {
-  return message.body.type !== "revoked" && message.body.type !== "unsupported"
+  return (
+    message.body.type !== "choice" &&
+    message.body.type !== "revoked" &&
+    message.body.type !== "unsupported"
+  )
 }
 
 const messageTimeMarkerThresholdMs = 60 * 60 * 1000
+const historyRetentionMs = 3 * 60 * 1000
+const historyHighlightDurationMs = 2_000
+const historyHighlightClasses = ["rounded-md", "ring-2", "ring-teal-500/70"]
+
+function noop() {}
+
+function noopRegistration() {
+  return noop
+}
 
 function shouldShowMessageTimeMarker(
   previousMessage: ConversationPanelMessage | undefined,
@@ -421,11 +602,16 @@ function getMessageTop(viewport: HTMLDivElement, messageId: string | null): numb
     return null
   }
 
-  const messageElement = Array.from(
-    viewport.querySelectorAll<HTMLElement>("[data-conversation-message-id]"),
-  ).find((element) => element.dataset.conversationMessageId === messageId)
+  const messageElement = findMessageElement(viewport, messageId)
 
   return messageElement?.getBoundingClientRect().top ?? null
+}
+
+function findMessageElement(viewport: HTMLDivElement, messageId: string | null) {
+  if (!messageId) return null
+  return Array.from(viewport.querySelectorAll<HTMLElement>("[data-conversation-message-id]")).find(
+    (element) => element.dataset.conversationMessageId === messageId,
+  )
 }
 
 function getAppendedMessages(

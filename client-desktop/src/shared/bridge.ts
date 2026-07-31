@@ -6,6 +6,8 @@ import type {
   RealtimeSnapshot,
   ServerTarget,
 } from "@shared/client-contract"
+import type { MessageCacheBridge } from "@shared/message-cache-contract"
+import type { ASRBridge } from "@shared/asr-contract"
 
 export const BRIDGE_VERSION = 1 as const
 
@@ -13,6 +15,11 @@ export const MAX_TRAY_MESSAGES = 20
 
 export const IPC = {
   appInfo: "desktop:v1:app-info",
+  asrClose: "desktop:v1:asr-close",
+  asrCommit: "desktop:v1:asr-commit",
+  asrConnect: "desktop:v1:asr-connect",
+  asrEvent: "desktop:v1:asr-event",
+  asrSendFrame: "desktop:v1:asr-send-frame",
   appearanceThemeSet: "desktop:v1:appearance-theme-set",
   authCancel: "desktop:v1:auth-cancel",
   authFinished: "desktop:v1:auth-finished",
@@ -27,6 +34,20 @@ export const IPC = {
   filesOpenLocation: "desktop:v1:files-open-location",
   filesPick: "desktop:v1:files-pick",
   filesUpload: "desktop:v1:files-upload",
+  messageCacheClearConversation: "desktop:v1:message-cache-clear-conversation",
+  messageCacheClearUser: "desktop:v1:message-cache-clear-user",
+  messageCacheCommitAfter: "desktop:v1:message-cache-commit-after",
+  messageCacheCommitBefore: "desktop:v1:message-cache-commit-before",
+  messageCacheCommitLatest: "desktop:v1:message-cache-commit-latest",
+  messageCacheGetById: "desktop:v1:message-cache-get-by-id",
+  messageCacheGetStats: "desktop:v1:message-cache-get-stats",
+  messageCacheGetSyncState: "desktop:v1:message-cache-get-sync-state",
+  messageCacheListSyncStates: "desktop:v1:message-cache-list-sync-states",
+  messageCacheReadAround: "desktop:v1:message-cache-read-around",
+  messageCacheReadBefore: "desktop:v1:message-cache-read-before",
+  messageCacheReadRecent: "desktop:v1:message-cache-read-recent",
+  messageCacheRemoveMessage: "desktop:v1:message-cache-remove-message",
+  messageCacheUpsert: "desktop:v1:message-cache-upsert",
   notificationShow: "desktop:v1:notification-show",
   navigate: "desktop:v1:navigate",
   openExternal: "desktop:v1:open-external",
@@ -168,6 +189,7 @@ export type UpdaterInstallResult = Readonly<{
 export interface DesktopBridge {
   readonly version: typeof BRIDGE_VERSION
   app: { info(): Promise<DesktopAppInfo> }
+  asr: ASRBridge
   appearance: { setThemeSource(source: DesktopThemeSource): Promise<void> }
   badge: { set(count: number): Promise<void> }
   tray: { setMessages(messages: ReadonlyArray<TrayMessage>): Promise<void> }
@@ -196,6 +218,7 @@ export interface DesktopBridge {
     }): Promise<ReadonlyArray<{ id: string; name: string; size: number }>>
     upload(target: AuthenticatedTarget, apiPath: string, fileId: string): Promise<ClientResponse>
   }
+  messageCache: MessageCacheBridge
   notifications: { show(input: NotificationInput): Promise<void> }
   navigation: {
     subscribe(listener: (route: string) => void): () => void

@@ -13,15 +13,17 @@ import {
   Server,
   ShieldCheck,
   Sparkles,
+  Trash2,
   UsersRound,
   XIcon,
 } from "lucide-react"
 import { BrowserRouter } from "react-router"
+import { toast } from "sonner"
 import { configureDesktopHost } from "@/lib/desktop-host"
 import { RealtimeClient } from "@/lib/realtime-client"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import App from "@/app/App"
 import type { AuthenticatedTarget } from "@shared/client-contract"
@@ -30,6 +32,7 @@ import type {
   DesktopSettings,
   DesktopSettingsPatch,
   ServerProfile,
+  UpdaterInstallResult,
   UpdaterState,
 } from "@shared/bridge"
 import { DesktopWebSocket, installDesktopFetch } from "./desktop-transport"
@@ -38,16 +41,21 @@ import { installDesktopLinkNavigation } from "@/lib/desktop-link-navigation"
 import { startRuntimeDiagnostics } from "@/lib/runtime-diagnostics"
 import { releaseChannelLabel } from "@/release-channel"
 import { BrandLoadingScreen } from "@/components/brand-loading-screen"
+import { clearManagedMessageCache, configureMessageCacheTarget } from "@/lib/messages"
+import type { MessageCacheStats } from "@shared/message-cache-contract"
 
 export function DesktopRoot() {
   return (
     <ThemeProvider>
-      <div className="desktop-frame">
-        <div aria-hidden="true" className="desktop-titlebar-drag-region" />
-        <div className="desktop-content">
-          <DesktopRootContent />
+      <TooltipProvider>
+        <div className="desktop-frame">
+          <div aria-hidden="true" className="desktop-titlebar-drag-region" />
+          <div className="desktop-content">
+            <DesktopRootContent />
+          </div>
         </div>
-      </div>
+        <Toaster position="top-center" />
+      </TooltipProvider>
     </ThemeProvider>
   )
 }
@@ -57,6 +65,7 @@ function DesktopRootContent() {
   const [selectedId, setSelectedId] = useState<string>()
   const [messageSoundEnabled, setMessageSoundEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
+  const { setUpdater, updater } = useDesktopUpdaterState()
 
   useEffect(() => startRuntimeDiagnostics(), [])
 
@@ -91,30 +100,43 @@ function DesktopRootContent() {
     setSelectedId(undefined)
   }
 
-  if (loading) return <StatusPage text="正在启动即应" />
   const selected = profiles.find((profile) => profile.id === selectedId)
-  if (!selected) return <ServerSetup onAdded={added} />
+
   return (
-    <DesktopWorkspace
-      key={`${selected.id}:${selected.lastUserId ?? "anonymous"}`}
-      messageSoundEnabled={messageSoundEnabled}
-      profile={selected}
-      onMessageSoundEnabledChange={setMessageSoundEnabled}
-      onRemoved={removed}
-    />
+    <>
+      {loading ? (
+        <StatusPage text="正在启动即应" />
+      ) : selected ? (
+        <DesktopWorkspace
+          key={`${selected.id}:${selected.lastUserId ?? "anonymous"}`}
+          messageSoundEnabled={messageSoundEnabled}
+          profile={selected}
+          updater={updater}
+          onMessageSoundEnabledChange={setMessageSoundEnabled}
+          onRemoved={removed}
+          onUpdaterChange={setUpdater}
+        />
+      ) : (
+        <ServerSetup onAdded={added} />
+      )}
+    </>
   )
 }
 
 function DesktopWorkspace({
   messageSoundEnabled,
   profile,
+  updater,
   onMessageSoundEnabledChange,
   onRemoved,
+  onUpdaterChange,
 }: {
   messageSoundEnabled: boolean
   profile: ServerProfile
+  updater: UpdaterState
   onMessageSoundEnabledChange(enabled: boolean): void
   onRemoved(serverId: string): void
+  onUpdaterChange(state: UpdaterState): void
 }) {
   const [userId, setUserId] = useState(profile.lastUserId ?? "anonymous")
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -126,26 +148,171 @@ function DesktopWorkspace({
 
   return (
     <>
-      <TooltipProvider>
-        <BrowserRouter>
-          <DesktopHostedApp
-            messageSoundEnabled={messageSoundEnabled}
-            profile={profile}
-            target={target}
-            onAuthenticated={setUserId}
-            onOpenSettings={openSettings}
-          />
-          <Toaster position="top-center" />
-        </BrowserRouter>
-      </TooltipProvider>
+      <BrowserRouter>
+        <DesktopHostedApp
+          messageSoundEnabled={messageSoundEnabled}
+          profile={profile}
+          target={target}
+          updater={updater}
+          onAuthenticated={setUserId}
+          onOpenSettings={openSettings}
+          onUpdaterChange={onUpdaterChange}
+        />
+      </BrowserRouter>
       {settingsOpen && (
         <DesktopSettingsPanel
           profile={profile}
+          target={target}
+          updater={updater}
           onMessageSoundEnabledChange={onMessageSoundEnabledChange}
           onOpenChange={setSettingsOpen}
           onRemoved={onRemoved}
+          onUpdaterChange={onUpdaterChange}
         />
       )}
+    </>
+  )
+}
+
+function useDesktopUpdaterState() {
+  const [updater, setUpdater] = useState<UpdaterState>({
+    currentVersion: "",
+    installMode: "manual",
+    installationSource: "development",
+    retryable: false,
+    status: "manual",
+  })
+
+  useEffect(() => {
+    let disposed = false
+    let receivedUpdate = false
+    const unsubscribe = window.desktop.updater.subscribe((state) => {
+      receivedUpdate = true
+      setUpdater(state)
+    })
+    void window.desktop.updater
+      .getState()
+      .then((state) => {
+        if (!disposed && !receivedUpdate) setUpdater(state)
+      })
+      .catch(() => undefined)
+
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [])
+
+  return { setUpdater, updater }
+}
+
+function useDesktopUpdateAction(onError: (message: string) => void) {
+  const [actionPending, setActionPending] = useState(false)
+  const actionPendingRef = useRef(false)
+
+  const runUpdateAction = useCallback(
+    async (action: () => Promise<void>) => {
+      if (actionPendingRef.current) return
+      actionPendingRef.current = true
+      setActionPending(true)
+      try {
+        await action()
+      } catch {
+        onError("更新操作失败，请稍后重试")
+      } finally {
+        actionPendingRef.current = false
+        setActionPending(false)
+      }
+    },
+    [onError],
+  )
+
+  return { actionPending, runUpdateAction }
+}
+
+function showUpdateActionToast(message: string) {
+  toast.error(message)
+}
+
+function DesktopUpdatePrompt({
+  onStateChange,
+  state,
+}: {
+  onStateChange(state: UpdaterState): void
+  state: UpdaterState
+}) {
+  const { actionPending, runUpdateAction } = useDesktopUpdateAction(showUpdateActionToast)
+  const hasNewVersion =
+    Boolean(state.targetVersion) &&
+    ["available", "downloaded", "downloading", "error", "installing"].includes(state.status)
+
+  if (!hasNewVersion) return null
+
+  function handleUpdateAction() {
+    if (state.status === "downloading" || state.status === "installing") return
+    void runUpdateAction(async () => {
+      if (state.status === "available") {
+        if (state.installMode === "ota") await window.desktop.updater.download()
+        else await window.desktop.updater.openManualDownload()
+        return
+      }
+      if (state.status === "downloaded") {
+        const result = await window.desktop.updater.install()
+        if (result.status !== "started") toast.error(getUpdateInstallErrorMessage(result.reason))
+        return
+      }
+      if (state.status === "error") {
+        if (state.errorCode === "platform_signature_required" || !state.retryable) {
+          await window.desktop.updater.openManualDownload()
+        } else {
+          onStateChange(await window.desktop.updater.check())
+        }
+      }
+    })
+  }
+
+  const Icon =
+    state.status === "downloaded"
+      ? Sparkles
+      : state.status === "error"
+        ? CircleHelp
+        : state.status === "downloading" || state.status === "installing"
+          ? RefreshCw
+          : Download
+  const label = updatePromptLabel(state)
+  const actionDisabled =
+    actionPending || state.status === "downloading" || state.status === "installing"
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            aria-disabled={actionDisabled}
+            className="desktop-update-prompt"
+            onClick={handleUpdateAction}
+            title={state.targetVersion ? `${label} · 即应 ${state.targetVersion}` : label}
+            type="button"
+          >
+            <Icon
+              aria-hidden="true"
+              className={
+                state.status === "downloading" || state.status === "installing"
+                  ? "motion-safe:animate-spin"
+                  : ""
+              }
+              size={16}
+            />
+            <span className="sr-only">{label}</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={6}>
+          {state.targetVersion ? `${label} · ${state.targetVersion}` : label}
+        </TooltipContent>
+      </Tooltip>
+      <span aria-atomic="true" aria-live="polite" className="sr-only" role="status">
+        {label}
+      </span>
     </>
   )
 }
@@ -154,14 +321,18 @@ function DesktopHostedApp({
   messageSoundEnabled,
   profile,
   target,
+  updater,
   onAuthenticated,
   onOpenSettings,
+  onUpdaterChange,
 }: {
   messageSoundEnabled: boolean
   profile: ServerProfile
   target: AuthenticatedTarget
+  updater: UpdaterState
   onAuthenticated(userId: string): void
   onOpenSettings(): void
+  onUpdaterChange(state: UpdaterState): void
 }) {
   const [ready, setReady] = useState(false)
   const messageSoundEnabledRef = useRef(messageSoundEnabled)
@@ -172,6 +343,7 @@ function DesktopHostedApp({
 
   useEffect(() => {
     const restoreFetch = installDesktopFetch(target)
+    const restoreMessageCacheTarget = configureMessageCacheTarget(target)
     const restoreHost = configureDesktopHost({
       cancelThirdPartyLogin: (transactionId) => window.desktop.auth.cancel(transactionId),
       createRealtimeClient: (options) =>
@@ -238,68 +410,69 @@ function DesktopHostedApp({
       unsubscribeNavigation()
       restoreHost()
       restoreFetch()
+      restoreMessageCacheTarget()
     }
   }, [onAuthenticated, onOpenSettings, profile, target])
 
-  return ready ? <App /> : <StatusPage detail={profile.displayName} text="正在连接工作空间" />
+  return ready ? (
+    <App updatePrompt={<DesktopUpdatePrompt state={updater} onStateChange={onUpdaterChange} />} />
+  ) : (
+    <StatusPage detail={profile.displayName} text="正在连接工作空间" />
+  )
 }
 
 function DesktopSettingsPanel({
   profile,
+  target,
+  updater,
   onMessageSoundEnabledChange,
   onOpenChange,
   onRemoved,
+  onUpdaterChange,
 }: {
   profile: ServerProfile
+  target: AuthenticatedTarget
+  updater: UpdaterState
   onMessageSoundEnabledChange(enabled: boolean): void
   onOpenChange(open: boolean): void
   onRemoved(serverId: string): void
+  onUpdaterChange(state: UpdaterState): void
 }) {
   const [settings, setSettings] = useState<DesktopSettings>()
   const [appInfo, setAppInfo] = useState<DesktopAppInfo>()
-  const [updater, setUpdater] = useState<UpdaterState>({
-    currentVersion: "",
-    installMode: "manual",
-    installationSource: "development",
-    retryable: false,
-    status: "manual",
-  })
   const [name, setName] = useState(profile.displayName)
   const [busy, setBusy] = useState(false)
   const [removeError, setRemoveError] = useState("")
   const [settingsError, setSettingsError] = useState("")
-  const [updateActionError, setUpdateActionError] = useState("")
-  const showMacManualUpdate =
-    updater.installationSource === "mac_app" &&
-    Boolean(updater.targetVersion) &&
-    (updater.status === "available" || updater.status === "error")
+  const [cacheStats, setCacheStats] = useState<MessageCacheStats>()
+  const [cacheClearing, setCacheClearing] = useState(false)
 
   useEffect(() => {
-    let disposed = false
-    let receivedUpdate = false
-
-    void Promise.all([window.desktop.settings.get(), window.desktop.app.info()]).then(
-      ([nextSettings, nextInfo]) => {
-        setSettings(nextSettings)
-        setAppInfo(nextInfo)
-      },
-    )
-    const unsubscribe = window.desktop.updater.subscribe((state) => {
-      receivedUpdate = true
-      setUpdater(state)
+    void Promise.all([
+      window.desktop.settings.get(),
+      window.desktop.app.info(),
+      window.desktop.messageCache.getStats(target).catch(() => undefined),
+    ]).then(([nextSettings, nextInfo, nextCacheStats]) => {
+      setSettings(nextSettings)
+      setAppInfo(nextInfo)
+      setCacheStats(nextCacheStats)
     })
-    void window.desktop.updater
-      .getState()
-      .then((state) => {
-        if (!disposed && !receivedUpdate) setUpdater(state)
-      })
-      .catch(() => undefined)
+  }, [target])
 
-    return () => {
-      disposed = true
-      unsubscribe()
+  async function clearMessageCache() {
+    if (!window.confirm("清理当前账户的本地消息缓存？")) return
+    setCacheClearing(true)
+    setSettingsError("")
+    try {
+      const managed = await clearManagedMessageCache(target)
+      if (!managed) await window.desktop.messageCache.clearUser(target)
+      setCacheStats(await window.desktop.messageCache.getStats(target))
+    } catch {
+      setSettingsError("本地消息缓存清理失败，请重试")
+    } finally {
+      setCacheClearing(false)
     }
-  }, [])
+  }
 
   async function updateSettings(patch: DesktopSettingsPatch) {
     setSettingsError("")
@@ -384,6 +557,12 @@ function DesktopSettingsPanel({
               <span className="desktop-status-pill">运行正常</span>
             </div>
             {settingsError && <p role="alert">{settingsError}</p>}
+            <DesktopAboutSettingsSection
+              appInfo={appInfo}
+              state={updater}
+              onClose={() => onOpenChange(false)}
+              onStateChange={onUpdaterChange}
+            />
             <section className="desktop-setting-section">
               <div className="desktop-setting-section-heading">
                 <MonitorCog size={17} />
@@ -465,6 +644,31 @@ function DesktopSettingsPanel({
             </section>
             <section className="desktop-setting-section">
               <div className="desktop-setting-section-heading">
+                <HardDriveDownload size={17} />
+                <div>
+                  <h3>本地消息缓存</h3>
+                  <p>最近消息的本机恢复数据</p>
+                </div>
+              </div>
+              <div className="desktop-setting-card">
+                <span>
+                  <strong>{formatCacheSize(cacheStats?.payloadBytes ?? 0)}</strong>
+                  <small>{cacheStatusText(cacheStats?.status)}</small>
+                </span>
+                <button
+                  aria-label="清理本地消息缓存"
+                  className="desktop-icon-action"
+                  disabled={cacheClearing}
+                  onClick={() => void clearMessageCache()}
+                  title="清理本地消息缓存"
+                  type="button"
+                >
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            </section>
+            <section className="desktop-setting-section">
+              <div className="desktop-setting-section-heading">
                 <Server size={17} />
                 <div>
                   <h3>工作空间</h3>
@@ -506,144 +710,223 @@ function DesktopSettingsPanel({
               </button>
               {removeError && <p role="alert">{removeError}</p>}
             </section>
-            <section className="desktop-setting-section">
-              <div className="desktop-setting-section-heading">
-                <CircleHelp size={17} />
-                <div>
-                  <h3>关于即应</h3>
-                  <p>版本、更新与诊断工具</p>
-                </div>
-              </div>
-              <div className="desktop-setting-card desktop-about-card">
-                <div className="desktop-about-icon">
-                  <HardDriveDownload size={18} />
-                </div>
-                <div className="min-w-0">
-                  <strong>当前版本</strong>
-                  <p>
-                    {appInfo
-                      ? `${appInfo.version} · ${appInfo.platform} ${appInfo.arch} · ${releaseChannelLabel(appInfo.channel)}`
-                      : "正在读取"}
-                  </p>
-                  <small>{updateStatusText(updater)}</small>
-                  {updater.targetVersion && <small>目标版本：{updater.targetVersion}</small>}
-                  <small>安装来源：{installationSourceLabel(updater.installationSource)}</small>
-                </div>
-                <button
-                  className="desktop-icon-action"
-                  aria-label="检查更新"
-                  disabled={
-                    updater.status === "checking" ||
-                    updater.status === "downloading" ||
-                    updater.status === "installing"
-                  }
-                  onClick={() => void window.desktop.updater.check().then(setUpdater)}
-                  title="检查更新"
-                >
-                  <RefreshCw size={17} />
-                </button>
-              </div>
-              {updater.targetVersion && (
-                <button
-                  className="desktop-release-link"
-                  onClick={() => void window.desktop.updater.openReleasePage()}
-                >
-                  <ExternalLink size={15} />
-                  查看发布内容
-                </button>
-              )}
-              {updater.status === "available" &&
-                (updater.installMode === "ota" ? (
-                  <button
-                    className="desktop-primary-action"
-                    disabled={!updater.retryable}
-                    onClick={() => void window.desktop.updater.download()}
-                  >
-                    <Download size={16} />
-                    {updater.installationSource === "mac_app"
-                      ? "下载并自动更新"
-                      : `下载 ${updater.targetVersion}`}
-                  </button>
-                ) : (
-                  <button
-                    className="desktop-primary-action"
-                    onClick={() => void window.desktop.updater.openManualDownload()}
-                  >
-                    <Download size={16} />
-                    {updater.manualAction?.label ?? "手动升级"}
-                  </button>
-                ))}
-              {updater.status === "manual" && updater.manualAction && (
-                <button
-                  className="desktop-primary-action"
-                  onClick={() => void window.desktop.updater.openManualDownload()}
-                >
-                  <Download size={16} />
-                  {updater.manualAction.label}
-                </button>
-              )}
-              {updater.status === "downloaded" && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button className="desktop-secondary-action" onClick={() => onOpenChange(false)}>
-                    稍后
-                  </button>
-                  <button
-                    className="desktop-primary-action"
-                    onClick={() => {
-                      setUpdateActionError("")
-                      void window.desktop.updater.install().then((result) => {
-                        if (result.status === "started") return
-                        setUpdateActionError(
-                          result.reason === "install_failed"
-                            ? "自动安装未能启动，请重试检查或使用手动更新"
-                            : "仍有传输或更新准备未完成，请稍后重试",
-                        )
-                      })
-                    }}
-                  >
-                    <Sparkles size={16} />
-                    安装并重启
-                  </button>
-                </div>
-              )}
-              {updater.status === "error" && updater.retryable && (
-                <button
-                  className="desktop-primary-action"
-                  onClick={() => void window.desktop.updater.check().then(setUpdater)}
-                >
-                  重试检查
-                </button>
-              )}
-              {showMacManualUpdate && (
-                <div className="desktop-mac-update-guide">
-                  <strong>手动更新 macOS</strong>
-                  <p>自动更新不可用时，可以下载安装包覆盖当前版本，聊天记录和本地设置会保留。</p>
-                  <ol>
-                    <li>下载并打开 DMG 安装包</li>
-                    <li>将 MagicChat 拖入“应用程序”，选择替换</li>
-                    <li>重新打开 MagicChat，确认版本已更新</li>
-                  </ol>
-                  <button
-                    className="desktop-primary-action"
-                    onClick={() => void window.desktop.updater.openManualDownload()}
-                  >
-                    <Download size={16} />
-                    下载 macOS 安装包
-                  </button>
-                </div>
-              )}
-              {updateActionError && <p role="alert">{updateActionError}</p>}
-              <button
-                className="desktop-secondary-action"
-                onClick={() => void window.desktop.diagnostics.export()}
-              >
-                导出脱敏诊断
-              </button>
-            </section>
           </div>
         )}
       </SheetContent>
     </Sheet>
+  )
+}
+
+function formatCacheSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`
+}
+
+function cacheStatusText(status: MessageCacheStats["status"] | undefined): string {
+  if (status === "available") return "缓存可用，不包含附件文件"
+  if (status === "rebuilding") return "正在重建缓存，在线聊天不受影响"
+  if (status === "degraded") return "缓存暂不可用，已切换为内存模式"
+  return "正在读取缓存状态"
+}
+
+function DesktopAboutSettingsSection({
+  appInfo,
+  onClose,
+  onStateChange,
+  state,
+}: {
+  appInfo?: DesktopAppInfo
+  onClose(): void
+  onStateChange(state: UpdaterState): void
+  state: UpdaterState
+}) {
+  const [updateActionError, setUpdateActionError] = useState("")
+  const { actionPending, runUpdateAction } = useDesktopUpdateAction(setUpdateActionError)
+  const showMacManualUpdate =
+    state.installationSource === "mac_app" &&
+    Boolean(state.targetVersion) &&
+    (state.status === "available" || state.status === "error")
+
+  function runSettingsUpdateAction(action: () => Promise<void>) {
+    setUpdateActionError("")
+    void runUpdateAction(action)
+  }
+
+  return (
+    <section className="desktop-setting-section">
+      <div className="desktop-setting-section-heading">
+        <CircleHelp size={17} />
+        <div>
+          <h3>关于即应</h3>
+          <p>版本、更新与诊断工具</p>
+        </div>
+      </div>
+      <div className="desktop-setting-card desktop-about-card">
+        <div className="desktop-about-icon">
+          <HardDriveDownload size={18} />
+        </div>
+        <div className="min-w-0">
+          <strong>当前版本</strong>
+          <p>
+            {appInfo
+              ? `${appInfo.version} · ${appInfo.platform} ${appInfo.arch} · ${releaseChannelLabel(appInfo.channel)}`
+              : "正在读取"}
+          </p>
+          <small>{updateStatusText(state)}</small>
+          {state.targetVersion && <small>目标版本：{state.targetVersion}</small>}
+          <small>安装来源：{installationSourceLabel(state.installationSource)}</small>
+        </div>
+        <button
+          aria-label="检查更新"
+          className="desktop-icon-action"
+          disabled={
+            actionPending ||
+            state.status === "checking" ||
+            state.status === "downloading" ||
+            state.status === "installing"
+          }
+          onClick={() =>
+            runSettingsUpdateAction(async () => {
+              onStateChange(await window.desktop.updater.check())
+            })
+          }
+          title="检查更新"
+          type="button"
+        >
+          <RefreshCw size={17} />
+        </button>
+      </div>
+      {state.targetVersion && (
+        <button
+          className="desktop-release-link"
+          disabled={actionPending}
+          onClick={() =>
+            runSettingsUpdateAction(async () => {
+              await window.desktop.updater.openReleasePage()
+            })
+          }
+          type="button"
+        >
+          <ExternalLink size={15} />
+          查看发布内容
+        </button>
+      )}
+      {state.status === "available" &&
+        (state.installMode === "ota" ? (
+          <button
+            className="desktop-primary-action"
+            disabled={actionPending || !state.retryable}
+            onClick={() =>
+              runSettingsUpdateAction(async () => {
+                await window.desktop.updater.download()
+              })
+            }
+            type="button"
+          >
+            <Download size={16} />
+            {state.installationSource === "mac_app"
+              ? "下载并自动更新"
+              : `下载 ${state.targetVersion}`}
+          </button>
+        ) : (
+          <button
+            className="desktop-primary-action"
+            disabled={actionPending}
+            onClick={() =>
+              runSettingsUpdateAction(async () => {
+                await window.desktop.updater.openManualDownload()
+              })
+            }
+            type="button"
+          >
+            <Download size={16} />
+            {state.manualAction?.label ?? "手动升级"}
+          </button>
+        ))}
+      {state.status === "manual" && state.manualAction && (
+        <button
+          className="desktop-primary-action"
+          disabled={actionPending}
+          onClick={() =>
+            runSettingsUpdateAction(async () => {
+              await window.desktop.updater.openManualDownload()
+            })
+          }
+          type="button"
+        >
+          <Download size={16} />
+          {state.manualAction.label}
+        </button>
+      )}
+      {state.status === "downloaded" && (
+        <div className="grid grid-cols-2 gap-2">
+          <button className="desktop-secondary-action" onClick={onClose} type="button">
+            稍后
+          </button>
+          <button
+            className="desktop-primary-action"
+            disabled={actionPending}
+            onClick={() =>
+              runSettingsUpdateAction(async () => {
+                const result = await window.desktop.updater.install()
+                if (result.status === "started") return
+                setUpdateActionError(getUpdateInstallErrorMessage(result.reason))
+              })
+            }
+            type="button"
+          >
+            <Sparkles size={16} />
+            安装并重启
+          </button>
+        </div>
+      )}
+      {state.status === "error" && state.retryable && (
+        <button
+          className="desktop-primary-action"
+          disabled={actionPending}
+          onClick={() =>
+            runSettingsUpdateAction(async () => {
+              onStateChange(await window.desktop.updater.check())
+            })
+          }
+          type="button"
+        >
+          重试检查
+        </button>
+      )}
+      {showMacManualUpdate && (
+        <div className="desktop-mac-update-guide">
+          <strong>手动更新 macOS</strong>
+          <p>自动更新不可用时，可以下载安装包覆盖当前版本，聊天记录和本地设置会保留。</p>
+          <ol>
+            <li>下载并打开 DMG 安装包</li>
+            <li>将 MagicChat 拖入“应用程序”，选择替换</li>
+            <li>重新打开 MagicChat，确认版本已更新</li>
+          </ol>
+          <button
+            className="desktop-primary-action"
+            disabled={actionPending}
+            onClick={() =>
+              runSettingsUpdateAction(async () => {
+                await window.desktop.updater.openManualDownload()
+              })
+            }
+            type="button"
+          >
+            <Download size={16} />
+            下载 macOS 安装包
+          </button>
+        </div>
+      )}
+      {updateActionError && <p role="alert">{updateActionError}</p>}
+      <button
+        className="desktop-secondary-action"
+        onClick={() => void window.desktop.diagnostics.export()}
+      >
+        导出脱敏诊断
+      </button>
+    </section>
   )
 }
 
@@ -663,6 +946,22 @@ function updateStatusText(state: UpdaterState): string {
     : state.status === "downloaded"
       ? "更新已下载"
       : `发现 ${state.targetVersion ?? "新版本"}`
+}
+
+function updatePromptLabel(state: UpdaterState): string {
+  if (state.status === "downloading") return `下载中 ${Math.round(state.progress ?? 0)}%`
+  if (state.status === "downloaded") return "重启更新"
+  if (state.status === "installing") return "正在更新"
+  if (state.status === "error") return "更新失败"
+  return "新版本"
+}
+
+function getUpdateInstallErrorMessage(reason: UpdaterInstallResult["reason"]): string {
+  if (reason === "install_failed") return "自动安装未能启动，请重试检查或使用手动更新"
+  if (reason === "active_transfers") return "仍有文件正在传输，请完成或取消传输后重试"
+  if (reason === "install_in_progress") return "更新安装已在进行中"
+  if (reason === "not_downloaded") return "更新尚未下载完成，请稍后重试"
+  return "更新准备未完成，请稍后重试"
 }
 
 function installationSourceLabel(source: UpdaterState["installationSource"]): string {

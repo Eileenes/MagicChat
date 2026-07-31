@@ -26,11 +26,13 @@ import {
   DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogTitle,
 } from "@/components/ui/dialog"
 import { UserProfilePopover } from "@/components/user-profile-popover"
 import { SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 
 type GroupConversationInfoProps = {
   conversationId: string
@@ -48,10 +50,15 @@ export function GroupConversationInfo({ conversationId }: GroupConversationInfoP
     removeGroupConversationMember,
     setGroupConversationPrivate,
     setGroupConversationPublic,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
     updateGroupConversationAvatar,
   } = useClientData()
   const conversation = getConversation(conversationId)
+  const [announcementClearConfirmOpen, setAnnouncementClearConfirmOpen] = useState(false)
+  const [announcementEditorOpen, setAnnouncementEditorOpen] = useState(false)
+  const [announcementDraft, setAnnouncementDraft] = useState("")
+  const [announcementSaving, setAnnouncementSaving] = useState(false)
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [avatarSaving, setAvatarSaving] = useState(false)
   const [dissolveConfirmOpen, setDissolveConfirmOpen] = useState(false)
@@ -90,12 +97,16 @@ export function GroupConversationInfo({ conversationId }: GroupConversationInfoP
   const canManageMembers = canManageGroupMembers(currentMember?.role)
   const canManageProjects = canManageGroupProjects(currentMember?.role)
   const canChangeName = canManageGroupName(currentMember?.role)
+  const canChangeAnnouncement = canManageGroupAnnouncement(currentMember?.role)
   const canLeaveGroup = Boolean(currentMember && currentMember.role !== "owner")
   const canDissolveGroup = currentMember?.role === "owner"
   const canChangeVisibility = currentMember?.role === "owner"
   const isPublicGroup = activeConversation.visibility === "public"
   const conversationName = activeConversation.name
   const conversationAvatar = activeConversation.avatar
+  const normalizedAnnouncementDraft = announcementDraft.trim()
+  const announcementDraftLength = Array.from(normalizedAnnouncementDraft).length
+  const announcementDraftTooLong = announcementDraftLength > 200
   const draftAvatar =
     draftAvatarOverride?.conversationId === activeConversation.id &&
     draftAvatarOverride.baseAvatar === conversationAvatar
@@ -141,6 +152,28 @@ export function GroupConversationInfo({ conversationId }: GroupConversationInfoP
       throw error
     } finally {
       setNameSaving(false)
+    }
+  }
+
+  function openAnnouncementEditor() {
+    if (!canChangeAnnouncement || announcementSaving) return
+    setAnnouncementDraft(activeConversation.announcement ?? "")
+    setAnnouncementEditorOpen(true)
+  }
+
+  async function handleAnnouncementSave(announcement: string) {
+    if (!canChangeAnnouncement || announcementSaving) return
+
+    setAnnouncementSaving(true)
+    try {
+      await updateGroupConversationAnnouncement(activeConversation.id, announcement)
+      setAnnouncementClearConfirmOpen(false)
+      setAnnouncementEditorOpen(false)
+      toast.success(announcement.trim() ? "群公告已保存" : "群公告已清空")
+    } catch (error) {
+      toast.error(getErrorMessage(error, "修改群公告失败"))
+    } finally {
+      setAnnouncementSaving(false)
     }
   }
 
@@ -248,6 +281,12 @@ export function GroupConversationInfo({ conversationId }: GroupConversationInfoP
             saving={nameSaving}
           />
 
+          <GroupConversationAnnouncementControl
+            announcement={activeConversation.announcement ?? ""}
+            canChange={canChangeAnnouncement}
+            onEdit={openAnnouncementEditor}
+          />
+
           <GroupConversationProjects
             availableProjects={projects}
             canManage={canManageProjects}
@@ -316,6 +355,103 @@ export function GroupConversationInfo({ conversationId }: GroupConversationInfoP
           <CustomAvatarPicker onSave={handleAvatarSave} saving={avatarSaving} />
         </DialogContent>
       </Dialog>
+      <Dialog
+        open={announcementEditorOpen}
+        onOpenChange={(open) => {
+          if (!announcementSaving) setAnnouncementEditorOpen(open)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogTitle>修改群公告</DialogTitle>
+          <DialogDescription>
+            群公告为纯文本，最多 200 个字符。清空内容即可移除公告。
+          </DialogDescription>
+          <div className="grid gap-2">
+            <Label htmlFor="group-announcement-editor">群公告</Label>
+            <Textarea
+              aria-invalid={announcementDraftTooLong}
+              className="min-h-32 resize-y"
+              disabled={announcementSaving}
+              id="group-announcement-editor"
+              onChange={(event) => setAnnouncementDraft(event.target.value)}
+              placeholder="输入群公告"
+              value={announcementDraft}
+            />
+            <div
+              className={
+                announcementDraftTooLong
+                  ? "text-right text-xs text-destructive"
+                  : "text-right text-xs text-muted-foreground"
+              }
+            >
+              {announcementDraftLength}/200
+            </div>
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button
+              disabled={announcementSaving || !activeConversation.announcement}
+              onClick={() => setAnnouncementClearConfirmOpen(true)}
+              type="button"
+              variant="outline"
+            >
+              清空公告
+            </Button>
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button disabled={announcementSaving} type="button" variant="outline">
+                  取消
+                </Button>
+              </DialogClose>
+              <Button
+                disabled={
+                  announcementSaving ||
+                  announcementDraftTooLong ||
+                  normalizedAnnouncementDraft === (activeConversation.announcement ?? "").trim()
+                }
+                onClick={() => void handleAnnouncementSave(normalizedAnnouncementDraft)}
+                type="button"
+              >
+                保存
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog
+        open={announcementClearConfirmOpen}
+        onOpenChange={(open) => {
+          if (!announcementSaving) setAnnouncementClearConfirmOpen(open)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认清空群公告</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要清空当前群公告吗？清空后，群聊页面将不再展示公告。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={announcementSaving}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={
+                announcementSaving || !canChangeAnnouncement || !activeConversation.announcement
+              }
+              onClick={(event) => {
+                event.preventDefault()
+                void handleAnnouncementSave("")
+              }}
+              variant="destructive"
+            >
+              {announcementSaving && (
+                <span className="mr-1 inline-flex">
+                  <span className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                </span>
+              )}
+              清空公告
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <SheetFooter className="border-t">
         {canChangeVisibility && (
           <Button
@@ -620,6 +756,38 @@ function GroupConversationNameControl({
   )
 }
 
+function GroupConversationAnnouncementControl({
+  announcement,
+  canChange,
+  onEdit,
+}: {
+  announcement: string
+  canChange: boolean
+  onEdit: () => void
+}) {
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label>群公告</Label>
+        {canChange && (
+          <Button
+            aria-label="修改群公告"
+            onClick={onEdit}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+          >
+            <Pencil className="size-4" />
+          </Button>
+        )}
+      </div>
+      <div className="min-h-16 rounded-md border bg-muted/30 px-3 py-2 text-sm break-words whitespace-pre-wrap text-muted-foreground">
+        {announcement || "暂无群公告"}
+      </div>
+    </div>
+  )
+}
+
 function GroupConversationAvatarControl({
   avatar,
   canChangeAvatar,
@@ -744,17 +912,18 @@ function getMemberRoleLabel(member: ClientConversationMember) {
   return "成员"
 }
 
-const memberRoleOrder: Record<ClientConversationMember["role"], number> = {
-  owner: 0,
-  admin: 1,
-  member: 2,
-}
-
 function compareConversationMembers(
   left: ClientConversationMember,
   right: ClientConversationMember,
 ) {
-  return memberRoleOrder[left.role] - memberRoleOrder[right.role]
+  return getConversationMemberOrder(left) - getConversationMemberOrder(right)
+}
+
+function getConversationMemberOrder(member: ClientConversationMember) {
+  if (member.role === "owner") return 0
+  if (member.role === "admin") return 1
+  if (member.type === "app") return 2
+  return 3
 }
 
 function canManageGroupAvatar(role: ClientConversationMember["role"] | undefined) {
@@ -762,6 +931,10 @@ function canManageGroupAvatar(role: ClientConversationMember["role"] | undefined
 }
 
 function canManageGroupName(role: ClientConversationMember["role"] | undefined) {
+  return role === "owner" || role === "admin"
+}
+
+function canManageGroupAnnouncement(role: ClientConversationMember["role"] | undefined) {
   return role === "owner" || role === "admin"
 }
 

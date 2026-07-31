@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
+import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DesktopRoot } from "./desktop-root"
@@ -24,7 +25,12 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/app/App", () => ({
-  default: () => <button onClick={() => mocks.openSettings?.()}>打开设置</button>,
+  default: ({ updatePrompt }: { updatePrompt?: ReactNode }) => (
+    <div>
+      <aside aria-label="应用侧边栏">{updatePrompt}</aside>
+      <button onClick={() => mocks.openSettings?.()}>打开设置</button>
+    </div>
+  ),
 }))
 
 vi.mock("@/lib/desktop-host", () => ({
@@ -129,6 +135,46 @@ describe("桌面设置服务器管理", () => {
     await waitFor(() => expect(mocks.messageNotificationSoundEnabled?.()).toBe(false))
   })
 
+  it("将本地消息缓存展示在通知与隐私下方并右对齐清理按钮", async () => {
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+
+    const notificationHeading = screen.getByRole("heading", { name: "通知与隐私" })
+    const cacheHeading = screen.getByRole("heading", { name: "本地消息缓存" })
+    expect(
+      notificationHeading.compareDocumentPosition(cacheHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    const cacheButton = screen.getByRole("button", { name: "清理本地消息缓存" })
+    expect(cacheButton).toHaveClass("desktop-icon-action")
+
+    const source = await readFile(path.resolve(process.cwd(), "src/renderer/styles.css"), "utf8")
+    expect(source).toMatch(/\.desktop-icon-action\s*\{[^}]*justify-self:\s*end/)
+  })
+
+  it("确认后清理当前账户缓存并刷新统计", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await user.click(screen.getByRole("button", { name: "清理本地消息缓存" }))
+
+    await waitFor(() => expect(bridge.messageCache.clearUser).toHaveBeenCalledOnce())
+    expect(bridge.messageCache.clearUser).toHaveBeenCalledWith({
+      id: profile.id,
+      normalizedUrl: profile.normalizedUrl,
+      userId: profile.lastUserId ?? "anonymous",
+    })
+    expect(bridge.messageCache.getStats).toHaveBeenCalledTimes(2)
+  })
+
   it("设置保存失败时保留原值并显示错误", async () => {
     const bridge = createDesktopBridge()
     vi.mocked(bridge.settings.set).mockRejectedValueOnce(
@@ -151,6 +197,283 @@ describe("桌面设置服务器管理", () => {
     expect(mocks.messageNotificationSoundEnabled?.()).toBe(true)
   })
 
+  it("发现 OTA 新版本后在左侧栏底部提供图标下载入口", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      installMode: "ota",
+      installationSource: "nsis",
+      retryable: true,
+      status: "available",
+      targetVersion: "1.1.0",
+    })
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    const updateButton = await screen.findByRole("button", { name: "新版本" })
+    expect(updateButton).toHaveAttribute("title", "新版本 · 即应 1.1.0")
+    expect(updateButton).toHaveTextContent("新版本")
+    expect(screen.getByRole("status")).toHaveTextContent("新版本")
+    expect(updateButton.closest("aside")).toHaveAccessibleName("应用侧边栏")
+    await user.click(updateButton)
+
+    expect(bridge.updater.download).toHaveBeenCalledOnce()
+  })
+
+  it("未配置服务器时仍订阅更新但不展示入口", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      installMode: "ota",
+      installationSource: "nsis",
+      retryable: true,
+      status: "available",
+      targetVersion: "1.1.0",
+    })
+    vi.mocked(bridge.servers.list).mockResolvedValue([])
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+
+    render(<DesktopRoot />)
+
+    expect(await screen.findByRole("heading", { name: "开始使用即应" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "新版本" })).not.toBeInTheDocument()
+    expect(bridge.updater.subscribe).toHaveBeenCalledOnce()
+    expect(bridge.updater.getState).toHaveBeenCalledOnce()
+  })
+
+  it("下载更新时展示进度、禁用重复操作并遵循 reduced-motion", async () => {
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: createDesktopBridge({
+        currentVersion: "1.0.0",
+        installMode: "ota",
+        installationSource: "nsis",
+        progress: 42.4,
+        retryable: false,
+        status: "downloading",
+        targetVersion: "1.1.0",
+      }),
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    const updateButton = await screen.findByRole("button", { name: "下载中 42%" })
+    expect(updateButton).toBeEnabled()
+    expect(updateButton).toHaveAttribute("aria-disabled", "true")
+    expect(updateButton).toHaveTextContent("下载中 42%")
+    expect(screen.getByRole("status")).toHaveTextContent("下载中 42%")
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite")
+    expect(screen.getByRole("status")).toHaveAttribute("aria-atomic", "true")
+    expect(updateButton.querySelector("svg")).toHaveClass("motion-safe:animate-spin")
+    expect(updateButton.querySelector("svg")).not.toHaveClass("animate-spin")
+    updateButton.focus()
+    expect(updateButton).toHaveFocus()
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("下载中 42% · 1.1.0")
+    await user.click(updateButton)
+    expect(window.desktop.updater.download).not.toHaveBeenCalled()
+  })
+
+  it("更新状态变化时同步刷新无障碍实时文本", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      installMode: "ota",
+      installationSource: "nsis",
+      retryable: true,
+      status: "available",
+      targetVersion: "1.1.0",
+    })
+    let publish: ((state: UpdaterState) => void) | undefined
+    vi.mocked(bridge.updater.subscribe).mockImplementation((listener) => {
+      publish = listener
+      return () => undefined
+    })
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    render(<DesktopRoot />)
+
+    expect(await screen.findByRole("status")).toHaveTextContent("新版本")
+
+    act(() => {
+      publish?.({
+        currentVersion: "1.0.0",
+        installMode: "ota",
+        installationSource: "nsis",
+        progress: 42.4,
+        retryable: false,
+        status: "downloading",
+        targetVersion: "1.1.0",
+      })
+    })
+
+    expect(screen.getByRole("status")).toHaveTextContent("下载中 42%")
+    expect(screen.getByRole("button", { name: "下载中 42%" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    )
+  })
+
+  it("下载调用失败时展示可恢复提示", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      installMode: "ota",
+      installationSource: "nsis",
+      retryable: true,
+      status: "available",
+      targetVersion: "1.1.0",
+    })
+    vi.mocked(bridge.updater.download).mockRejectedValue(new Error("IPC unavailable"))
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "新版本" }))
+
+    expect(await screen.findByText("更新操作失败，请稍后重试")).toBeInTheDocument()
+  })
+
+  it("手动升级来源从左下角入口打开匹配的安装包", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      installMode: "manual",
+      installationSource: "deb",
+      manualAction: { label: "下载 deb" },
+      retryable: false,
+      status: "available",
+      targetVersion: "1.1.0",
+    })
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "新版本" }))
+
+    expect(mocks.openManual).toHaveBeenCalledOnce()
+    expect(bridge.updater.download).not.toHaveBeenCalled()
+  })
+
+  it("更新下载完成后从左下角执行重启安装", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      installMode: "ota",
+      installationSource: "nsis",
+      progress: 100,
+      retryable: true,
+      status: "downloaded",
+      targetVersion: "1.1.0",
+    })
+    vi.mocked(bridge.updater.install).mockResolvedValue({ status: "started" })
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "重启更新" }))
+
+    expect(bridge.updater.install).toHaveBeenCalledOnce()
+  })
+
+  it("安装被活跃传输阻止时展示准确提示", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      installMode: "ota",
+      installationSource: "nsis",
+      progress: 100,
+      retryable: true,
+      status: "downloaded",
+      targetVersion: "1.1.0",
+    })
+    vi.mocked(bridge.updater.install).mockResolvedValue({
+      reason: "active_transfers",
+      status: "blocked",
+    })
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "重启更新" }))
+
+    expect(await screen.findByText("仍有文件正在传输，请完成或取消传输后重试")).toBeInTheDocument()
+  })
+
+  it("可重试错误从左下角入口重新检查更新", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      errorCode: "network",
+      installMode: "ota",
+      installationSource: "nsis",
+      retryable: true,
+      status: "error",
+      targetVersion: "1.1.0",
+    })
+    vi.mocked(bridge.updater.check).mockResolvedValue({
+      currentVersion: "1.0.0",
+      installMode: "ota",
+      installationSource: "nsis",
+      retryable: false,
+      status: "idle",
+    })
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "更新失败" }))
+
+    expect(bridge.updater.check).toHaveBeenCalledOnce()
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "更新失败" })).not.toBeInTheDocument(),
+    )
+  })
+
+  it("macOS 更新入口同样位于左侧栏底部", async () => {
+    const bridge = createDesktopBridge({
+      currentVersion: "1.0.0",
+      installMode: "ota",
+      installationSource: "mac_app",
+      retryable: true,
+      status: "available",
+      targetVersion: "1.1.0",
+    })
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    render(<DesktopRoot />)
+
+    expect(
+      (await screen.findByRole("button", { name: "新版本" })).closest("aside"),
+    ).toHaveAccessibleName("应用侧边栏")
+    expect(bridge.app.info).not.toHaveBeenCalled()
+  })
+
+  it("没有新版本时不显示左下角更新入口", async () => {
+    render(<DesktopRoot />)
+
+    await screen.findByRole("button", { name: "打开设置" })
+    expect(screen.queryByRole("button", { name: "新版本" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "重启更新" })).not.toBeInTheDocument()
+  })
+
   it("展示实验性更新信息并支持键盘触发手动升级", async () => {
     const bridge = createDesktopBridge({
       currentVersion: "1.0.0",
@@ -170,6 +493,12 @@ describe("桌面设置服务器管理", () => {
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
     expect(await screen.findByText("目标版本：1.1.0")).toBeInTheDocument()
+    expect(
+      screen
+        .getByRole("heading", { name: "关于即应" })
+        .compareDocumentPosition(screen.getByRole("heading", { name: "应用行为" })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     expect(bridge.updater.getState).toHaveBeenCalledOnce()
     expect(screen.getByText("安装来源：Linux deb")).toBeInTheDocument()
     expect(screen.queryByLabelText("更新说明")).not.toBeInTheDocument()
@@ -182,6 +511,34 @@ describe("桌面设置服务器管理", () => {
     manual.focus()
     await user.keyboard("{Enter}")
     expect(mocks.openManual).toHaveBeenCalledOnce()
+  })
+
+  it("设置页捕获更新 Bridge 异常并在操作完成前阻止重复调用", async () => {
+    const bridge = createDesktopBridge()
+    let rejectCheck: (reason?: unknown) => void = () => undefined
+    const checkPromise = new Promise<UpdaterState>((_, reject) => {
+      rejectCheck = reject
+    })
+    vi.mocked(bridge.updater.check).mockReturnValue(checkPromise)
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    const checkButton = await screen.findByRole("button", { name: "检查更新" })
+    await user.click(checkButton)
+
+    expect(checkButton).toBeDisabled()
+    await user.click(checkButton)
+    expect(bridge.updater.check).toHaveBeenCalledOnce()
+
+    await act(async () => rejectCheck(new Error("IPC unavailable")))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("更新操作失败，请稍后重试")
+    await waitFor(() => expect(checkButton).toBeEnabled())
   })
 
   it("订阅事件先到时不使用较旧的状态快照", async () => {
@@ -299,6 +656,13 @@ function createDesktopBridge(
     selectedServerId: profile.id,
   }
   return {
+    asr: {
+      close: vi.fn(),
+      commit: vi.fn(),
+      connect: vi.fn(),
+      sendFrame: vi.fn(),
+      subscribe: vi.fn().mockReturnValue(unsubscribe),
+    },
     app: {
       info: vi.fn().mockResolvedValue({
         arch: "arm64",
@@ -324,6 +688,27 @@ function createDesktopBridge(
       openLocation: vi.fn(),
       pick: vi.fn(),
       upload: vi.fn(),
+    },
+    messageCache: {
+      clearConversation: vi.fn(),
+      clearUser: vi.fn(),
+      commitAfter: vi.fn(),
+      commitBefore: vi.fn(),
+      commitLatest: vi.fn(),
+      getById: vi.fn(),
+      getStats: vi.fn().mockResolvedValue({
+        conversationCount: 0,
+        messageCount: 0,
+        payloadBytes: 0,
+        status: "available",
+      }),
+      getSyncState: vi.fn(),
+      listSyncStates: vi.fn(),
+      readAround: vi.fn(),
+      readBefore: vi.fn(),
+      readRecent: vi.fn(),
+      removeMessage: vi.fn(),
+      upsert: vi.fn(),
     },
     navigation: {
       subscribe: vi.fn().mockReturnValue(unsubscribe),
