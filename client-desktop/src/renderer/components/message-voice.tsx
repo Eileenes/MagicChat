@@ -10,7 +10,12 @@ type MessageVoiceProps = {
   voice: ClientVoiceMessageBody
 }
 
-let activeVoiceAudio: HTMLAudioElement | null = null
+type ActiveVoicePlayback = {
+  audio: HTMLAudioElement
+  stop: () => void
+}
+
+let activeVoicePlayback: ActiveVoicePlayback | null = null
 const playbackStartTimeoutMS = 15_000
 type PlaybackState = "error" | "idle" | "loading" | "paused" | "playing"
 
@@ -18,7 +23,10 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
   const abortRef = React.useRef<AbortController | null>(null)
   const objectURLRef = React.useRef<string | null>(null)
+  const playbackAttemptRef = React.useRef(0)
   const playbackStateRef = React.useRef<PlaybackState>("idle")
+  const reloadBeforePlayRef = React.useRef(false)
+  const suppressMediaErrorRef = React.useRef(false)
   const timeoutRef = React.useRef<number | null>(null)
   const [currentTime, setCurrentTime] = React.useState(0)
   const [playbackState, setPlaybackState] = React.useState<PlaybackState>("idle")
@@ -39,9 +47,11 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
   }
 
   function releaseSource(audio: HTMLAudioElement | null) {
-    if (audio && activeVoiceAudio === audio) activeVoiceAudio = null
+    if (audio && activeVoicePlayback?.audio === audio) activeVoicePlayback = null
+    reloadBeforePlayRef.current = false
     audio?.pause()
     if (audio) {
+      suppressMediaErrorRef.current = true
       audio.removeAttribute("src")
       audio.load()
     }
@@ -51,6 +61,7 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
 
   function failPlayback(message = "语音播放失败，请重试") {
     if (playbackStateRef.current === "error") return
+    playbackAttemptRef.current += 1
     updatePlaybackState("error")
     clearPlaybackAttempt()
     releaseSource(audioRef.current)
@@ -60,26 +71,47 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
 
   React.useEffect(
     () => () => {
+      playbackAttemptRef.current += 1
       clearPlaybackAttempt()
       releaseSource(audioRef.current)
     },
     [],
   )
 
+  function stopPlaybackAttempt(attemptId: number, audio: HTMLAudioElement) {
+    if (playbackAttemptRef.current !== attemptId) return
+    playbackAttemptRef.current += 1
+    clearPlaybackAttempt()
+    if (activeVoicePlayback?.audio === audio) activeVoicePlayback = null
+    audio.pause()
+    if (playbackStateRef.current !== "error") updatePlaybackState("paused")
+  }
+
   async function handlePlayToggle() {
     const audio = audioRef.current
     if (!audio || playbackStateRef.current === "loading") return
 
-    if (!audio.paused) {
-      audio.pause()
+    if (playbackStateRef.current === "playing") {
+      if (activeVoicePlayback?.audio === audio) {
+        activeVoicePlayback.stop()
+      } else {
+        stopPlaybackAttempt(playbackAttemptRef.current, audio)
+      }
       return
     }
 
     clearPlaybackAttempt()
     if (playbackStateRef.current === "error") releaseSource(audio)
     updatePlaybackState("loading")
+    const attemptId = playbackAttemptRef.current + 1
+    playbackAttemptRef.current = attemptId
     const controller = new AbortController()
     abortRef.current = controller
+    if (activeVoicePlayback && activeVoicePlayback.audio !== audio) activeVoicePlayback.stop()
+    activeVoicePlayback = {
+      audio,
+      stop: () => stopPlaybackAttempt(attemptId, audio),
+    }
 
     try {
       if (!audio.src) {
@@ -88,13 +120,18 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
           { signal: controller.signal },
         )
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        objectURLRef.current = URL.createObjectURL(await response.blob())
+        const blob = await response.blob()
+        if (playbackAttemptRef.current !== attemptId) return
+        objectURLRef.current = URL.createObjectURL(blob)
+        suppressMediaErrorRef.current = false
         audio.src = objectURLRef.current
       }
-      if (activeVoiceAudio && activeVoiceAudio !== audio) {
-        activeVoiceAudio.pause()
+      if (reloadBeforePlayRef.current) {
+        // 部分 WebM/M4A 容器播放结束后不能可靠 seek 回开头，重新初始化解码器更稳定。
+        audio.load()
+        reloadBeforePlayRef.current = false
       }
-      activeVoiceAudio = audio
+      suppressMediaErrorRef.current = false
       await Promise.race([
         audio.play(),
         new Promise<never>((_resolve, reject) => {
@@ -104,9 +141,18 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
           )
         }),
       ])
+      if (playbackAttemptRef.current !== attemptId) return
       clearPlaybackAttempt()
       updatePlaybackState("playing")
-    } catch {
+    } catch (cause) {
+      if (playbackAttemptRef.current !== attemptId) return
+      if (cause instanceof DOMException && cause.name === "AbortError") {
+        playbackAttemptRef.current += 1
+        clearPlaybackAttempt()
+        if (activeVoicePlayback?.audio === audio) activeVoicePlayback = null
+        updatePlaybackState("paused")
+        return
+      }
       failPlayback("语音加载或解码失败，请重试")
     }
   }
@@ -126,14 +172,26 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
       <audio
         ref={audioRef}
         onEnded={() => {
+          reloadBeforePlayRef.current = true
+          playbackAttemptRef.current += 1
+          clearPlaybackAttempt()
+          if (activeVoicePlayback?.audio === audioRef.current) activeVoicePlayback = null
           setCurrentTime(0)
           updatePlaybackState("idle")
         }}
-        onError={() => failPlayback()}
-        onPause={() => {
-          if (playbackStateRef.current !== "error") updatePlaybackState("paused")
+        onError={(event) => {
+          if (
+            suppressMediaErrorRef.current ||
+            !objectURLRef.current ||
+            !event.currentTarget.getAttribute("src")
+          ) {
+            return
+          }
+          failPlayback()
         }}
-        onPlay={() => updatePlaybackState("playing")}
+        onPause={() => {
+          if (playbackStateRef.current === "playing") updatePlaybackState("paused")
+        }}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
         preload="none"
       />
@@ -159,13 +217,16 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
         </div>
         <Button
           aria-label={
-            playbackState === "playing"
-              ? "暂停语音"
-              : playbackState === "error"
-                ? "重试语音"
-                : "播放语音"
+            playbackState === "loading"
+              ? "正在加载语音"
+              : playbackState === "playing"
+                ? "暂停语音"
+                : playbackState === "error"
+                  ? "重试语音"
+                  : "播放语音"
           }
           className="hover:bg-background/70 data-[state=open]:bg-background/70 dark:hover:bg-background/70 dark:data-[state=open]:bg-background/70"
+          disabled={playbackState === "loading"}
           onClick={() => void handlePlayToggle()}
           size="icon-sm"
           title={playbackState === "playing" ? "暂停" : playbackState === "error" ? "重试" : "播放"}
