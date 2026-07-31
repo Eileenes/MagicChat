@@ -4,9 +4,10 @@ import { messageManager } from "@/data/messages"
 import {
   normalizeMessageReactionUsers,
   normalizeReactionVersion,
-} from "@/data/message-normalizer"
-import type { MessageReactionsUpdatedEvent } from "@/data/models"
-import { queryKeys, type AuthenticatedTarget } from "@/data/query"
+} from "@/data/messages/message-normalizer"
+import type { MessageReactionsUpdatedEvent } from "@/core/models"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { queryKeys } from "@/data/query"
 
 const REACTION_SNAPSHOT_BATCH_SIZE = 100
 const MAX_REACTION_SNAPSHOT_CATCH_UP_ATTEMPTS = 3

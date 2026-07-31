@@ -2,7 +2,7 @@ import { File } from "expo-file-system"
 import * as MediaLibrary from "expo-media-library"
 import { Platform } from "react-native"
 
-import type { ResolvedResource } from "@/data/resources/resource-types"
+import type { ResolvedResource } from "@/core/resource-models"
 
 export class MediaLibraryPermissionError extends Error {
   constructor() {

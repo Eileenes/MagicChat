@@ -2,7 +2,7 @@ import type {
   ClientMessage,
   MessageReactionsUpdatedEvent,
   MessageReactionSnapshot,
-} from "@/data/models"
+} from "@/core/models"
 import { preserveNewerMessageChoiceState } from "@/domain/messages/message-choices"
 
 export type ReactionUpdateResult = {

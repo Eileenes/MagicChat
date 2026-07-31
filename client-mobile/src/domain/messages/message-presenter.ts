@@ -6,8 +6,8 @@ import type {
   ClientMessageChoiceState,
   ClientMessageReaction,
   ClientUser,
-} from "@/data/models"
-import type { AttachmentResourceReference } from "@/data/resources"
+} from "@/core/models"
+import type { AttachmentResourceReference } from "@/core/resource-models"
 import { getContactDisplayName } from "@/domain/contacts/contact-display"
 import type { EntityReference } from "@/domain/entities/entity-profile"
 import {

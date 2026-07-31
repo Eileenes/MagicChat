@@ -23,4 +23,4 @@ export type {
   ResourceLoadState,
   ResourceReference,
   ResolvedResource,
-} from "@/data/resources/resource-types"
+} from "@/core/resource-models"

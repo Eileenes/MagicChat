@@ -4,10 +4,10 @@ import { Image, Paragraph, XStack, YStack } from "tamagui"
 
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { appConfig } from "@/config/app-config"
-import { useCachedAppInfo } from "@/data/hooks"
-import { useAuth } from "@/features/auth/auth-context"
+import { useCachedAppInfo } from "@/data/auth/auth-hooks"
+import { useAuth } from "@/providers/auth-provider"
 import { LoginForm } from "@/features/auth/login-form"
-import { useServers } from "@/features/servers/server-context"
+import { useServers } from "@/providers/server-provider"
 
 const COMPANY_WEBSITE_URL = "https://baizhi.cloud/"
 

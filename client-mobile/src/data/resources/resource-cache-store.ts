@@ -2,8 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { Directory, File, Paths } from "expo-file-system"
 import { Platform } from "react-native"
 
-import type { ServerTarget } from "@/data/query"
-import type { ResolvedResource } from "@/data/resources/resource-types"
+import type { ServerTarget } from "@/core/server-target"
+import type { ResolvedResource } from "@/core/resource-models"
 
 const CACHE_INDEX_KEY = "@magicchat/resource-cache/v1"
 const CACHE_ROOT_NAME = "magicchat-resources-v1"

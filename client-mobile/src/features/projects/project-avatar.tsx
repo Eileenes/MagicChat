@@ -3,8 +3,8 @@ import { Avatar, Text } from "tamagui"
 
 import { ThemedIcon } from "@/components/icons/themed-icon"
 import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
-import type { ClientProjectSummary, ClientUser } from "@/data/models"
-import type { ServerTarget } from "@/data/query"
+import type { ClientProjectSummary, ClientUser } from "@/core/models"
+import type { ServerTarget } from "@/core/server-target"
 import { getContactDisplayName } from "@/domain/contacts/contact-display"
 
 export function ProjectAvatar({

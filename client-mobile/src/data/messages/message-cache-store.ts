@@ -7,10 +7,10 @@ import type {
   MessageChoiceUpdatedEvent,
   MessageReactionsUpdatedEvent,
   MessageReactionSnapshot,
-} from "@/data/models"
+} from "@/core/models"
 import { getMessageCacheDatabase } from "@/data/messages/message-cache-database"
 import { applyChoiceMessageTombstone } from "@/data/messages/message-tombstones"
-import type { AuthenticatedTarget, ServerTarget } from "@/data/query"
+import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
 import {
   applyMessageChoiceEvent,
   applyMessageChoiceSnapshot,

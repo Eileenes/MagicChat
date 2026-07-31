@@ -1,7 +1,7 @@
 import type {
   ClientContacts,
   ClientConversation,
-} from "@/data/models"
+} from "@/core/models"
 import {
   isConversationTopicVisibleInList,
   orderConversations,

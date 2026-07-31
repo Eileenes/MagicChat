@@ -3,7 +3,7 @@ import * as IntentLauncher from "expo-intent-launcher"
 import * as Sharing from "expo-sharing"
 import { Linking, Platform } from "react-native"
 
-import type { ResolvedResource } from "@/data/resources/resource-types"
+import type { ResolvedResource } from "@/core/resource-models"
 
 const FLAG_GRANT_READ_URI_PERMISSION = 1
 

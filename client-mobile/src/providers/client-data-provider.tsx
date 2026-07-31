@@ -9,21 +9,25 @@ import {
 } from "react"
 
 import { isUnauthorizedError } from "@/data/api-client"
+import {
+  getClientDataPollingIntervals,
+} from "@/data/query/fallback-polling"
 import type {
   ClientContacts,
   ClientConversation,
   ClientProjectPage,
   ClientProjectSummary,
   ClientUser,
-} from "@/data/models"
+} from "@/core/models"
+import type { AuthenticatedTarget } from "@/core/server-target"
 import {
   contactsQueryOptions,
   conversationsQueryOptions,
   currentUserQueryOptions,
   projectsQueryOptions,
-  type AuthenticatedTarget,
 } from "@/data/query"
-import { useAuth } from "@/features/auth/auth-context"
+import { useAuth } from "@/providers/auth-provider"
+import { useRealtime } from "@/realtime/realtime-context"
 
 const EMPTY_CONTACTS: ClientContacts = {
   apps: [],
@@ -67,14 +71,20 @@ const ClientDataContext = createContext<ClientDataContextValue | null>(null)
 
 export function ClientDataProvider({ children }: React.PropsWithChildren) {
   const { invalidateSession, session } = useAuth()
+  const { ready: realtimeReady } = useRealtime()
   const target = session ?? INACTIVE_TARGET
   const enabled = session !== null
+  const pollingIntervals = getClientDataPollingIntervals(realtimeReady)
   const contactsQuery = useQuery({
-    ...contactsQueryOptions(target),
+    ...contactsQueryOptions(target, {
+      refetchInterval: pollingIntervals.contacts,
+    }),
     enabled,
   })
   const conversationsQuery = useQuery({
-    ...conversationsQueryOptions(target),
+    ...conversationsQueryOptions(target, {
+      refetchInterval: pollingIntervals.conversations,
+    }),
     enabled,
   })
   const currentUserQuery = useQuery({
@@ -82,7 +92,9 @@ export function ClientDataProvider({ children }: React.PropsWithChildren) {
     enabled,
   })
   const projectsQuery = useInfiniteQuery({
-    ...projectsQueryOptions(target),
+    ...projectsQueryOptions(target, {
+      refetchInterval: pollingIntervals.projects,
+    }),
     enabled,
   })
   const [manualRefresh, setManualRefresh] = useState({

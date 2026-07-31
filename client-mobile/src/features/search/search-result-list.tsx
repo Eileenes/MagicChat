@@ -8,8 +8,8 @@ import type {
   ContactApp,
   ContactGroup,
   ContactUser,
-} from "@/data/models"
-import type { ServerTarget } from "@/data/query"
+} from "@/core/models"
+import type { ServerTarget } from "@/core/server-target"
 import { getContactDisplayName } from "@/domain/contacts/contact-display"
 import { ContactDirectoryAvatar } from "@/features/contacts/contact-directory-avatar"
 import { ConversationAvatar } from "@/features/messages/conversation-avatar"

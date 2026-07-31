@@ -2,7 +2,7 @@ import { useMemo } from "react"
 
 import { ContentState } from "@/components/feedback/content-state"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
-import { useAuthenticatedSession } from "@/features/auth/auth-context"
+import { useAuthenticatedSession } from "@/providers/auth-provider"
 import { ProjectList } from "@/features/projects/project-list"
 import { buildProjectListSections } from "@/features/projects/project-list-model"
 import { useClientData } from "@/providers/client-data-provider"

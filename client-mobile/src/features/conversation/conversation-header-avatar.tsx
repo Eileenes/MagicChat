@@ -4,8 +4,8 @@ import { Avatar, SizableText } from "tamagui"
 import { GroupAvatar } from "@/components/avatar/group-avatar"
 import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
 import { ThemedIcon } from "@/components/icons/themed-icon"
-import type { ClientConversation } from "@/data/models"
-import type { ServerTarget } from "@/data/query"
+import type { ClientConversation } from "@/core/models"
+import type { ServerTarget } from "@/core/server-target"
 
 export function ConversationHeaderAvatar({
   conversation,

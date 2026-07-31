@@ -1,6 +1,6 @@
 import { Drawer } from "expo-router/drawer"
 
-import { AppDrawerContent } from "@/components/navigation/app-drawer-content"
+import { AppDrawerContent } from "@/features/app-shell/app-drawer-content"
 
 export default function AppDrawerLayout() {
   return (

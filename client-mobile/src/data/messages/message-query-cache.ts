@@ -5,10 +5,11 @@ import type {
   ClientMessageList,
   MessageChoiceSnapshot,
   MessageChoiceUpdatedEvent,
-} from "@/data/models"
+} from "@/core/models"
 import type { ConversationMessagesChangedEvent } from "@/data/messages/message-events"
 import { messageManager } from "@/data/messages/message-manager"
-import { queryKeys, type AuthenticatedTarget } from "@/data/query"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { queryKeys } from "@/data/query"
 import {
   applyMessageChoiceEvent,
   applyMessageChoiceSnapshot,

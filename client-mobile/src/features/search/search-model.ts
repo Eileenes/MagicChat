@@ -5,7 +5,7 @@ import type {
   ContactApp,
   ContactGroup,
   ContactUser,
-} from "@/data/models"
+} from "@/core/models"
 import {
   formatContactPhone,
   getContactDisplayName,

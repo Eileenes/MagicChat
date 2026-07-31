@@ -14,7 +14,7 @@ import {
 import { ContentState } from "@/components/feedback/content-state"
 import { InlineError } from "@/components/feedback/inline-error"
 import { ListItemContent } from "@/components/lists/list-item-content"
-import type { ServerTarget } from "@/data/query"
+import type { ServerTarget } from "@/core/server-target"
 import { getContactDisplayName } from "@/domain/contacts/contact-display"
 import { ContactDirectoryAvatar } from "@/features/contacts/contact-directory-avatar"
 import {

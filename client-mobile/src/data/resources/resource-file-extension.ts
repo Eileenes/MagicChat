@@ -1,4 +1,4 @@
-import type { AttachmentResourceReference } from "@/data/resources/resource-types"
+import type { AttachmentResourceReference } from "@/core/resource-models"
 
 export function getAttachmentCacheExtension(
   reference: AttachmentResourceReference,

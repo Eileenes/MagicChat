@@ -15,8 +15,8 @@ import {
 } from "@/components/feedback/app-toast"
 import { resolveAppTheme } from "@/config/app-theme"
 import { createClientQueryClient } from "@/data/query"
-import { AuthProvider } from "@/features/auth/auth-context"
-import { ServerProvider } from "@/features/servers/server-context"
+import { AuthProvider } from "@/providers/auth-provider"
+import { ServerProvider } from "@/providers/server-provider"
 import { ClientDataProvider } from "@/providers/client-data-provider"
 import { AppBlurTargetProvider } from "@/providers/app-blur-target"
 import { RealtimeProvider } from "@/providers/realtime-provider"
@@ -47,9 +47,9 @@ export function AppProviders({ children }: React.PropsWithChildren) {
                 <YStack bg="$background" flex={1}>
                   <ServerProvider>
                     <AuthProvider>
-                      <ClientDataProvider>
-                        <RealtimeProvider>{children}</RealtimeProvider>
-                      </ClientDataProvider>
+                      <RealtimeProvider>
+                        <ClientDataProvider>{children}</ClientDataProvider>
+                      </RealtimeProvider>
                     </AuthProvider>
                   </ServerProvider>
                 </YStack>

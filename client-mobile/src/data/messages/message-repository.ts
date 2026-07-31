@@ -1,6 +1,6 @@
-import { fetchConversationMessages } from "@/data/messages-api"
-import type { ClientMessageList } from "@/data/models"
-import type { AuthenticatedTarget } from "@/data/query"
+import { fetchConversationMessages } from "@/data/messages/messages-api"
+import type { ClientMessageList } from "@/core/models"
+import type { AuthenticatedTarget } from "@/core/server-target"
 import {
   getMessageSyncState,
   persistAfterHttpPage,

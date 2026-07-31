@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AppState, Platform, type AppStateStatus } from "react-native"
 
 import { isUnauthorizedError } from "@/data/api-client"
-import { fetchCurrentUser } from "@/data/current-user-api"
-import type { AuthenticatedTarget } from "@/data/query"
-import { useAuth } from "@/features/auth/auth-context"
+import { fetchCurrentUser } from "@/data/users/current-user-api"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { useAuth } from "@/providers/auth-provider"
 import {
   prepareMessageNotifications,
   showBackgroundMessageNotification,

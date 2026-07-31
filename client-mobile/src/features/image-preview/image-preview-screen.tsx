@@ -13,7 +13,7 @@ import {
 } from "tamagui"
 
 import type { AppToastTone } from "@/components/feedback/app-toast"
-import type { AuthenticatedTarget } from "@/data/query"
+import type { AuthenticatedTarget } from "@/core/server-target"
 import {
   ensureAttachmentResource,
   invalidateAttachmentResource,
@@ -21,7 +21,7 @@ import {
   saveImageToMediaLibrary,
   type ResolvedResource,
 } from "@/data/resources"
-import { useAuth } from "@/features/auth/auth-context"
+import { useAuth } from "@/providers/auth-provider"
 import { ZoomableImage } from "@/features/image-preview/zoomable-image"
 
 export function ImagePreviewScreen() {

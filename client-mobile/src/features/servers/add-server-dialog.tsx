@@ -13,11 +13,11 @@ import {
 
 import { AppButton } from "@/components/forms/app-button"
 import { AppInput } from "@/components/forms/app-input"
-import { useServers } from "@/features/servers/server-context"
+import { useServers } from "@/providers/server-provider"
 import {
   isValidServerUrl,
   type ServerConfig,
-} from "@/features/servers/server-model"
+} from "@/core/server-model"
 
 const SERVER_NAME_INPUT_ID = "new-server-name"
 const SERVER_URL_INPUT_ID = "new-server-url"

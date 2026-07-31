@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { DatabaseSync } from "node:sqlite"
 import test from "node:test"
 
-import { normalizeClientMessage } from "../src/data/message-normalizer.ts"
+import { normalizeClientMessage } from "../src/data/messages/message-normalizer.ts"
 import {
   createMessageCacheMigrationSQL,
   MESSAGE_CACHE_DATABASE_VERSION,
@@ -18,7 +18,7 @@ import type {
   ClientConversation,
   ClientMessage,
   ClientMessageChoiceState,
-} from "../src/data/models.ts"
+} from "../src/core/models.ts"
 import {
   applyMessageChoiceEvent,
   applyMessageChoiceSnapshot,

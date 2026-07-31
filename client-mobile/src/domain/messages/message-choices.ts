@@ -5,7 +5,7 @@ import type {
   ClientMessageChoiceState,
   MessageChoiceSnapshot,
   MessageChoiceUpdatedEvent,
-} from "@/data/models"
+} from "@/core/models"
 
 export function isMessageChoiceAnswered(
   choice: ClientMessageChoiceState | undefined

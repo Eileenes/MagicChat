@@ -6,15 +6,15 @@ import { Card, Paragraph, ScrollView, XStack, YStack } from "tamagui"
 import { ContentState } from "@/components/feedback/content-state"
 import { PageHeader } from "@/components/navigation/page-header"
 import { ApiRequestError } from "@/data/api-client"
-import { useOpenEntityConversation } from "@/data/conversation-hooks"
-import type { ServerTarget } from "@/data/query"
+import { useOpenEntityConversation } from "@/data/conversations/conversation-hooks"
+import type { ServerTarget } from "@/core/server-target"
 import {
   isEntityType,
   resolveEntityProfile,
   type EntityProfile,
   type EntityType,
 } from "@/domain/entities/entity-profile"
-import { useAuthenticatedSession } from "@/features/auth/auth-context"
+import { useAuthenticatedSession } from "@/providers/auth-provider"
 import { EntityDetailAction } from "@/features/entity-details/entity-detail-action"
 import { EntityDetailAvatar } from "@/features/entity-details/entity-detail-avatar"
 import { EntityDetailFields } from "@/features/entity-details/entity-detail-fields"
