@@ -1,4 +1,6 @@
 ---
+import mapleBoldFontUrl from '../assets/fonts/maple-mono/maple-mono-cn-bold-v7.9.woff2?url';
+import mapleRegularFontUrl from '../assets/fonts/maple-mono/maple-mono-cn-regular-v7.9.woff2?url';
 import '../styles/global.css';
 
 interface Props {
@@ -42,6 +44,8 @@ const hasValidGaId = Boolean(gaId && /^G-[A-Z0-9]+$/.test(gaId));
     <link rel="alternate" hreflang="zh-CN" href={canonical} />
     <link rel="alternate" hreflang="x-default" href={canonical} />
     <link rel="icon" type="image/webp" href={`${import.meta.env.BASE_URL}favicon.webp`} />
+    <link rel="preload" href={mapleRegularFontUrl} as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="preload" href={mapleBoldFontUrl} as="font" type="font/woff2" crossorigin="anonymous" />
 
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:type" content={type} />

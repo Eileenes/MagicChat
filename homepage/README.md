@@ -23,6 +23,20 @@ npm run preview
 SITE_URL=https://example.com PUBLIC_BASE_PATH=/ npm run build
 ```
 
+## 字体
+
+官网自托管 [Maple Mono CN v7.9](https://github.com/subframe7536/maple-font)，使用 Regular、SemiBold 和 Bold 三个字重。字体按当前官网文案生成中文子集，并同时提供 WOFF2 与 WOFF；许可证位于 `src/assets/fonts/maple-mono/LICENSE.txt`，遵循 SIL Open Font License 1.1。
+
+更新官网文案后，字符覆盖检查会提示是否需要重新生成字体。生成脚本要求系统已安装 `curl`、`unzip` 和带 WOFF 支持的 `fonttools`：
+
+```bash
+python3 -m pip install 'fonttools[woff]'
+npm run fonts:build
+npm run fonts:check
+```
+
+`fonts:build` 会下载官方 `MapleMono-CN.zip`、验证固定 SHA-256，并重新生成字符清单、WOFF2 与 WOFF。也可以通过 `MAPLE_FONT_ARCHIVE=/path/to/MapleMono-CN.zip` 使用已下载且校验一致的本地包。
+
 ## Google Analytics
 
 在构建或部署环境中设置 GA4 Measurement ID：
