@@ -1,0 +1,104 @@
+.document-editor .tiptap {
+  min-height: 58vh;
+  color: var(--foreground);
+  outline: none;
+}
+
+.document-editor .tiptap > * + * {
+  margin-top: 0.8em;
+}
+
+.document-editor .tiptap h1,
+.document-editor .tiptap h2,
+.document-editor .tiptap h3 {
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.document-editor .tiptap h1 {
+  margin-top: 1.7em;
+  font-size: 2rem;
+}
+
+.document-editor .tiptap h2 {
+  margin-top: 1.5em;
+  font-size: 1.5rem;
+}
+
+.document-editor .tiptap h3 {
+  margin-top: 1.35em;
+  font-size: 1.2rem;
+}
+
+.document-editor .tiptap h1:first-child,
+.document-editor .tiptap h2:first-child,
+.document-editor .tiptap h3:first-child {
+  margin-top: 0;
+}
+
+.document-editor .tiptap p {
+  line-height: 1.85;
+}
+
+.document-editor .tiptap ul,
+.document-editor .tiptap ol {
+  padding-left: 1.6rem;
+}
+
+.document-editor .tiptap ul {
+  list-style: disc;
+}
+
+.document-editor .tiptap ol {
+  list-style: decimal;
+}
+
+.document-editor .tiptap li > p {
+  margin: 0;
+}
+
+.document-editor .tiptap blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1rem;
+  color: var(--muted-foreground);
+}
+
+.document-editor .tiptap code {
+  border-radius: 0.3rem;
+  background: var(--muted);
+  padding: 0.12rem 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.document-editor .tiptap pre {
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: var(--muted);
+  padding: 1rem;
+}
+
+.document-editor .tiptap pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.document-editor .tiptap hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.document-editor .tiptap p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: var(--muted-foreground);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.document-editor .tiptap ::selection {
+  background: color-mix(in oklch, var(--primary) 28%, transparent);
+}

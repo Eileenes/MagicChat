@@ -12,6 +12,7 @@ import { GlobalBeforeUnloadGuard } from "@/components/global-before-unload-guard
 import { AppInfoProvider } from "@/components/app-info-provider"
 import { ChatPage } from "@/pages/chat-page"
 import { ContactsPage } from "@/pages/contacts-page"
+import { DocumentPage } from "@/pages/document-page"
 import { LoginPage } from "@/pages/login-page"
 import { ProjectsPage } from "@/pages/projects-page"
 
@@ -30,6 +31,10 @@ export function App() {
               <LoginPage />
             </>
           }
+        />
+        <Route
+          path="/documents/document/:documentId"
+          element={<DocumentPage />}
         />
         <Route
           element={
