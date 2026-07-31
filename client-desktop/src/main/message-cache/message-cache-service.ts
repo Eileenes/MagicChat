@@ -183,6 +183,13 @@ export class MessageCacheService {
     return this.run(() => this.client.request({ kind: "listSyncStates", target }))
   }
 
+  readAround(rawScope: unknown, rawTargetSeq: unknown, rawLimit: unknown) {
+    const scope = this.scope(rawScope)
+    const targetSeq = parseMessageCacheSeq(rawTargetSeq)
+    const limit = parseMessageCacheLimit(rawLimit)
+    return this.run(() => this.client.request({ kind: "readAround", limit, scope, targetSeq }))
+  }
+
   readBefore(rawScope: unknown, rawBeforeSeq: unknown, rawLimit: unknown) {
     const scope = this.scope(rawScope)
     const beforeSeq = parseMessageCacheSeq(rawBeforeSeq)

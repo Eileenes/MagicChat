@@ -5,6 +5,11 @@ export {
 } from "./message-cache-client"
 export { MessageManager } from "./message-manager"
 export {
+  HistoryWindowStore,
+  type HistoryWindowSnapshot,
+  type HistoryWindowTarget,
+} from "./history-window-store"
+export {
   clearManagedMessageCache,
   messageCacheTargetKey,
   registerMessageCacheClearHandler,

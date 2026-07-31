@@ -656,6 +656,13 @@ function createDesktopBridge(
     selectedServerId: profile.id,
   }
   return {
+    asr: {
+      close: vi.fn(),
+      commit: vi.fn(),
+      connect: vi.fn(),
+      sendFrame: vi.fn(),
+      subscribe: vi.fn().mockReturnValue(unsubscribe),
+    },
     app: {
       info: vi.fn().mockResolvedValue({
         arch: "arm64",
@@ -697,6 +704,7 @@ function createDesktopBridge(
       }),
       getSyncState: vi.fn(),
       listSyncStates: vi.fn(),
+      readAround: vi.fn(),
       readBefore: vi.fn(),
       readRecent: vi.fn(),
       removeMessage: vi.fn(),

@@ -5,6 +5,7 @@ import type {
   MessageCachePage,
   MessageCacheRecord,
   MessageCacheSyncState,
+  MessageCacheWindowPage,
 } from "@shared/message-cache-contract"
 import { MessageManager } from "./message-manager"
 import { MessageOperationCancelledError } from "./message-operation"
@@ -291,6 +292,51 @@ describe("MessageManager", () => {
     expect(fetchPage).toHaveBeenCalledOnce()
     expect(repository.records.map(({ seq }) => seq)).toEqual([1])
   })
+  it("历史窗口独立持久化且不推进连续游标或 latest working set", async () => {
+    const repository = new FakeRepository([])
+    const manager = new MessageManager(repository, 3)
+    const operation = manager.beginConversationOperation("conversation-1")
+    const cursorBefore = await manager.getSyncCursor(operation)
+
+    const snapshot = await manager.replaceHistoryWindow(
+      operation,
+      { messageId: "message-2", seq: 2 },
+      [message(1), message(2), message(3)],
+      { hasMoreAfter: true, hasMoreBefore: true },
+    )
+
+    expect(snapshot.messages.map(({ seq }) => seq)).toEqual([1, 2, 3])
+    expect(manager.getMessages("conversation-1")).toEqual([])
+    expect(await manager.getSyncCursor(operation)).toBe(cursorBefore)
+    expect(repository.upsertCalls).toBe(1)
+  })
+
+  it("实时消息只更新历史窗口已有实体，删除同时协调两个集合", async () => {
+    const manager = new MessageManager(new FakeRepository([]), 3)
+    const operation = manager.beginConversationOperation("conversation-1")
+    await manager.replaceHistoryWindow(
+      operation,
+      { messageId: "message-2", seq: 2 },
+      [message(1), message(2)],
+      { hasMoreAfter: true, hasMoreBefore: false },
+    )
+    await manager.ingest("realtime", [message(3)])
+    expect(manager.getHistoryWindow("conversation-1").messages.map(({ seq }) => seq)).toEqual([
+      1, 2,
+    ])
+
+    await manager.ingest("realtime", [
+      message(2, {
+        body: { editableBody: { content: "重发", type: "text" }, type: "revoked" },
+      }),
+    ])
+    expect(manager.getHistoryWindow("conversation-1").messages.at(-1)?.body).toMatchObject({
+      type: "revoked",
+    })
+    await manager.deleteMessage("conversation-1", "message-2")
+    expect(manager.getHistoryWindow("conversation-1").messages.map(({ seq }) => seq)).toEqual([1])
+    expect(manager.getMessages("conversation-1").some(({ id }) => id === "message-2")).toBe(false)
+  })
 })
 
 class FakeRepository implements MessageRepository {
@@ -397,6 +443,16 @@ class FakeRepository implements MessageRepository {
   async readBefore(_id: string, beforeSeq: number) {
     if (this.beforePageOverride) return this.beforePageOverride
     return cachePage(this.records.filter((record) => record.seq < beforeSeq))
+  }
+  async readAround(_id: string, targetSeq: number, limit: number): Promise<MessageCacheWindowPage> {
+    const sorted = this.records
+      .filter((record) => Math.abs(record.seq - targetSeq) <= limit)
+      .sort((left, right) => left.seq - right.seq)
+    return {
+      ...cachePage(sorted),
+      complete: sorted.some((record) => record.seq === targetSeq),
+      hasMoreAfter: this.records.some((record) => record.seq > (sorted.at(-1)?.seq ?? targetSeq)),
+    }
   }
   async readRecent() {
     this.readRecentCalls += 1

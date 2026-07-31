@@ -18,11 +18,12 @@ describe("认证失效缓存生命周期", () => {
 
     handleUnauthorizedCacheLifecycle(target, {
       broadcastUnauthorized: () => order.push("broadcast"),
+      cancelHttp: () => order.push("cancel-http"),
       clearUserBestEffort,
       closeRealtime: () => order.push("close"),
     })
 
-    expect(order).toEqual(["close", "clear", "broadcast"])
+    expect(order).toEqual(["cancel-http", "close", "clear", "broadcast"])
     expect(clearUserBestEffort).toHaveBeenCalledWith(target)
   })
 
@@ -32,6 +33,7 @@ describe("认证失效缓存生命周期", () => {
     expect(() =>
       handleUnauthorizedCacheLifecycle(target, {
         broadcastUnauthorized,
+        cancelHttp: vi.fn(),
         clearUserBestEffort: () => {
           throw new Error("profile unavailable")
         },

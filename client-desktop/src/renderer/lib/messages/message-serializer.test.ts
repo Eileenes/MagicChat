@@ -35,4 +35,24 @@ describe("消息缓存序列化", () => {
     })
     expect(deserializeMessage({ ...record, conversationId: "conversation-2" })).toBeNull()
   })
+
+  it("往返保留撤回消息的可编辑正文", () => {
+    const message: ClientMessage = {
+      body: {
+        editableBody: { content: "**再次编辑**", type: "markdown" },
+        type: "revoked",
+      },
+      clientMessageId: "client-2",
+      conversationId: "conversation-1",
+      createdAt: "2026-07-29T00:00:00Z",
+      id: "message-2",
+      reactionVersion: 0,
+      reactions: [],
+      revokedAt: "2026-07-29T00:01:00Z",
+      sender: { id: "user-1", type: "user" },
+      seq: 2,
+    }
+
+    expect(deserializeMessage(serializeMessage(message))).toEqual(message)
+  })
 })

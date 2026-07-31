@@ -14,6 +14,7 @@ import {
   listConversationMessageReactionSnapshots,
   type ClientConversation,
   type ClientMessage,
+  type ClientMessageSearchResult,
   type ClientTopicSourceMessage,
   type ContactApp,
   type ContactUser,
@@ -142,12 +143,15 @@ export function ChatPage() {
     contactGroups,
     contacts,
     conversations,
+    consumeConversationMessageFocus,
     createGroupConversation,
     compactConversationMessages,
     dismissConversation,
     ensureConversationMessages,
+    focusConversationMessage,
     getConversation,
     getConversationMessageState,
+    loadAfterConversationMessages,
     loadBeforeConversationMessages,
     markConversationRead,
     me,
@@ -158,6 +162,7 @@ export function ChatPage() {
     joinGroupConversation,
     refreshConversations,
     registerConversationMessageView,
+    replaceWithLatestMessages,
     respondToChoice,
     revokeConversationMessage,
     sendConversationFile,
@@ -421,7 +426,11 @@ export function ChatPage() {
   }, [activeConversationId, ensureConversationMessages])
 
   React.useEffect(() => {
-    if (!activeConversationId || !activeConversationHasUnreadProgress) {
+    if (
+      !activeConversationId ||
+      !activeConversationHasUnreadProgress ||
+      activeMessageState?.viewMode === "history"
+    ) {
       return
     }
 
@@ -446,7 +455,12 @@ export function ChatPage() {
       window.clearInterval(interval)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [activeConversationId, activeConversationHasUnreadProgress, markConversationRead])
+  }, [
+    activeConversationId,
+    activeConversationHasUnreadProgress,
+    activeMessageState?.viewMode,
+    markConversationRead,
+  ])
 
   const loadBeforeMessages = React.useCallback(() => {
     if (!activeConversationId) {
@@ -455,6 +469,16 @@ export function ChatPage() {
 
     loadBeforeConversationMessages(activeConversationId)
   }, [activeConversationId, loadBeforeConversationMessages])
+
+  const loadAfterMessages = React.useCallback(() => {
+    if (!activeConversationId) return
+    loadAfterConversationMessages(activeConversationId)
+  }, [activeConversationId, loadAfterConversationMessages])
+
+  const returnToLatestMessages = React.useCallback(() => {
+    if (!activeConversationId) return
+    replaceWithLatestMessages(activeConversationId)
+  }, [activeConversationId, replaceWithLatestMessages])
 
   const clearReplyTarget = React.useCallback(() => {
     updateConversationDraft(activeConversationId, (currentDraft) => ({
@@ -1009,6 +1033,32 @@ export function ChatPage() {
     }
   }
 
+  async function selectMessageSearchResult(result: ClientMessageSearchResult) {
+    const navigationIntent = ++navigationIntentRef.current
+    try {
+      if (result.conversation.type === "topic") {
+        openTopicDrawer(result.conversation.id)
+        await focusConversationMessage(result.conversation.id, {
+          messageId: result.message.id,
+          seq: result.message.seq,
+        })
+        return
+      }
+      let conversation = getConversation(result.conversation.id)
+      if (!conversation) conversation = await restoreConversation(result.conversation.id)
+      if (navigationIntentRef.current !== navigationIntent) return
+      selectConversation(conversation.id)
+      await focusConversationMessage(conversation.id, {
+        messageId: result.message.id,
+        seq: result.message.seq,
+      })
+    } catch (error) {
+      if (navigationIntentRef.current === navigationIntent) {
+        toast.error(getClientDataErrorMessage(error, "打开搜索结果失败"))
+      }
+    }
+  }
+
   async function deleteConversation(conversationId: string) {
     navigationIntentRef.current += 1
     await dismissConversation(conversationId)
@@ -1046,6 +1096,7 @@ export function ChatPage() {
         onCreateGroup={() => setCreateGroupDialogOpen(true)}
         onDismissConversation={deleteConversation}
         onSelectDirectoryItem={(item) => void selectDirectoryItem(item)}
+        onSelectMessageResult={(result) => void selectMessageSearchResult(result)}
         onSelectConversation={selectConversation}
         onSetConversationMuted={setConversationMuted}
         onSetConversationPinned={setConversationPinned}
@@ -1059,9 +1110,13 @@ export function ChatPage() {
         draft={draft}
         draftMentions={activeDraft.mentions}
         historyError={activeMessageState?.error ?? null}
+        historyFocus={activeMessageState?.focus ?? null}
         historyLoading={historyLoading}
+        historyLoadingAfter={Boolean(activeMessageState?.loadingAfter)}
         historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
         historyHeader={activeHistoryHeader}
+        historyMode={activeMessageState?.viewMode === "history"}
+        historyPendingLatestMessageCount={activeMessageState?.pendingLatestMessageCount ?? 0}
         headerActions={
           activeConversation?.type === "topic" && activeConversation.canSend !== false ? (
             <TopicArchiveAction conversationId={activeConversation.id} />
@@ -1073,6 +1128,9 @@ export function ChatPage() {
         onCancelMessageSelection={messageSelection.cancel}
         onCancelReply={clearReplyTarget}
         onCompactMessages={compactActiveConversationMessages}
+        onConsumeHistoryFocus={(focus) =>
+          activeConversationId && consumeConversationMessageFocus(activeConversationId, focus)
+        }
         onRegisterMessageView={registerConversationMessageView}
         onDraftBlur={flushDrafts}
         onDraftChange={setDraft}
@@ -1091,8 +1149,10 @@ export function ChatPage() {
         onSendFile={sendFileMessage}
         onSendImage={sendImageMessage}
         onSendVoice={sendVoiceMessage}
+        onLoadAfterMessages={loadAfterMessages}
         onLoadBeforeMessages={loadBeforeMessages}
         onOpenTopic={openTopicDrawer}
+        onReturnToLatestMessages={returnToLatestMessages}
         onSendMessage={sendMessage}
         onStartMessageSelection={startMessageSelection}
         onToggleMessageSelection={toggleMessageSelection}

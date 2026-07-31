@@ -61,6 +61,11 @@ export type MessageCachePage = Readonly<{
   oldestSeq: number
 }>
 
+export type MessageCacheWindowPage = MessageCachePage &
+  Readonly<{
+    hasMoreAfter: boolean
+  }>
+
 export type MessageCacheSyncState = Readonly<{
   conversationId: string
   generation: MessageCacheGeneration
@@ -112,6 +117,11 @@ export interface MessageCacheBridge {
   getSyncState(scope: MessageCacheScope): Promise<MessageCacheSyncState>
   listSyncStates(target: AuthenticatedTarget): Promise<ReadonlyArray<MessageCacheSyncState>>
   readBefore(scope: MessageCacheScope, beforeSeq: number, limit: number): Promise<MessageCachePage>
+  readAround(
+    scope: MessageCacheScope,
+    targetSeq: number,
+    limit: number,
+  ): Promise<MessageCacheWindowPage>
   readRecent(scope: MessageCacheScope, limit: number): Promise<MessageCachePage>
   removeMessage(
     scope: MessageCacheScope,

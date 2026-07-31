@@ -3,9 +3,26 @@ import { describe, expect, it } from "vitest"
 import type { ClientConversation, ClientMessage } from "@/lib/client-data-api"
 import {
   applyMessageChoiceSnapshot,
+  consumeConversationMessageFocus,
   mergeConversationMessages,
   orderConversations,
 } from "@/lib/client-data-state"
+import type { ClientConversationMessageState } from "@/lib/client-data-context"
+
+describe("consumeConversationMessageFocus", () => {
+  it("仅消费完全匹配的定位请求", () => {
+    const focus = { messageId: "message-1", requestKey: 2 }
+    const state = { focus } as ClientConversationMessageState
+
+    expect(consumeConversationMessageFocus(state, { messageId: "message-1", requestKey: 1 })).toBe(
+      state,
+    )
+    expect(consumeConversationMessageFocus(state, { messageId: "message-2", requestKey: 2 })).toBe(
+      state,
+    )
+    expect(consumeConversationMessageFocus(state, focus)).toEqual({ focus: null })
+  })
+})
 
 describe("applyMessageChoiceSnapshot", () => {
   it("does not apply a snapshot when the choice changed after the request started", () => {

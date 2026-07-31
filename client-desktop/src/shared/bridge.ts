@@ -7,6 +7,7 @@ import type {
   ServerTarget,
 } from "@shared/client-contract"
 import type { MessageCacheBridge } from "@shared/message-cache-contract"
+import type { ASRBridge } from "@shared/asr-contract"
 
 export const BRIDGE_VERSION = 1 as const
 
@@ -14,6 +15,11 @@ export const MAX_TRAY_MESSAGES = 20
 
 export const IPC = {
   appInfo: "desktop:v1:app-info",
+  asrClose: "desktop:v1:asr-close",
+  asrCommit: "desktop:v1:asr-commit",
+  asrConnect: "desktop:v1:asr-connect",
+  asrEvent: "desktop:v1:asr-event",
+  asrSendFrame: "desktop:v1:asr-send-frame",
   appearanceThemeSet: "desktop:v1:appearance-theme-set",
   authCancel: "desktop:v1:auth-cancel",
   authFinished: "desktop:v1:auth-finished",
@@ -37,6 +43,7 @@ export const IPC = {
   messageCacheGetStats: "desktop:v1:message-cache-get-stats",
   messageCacheGetSyncState: "desktop:v1:message-cache-get-sync-state",
   messageCacheListSyncStates: "desktop:v1:message-cache-list-sync-states",
+  messageCacheReadAround: "desktop:v1:message-cache-read-around",
   messageCacheReadBefore: "desktop:v1:message-cache-read-before",
   messageCacheReadRecent: "desktop:v1:message-cache-read-recent",
   messageCacheRemoveMessage: "desktop:v1:message-cache-remove-message",
@@ -182,6 +189,7 @@ export type UpdaterInstallResult = Readonly<{
 export interface DesktopBridge {
   readonly version: typeof BRIDGE_VERSION
   app: { info(): Promise<DesktopAppInfo> }
+  asr: ASRBridge
   appearance: { setThemeSource(source: DesktopThemeSource): Promise<void> }
   badge: { set(count: number): Promise<void> }
   tray: { setMessages(messages: ReadonlyArray<TrayMessage>): Promise<void> }

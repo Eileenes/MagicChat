@@ -8,6 +8,7 @@ import {
 } from "@/lib/client-data-api"
 import type { MentionLabelResolver } from "@/lib/message-mentions"
 import type { ConversationDraftMention } from "@/lib/conversation-drafts"
+import { createDraftFromMessageContent } from "@/lib/conversation-composer"
 import type {
   ConversationPanelComposerHandle,
   ConversationPanelForwardMode,
@@ -19,6 +20,7 @@ import type {
 import { isAcceptedImageMessageMimeType } from "@/lib/image-message"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
 import { ConversationPanelComposer } from "@/components/conversation/conversation-panel-composer"
+import { ConversationAnnouncement } from "@/components/conversation/conversation-announcement"
 import { ConversationPanelHeader } from "@/components/conversation/conversation-panel-header"
 import { ConversationPanelHistory } from "@/components/conversation/conversation-panel-history"
 import { MessageSelectionToolbar } from "@/components/conversation/message-selection-toolbar"
@@ -46,8 +48,12 @@ type ConversationPanelProps = {
   draftMentions?: ConversationDraftMention[]
   historyError: string | null
   historyLoading: boolean
+  historyLoadingAfter?: boolean
   historyLoadingBefore: boolean
+  historyFocus?: { messageId: string; requestKey: number } | null
   historyHeader?: React.ReactNode
+  historyMode?: boolean
+  historyPendingLatestMessageCount?: number
   headerActions?: React.ReactNode
   mentionLabelResolver?: MentionLabelResolver
   messages: ConversationPanelMessage[]
@@ -60,6 +66,7 @@ type ConversationPanelProps = {
   onForwardSelectedMessages?: (mode: ConversationPanelForwardMode) => void
   onCancelReply: () => void
   onCompactMessages?: () => void
+  onConsumeHistoryFocus?: (focus: { messageId: string; requestKey: number }) => void
   onRegisterMessageView?: (conversationId: string) => () => void
   onReplyToMessage: (message: ConversationPanelMessage) => void
   onRevokeMessage: (message: ConversationPanelMessage) => void
@@ -76,8 +83,10 @@ type ConversationPanelProps = {
     captionType: ImageCaptionType,
   ) => Promise<ClientMessage | null>
   onSendVoice: (voice: VoiceMessageRecording) => Promise<ClientMessage | null>
+  onLoadAfterMessages?: () => void
   onLoadBeforeMessages: () => void
   onOpenTopic?: (conversationId: string) => void
+  onReturnToLatestMessages?: () => void
   onRichTextModeChange: (richTextMode: boolean) => void
   onSendMessage: (content?: string) => void
   onStartMessageSelection?: (message: ConversationPanelMessage) => void
@@ -98,8 +107,12 @@ export function ConversationPanel({
   draftMentions = emptyDraftMentions,
   historyError,
   historyLoading,
+  historyLoadingAfter = false,
   historyLoadingBefore,
+  historyFocus = null,
   historyHeader,
+  historyMode = false,
+  historyPendingLatestMessageCount = 0,
   headerActions,
   mentionLabelResolver = fallbackMentionLabelResolver,
   messages,
@@ -112,6 +125,7 @@ export function ConversationPanel({
   onForwardSelectedMessages,
   onCancelReply,
   onCompactMessages,
+  onConsumeHistoryFocus,
   onRegisterMessageView,
   onReplyToMessage,
   onRevokeMessage,
@@ -120,8 +134,10 @@ export function ConversationPanel({
   onSendFile,
   onSendImage,
   onSendVoice,
+  onLoadAfterMessages,
   onLoadBeforeMessages,
   onOpenTopic,
+  onReturnToLatestMessages,
   onRichTextModeChange,
   onSendMessage,
   onStartMessageSelection,
@@ -176,6 +192,20 @@ export function ConversationPanel({
       composerRef.current?.focus()
     },
     [conversation?.topic?.parentConversationType, conversation?.type, onReplyToMessage],
+  )
+
+  const handleReeditRevokedMessage = React.useCallback(
+    (message: ConversationPanelMessage) => {
+      if (sending || message.body.type !== "revoked" || !message.body.editableBody) return
+
+      const editableBody = message.body.editableBody
+      const nextDraft = createDraftFromMessageContent(editableBody.content, mentionLabelResolver)
+      onCancelReply()
+      onDraftChange(nextDraft.text, nextDraft.mentions)
+      onRichTextModeChange(editableBody.type === "markdown")
+      composerRef.current?.focusAtEnd()
+    },
+    [mentionLabelResolver, onCancelReply, onDraftChange, onRichTextModeChange, sending],
   )
 
   function resetFileDrag() {
@@ -264,25 +294,40 @@ export function ConversationPanel({
             actions={headerActions}
             online={conversationOnline}
           />
+          {conversation.type === "group" && (
+            <ConversationAnnouncement announcement={conversation.announcement ?? ""} />
+          )}
           <ConversationPanelHistory
             canReply={!conversationReadOnly}
             conversation={conversation}
             error={historyError}
+            focus={historyFocus}
+            historyMode={historyMode}
             loading={historyLoading}
+            loadingAfter={historyLoadingAfter}
             loadingBefore={historyLoadingBefore}
             header={historyHeader}
             currentUserId={currentUserId}
             mentionLabelResolver={mentionLabelResolver}
             messageSelection={messageSelection}
             messages={messages}
+            pendingLatestMessageCount={historyPendingLatestMessageCount}
             onCompactMessages={onCompactMessages}
+            onConsumeFocus={onConsumeHistoryFocus}
             onRegisterMessageView={onRegisterMessageView}
             onForwardMessage={onForwardMessage}
             onCreateTopic={onCreateTopic}
+            onLoadAfterMessages={onLoadAfterMessages}
             onLoadBeforeMessages={onLoadBeforeMessages}
             onStartMessageSelection={onStartMessageSelection}
             onInsertMention={insertComposerMention}
             onOpenTopic={onOpenTopic}
+            onReturnToLatestMessages={onReturnToLatestMessages}
+            onReeditRevokedMessage={
+              conversationReadOnly || messageSelection?.active || sending
+                ? undefined
+                : handleReeditRevokedMessage
+            }
             onReplyToMessage={handleReplyToMessage}
             onRevokeMessage={readOnlyReason ? undefined : onRevokeMessage}
             onRespondToChoice={readOnlyReason ? undefined : onRespondToChoice}

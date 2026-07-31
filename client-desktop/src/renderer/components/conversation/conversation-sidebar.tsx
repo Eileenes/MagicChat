@@ -31,6 +31,7 @@ import { formatActivityTime } from "@/lib/activity-time"
 import { getAvatarInitial } from "@/lib/avatar"
 import type {
   ClientConversation,
+  ClientMessageSearchResult,
   ClientUser,
   ContactApp,
   ContactGroup,
@@ -71,6 +72,7 @@ export function ConversationSidebar({
   onCreateGroup,
   onDismissConversation,
   onSelectDirectoryItem = () => undefined,
+  onSelectMessageResult,
   onSelectConversation,
   onSetConversationMuted,
   onSetConversationPinned,
@@ -87,6 +89,7 @@ export function ConversationSidebar({
   onCreateGroup: () => void
   onDismissConversation?: (conversationId: string) => Promise<void>
   onSelectDirectoryItem?: (item: DirectorySearchItem) => void
+  onSelectMessageResult?: (result: ClientMessageSearchResult) => void
   onSelectConversation: (conversationId: string) => void
   onSetConversationMuted: (conversationId: string, muted: boolean) => Promise<void>
   onSetConversationPinned: (conversationId: string, pinned: boolean) => Promise<void>
@@ -281,6 +284,7 @@ export function ConversationSidebar({
               currentUserId={currentUser.id}
               onSelectConversation={onSelectConversation}
               onSelectDirectoryItem={onSelectDirectoryItem}
+              onSelectMessageResult={onSelectMessageResult}
             />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

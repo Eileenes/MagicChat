@@ -50,6 +50,7 @@ import {
   messagePageLimit,
   orderConversations,
   compactConversationMessageState,
+  consumeConversationMessageFocus as consumeMessageFocusState,
   updatePageWithMessage,
 } from "@/lib/client-data-state"
 import {
@@ -124,6 +125,9 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const loadingConversationOperationsRef = useRef<Map<string, symbol>>(new Map())
   const conversationsNeedingServerRefreshRef = useRef<Set<string>>(new Set())
   const syncingAfterConversationOperationsRef = useRef<Map<string, symbol>>(new Map())
+  const historyRequestVersionsRef = useRef<Map<string, number>>(new Map())
+  const historyRequestControllersRef = useRef<Map<string, AbortController>>(new Map())
+  const historyFocusRequestKeyRef = useRef(0)
   const refreshingReactionSnapshotKeysRef = useRef<Set<string>>(new Set())
   const reactionSnapshotMinimumVersionsRef = useRef<Map<string, number>>(new Map())
   const messageManagerRef = useRef<{ key: string; manager: MessageManager } | null>(null)
@@ -193,9 +197,12 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     mountedRef.current = true
+    const historyRequestControllers = historyRequestControllersRef.current
 
     return () => {
       mountedRef.current = false
+      for (const controller of historyRequestControllers.values()) controller.abort()
+      historyRequestControllers.clear()
       updateDiagnosticData({
         contacts: 0,
         conversations: 0,
@@ -420,12 +427,44 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         }))
         return
       }
-      updateConversationMessageState(event.conversationId, (state) => ({
-        ...state,
-        error: null,
-        messages: event.messages,
-        page: updatePageWithMessage(state.page, event.messages),
-      }))
+      if (event.kind === "history-window-changed") {
+        updateConversationMessageState(event.conversationId, (state) => {
+          if (
+            state.viewMode !== "history" ||
+            !state.historyTarget ||
+            event.snapshot.target?.messageId !== state.historyTarget.messageId
+          ) {
+            return state
+          }
+          const messages = [...event.snapshot.messages]
+          return {
+            ...state,
+            error: null,
+            messages,
+            page: {
+              hasMoreAfter: event.snapshot.hasMoreAfter,
+              hasMoreBefore: event.snapshot.hasMoreBefore,
+              limit: messagePageLimit,
+              newestSeq: event.snapshot.newestSeq,
+              oldestSeq: event.snapshot.oldestSeq,
+            },
+          }
+        })
+        return
+      }
+      updateConversationMessageState(event.conversationId, (state) => {
+        const latestKnownSeq = Math.max(state.latestKnownSeq, event.messages.at(-1)?.seq ?? 0)
+        if (state.viewMode === "history") {
+          return { ...state, latestKnownSeq }
+        }
+        return {
+          ...state,
+          error: null,
+          latestKnownSeq,
+          messages: event.messages,
+          page: updatePageWithMessage(state.page, event.messages),
+        }
+      })
     })
   }, [messageManager, updateConversationMessageState])
 
@@ -688,10 +727,10 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     ) => {
       const fromCurrentUser =
         currentUserId !== "" && isClientMessageInitiatedByUser(message, currentUserId)
-      const visibleInActiveConversation =
-        Boolean(options.visible) && options.activeConversationId === message.conversationId
       const messageState = conversationMessageStatesRef.current[message.conversationId]
       const activeConversation = options.activeConversationId === message.conversationId
+      const visibleInActiveConversation =
+        Boolean(options.visible) && activeConversation && messageState?.viewMode !== "history"
       const shouldCacheMessage = activeConversation || messageState?.loaded || messageState?.loading
 
       if (shouldCacheMessage) {
@@ -699,6 +738,16 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       } else {
         updateTopicSourcePreview(message)
         void messageManager?.persist([message])
+      }
+      if (
+        messageState?.viewMode === "history" &&
+        message.seq > (messageState.page?.newestSeq ?? 0)
+      ) {
+        updateConversationMessageState(message.conversationId, (state) => ({
+          ...state,
+          latestKnownSeq: Math.max(state.latestKnownSeq, message.seq),
+          pendingLatestMessageCount: state.pendingLatestMessageCount + 1,
+        }))
       }
       applyConversationMessageToList(message, {
         countUnread: !fromCurrentUser && !visibleInActiveConversation,
@@ -709,6 +758,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       currentUserId,
       messageManager,
       mergeIncomingConversationMessage,
+      updateConversationMessageState,
       updateTopicSourcePreview,
     ],
   )
@@ -1093,6 +1143,221 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [handleError],
   )
 
+  const beginHistoryWindowRequest = useCallback((conversationId: string) => {
+    historyRequestControllersRef.current.get(conversationId)?.abort()
+    const controller = new AbortController()
+    historyRequestControllersRef.current.set(conversationId, controller)
+    const version = (historyRequestVersionsRef.current.get(conversationId) ?? 0) + 1
+    historyRequestVersionsRef.current.set(conversationId, version)
+    return { controller, version }
+  }, [])
+
+  const historyRequestIsCurrent = useCallback(
+    (conversationId: string, version: number) =>
+      historyRequestVersionsRef.current.get(conversationId) === version &&
+      !historyRequestControllersRef.current.get(conversationId)?.signal.aborted,
+    [],
+  )
+
+  const replaceWithLatestMessages = useCallback(
+    (conversationId: string) => {
+      if (!conversationId) return
+      const { controller, version } = beginHistoryWindowRequest(conversationId)
+      void messageManager?.clearHistoryWindow(conversationId).catch(() => undefined)
+      updateConversationMessageState(conversationId, (state) => ({
+        ...state,
+        error: null,
+        focus: null,
+        historyTarget: null,
+        loaded: false,
+        loading: true,
+        loadingAfter: false,
+        loadingBefore: false,
+        messages: messageManager?.getMessages(conversationId) ?? [],
+        page: null,
+        pendingLatestMessageCount: 0,
+        viewMode: "latest",
+      }))
+
+      void (async () => {
+        try {
+          const result = await listConversationMessages(conversationId, {
+            limit: messagePageLimit,
+            signal: controller.signal,
+          })
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          const operation = messageManager?.beginConversationOperation(conversationId)
+          const messages = messageManager
+            ? await messageManager.commitLatest(operation!, result.messages, result.page)
+            : result.messages
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          updateConversationMessageState(conversationId, (state) => ({
+            ...state,
+            error: null,
+            loaded: true,
+            loading: false,
+            latestKnownSeq: Math.max(state.latestKnownSeq, result.page.newestSeq),
+            messages,
+            page: {
+              ...result.page,
+              newestSeq: messages.at(-1)?.seq ?? result.page.newestSeq,
+              oldestSeq: messages[0]?.seq ?? result.page.oldestSeq,
+            },
+          }))
+        } catch (error) {
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          updateConversationMessageState(conversationId, (state) => ({
+            ...state,
+            error: getClientDataErrorMessage(error, "加载最新消息失败"),
+            loading: false,
+          }))
+        }
+      })()
+    },
+    [
+      beginHistoryWindowRequest,
+      historyRequestIsCurrent,
+      messageManager,
+      updateConversationMessageState,
+    ],
+  )
+
+  const focusConversationMessage = useCallback(
+    async (conversationId: string, target: { messageId: string; seq: number }) => {
+      if (!conversationId || !target.messageId || target.seq < 1) return
+      const { controller, version } = beginHistoryWindowRequest(conversationId)
+      const requestKey = ++historyFocusRequestKeyRef.current
+      const guard = () =>
+        historyRequestIsCurrent(conversationId, version) &&
+        conversationMessageStatesRef.current[conversationId]?.historyTarget?.messageId ===
+          target.messageId
+      updateConversationMessageState(conversationId, (state) => ({
+        ...state,
+        error: null,
+        focus: { messageId: target.messageId, requestKey },
+        historyTarget: target,
+        latestKnownSeq: Math.max(state.latestKnownSeq, target.seq),
+        loaded: false,
+        loading: true,
+        loadingAfter: false,
+        loadingBefore: false,
+        messages: [],
+        page: null,
+        pendingLatestMessageCount: 0,
+        viewMode: "history",
+      }))
+
+      try {
+        const operation = messageManager?.beginConversationOperation(conversationId)
+        if (messageManager && operation) {
+          const cached = await messageManager.hydrateHistoryAround(
+            operation,
+            target,
+            messagePageLimit * 2,
+            guard,
+          )
+          if (cached && guard()) {
+            updateConversationMessageState(conversationId, (state) => ({
+              ...state,
+              loaded: true,
+              loading: true,
+              messages: [...cached.messages],
+              page: {
+                hasMoreAfter: cached.hasMoreAfter,
+                hasMoreBefore: cached.hasMoreBefore,
+                limit: messagePageLimit,
+                newestSeq: cached.newestSeq,
+                oldestSeq: cached.oldestSeq,
+              },
+            }))
+          }
+        }
+        const [before, after] = await Promise.all([
+          listConversationMessages(conversationId, {
+            beforeSeq: target.seq + 1,
+            limit: messagePageLimit,
+            signal: controller.signal,
+          }),
+          listConversationMessages(conversationId, {
+            afterSeq: target.seq,
+            limit: messagePageLimit,
+            signal: controller.signal,
+          }),
+        ])
+        if (!historyRequestIsCurrent(conversationId, version)) return
+        const messages = mergeConversationMessages(before.messages, after.messages)
+        if (!messages.some((message) => message.id === target.messageId)) {
+          throw new Error("目标消息已删除或不可见")
+        }
+        if (messageManager) {
+          await messageManager.replaceHistoryWindow(
+            operation!,
+            target,
+            messages,
+            {
+              hasMoreAfter: after.page.hasMoreAfter,
+              hasMoreBefore: before.page.hasMoreBefore,
+            },
+            guard,
+          )
+        }
+        if (!historyRequestIsCurrent(conversationId, version)) return
+        updateConversationMessageState(conversationId, (state) => ({
+          ...state,
+          error: null,
+          loaded: true,
+          loading: false,
+          latestKnownSeq: Math.max(state.latestKnownSeq, after.page.newestSeq),
+          messages: messageManager
+            ? [...messageManager.getHistoryWindow(conversationId).messages]
+            : messages,
+          page: messageManager
+            ? {
+                hasMoreAfter: messageManager.getHistoryWindow(conversationId).hasMoreAfter,
+                hasMoreBefore: messageManager.getHistoryWindow(conversationId).hasMoreBefore,
+                limit: messagePageLimit,
+                newestSeq: messageManager.getHistoryWindow(conversationId).newestSeq,
+                oldestSeq: messageManager.getHistoryWindow(conversationId).oldestSeq,
+              }
+            : {
+                hasMoreAfter: after.page.hasMoreAfter,
+                hasMoreBefore: before.page.hasMoreBefore,
+                limit: messagePageLimit,
+                newestSeq: messages.at(-1)?.seq ?? 0,
+                oldestSeq: messages[0]?.seq ?? 0,
+              },
+        }))
+      } catch (error) {
+        if (!historyRequestIsCurrent(conversationId, version)) return
+        const message = getClientDataErrorMessage(error, "定位消息失败")
+        updateConversationMessageState(conversationId, (state) => ({
+          ...state,
+          error: message,
+          loaded: false,
+          loading: false,
+        }))
+        toast.error(message)
+        replaceWithLatestMessages(conversationId)
+      }
+    },
+    [
+      beginHistoryWindowRequest,
+      historyRequestIsCurrent,
+      messageManager,
+      replaceWithLatestMessages,
+      updateConversationMessageState,
+    ],
+  )
+
+  const consumeConversationMessageFocus = useCallback(
+    (conversationId: string, consumedFocus: { messageId: string; requestKey: number }) => {
+      updateConversationMessageState(conversationId, (state) =>
+        consumeMessageFocusState(state, consumedFocus),
+      )
+    },
+    [updateConversationMessageState],
+  )
+
   const ensureConversationMessages = useCallback(
     (conversationId: string) => {
       if (!conversationId) {
@@ -1200,6 +1465,71 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      if (state.viewMode === "history") {
+        const version = historyRequestVersionsRef.current.get(conversationId) ?? 0
+        const controller = historyRequestControllersRef.current.get(conversationId)
+        const targetId = state.historyTarget?.messageId
+        if (!controller || !targetId) return
+        updateConversationMessageState(conversationId, (current) => ({
+          ...current,
+          error: null,
+          loadingBefore: true,
+        }))
+        void (async () => {
+          try {
+            const result = await listConversationMessages(conversationId, {
+              beforeSeq: state.page!.oldestSeq,
+              limit: messagePageLimit,
+              signal: controller.signal,
+            })
+            if (!historyRequestIsCurrent(conversationId, version)) return
+            const current = conversationMessageStatesRef.current[conversationId]
+            if (current?.historyTarget?.messageId !== targetId) return
+            const operation = messageManager?.beginConversationOperation(conversationId)
+            const guard = () =>
+              historyRequestIsCurrent(conversationId, version) &&
+              conversationMessageStatesRef.current[conversationId]?.historyTarget?.messageId ===
+                targetId
+            const snapshot = messageManager
+              ? await messageManager.mergeHistoryBefore(
+                  operation!,
+                  result.messages,
+                  result.page.hasMoreBefore,
+                  guard,
+                )
+              : null
+            if (!historyRequestIsCurrent(conversationId, version)) return
+            const messages = snapshot
+              ? [...snapshot.messages]
+              : mergeConversationMessages(current.messages, result.messages)
+            updateConversationMessageState(conversationId, (latest) => ({
+              ...latest,
+              error: null,
+              loaded: true,
+              loadingBefore: false,
+              messages,
+              page: snapshot
+                ? {
+                    hasMoreAfter: snapshot.hasMoreAfter,
+                    hasMoreBefore: snapshot.hasMoreBefore,
+                    limit: messagePageLimit,
+                    newestSeq: snapshot.newestSeq,
+                    oldestSeq: snapshot.oldestSeq,
+                  }
+                : mergePageWithBeforeResult(latest.page, result.page, messages),
+            }))
+          } catch (error) {
+            if (!historyRequestIsCurrent(conversationId, version)) return
+            updateConversationMessageState(conversationId, (current) => ({
+              ...current,
+              error: getClientDataErrorMessage(error, "加载更早消息失败"),
+              loadingBefore: false,
+            }))
+          }
+        })()
+        return
+      }
+
       const beforeSeq = state.page.oldestSeq
       let operation: MessageOperationToken | undefined
       try {
@@ -1278,7 +1608,84 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         }
       })()
     },
-    [messageManager, updateConversationMessageState],
+    [historyRequestIsCurrent, messageManager, updateConversationMessageState],
+  )
+
+  const loadAfterConversationMessages = useCallback(
+    (conversationId: string) => {
+      const state = conversationMessageStatesRef.current[conversationId]
+      if (
+        state?.viewMode !== "history" ||
+        !state.page?.hasMoreAfter ||
+        !state.loaded ||
+        state.loadingAfter ||
+        !state.historyTarget
+      ) {
+        return
+      }
+      const version = historyRequestVersionsRef.current.get(conversationId) ?? 0
+      const controller = historyRequestControllersRef.current.get(conversationId)
+      const targetId = state.historyTarget.messageId
+      if (!controller) return
+      updateConversationMessageState(conversationId, (current) => ({
+        ...current,
+        error: null,
+        loadingAfter: true,
+      }))
+      void (async () => {
+        try {
+          const result = await listConversationMessages(conversationId, {
+            afterSeq: state.page!.newestSeq,
+            limit: messagePageLimit,
+            signal: controller.signal,
+          })
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          const current = conversationMessageStatesRef.current[conversationId]
+          if (current?.historyTarget?.messageId !== targetId) return
+          const operation = messageManager?.beginConversationOperation(conversationId)
+          const guard = () =>
+            historyRequestIsCurrent(conversationId, version) &&
+            conversationMessageStatesRef.current[conversationId]?.historyTarget?.messageId ===
+              targetId
+          const snapshot = messageManager
+            ? await messageManager.mergeHistoryAfter(
+                operation!,
+                result.messages,
+                result.page.hasMoreAfter,
+                guard,
+              )
+            : null
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          const messages = snapshot
+            ? [...snapshot.messages]
+            : mergeConversationMessages(current.messages, result.messages)
+          updateConversationMessageState(conversationId, (latest) => ({
+            ...latest,
+            error: null,
+            loaded: true,
+            loadingAfter: false,
+            messages,
+            page: snapshot
+              ? {
+                  hasMoreAfter: snapshot.hasMoreAfter,
+                  hasMoreBefore: snapshot.hasMoreBefore,
+                  limit: messagePageLimit,
+                  newestSeq: snapshot.newestSeq,
+                  oldestSeq: snapshot.oldestSeq,
+                }
+              : mergePageWithAfterResult(latest.page, result.page, messages),
+          }))
+        } catch (error) {
+          if (!historyRequestIsCurrent(conversationId, version)) return
+          updateConversationMessageState(conversationId, (current) => ({
+            ...current,
+            error: getClientDataErrorMessage(error, "加载更新消息失败"),
+            loadingAfter: false,
+          }))
+        }
+      })()
+    },
+    [historyRequestIsCurrent, messageManager, updateConversationMessageState],
   )
 
   const syncAfterConversationMessages = useCallback(
@@ -1481,6 +1888,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   } = useConversationActions({
     conversations,
@@ -1657,16 +2065,19 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     createGroupConversation,
     createProject,
     compactConversationMessages,
+    consumeConversationMessageFocus,
     clearMessageScope,
     dissolveGroupConversation,
     dismissConversation,
     ensureConversationMessages,
+    focusConversationMessage,
     foregroundConversationId,
     getConversation,
     getConversationMessageState,
     joinGroupConversation,
     leaveGroupConversation,
     loadBeforeConversationMessages,
+    loadAfterConversationMessages,
     markConversationRead,
     setConversationPinned,
     setConversationMuted,
@@ -1692,6 +2103,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshContacts,
     refreshMe,
     refreshProjects,
+    replaceWithLatestMessages,
     registerConversationMessageView,
     loadMoreProjects,
     removeConversation,
@@ -1718,6 +2130,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     updateConversationMuted,
     updateMessageTopic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   }
 

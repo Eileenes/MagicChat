@@ -17,11 +17,31 @@ export const conversationMessageRetentionLimit = 300
 export const emptyConversationMessageState: ClientConversationMessageState = {
   error: null,
   loaded: false,
+  focus: null,
+  historyTarget: null,
+  latestKnownSeq: 0,
   loading: false,
+  loadingAfter: false,
   loadingBefore: false,
   messages: [],
   page: null,
+  pendingLatestMessageCount: 0,
   sending: false,
+  viewMode: "latest",
+}
+
+export function consumeConversationMessageFocus(
+  state: ClientConversationMessageState,
+  consumedFocus: { messageId: string; requestKey: number },
+): ClientConversationMessageState {
+  if (
+    state.focus?.messageId !== consumedFocus.messageId ||
+    state.focus.requestKey !== consumedFocus.requestKey
+  ) {
+    return state
+  }
+
+  return { ...state, focus: null }
 }
 
 export function getMessageSummary(message: ClientMessage) {
@@ -144,12 +164,18 @@ export function applyTopicSourceMessageUpdate(
 export function createConversationMessageState(): ClientConversationMessageState {
   return {
     error: null,
+    focus: null,
+    historyTarget: null,
+    latestKnownSeq: 0,
     loaded: false,
     loading: false,
+    loadingAfter: false,
     loadingBefore: false,
     messages: [],
     page: null,
+    pendingLatestMessageCount: 0,
     sending: false,
+    viewMode: "latest",
   }
 }
 

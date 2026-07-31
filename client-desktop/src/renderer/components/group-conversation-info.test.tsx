@@ -94,7 +94,77 @@ describe("GroupConversationInfo", () => {
       expect(dissolveGroupConversation).toHaveBeenCalledWith("conversation-group-1")
     })
   })
+
+  it("allows members to view announcements without an edit command", () => {
+    const conversation = { ...createGroupConversation(), announcement: "周五发布" }
+    renderGroupInfo(conversation)
+
+    expect(screen.getByText("周五发布")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "修改群公告" })).not.toBeInTheDocument()
+  })
+
+  it("lets an owner save a trimmed announcement and counts Unicode characters", async () => {
+    const user = userEvent.setup()
+    const conversation = createOwnedGroupConversation()
+    const updateGroupConversationAnnouncement = vi.fn().mockResolvedValue(conversation)
+    renderGroupInfo(conversation, { updateGroupConversationAnnouncement })
+
+    await user.click(screen.getByRole("button", { name: "修改群公告" }))
+    const editor = screen.getByRole("textbox", { name: "群公告" })
+    await user.type(editor, "  🚀发布  ")
+    expect(screen.getByText("3/200")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "保存" }))
+
+    await waitFor(() => {
+      expect(updateGroupConversationAnnouncement).toHaveBeenCalledWith(
+        "conversation-group-1",
+        "🚀发布",
+      )
+    })
+  })
+
+  it("requires confirmation before clearing an announcement", async () => {
+    const user = userEvent.setup()
+    const conversation = { ...createOwnedGroupConversation(), announcement: "已有公告" }
+    const updateGroupConversationAnnouncement = vi.fn().mockResolvedValue(conversation)
+    renderGroupInfo(conversation, { updateGroupConversationAnnouncement })
+
+    await user.click(screen.getByRole("button", { name: "修改群公告" }))
+    await user.click(screen.getByRole("button", { name: "清空公告" }))
+    expect(updateGroupConversationAnnouncement).not.toHaveBeenCalled()
+
+    const dialog = screen.getByRole("alertdialog", { name: "确认清空群公告" })
+    await user.click(within(dialog).getByRole("button", { name: "清空公告" }))
+    await waitFor(() => {
+      expect(updateGroupConversationAnnouncement).toHaveBeenCalledWith("conversation-group-1", "")
+    })
+  })
 })
+
+function renderGroupInfo(
+  conversation: ClientConversation,
+  overrides: Partial<ClientDataContextValue> = {},
+) {
+  return render(
+    <MemoryRouter>
+      <ClientDataContext.Provider
+        value={createClientDataContextValue({
+          conversations: [conversation],
+          getConversation: vi.fn((conversationId: string) =>
+            conversationId === conversation.id ? conversation : null,
+          ),
+          ...overrides,
+        })}
+      >
+        <Sheet open>
+          <SheetContent showCloseButton={false}>
+            <GroupConversationInfo conversationId={conversation.id} />
+          </SheetContent>
+        </Sheet>
+      </ClientDataContext.Provider>
+    </MemoryRouter>,
+  )
+}
 
 function createClientDataContextValue(
   overrides: Partial<ClientDataContextValue>,
@@ -150,6 +220,10 @@ function createClientDataContextValue(
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
+    loadAfterConversationMessages: vi.fn(),
+    consumeConversationMessageFocus: vi.fn(),
+    focusConversationMessage: vi.fn(),
+    replaceWithLatestMessages: vi.fn(),
     loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
     setConversationMuted: vi.fn(),
@@ -182,6 +256,7 @@ function createClientDataContextValue(
     updateConversationPinned: vi.fn(),
     updateConversationMuted: vi.fn(),
     updateGroupConversationAvatar: vi.fn(),
+    updateGroupConversationAnnouncement: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,
   }

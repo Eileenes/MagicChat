@@ -2,6 +2,7 @@ import path from "node:path"
 import { app, dialog, powerMonitor } from "electron"
 import { IPC } from "@shared/bridge"
 import { AuthController } from "@main/auth-controller"
+import { ASRController } from "@main/asr-controller"
 import { ConfigStore } from "@main/config-store"
 import { CredentialStore } from "@main/credential-store"
 import { Diagnostics } from "@main/diagnostics"
@@ -73,6 +74,7 @@ async function start(): Promise<void> {
   const system = new SystemIntegration(store, windows)
   const proxyAuth = new ProxyAuthPrompt(windows, iconPath)
   const realtime = new RealtimeController(profiles, sessions, proxyAuth)
+  const asr = new ASRController(profiles, sessions, proxyAuth)
   const trayAvailable = system.createTray(trayIconPath)
   if (
     !trayAvailable &&
@@ -110,6 +112,7 @@ async function start(): Promise<void> {
   })
   const unregisterIpc = registerIpc({
     auth,
+    asr,
     credentials,
     diagnostics,
     files,
@@ -128,6 +131,7 @@ async function start(): Promise<void> {
   const hidden = process.argv.includes("--hidden") && store.getSettings().autoLaunch
   const mainWindow = windows.create(hidden)
   mainWindow.webContents.once("did-finish-load", () => void startupHealth.markHealthy())
+  powerMonitor.on("suspend", () => asr.closeAll())
   powerMonitor.on("resume", () => realtime.reconnectAll())
   powerMonitor.on("unlock-screen", () => realtime.reconnectAll())
   app.on("activate", () => windows.show())
@@ -153,6 +157,8 @@ async function start(): Promise<void> {
   let transferExitConfirmed = false
   app.on("before-quit", (event) => {
     if (updater.isInstallIntent()) {
+      http.cancelAll()
+      asr.closeAll()
       auth.dispose()
       realtime.closeAll()
       void files.cleanup()
@@ -173,6 +179,8 @@ async function start(): Promise<void> {
     }
     cleanupStarted = true
     windows.prepareToQuit()
+    http.cancelAll()
+    asr.closeAll()
     auth.dispose()
     realtime.closeAll()
     event.preventDefault()

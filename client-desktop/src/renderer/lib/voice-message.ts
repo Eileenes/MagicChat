@@ -6,4 +6,5 @@ export const voiceMessageMaxDurationMS = 60_000
 export type VoiceMessageRecording = {
   blob: Blob
   durationMS: number
+  transcript?: string
 }

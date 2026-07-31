@@ -5,6 +5,7 @@ import type {
   MessageCachePage,
   MessageCacheStats,
   MessageCacheSyncState,
+  MessageCacheWindowPage,
 } from "@shared/message-cache-contract"
 
 export interface MessageRepository {
@@ -34,6 +35,11 @@ export interface MessageRepository {
   getStats(): Promise<MessageCacheStats>
   getSyncState(conversationId: string): Promise<MessageCacheSyncState>
   listSyncStates(): Promise<ReadonlyArray<MessageCacheSyncState>>
+  readAround(
+    conversationId: string,
+    targetSeq: number,
+    limit: number,
+  ): Promise<MessageCacheWindowPage>
   readBefore(conversationId: string, beforeSeq: number, limit: number): Promise<MessageCachePage>
   readRecent(conversationId: string, limit: number): Promise<MessageCachePage>
   remove(

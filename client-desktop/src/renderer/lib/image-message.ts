@@ -1,10 +1,45 @@
 export const imageMessageMaxBytes = 2 * 1024 * 1024
+export type ImageThumbnailFrame = { height: number; width: number }
+
+const legacyImageThumbnailSize = 256
+const minImageThumbnailWidth = 160
+const maxImageThumbnailWidth = 320
+const maxImageThumbnailHeight = 360
 
 const imageMessageMaxDimension = 1920
 const imageMessageOutputType = "image/webp"
 const imageMessageFallbackType = "image/png"
 const imageMessageOutputQuality = 0.82
 const acceptedImageMessageTypes = new Set(["image/jpeg", "image/png", "image/webp"])
+
+export function getImageThumbnailFrame(image: {
+  height?: number
+  width?: number
+}): ImageThumbnailFrame {
+  const imageWidth = image.width
+  const imageHeight = image.height
+  if (
+    typeof imageWidth !== "number" ||
+    typeof imageHeight !== "number" ||
+    !Number.isFinite(imageWidth) ||
+    !Number.isFinite(imageHeight) ||
+    imageWidth <= 0 ||
+    imageHeight <= 0
+  ) {
+    return {
+      height: legacyImageThumbnailSize,
+      width: legacyImageThumbnailSize,
+    }
+  }
+
+  const width = Math.min(maxImageThumbnailWidth, Math.max(minImageThumbnailWidth, imageWidth))
+  const height = Math.min(maxImageThumbnailHeight, (imageHeight * width) / imageWidth)
+
+  return {
+    height: Math.max(1, Math.round(height)),
+    width: Math.max(1, Math.round(width)),
+  }
+}
 
 export async function compressImageForMessage(sourceFile: File) {
   if (!isAcceptedImageMessageFile(sourceFile)) {
