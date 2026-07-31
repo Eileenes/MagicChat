@@ -255,6 +255,10 @@ assert_contains "homepage/src/pages/index.astro" "开源 · 免费私有化部�
 assert_contains "homepage/src/pages/index.astro" "AGPL v3 开源"
 assert_contains "homepage/src/pages/index.astro" "Docker 私有部署"
 assert_contains "homepage/src/pages/index.astro" "办公 AI 助理"
+assert_contains "homepage/src/pages/index.astro" 'href="https://app.jiying.chat/"'
+assert_contains "homepage/src/components/SiteFooter.astro" 'href="https://app.jiying.chat/"'
+assert_not_contains "homepage/src/pages/index.astro" "chat.chaitin.net"
+assert_not_contains "homepage/src/components/SiteFooter.astro" "chat.chaitin.net"
 assert_not_contains "homepage/src/pages/index.astro" "茉莉"
 assert_not_contains "homepage/src/components/SiteFooter.astro" "茉莉"
 assert_not_contains "homepage/src/components/SiteHeader.astro" "desktop-nav"
