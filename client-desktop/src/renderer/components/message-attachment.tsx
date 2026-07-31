@@ -23,10 +23,7 @@ type MessageAttachmentProps = {
 export function MessageAttachment({ file }: MessageAttachmentProps) {
   const [downloading, setDownloading] = React.useState(false)
 
-  async function handleDownload(event: React.MouseEvent<HTMLButtonElement>) {
-    event.preventDefault()
-    event.stopPropagation()
-
+  async function handleDownload() {
     if (downloading) {
       return
     }
@@ -51,7 +48,16 @@ export function MessageAttachment({ file }: MessageAttachmentProps) {
   }
 
   return (
-    <div className="flex w-80 max-w-full items-center gap-3">
+    <Button
+      aria-disabled={downloading}
+      aria-label={`下载 ${file.name}`}
+      className="h-auto w-80 max-w-full justify-start gap-3 p-0 text-left font-normal hover:bg-background/40"
+      disabled={downloading}
+      onClick={() => void handleDownload()}
+      title="下载"
+      type="button"
+      variant="ghost"
+    >
       <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/50 text-muted-foreground">
         <AttachmentFileIcon fileName={file.name} />
       </div>
@@ -61,23 +67,14 @@ export function MessageAttachment({ file }: MessageAttachmentProps) {
           {formatFileSize(file.sizeBytes)}
         </div>
       </div>
-      <Button
-        aria-disabled={downloading}
-        aria-label={`下载 ${file.name}`}
-        className="hover:bg-background/70 data-[state=open]:bg-background/70 dark:hover:bg-background/70 dark:data-[state=open]:bg-background/70"
-        onClick={handleDownload}
-        size="icon-sm"
-        title="下载"
-        type="button"
-        variant="ghost"
-      >
+      <span className="flex size-8 shrink-0 items-center justify-center">
         {downloading ? (
           <LoaderCircle className="size-4 animate-spin" />
         ) : (
           <Download className="size-4" />
         )}
-      </Button>
-    </div>
+      </span>
+    </Button>
   )
 }
 

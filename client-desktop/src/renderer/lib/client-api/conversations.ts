@@ -22,6 +22,7 @@ import type {
   CreateGroupConversationInput,
   AddGroupConversationMembersInput,
   UpdateGroupConversationNameInput,
+  UpdateGroupConversationAnnouncementInput,
   AddGroupConversationMembersResult,
   GroupConversationActionResult,
   UploadGroupConversationAvatarResult,
@@ -446,6 +447,40 @@ export async function updateGroupConversationName(
   }
 }
 
+export async function updateGroupConversationAnnouncement(
+  conversationId: string,
+  input: UpdateGroupConversationAnnouncementInput,
+  fetcher: ClientDataFetch = fetch,
+): Promise<GroupConversationActionResult> {
+  const response = await fetcher(
+    `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/announcement`,
+    {
+      body: JSON.stringify({ announcement: input.announcement }),
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+    },
+  )
+  const payload = await readJson<
+    ClientDataErrorEnvelope | ClientDataSuccessEnvelope<GroupConversationActionResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "修改群公告失败")
+  }
+
+  const data = (payload as ClientDataSuccessEnvelope<GroupConversationActionResponse> | undefined)
+    ?.data
+  if (!data?.conversation) {
+    throw new ClientDataRequestError("修改群公告响应格式不正确")
+  }
+
+  return {
+    conversation: normalizeConversation(data.conversation),
+    message: data.message ? normalizeMessage(data.message) : null,
+  }
+}
+
 export async function leaveGroupConversation(
   conversationId: string,
   fetcher: ClientDataFetch = fetch,
@@ -662,6 +697,7 @@ function normalizeConversation(conversation: ConversationResponse | undefined): 
   }
 
   const normalizedConversation: ClientConversation = {
+    announcement: conversation.announcement ?? "",
     avatar: conversation.avatar ?? "",
     canSend: conversation.can_send !== false,
     createdAt: conversation.created_at,

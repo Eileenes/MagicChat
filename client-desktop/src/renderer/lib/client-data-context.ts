@@ -25,9 +25,15 @@ export type ClientConversationMessageState = {
   loaded: boolean
   loading: boolean
   loadingBefore: boolean
+  loadingAfter: boolean
+  focus: { messageId: string; requestKey: number } | null
+  historyTarget: { messageId: string; seq: number } | null
+  latestKnownSeq: number
   messages: ClientMessage[]
   page: ClientMessagePage | null
+  pendingLatestMessageCount: number
   sending: boolean
+  viewMode: "history" | "latest"
 }
 
 export type SendConversationMessageOptions = {
@@ -79,6 +85,16 @@ export type ClientDataContextValue = {
   getConversation: (conversationId: string) => ClientConversation | null
   getConversationMessageState: (conversationId: string) => ClientConversationMessageState
   loadBeforeConversationMessages: (conversationId: string) => void
+  loadAfterConversationMessages: (conversationId: string) => void
+  focusConversationMessage: (
+    conversationId: string,
+    target: { messageId: string; seq: number },
+  ) => Promise<void>
+  consumeConversationMessageFocus: (
+    conversationId: string,
+    focus: { messageId: string; requestKey: number },
+  ) => void
+  replaceWithLatestMessages: (conversationId: string) => void
   markConversationRead: (
     conversationId: string,
     options?: MarkConversationReadOptions,
@@ -129,6 +145,10 @@ export type ClientDataContextValue = {
   setGroupConversationPublic: (conversationId: string) => Promise<ClientConversation>
   setGroupConversationPrivate: (conversationId: string) => Promise<ClientConversation>
   updateGroupConversationName: (conversationId: string, name: string) => Promise<ClientConversation>
+  updateGroupConversationAnnouncement: (
+    conversationId: string,
+    announcement: string,
+  ) => Promise<ClientConversation>
   refreshConversations: () => Promise<void>
   refreshContacts: () => Promise<void>
   refreshMe: () => Promise<void>

@@ -26,6 +26,7 @@ export type MessageCacheWorkerOperation =
   | Readonly<{ kind: "getSyncState"; scope: MessageCacheScope }>
   | Readonly<{ kind: "health" }>
   | Readonly<{ kind: "listSyncStates"; target: AuthenticatedTarget }>
+  | Readonly<{ kind: "readAround"; limit: number; scope: MessageCacheScope; targetSeq: number }>
   | Readonly<{ beforeSeq: number; kind: "readBefore"; limit: number; scope: MessageCacheScope }>
   | Readonly<{ kind: "readRecent"; limit: number; scope: MessageCacheScope }>
   | Readonly<{

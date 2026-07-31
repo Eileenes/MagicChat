@@ -118,27 +118,30 @@ function CreateGroupConversationForm({
   }, [apps, keyword])
   const visibleCandidates: CreateGroupCandidate[] = tab === "apps" ? filteredApps : filteredContacts
 
-  function toggleCandidate(candidate: CreateGroupCandidate, checked: boolean | string) {
-    const key = createGroupCandidateKey(candidate)
-    setSelectedCandidateKeys((currentKeys) => {
-      const nextChecked = Boolean(checked)
-      const currentChecked = currentKeys.has(key)
+  const toggleCandidate = React.useCallback(
+    (candidate: CreateGroupCandidate, checked: boolean | string) => {
+      const key = createGroupCandidateKey(candidate)
+      setSelectedCandidateKeys((currentKeys) => {
+        const nextChecked = Boolean(checked)
+        const currentChecked = currentKeys.has(key)
 
-      if (currentChecked === nextChecked) {
-        return currentKeys
-      }
+        if (currentChecked === nextChecked) {
+          return currentKeys
+        }
 
-      const nextKeys = new Set(currentKeys)
+        const nextKeys = new Set(currentKeys)
 
-      if (nextChecked) {
-        nextKeys.add(key)
-      } else {
-        nextKeys.delete(key)
-      }
+        if (nextChecked) {
+          nextKeys.add(key)
+        } else {
+          nextKeys.delete(key)
+        }
 
-      return nextKeys
-    })
-  }
+        return nextKeys
+      })
+    },
+    [],
+  )
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -209,31 +212,12 @@ function CreateGroupConversationForm({
           />
         </div>
       </div>
-      <div className="h-64 overflow-y-auto rounded-md border">
-        <ItemGroup
-          aria-label={tab === "apps" ? "群聊应用" : "群聊成员"}
-          className="gap-1 p-2 has-data-[size=sm]:gap-1"
-          role="group"
-        >
-          {visibleCandidates.map((candidate) => {
-            const key = createGroupCandidateKey(candidate)
-
-            return (
-              <CreateGroupMemberItem
-                candidate={candidate}
-                checked={selectedCandidateKeys.has(key)}
-                key={key}
-                onCheckedChange={(checked) => toggleCandidate(candidate, checked)}
-              />
-            )
-          })}
-          {visibleCandidates.length === 0 && (
-            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-              {tab === "apps" ? "没有匹配的应用" : "没有匹配的联系人"}
-            </div>
-          )}
-        </ItemGroup>
-      </div>
+      <CreateGroupCandidateList
+        candidates={visibleCandidates}
+        onToggleCandidate={toggleCandidate}
+        selectedCandidateKeys={selectedCandidateKeys}
+        tab={tab}
+      />
       <DialogFooter>
         <DialogClose asChild>
           <Button disabled={creating} type="button" variant="outline">
@@ -248,6 +232,46 @@ function CreateGroupConversationForm({
     </form>
   )
 }
+
+const CreateGroupCandidateList = React.memo(function CreateGroupCandidateList({
+  candidates,
+  onToggleCandidate,
+  selectedCandidateKeys,
+  tab,
+}: {
+  candidates: CreateGroupCandidate[]
+  onToggleCandidate: (candidate: CreateGroupCandidate, checked: boolean | string) => void
+  selectedCandidateKeys: Set<string>
+  tab: "users" | "apps"
+}) {
+  return (
+    <div className="h-64 overflow-y-auto rounded-md border">
+      <ItemGroup
+        aria-label={tab === "apps" ? "群聊应用" : "群聊成员"}
+        className="gap-1 p-2 has-data-[size=sm]:gap-1"
+        role="group"
+      >
+        {candidates.map((candidate) => {
+          const key = createGroupCandidateKey(candidate)
+
+          return (
+            <CreateGroupMemberItem
+              candidate={candidate}
+              checked={selectedCandidateKeys.has(key)}
+              key={key}
+              onCheckedChange={(checked) => onToggleCandidate(candidate, checked)}
+            />
+          )
+        })}
+        {candidates.length === 0 && (
+          <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+            {tab === "apps" ? "没有匹配的应用" : "没有匹配的联系人"}
+          </div>
+        )}
+      </ItemGroup>
+    </div>
+  )
+})
 
 function CreateGroupMemberItem({
   candidate,

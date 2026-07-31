@@ -8,6 +8,14 @@ export function preserveNewerMessageState(
   if (current.body.type === "revoked" && incoming.body.type !== "revoked") return current
 
   let next = incoming
+  if (
+    current.body.type === "revoked" &&
+    current.body.editableBody &&
+    incoming.body.type === "revoked" &&
+    !incoming.body.editableBody
+  ) {
+    next = { ...next, body: current.body }
+  }
   if ((current.reactionVersion ?? 0) > (incoming.reactionVersion ?? 0)) {
     next = {
       ...next,

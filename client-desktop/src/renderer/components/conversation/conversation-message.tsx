@@ -86,6 +86,7 @@ type MessageBubbleProps = {
   onForward?: (message: ConversationPanelMessage) => void
   onCreateTopic?: (message: ConversationPanelMessage) => void
   onMultiSelect?: (message: ConversationPanelMessage) => void
+  onReeditRevoked?: (message: ConversationPanelMessage) => void
   onReply?: (message: ConversationPanelMessage) => void
   onOpenTopic?: (conversationId: string) => void
   onRevoke?: (message: ConversationPanelMessage) => void
@@ -111,6 +112,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   onForward,
   onCreateTopic,
   onMultiSelect,
+  onReeditRevoked,
   onReply,
   onOpenTopic,
   onRevoke,
@@ -215,6 +217,9 @@ export const MessageBubble = React.memo(function MessageBubble({
         flushImage={flushImageBubble}
         mentionLabelResolver={mentionLabelResolver}
         messageId={message.id}
+        onReeditRevoked={
+          fromMe && !selectionMode && onReeditRevoked ? () => onReeditRevoked(message) : undefined
+        }
         showChoiceResponseCounts={showChoiceResponseCounts}
         onRespondToChoice={
           onRespondToChoice ? (optionIds) => onRespondToChoice(message, optionIds) : undefined
@@ -362,6 +367,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     previous.onCreateTopic === next.onCreateTopic &&
     previous.onInsertMention === next.onInsertMention &&
     previous.onMultiSelect === next.onMultiSelect &&
+    previous.onReeditRevoked === next.onReeditRevoked &&
     previous.onReply === next.onReply &&
     previous.canReply === next.canReply &&
     previous.onOpenTopic === next.onOpenTopic &&
@@ -685,6 +691,7 @@ type MessageBodyRendererProps = {
   flushImage?: boolean
   mentionLabelResolver: MentionLabelResolver
   messageId?: string
+  onReeditRevoked?: () => void
   onRespondToChoice?: (optionIds: string[]) => Promise<void>
   showChoiceResponseCounts?: boolean
 }
@@ -696,6 +703,7 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
   flushImage = false,
   mentionLabelResolver,
   messageId,
+  onReeditRevoked,
   onRespondToChoice,
   showChoiceResponseCounts = true,
 }: MessageBodyRendererProps) {
@@ -705,7 +713,7 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
     case "image":
       return (
         <div className="min-w-0">
-          <MessageImage image={body} />
+          <MessageImage hasCaption={Boolean(body.caption?.trim())} image={body} />
           {body.caption && (
             <div className={cn("min-w-0 pt-2", flushImage && "px-3 pb-3")}>
               {body.captionType === "markdown" ? (
@@ -783,7 +791,20 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
         />
       )
     case "revoked":
-      return <span className="text-muted-foreground">该消息已被撤回</span>
+      return body.editableBody && onReeditRevoked ? (
+        <span className="text-muted-foreground">
+          <button
+            className="cursor-pointer p-0 font-medium text-sky-600 transition-colors hover:text-sky-700 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none dark:text-sky-400 dark:hover:text-sky-300"
+            onClick={onReeditRevoked}
+            type="button"
+          >
+            重新编辑
+          </button>
+          已撤回的消息
+        </span>
+      ) : (
+        <span className="text-muted-foreground">该消息已被撤回</span>
+      )
     case "unsupported":
       return <span className="text-muted-foreground">暂不支持查看该消息</span>
     case "system_event":
@@ -801,6 +822,7 @@ function areMessageBodyRendererPropsEqual(
     previous.currentUserId === next.currentUserId &&
     previous.flushImage === next.flushImage &&
     previous.messageId === next.messageId &&
+    previous.onReeditRevoked === next.onReeditRevoked &&
     previous.onRespondToChoice === next.onRespondToChoice &&
     previous.showChoiceResponseCounts === next.showChoiceResponseCounts &&
     (previous.mentionLabelResolver === next.mentionLabelResolver ||

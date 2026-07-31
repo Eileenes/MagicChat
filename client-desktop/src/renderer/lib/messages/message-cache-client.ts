@@ -88,6 +88,10 @@ export class DesktopMessageRepository implements MessageRepository {
     return window.desktop.messageCache.listSyncStates(this.target)
   }
 
+  readAround(conversationId: string, targetSeq: number, limit: number) {
+    return window.desktop.messageCache.readAround(this.scope(conversationId), targetSeq, limit)
+  }
+
   readBefore(conversationId: string, beforeSeq: number, limit: number) {
     return window.desktop.messageCache.readBefore(this.scope(conversationId), beforeSeq, limit)
   }

@@ -1,8 +1,10 @@
 import type { ServerProfile } from "@shared/bridge"
 
 export type ServerRemovalDependencies = {
+  asr: { closeServer(id: string): void }
   credentials: { removeServer(id: string): Promise<void> }
   files: { cleanupServer(id: string): Promise<void> }
+  http: { cancelServer(id: string): void }
   messageCache: { clearServerBestEffort(profile: ServerProfile): void }
   realtime: { closeServer(id: string): void }
   sessions: { remove(profile: ServerProfile): Promise<void> }
@@ -15,6 +17,8 @@ export async function removeServerResources(
   id: string,
   profile: ServerProfile,
 ): Promise<void> {
+  deps.http.cancelServer(id)
+  deps.asr.closeServer(id)
   deps.realtime.closeServer(id)
   deps.uploads.cleanupServer(id)
   try {

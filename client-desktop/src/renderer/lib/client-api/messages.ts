@@ -297,6 +297,7 @@ export async function listConversationMessages(
     {
       credentials: "include",
       method: "GET",
+      signal: options.signal,
     },
   )
   const payload = await readJson<
@@ -717,6 +718,8 @@ export async function sendConversationVoiceMessage(
   if (input.replyToMessageId) {
     formData.set("reply_to_message_id", input.replyToMessageId)
   }
+  const transcript = input.transcript?.trim()
+  if (transcript) formData.set("transcript", transcript)
   formData.set("voice", input.voice, "voice-message.webm")
 
   const response = await fetcher(
@@ -1090,9 +1093,7 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
   }
 
   if (body.type === "voice") {
-    const summary = `[语音] ${formatVoiceMessageDuration(body.durationMS)}`
-
-    return body.transcript ? `${summary} - ${body.transcript}` : summary
+    return body.transcript ? `[语音] ${body.transcript}` : "[语音]"
   }
 
   if (body.type === "forward_bundle") {
@@ -1144,6 +1145,12 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
     return `${body.actor.displayName} 修改群聊名称为 ${body.name}`
   }
 
+  if (body.event === "group_announcement_updated") {
+    return body.announcement
+      ? `${body.actor.displayName} 更新了群公告`
+      : `${body.actor.displayName} 清空了群公告`
+  }
+
   return `${body.inviter.displayName} 邀请 ${body.invitees
     .map((invitee) => invitee.displayName)
     .join(",")} 加入群聊`
@@ -1156,12 +1163,6 @@ function truncateForwardBundleSummary(content: string) {
   }
 
   return `${characters.slice(0, 100).join("").trim()}…`
-}
-
-function formatVoiceMessageDuration(durationMS: number) {
-  const totalSeconds = Math.ceil(durationMS / 1_000)
-
-  return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`
 }
 
 function formatMarkdownMessageSummary(content: string) {
@@ -1205,6 +1206,7 @@ export function isClientMessageInitiatedByUser(message: ClientMessage, userId: s
     message.body.event === "group_member_left" ||
     message.body.event === "group_member_removed" ||
     message.body.event === "group_name_updated" ||
+    message.body.event === "group_announcement_updated" ||
     message.body.event === "message_revoked" ||
     message.body.event === "topic_closed"
   ) {

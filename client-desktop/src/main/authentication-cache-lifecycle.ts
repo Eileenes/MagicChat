@@ -5,9 +5,11 @@ export function handleUnauthorizedCacheLifecycle(
   dependencies: Readonly<{
     broadcastUnauthorized(target: AuthenticatedTarget): void
     clearUserBestEffort(target: AuthenticatedTarget): void
+    cancelHttp(target: AuthenticatedTarget): void
     closeRealtime(target: AuthenticatedTarget): void
   }>,
 ): void {
+  dependencies.cancelHttp(target)
   dependencies.closeRealtime(target)
   try {
     dependencies.clearUserBestEffort(target)

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Bot, Search, SearchX } from "lucide-react"
+import { Bot, LoaderCircle, Search, SearchX } from "lucide-react"
 
 import { ConversationAvatar } from "@/components/conversation/conversation-avatar"
 import { GroupAvatar } from "@/components/group-avatar"
@@ -12,12 +12,19 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getAvatarInitial } from "@/lib/avatar"
 import type {
   ClientConversation,
+  ClientMessageSearchResult,
   ContactApp,
   ContactGroup,
   ContactUser,
 } from "@/lib/client-data-api"
 import { getConversationDisplayName } from "@/lib/conversation-avatar-presentation"
+import { formatActivityTime } from "@/lib/activity-time"
 import type { ConversationSearchField, ConversationSearchResult } from "@/lib/conversation-search"
+import {
+  createClientSearchService,
+  type ClientSearchResults,
+  type MessageSearchProvider,
+} from "@/lib/client-search"
 import {
   createLocalSearchService,
   type DirectorySearchItem,
@@ -29,7 +36,7 @@ const scopes = [
   { available: true, label: "综合", value: "all" },
   { available: true, label: "通讯录", value: "directory" },
   { available: true, label: "对话", value: "conversation" },
-  { available: false, label: "聊天记录", value: "messages" },
+  { available: true, label: "聊天记录", value: "messages" },
   { available: false, label: "文档", value: "documents" },
   { available: false, label: "任务", value: "tasks" },
 ] as const
@@ -38,6 +45,7 @@ type Scope = (typeof scopes)[number]["value"]
 type SearchOption =
   | { item: DirectorySearchItem; key: string; type: "directory" }
   | { result: ConversationSearchResult; key: string; type: "conversation" }
+  | { result: ClientMessageSearchResult; key: string; type: "message" }
 
 export function GlobalSearchCommand({
   contactApps,
@@ -46,8 +54,11 @@ export function GlobalSearchCommand({
   conversations,
   currentUserId,
   getConversationDescription = getDefaultConversationDescription,
+  messageSearch,
   onSelectDirectoryItem,
+  onSelectMessageResult,
   onSelectConversation,
+  searchDebounceMs = 500,
 }: {
   contactApps: ContactApp[]
   contactGroups: ContactGroup[]
@@ -55,8 +66,11 @@ export function GlobalSearchCommand({
   conversations: ClientConversation[]
   currentUserId: string
   getConversationDescription?: (conversation: ClientConversation) => string
+  messageSearch?: MessageSearchProvider
   onSelectDirectoryItem: (item: DirectorySearchItem) => void
+  onSelectMessageResult?: (result: ClientMessageSearchResult) => void
   onSelectConversation: (conversationId: string) => void
+  searchDebounceMs?: number
 }) {
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const optionRefs = React.useRef(new Map<string, HTMLButtonElement>())
@@ -65,6 +79,18 @@ export function GlobalSearchCommand({
   const [scope, setScope] = React.useState<Scope>("all")
   const [activeIndex, setActiveIndex] = React.useState(0)
   const service = React.useMemo(
+    () =>
+      createClientSearchService({
+        apps: contactApps,
+        contacts,
+        conversations,
+        currentUserId,
+        groups: contactGroups,
+        messageSearch,
+      }),
+    [contactApps, contactGroups, contacts, conversations, currentUserId, messageSearch],
+  )
+  const localService = React.useMemo(
     () =>
       createLocalSearchService({
         apps: contactApps,
@@ -75,11 +101,64 @@ export function GlobalSearchCommand({
       }),
     [contactApps, contactGroups, contacts, conversations, currentUserId],
   )
+  const [searchState, setSearchState] = React.useState<{
+    error: string
+    key: string
+    results: ClientSearchResults
+    searching: boolean
+  }>({ error: "", key: "", results: emptySearchResults, searching: false })
+  const hasKeyword = keyword.trim().length > 0
   const scopeDefinition = scopes.find((candidate) => candidate.value === scope)!
-  const results = React.useMemo(
-    () => service.search({ keyword, scope: getLocalSearchScope(scope) }),
-    [keyword, scope, service],
+  const searchKey = `${scope}:${keyword.trim()}`
+  const messageKeywordTooShort = scope === "messages" && Array.from(keyword.trim()).length < 2
+  const canSearch = open && hasKeyword && scopeDefinition.available && !messageKeywordTooShort
+  const localResults = React.useMemo(
+    () =>
+      localService.search({
+        keyword,
+        scope: getLocalSearchScope(scope),
+      }),
+    [keyword, localService, scope],
   )
+  React.useEffect(() => {
+    if (!canSearch) return
+    const controller = new AbortController()
+    let active = true
+    const timeout = window.setTimeout(
+      () => {
+        setSearchState({ error: "", key: searchKey, results: emptySearchResults, searching: true })
+        void service
+          .search({ keyword, scope: getClientSearchScope(scope) }, { signal: controller.signal })
+          .then((results) => {
+            if (active) setSearchState({ error: "", key: searchKey, results, searching: false })
+          })
+          .catch((error: unknown) => {
+            if (active && !isAbortError(error)) {
+              setSearchState({
+                error: error instanceof Error ? error.message : "搜索内容失败，请稍后重试",
+                key: searchKey,
+                results: emptySearchResults,
+                searching: false,
+              })
+            }
+          })
+      },
+      Math.max(0, searchDebounceMs),
+    )
+    return () => {
+      active = false
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [canSearch, keyword, scope, searchDebounceMs, searchKey, service])
+  const currentSearch = searchState.key === searchKey && canSearch
+  const results = {
+    conversations: scope === "messages" ? [] : localResults.conversations,
+    directory: scope === "messages" ? [] : localResults.directory,
+    messages: currentSearch ? searchState.results.messages : [],
+  }
+  const searching = canSearch && (!currentSearch || searchState.searching)
+  const searchError = currentSearch ? searchState.error : ""
   const options = React.useMemo<SearchOption[]>(
     () =>
       scopeDefinition.available
@@ -94,9 +173,14 @@ export function GlobalSearchCommand({
               key: `conversation:${result.conversation.id}`,
               type: "conversation" as const,
             })),
+            ...results.messages.map((result) => ({
+              key: `message:${result.message.id}`,
+              result,
+              type: "message" as const,
+            })),
           ]
         : [],
-    [results.conversations, results.directory, scopeDefinition.available],
+    [results.conversations, results.directory, results.messages, scopeDefinition.available],
   )
   const normalizedActiveIndex =
     options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
@@ -107,6 +191,24 @@ export function GlobalSearchCommand({
     optionRefs.current.get(activeOption.key)?.scrollIntoView?.({ block: "nearest" })
   }, [activeOption])
 
+  React.useEffect(() => {
+    function handleSearchShortcut(event: KeyboardEvent) {
+      if (
+        event.key.toLowerCase() !== "f" ||
+        (!event.ctrlKey && !event.metaKey) ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return
+      }
+      event.preventDefault()
+      setOpen(true)
+      window.requestAnimationFrame(() => inputRef.current?.focus())
+    }
+    window.addEventListener("keydown", handleSearchShortcut)
+    return () => window.removeEventListener("keydown", handleSearchShortcut)
+  }, [])
+
   function close() {
     setOpen(false)
     setKeyword("")
@@ -116,6 +218,10 @@ export function GlobalSearchCommand({
   function selectOption(option: SearchOption) {
     if (option.type === "directory") {
       onSelectDirectoryItem(option.item)
+    } else if (option.type === "conversation") {
+      onSelectConversation(option.result.conversation.id)
+    } else if (onSelectMessageResult) {
+      onSelectMessageResult(option.result)
     } else {
       onSelectConversation(option.result.conversation.id)
     }
@@ -159,7 +265,6 @@ export function GlobalSearchCommand({
     window.requestAnimationFrame(() => inputRef.current?.focus())
   }
 
-  const hasKeyword = keyword.trim().length > 0
   const activeDescendant = activeOption
     ? `global-search-option-${normalizedActiveIndex}`
     : undefined
@@ -221,6 +326,20 @@ export function GlobalSearchCommand({
           >
             {!hasKeyword ? (
               <GlobalSearchEmptyState state="idle" />
+            ) : messageKeywordTooShort ? (
+              <GlobalSearchEmptyState description="至少输入 2 个字符" />
+            ) : searching && options.length === 0 ? (
+              <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
+                <LoaderCircle className="mr-2 size-4 animate-spin" />
+                正在搜索
+              </div>
+            ) : searchError && options.length === 0 ? (
+              <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                <span>{searchError}</span>
+                <Button onClick={() => setKeyword((value) => `${value} `)} size="sm" type="button">
+                  重试
+                </Button>
+              </div>
             ) : !scopeDefinition.available ? (
               <div className="py-12 text-center text-sm text-muted-foreground">待完善</div>
             ) : options.length === 0 ? (
@@ -276,6 +395,27 @@ export function GlobalSearchCommand({
                     />
                   )
                 })}
+                {results.messages.length > 0 && (
+                  <SearchGroupLabel id="global-search-message-label">聊天记录</SearchGroupLabel>
+                )}
+                {results.messages.map((result, resultIndex) => {
+                  const index =
+                    results.directory.length + results.conversations.length + resultIndex
+                  const option = options[index]
+                  return (
+                    <SearchRow
+                      active={index === normalizedActiveIndex}
+                      avatar={<MessageSearchResultAvatar result={result} />}
+                      description={`${result.senderName}：${result.summary}`}
+                      id={`global-search-option-${index}`}
+                      key={option.key}
+                      label={`${result.conversation.name} · ${formatActivityTime(result.message.createdAt)}`}
+                      onClick={() => selectOption(option)}
+                      onPointerMove={() => setActiveIndex(index)}
+                      optionRef={(node) => setOptionRef(optionRefs.current, option.key, node)}
+                    />
+                  )
+                })}
               </>
             )}
           </div>
@@ -285,9 +425,24 @@ export function GlobalSearchCommand({
   )
 }
 
+function getClientSearchScope(scope: Scope) {
+  if (scope === "directory" || scope === "conversation" || scope === "messages") return scope
+  return "all" as const
+}
+
 function getLocalSearchScope(scope: Scope): LocalSearchScope {
   if (scope === "directory" || scope === "conversation") return scope
   return "all"
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError"
+}
+
+const emptySearchResults: ClientSearchResults = {
+  conversations: [],
+  directory: [],
+  messages: [],
 }
 
 function SearchGroupLabel({ children, id }: { children: React.ReactNode; id: string }) {
@@ -298,13 +453,21 @@ function SearchGroupLabel({ children, id }: { children: React.ReactNode; id: str
   )
 }
 
-function GlobalSearchEmptyState({ state }: { state: "idle" | "no-results" }) {
+function GlobalSearchEmptyState({
+  description,
+  state,
+}: {
+  description?: string
+  state?: "idle" | "no-results"
+}) {
   const idle = state === "idle"
   return (
     <Empty className="min-h-48 rounded-none p-8">
       <EmptyMedia variant="icon">{idle ? <Search /> : <SearchX />}</EmptyMedia>
       <EmptyHeader>
-        <EmptyDescription>{idle ? "输入关键词开始搜索" : "未找到相关内容"}</EmptyDescription>
+        <EmptyDescription>
+          {description ?? (idle ? "输入关键词开始搜索" : "未找到相关内容")}
+        </EmptyDescription>
       </EmptyHeader>
     </Empty>
   )
@@ -371,6 +534,20 @@ function DirectorySearchResultAvatar({ item }: { item: DirectorySearchItem }) {
       {item.avatar && <AvatarImage alt={name} className="rounded-sm" src={item.avatar} />}
       <AvatarFallback aria-label={name} className="rounded-sm">
         {item.type === "app" ? <Bot className="size-4" /> : getAvatarInitial(name)}
+      </AvatarFallback>
+    </Avatar>
+  )
+}
+
+function MessageSearchResultAvatar({ result }: { result: ClientMessageSearchResult }) {
+  const name = result.conversation.name || "会话"
+  return (
+    <Avatar className="size-8 rounded-sm bg-muted after:rounded-sm">
+      {result.conversation.avatar && (
+        <AvatarImage alt={name} className="rounded-sm" src={result.conversation.avatar} />
+      )}
+      <AvatarFallback className="rounded-sm">
+        {result.conversation.type === "app" ? <Bot className="size-4" /> : getAvatarInitial(name)}
       </AvatarFallback>
     </Avatar>
   )

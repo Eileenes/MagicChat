@@ -103,6 +103,60 @@ export class MessageCacheStore {
     return this.page(scope, rows.reverse())
   }
 
+  readAround(scope: MessageCacheScope, targetSeq: number, limit: number) {
+    const key = columns(scope)
+    const beforeLimit = Math.ceil(limit / 2)
+    const afterLimit = Math.max(0, limit - beforeLimit)
+    const beforeRows = this.database
+      .prepare(
+        `SELECT conversation_id, message_id, seq, reaction_version,
+                payload_schema_version, payload_json, created_at, cached_at
+           FROM cached_messages
+          WHERE server_key = ? AND user_id = ? AND conversation_id = ? AND seq <= ?
+          ORDER BY seq DESC LIMIT ?`,
+      )
+      .all(key.serverKey, key.userId, key.conversationId, targetSeq, beforeLimit) as MessageRow[]
+    const afterRows = this.database
+      .prepare(
+        `SELECT conversation_id, message_id, seq, reaction_version,
+                payload_schema_version, payload_json, created_at, cached_at
+           FROM cached_messages
+          WHERE server_key = ? AND user_id = ? AND conversation_id = ? AND seq > ?
+          ORDER BY seq ASC LIMIT ?`,
+      )
+      .all(key.serverKey, key.userId, key.conversationId, targetSeq, afterLimit) as MessageRow[]
+    const rows = [...beforeRows.reverse(), ...afterRows]
+    const page = this.page(scope, rows)
+    const targetPresent = rows.some((row) => row.seq === targetSeq)
+    const hasMoreAfter = page.newestSeq
+      ? Boolean(
+          this.database
+            .prepare(
+              `SELECT 1 FROM cached_messages
+                WHERE server_key = ? AND user_id = ? AND conversation_id = ? AND seq > ? LIMIT 1`,
+            )
+            .get(key.serverKey, key.userId, key.conversationId, page.newestSeq),
+        )
+      : false
+    const hasCachedBefore = page.oldestSeq
+      ? Boolean(
+          this.database
+            .prepare(
+              `SELECT 1 FROM cached_messages
+                WHERE server_key = ? AND user_id = ? AND conversation_id = ? AND seq < ? LIMIT 1`,
+            )
+            .get(key.serverKey, key.userId, key.conversationId, page.oldestSeq),
+        )
+      : false
+    this.touch(key)
+    return {
+      ...page,
+      complete: page.complete && targetPresent,
+      hasMoreAfter,
+      hasMoreBefore: hasCachedBefore || page.hasMoreBefore,
+    }
+  }
+
   readBefore(scope: MessageCacheScope, beforeSeq: number, limit: number): MessageCachePage {
     const key = columns(scope)
     const state = this.syncRow(key)

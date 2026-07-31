@@ -166,6 +166,10 @@ function createClientDataContextValue(
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
+    loadAfterConversationMessages: vi.fn(),
+    consumeConversationMessageFocus: vi.fn(),
+    focusConversationMessage: vi.fn(),
+    replaceWithLatestMessages: vi.fn(),
     loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
     setConversationMuted: vi.fn(),
@@ -198,6 +202,7 @@ function createClientDataContextValue(
     updateConversationPinned: vi.fn(),
     updateConversationMuted: vi.fn(),
     updateGroupConversationAvatar: vi.fn(),
+    updateGroupConversationAnnouncement: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,
   }

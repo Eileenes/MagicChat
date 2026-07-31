@@ -4,7 +4,11 @@ import type { ConversationDraftMention } from "@/lib/conversation-drafts"
 import { getConversationMemberMentionLabel } from "@/lib/conversation-mention-labels"
 import type { ClientConversationMember } from "@/lib/client-data-api"
 import type { ConversationPanelMentionTarget } from "@/lib/conversation-panel-types"
-import { createMentionToken } from "@/lib/message-mentions"
+import {
+  createMentionToken,
+  parseMentionTemplate,
+  type MentionLabelResolver,
+} from "@/lib/message-mentions"
 import { createPinyinSearchText, normalizePinyinSearchQuery } from "@/lib/pinyin-search"
 
 const maxMentionCandidateResults = 50
@@ -267,6 +271,33 @@ export function createDraftMentionTemplate(value: string, mentions: Conversation
   }
 
   return content
+}
+
+export function createDraftFromMessageContent(
+  content: string,
+  mentionLabelResolver: MentionLabelResolver,
+) {
+  const mentions: ConversationDraftMention[] = []
+  let text = ""
+
+  for (const part of parseMentionTemplate(content, mentionLabelResolver)) {
+    if (part.type === "text") {
+      text += part.text
+      continue
+    }
+
+    const start = text.length
+    text += part.label
+    mentions.push({
+      end: text.length,
+      id: part.id,
+      label: part.label.slice(1),
+      start,
+      targetType: part.targetType,
+    })
+  }
+
+  return { mentions, text }
 }
 
 function getDraftMentionText(mention: Pick<ConversationDraftMention, "label">) {

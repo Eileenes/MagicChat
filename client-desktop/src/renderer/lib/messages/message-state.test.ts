@@ -24,8 +24,16 @@ describe("消息领域状态合并", () => {
   })
 
   it("撤回终态不会被旧活动 payload 复活", () => {
-    const revoked = createMessage("message-1", 1, { body: { type: "revoked" } })
+    const revoked = createMessage("message-1", 1, {
+      body: { editableBody: { content: "再次发送", type: "text" }, type: "revoked" },
+    })
     expect(preserveNewerMessageState(revoked, createMessage("message-1", 1))).toBe(revoked)
+    expect(
+      preserveNewerMessageState(
+        revoked,
+        createMessage("message-1", 1, { body: { type: "revoked" } }),
+      ).body,
+    ).toEqual(revoked.body)
   })
 })
 

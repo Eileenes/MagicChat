@@ -5,10 +5,14 @@ import { beginDiagnosticRequest } from "@/lib/runtime-diagnostics"
 
 export function installDesktopFetch(target: AuthenticatedTarget): () => void {
   const original = window.fetch.bind(window)
+  const lifecycle = new AbortController()
+  const activeRequestIds = new Set<string>()
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = input instanceof Request ? input : new Request(input, init)
     const url = new URL(request.url, window.location.href)
     if (!url.pathname.startsWith("/api/client/")) return original(input, init)
+    const signal = AbortSignal.any([request.signal, lifecycle.signal])
+    throwIfAborted(signal)
     const method = request.method.toUpperCase() as "DELETE" | "GET" | "PATCH" | "POST" | "PUT"
     const finishDiagnostic = beginDiagnosticRequest(method, url.pathname)
     try {
@@ -18,6 +22,7 @@ export function installDesktopFetch(target: AuthenticatedTarget): () => void {
           request,
           `${url.pathname}${url.search}`,
           method,
+          signal,
         )
         finishDiagnostic(response.status)
         return response
@@ -25,13 +30,20 @@ export function installDesktopFetch(target: AuthenticatedTarget): () => void {
       let body: { kind: "text"; value: string } | undefined
       if (method !== "GET" && method !== "DELETE")
         body = { kind: "text", value: await request.text() }
-      const response = await window.desktop.transport.request(target, {
-        body,
-        headers: Object.fromEntries(request.headers.entries()),
-        method,
-        path: `${url.pathname}${url.search}`,
-        requestId: randomUUID(),
-      })
+      const requestId = randomUUID()
+      activeRequestIds.add(requestId)
+      const response = await runAbortable(
+        signal,
+        () =>
+          window.desktop.transport.request(target, {
+            body,
+            headers: Object.fromEntries(request.headers.entries()),
+            method,
+            path: `${url.pathname}${url.search}`,
+            requestId,
+          }),
+        () => void window.desktop.transport.cancel(requestId).catch(() => undefined),
+      ).finally(() => activeRequestIds.delete(requestId))
       const headers = new Headers(response.headers)
       const responseBody =
         response.body instanceof Uint8Array
@@ -58,6 +70,11 @@ export function installDesktopFetch(target: AuthenticatedTarget): () => void {
     }
   }
   return () => {
+    lifecycle.abort(new DOMException("请求已取消", "AbortError"))
+    for (const requestId of activeRequestIds) {
+      void window.desktop.transport.cancel(requestId).catch(() => undefined)
+    }
+    activeRequestIds.clear()
     window.fetch = original
   }
 }
@@ -67,7 +84,9 @@ async function streamMultipartRequest(
   request: Request,
   path: string,
   method: "DELETE" | "GET" | "PATCH" | "POST" | "PUT",
+  signal: AbortSignal,
 ): Promise<Response> {
+  throwIfAborted(signal)
   if (!request.body) throw new Error("上传请求缺少内容")
   const streamId = await window.desktop.transport.streamStart(target, {
     headers: Object.fromEntries(request.headers.entries()),
@@ -75,23 +94,36 @@ async function streamMultipartRequest(
     path,
     requestId: randomUUID(),
   })
+  if (signal.aborted) {
+    await window.desktop.transport.streamAbort(streamId).catch(() => undefined)
+    throw abortReason(signal)
+  }
   const abort = () => {
     void window.desktop.transport.streamAbort(streamId)
   }
-  request.signal.addEventListener("abort", abort, { once: true })
+  signal.addEventListener("abort", abort, { once: true })
   try {
     const reader = request.body.getReader()
     for (;;) {
-      const { done, value } = await reader.read()
+      const { done, value } = await runAbortable(signal, () => reader.read(), abort)
       if (done) break
       for (let offset = 0; offset < value.byteLength; offset += 256 * 1024) {
-        await window.desktop.transport.streamChunk(
-          streamId,
-          value.slice(offset, offset + 256 * 1024),
+        await runAbortable(
+          signal,
+          () =>
+            window.desktop.transport.streamChunk(
+              streamId,
+              value.slice(offset, offset + 256 * 1024),
+            ),
+          abort,
         )
       }
     }
-    const response = await window.desktop.transport.streamFinish(streamId)
+    const response = await runAbortable(
+      signal,
+      () => window.desktop.transport.streamFinish(streamId),
+      abort,
+    )
     const contentType = response.headers["content-type"] ?? "application/json"
     return new Response(
       typeof response.body === "string" ? response.body : JSON.stringify(response.body),
@@ -104,8 +136,42 @@ async function streamMultipartRequest(
     await window.desktop.transport.streamAbort(streamId).catch(() => undefined)
     throw error
   } finally {
-    request.signal.removeEventListener("abort", abort)
+    signal.removeEventListener("abort", abort)
   }
+}
+
+function runAbortable<T>(
+  signal: AbortSignal,
+  operation: () => Promise<T>,
+  cancel: () => void,
+): Promise<T> {
+  throwIfAborted(signal)
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      cancel()
+      reject(abortReason(signal))
+    }
+    signal.addEventListener("abort", onAbort, { once: true })
+    operation().then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort)
+        if (signal.aborted) reject(abortReason(signal))
+        else resolve(value)
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort)
+        reject(signal.aborted ? abortReason(signal) : error)
+      },
+    )
+  })
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw abortReason(signal)
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("请求已取消", "AbortError")
 }
 
 export class DesktopWebSocket implements RealtimeWebSocketLike {

@@ -11,6 +11,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+img {
+  dynamic-range-limit: standard;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "HarmonyOS Sans SC", "HarmonyOS Sans", "PingFang SC", "Microsoft YaHei", sans-serif;

@@ -18,6 +18,7 @@ import {
   setGroupConversationPrivate as setGroupConversationPrivateRequest,
   setGroupConversationPublic as setGroupConversationPublicRequest,
   updateGroupConversationName as updateGroupConversationNameRequest,
+  updateGroupConversationAnnouncement as updateGroupConversationAnnouncementRequest,
   uploadGroupConversationAvatar as uploadGroupConversationAvatarRequest,
 } from "@/lib/client-data-api"
 import type {
@@ -235,6 +236,15 @@ export function useConversationActions({
     [applyGroupConversationAction],
   )
 
+  const updateGroupConversationAnnouncement = useCallback(
+    async (conversationId: string, announcement: string) =>
+      applyGroupConversationAction(
+        () => updateGroupConversationAnnouncementRequest(conversationId, { announcement }),
+        "修改群公告失败",
+      ),
+    [applyGroupConversationAction],
+  )
+
   const leaveGroupConversation = useCallback(
     async (conversationId: string) => {
       try {
@@ -321,6 +331,7 @@ export function useConversationActions({
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationAvatar,
+    updateGroupConversationAnnouncement,
     updateGroupConversationName,
   }
 }

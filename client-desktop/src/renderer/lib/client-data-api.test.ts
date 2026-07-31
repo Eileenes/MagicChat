@@ -238,6 +238,7 @@ describe("client data API", () => {
 
     await expect(listClientConversations(fetcher)).resolves.toEqual([
       {
+        announcement: "",
         avatar: "/assets/avatars/builtin/03.webp",
         canSend: true,
         createdAt: "2026-07-03T07:00:00Z",
@@ -478,6 +479,7 @@ describe("client data API", () => {
         fetcher,
       ),
     ).resolves.toEqual({
+      announcement: "",
       avatar: "",
       canSend: true,
       createdAt: "2026-07-03T09:30:00Z",

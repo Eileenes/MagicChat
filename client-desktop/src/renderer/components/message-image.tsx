@@ -4,6 +4,7 @@ import { ImageOff } from "lucide-react"
 import { readTemporaryFileURLs, type ClientImageMessageBody } from "@/lib/client-data-api"
 import { cn } from "@/lib/utils"
 import { resolveHostResourceUrl } from "@/lib/desktop-host"
+import { getImageThumbnailFrame } from "@/lib/image-message"
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 
 type MessageImageProps = {
+  hasCaption?: boolean
   image: ClientImageMessageBody
 }
 
@@ -31,12 +33,8 @@ type PreviewSize = {
 const minPreviewZoom = 0.5
 const maxPreviewZoom = 2
 const previewZoomStep = 0.1
-const legacyImageThumbnailSize = 256
-const minImageThumbnailWidth = 160
-const maxImageThumbnailWidth = 320
-const maxImageThumbnailHeight = 360
 
-export function MessageImage({ image }: MessageImageProps) {
+export function MessageImage({ hasCaption = false, image }: MessageImageProps) {
   const previewDragRef = React.useRef<{
     offset: PreviewOffset
     pointerId: number
@@ -286,6 +284,7 @@ export function MessageImage({ image }: MessageImageProps) {
     return (
       <MessageImageStatus
         frame={thumbnailFrame}
+        joinedCaption={hasCaption}
         icon={<ImageOff className="size-5" />}
         text="图片加载失败"
       />
@@ -293,23 +292,29 @@ export function MessageImage({ image }: MessageImageProps) {
   }
 
   if (!currentSource?.url) {
-    return <MessageImageLoadingStatus frame={thumbnailFrame} />
+    return <MessageImageLoadingStatus frame={thumbnailFrame} joinedCaption={hasCaption} />
   }
 
   return (
     <>
       <button
         aria-label="预览图片"
-        className="relative block max-w-[65vw] overflow-hidden rounded-sm bg-muted text-left"
+        className={cn(
+          "relative block max-w-[65vw] overflow-hidden bg-muted text-left",
+          hasCaption ? "rounded-t-sm" : "rounded-sm",
+        )}
         onClick={handlePreviewClick}
         style={thumbnailFrame}
         type="button"
       >
-        {!currentSource.loaded && <MessageImageLoadingStatus frame={thumbnailFrame} />}
+        {!currentSource.loaded && (
+          <MessageImageLoadingStatus frame={thumbnailFrame} joinedCaption={hasCaption} />
+        )}
         <img
           alt="图片消息"
           className={cn(
-            "absolute inset-0 h-full w-full rounded-sm object-cover",
+            "absolute inset-0 h-full w-full object-cover",
+            hasCaption ? "rounded-t-sm" : "rounded-sm",
             currentSource.loaded ? "opacity-100" : "opacity-0",
           )}
           onError={handleImageError}
@@ -369,10 +374,19 @@ export function MessageImage({ image }: MessageImageProps) {
   )
 }
 
-function MessageImageLoadingStatus({ frame }: { frame: PreviewSize }) {
+function MessageImageLoadingStatus({
+  frame,
+  joinedCaption = false,
+}: {
+  frame: PreviewSize
+  joinedCaption?: boolean
+}) {
   return (
     <div
-      className="relative flex max-w-[65vw] items-center justify-center overflow-hidden rounded-sm"
+      className={cn(
+        "relative flex max-w-[65vw] items-center justify-center overflow-hidden",
+        joinedCaption ? "rounded-t-sm" : "rounded-sm",
+      )}
       style={frame}
     >
       <Skeleton className="absolute inset-0 h-full w-full rounded-sm" />
@@ -392,15 +406,20 @@ function MessageImageLoadingStatus({ frame }: { frame: PreviewSize }) {
 function MessageImageStatus({
   frame,
   icon,
+  joinedCaption = false,
   text,
 }: {
   frame: PreviewSize
   icon: React.ReactNode
+  joinedCaption?: boolean
   text: string
 }) {
   return (
     <div
-      className="flex max-w-[65vw] flex-col items-center justify-center gap-2 overflow-hidden rounded-sm bg-muted text-muted-foreground"
+      className={cn(
+        "flex max-w-[65vw] flex-col items-center justify-center gap-2 overflow-hidden bg-muted text-muted-foreground",
+        joinedCaption ? "rounded-t-sm" : "rounded-sm",
+      )}
       style={frame}
     >
       <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/60">
@@ -409,23 +428,6 @@ function MessageImageStatus({
       <span className="min-w-0 text-xs font-medium">{text}</span>
     </div>
   )
-}
-
-function getImageThumbnailFrame(image: ClientImageMessageBody): PreviewSize {
-  if (!image.width || !image.height) {
-    return {
-      height: legacyImageThumbnailSize,
-      width: legacyImageThumbnailSize,
-    }
-  }
-
-  const width = Math.min(maxImageThumbnailWidth, Math.max(minImageThumbnailWidth, image.width))
-  const height = Math.min(maxImageThumbnailHeight, (image.height * width) / image.width)
-
-  return {
-    height: Math.max(1, Math.round(height)),
-    width: Math.max(1, Math.round(width)),
-  }
 }
 
 function getContainedPreviewSize(

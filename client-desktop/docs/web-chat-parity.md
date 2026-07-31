@@ -1,8 +1,38 @@
 # Desktop 与 Web 聊天能力差异清单
 
-更新日期：2026-07-28
+更新日期：2026-07-31
 
 行为基线：`02189fe2`、`51d536b9`、`f849d57c`、`3e0a4982`、`73dc2b15`、`4797a7a4`。
+
+本轮增量基线：`b67c30c`、`ee7207e`、`496e227`、`0f6149d`、`863789d`、
+`53f19a9`、`d00796a`、`25457e1`。
+
+## 本轮增量对照清单
+
+- `b67c30c`：聊天记录搜索与定位。Desktop 现状是本地搜索和连续消息缓存；目标为
+  `client-api/search.ts`、`MessageManager` 独立 history snapshot、Provider、全局搜索和
+  话题抽屉。保留 Desktop 持久缓存、原生 Dialog 和连续游标语义；验收覆盖隐藏会话、
+  归档话题、双向分页、返回最新、请求取消和不推进已读/同步游标。
+- `ee7207e`：统一语音输入。目标为 Desktop 自有 `voice-input-dialog.tsx`、录音 hook 和
+  composer；保留 Main/Preload 安全边界。验收覆盖重录、发送语音/文本、识别失败降级和
+  发送中防重复提交。
+- `496e227`：群公告、撤回正文和图片缩略图。目标为会话/消息 DTO、normalizer、群信息、
+  聊天面板公告、草稿恢复和消息操作；保留原生图片复制。验收覆盖权限、Unicode 200 字、
+  清空确认、实时刷新、Markdown/提及恢复和旧缓存兼容。
+- `0f6149d`：实时 ASR。目标为版本化 Shared Bridge、Main ASR Controller、Preload、PCM
+  AudioWorklet、Renderer ASR 客户端及录音状态机；Renderer 不直接连接远端 WebSocket。
+  验收覆盖认证目标隔离、背压、2 MiB 队列上限、生命周期清理和普通语音降级。
+- `863789d`：图片动态范围。目标为 Renderer 全局图片样式；使用渐进增强，不增加脚本探测。
+  验收覆盖支持与不支持 `dynamic-range-limit` 的平台。
+- `53f19a9`：富消息紧凑布局。目标为文件、链接、卡片、合并转发及语音组件；保留原生下载、
+  HTTPS 外链和键盘焦点。验收覆盖 320 px 上限、长文本和三档窗口。
+- `d00796a`：M4A/AAC 与跨端语音摘要。目标为语音 normalizer、上传和摘要；保留受保护媒体
+  transport。验收覆盖 WebM、真实 M4A/AAC-LC 和未知类型降级。
+- `25457e1`：稳定语音播放。目标为 Desktop 单实例播放状态机、15 秒启动超时、失败重试和
+  Object URL 清理；保留 seek 控件。验收覆盖首播、暂停/继续、切换、错误和卸载。
+- 共享 HTTP 取消基础设施：不对应新增 Server 协议提交，服务于搜索、分页及所有受控
+  `/api/client/*` 请求。复用 `desktop:v1:transport-cancel`，目标为 Renderer fetch adapter、
+  Main pending registry 与宿主生命周期；不新增搜索专用通道或 Renderer 批量取消能力。
 
 ## 本轮已对齐
 
@@ -17,26 +47,74 @@
 - 文件消息：统一拒绝空文件和超过 200 MiB 的文件，Main 上传路径保留流式传输和消息级上限。
 - 会话生命周期：支持确认后删除/隐藏普通会话，从联系人、群组或应用目录恢复会话，并幂等处理 `conversation.restored` 实时事件。
 - 会话发现：支持综合/通讯录/对话全局搜索、拼音匹配，以及全部/未读/单聊/群聊筛选。
-- 全局搜索外观：Desktop 与 Web 同步展示综合、通讯录、对话、聊天记录、文档和任务六个页签，后三项明确显示“待完善”，不冒充已实现能力。
+- 聊天记录搜索：综合和聊天记录范围通过 `/api/client/search/messages` 提供远端结果，支持
+  500 ms 防抖、标准请求取消、错误重试、隐藏会话恢复、活动或归档话题打开及目标消息定位；
+  文档和任务页签仍明确显示“待完善”。
 - 应用外观：Desktop 浅色/深色主题 token、48 px 主导航、登录页、加载页和 Renderer 设置弹窗已同步 Web；仅保留 macOS 顶部窗口拖拽区。
 - 消息操作：普通消息和话题源消息悬停时同步展示表态与“更多操作”，同时保留右键菜单、选择消息限制和 Desktop 既有复制能力。
 - 字体：Desktop 与 Web 均使用 `HarmonyOS Sans SC` 正文字体和 `JetBrains Mono` 代码字体，并保持相同回退字体栈。
 - 话题列表：按父会话分组、30 分钟活动规则展示参与话题，当前旧话题可强制包含，话题不提供置顶操作。
-- 长历史：非活动消息缓存压缩到最近 300 条，面板和话题抽屉注册活动视图并保护刚加载的旧历史。
+- 长历史：`MessageManager` 使用独立、有界的 history snapshot 展示目标附近消息，支持缓存
+  优先、Server 校准、双向分页、目标居中高亮、实时新消息计数和返回最新；历史读取不会推进
+  连续缓存游标或自动标记已读。
+- 群公告：消费公告字段和实时系统事件，群主/管理员可编辑或确认清空，聊天面板支持三行截断
+  与可访问展开；普通成员保持只读。
+- 撤回重新编辑：仅使用 Server 提供的合法 `editable_body` 恢复文本或 Markdown、提及区间和
+  编辑器焦点，不从旧缓存正文推断权限。
+- 受控 HTTP 取消：所有 Desktop fetch adapter 请求通过既有 v1 cancel Bridge 映射标准
+  `AbortSignal`；Main 按 WebContents owner、Server 和认证 Target 隔离，并在注销、删除
+  Server、窗口销毁和退出时清理。
+- 实时语音输入：统一弹窗支持录音、实时转写、修改文字、重录、发送语音或文字；ASR 失败
+  不丢弃录音，转写经去空白后随 multipart 上传。
+- 语音播放：接受 WebM 与 M4A 协议，提供单实例播放、seek、15 秒启动超时、媒体错误提示、
+  重试、转写展开和 Object URL/定时器清理。
+- 富消息展示：图片使用稳定缩略图框架和 `dynamic-range-limit: standard` 渐进增强；文件、
+  链接、卡片、合并转发和语音保持 320 px 紧凑布局及原生宿主动作。
 - 资源管理：群应用邀请限制为群主/管理员；应用所有者可在精确名称确认后删除自建应用，项目任务可在永久删除确认后从已加载视图移除。
 - 应用资料：入口和错误文案统一为“开发指南”。
 
 ## 保留的差异与待验证项
 
 - 全局搜索的键盘和可访问性行为由 Desktop 自有 Dialog 实现，视觉结构与页签状态已对齐 Web，未引入仅用于外观一致性的额外 Command 依赖。
+- ASR 保持 Desktop 安全架构：Renderer 只采集 PCM 并调用窄化、版本化 Bridge；Main 使用
+  不可变 `AuthenticatedTarget`、Session Cookie、系统代理和 TLS 信任链连接固定
+  `/api/client/asr/realtime`，Renderer 无法指定 URL、Header、Cookie 或通用 WebSocket 数据。
+- 图片继续使用 `magicchat-media://`/受控资源 URL 和原生复制；文件继续使用原生下载；外链
+  继续执行既有 HTTPS/系统浏览器策略；语音保留 Desktop seek 控件。
 - 通知架构保持端侧差异：Web 继续使用浏览器通知偏好；Desktop 使用系统通知权限、全局隐私设置和服务端免打扰状态，对应测试也按 Desktop 原生链路组织。
 - 接近 200 MiB 文件的峰值内存、取消及失败清理仍需在打包应用连接兼容 Server 后实测。
 - 1280x820、1024x640、760x560 三档窗口的浅色/深色主题、长文本、焦点、对话框、筛选、嵌套话题和活动上传仍需真机视觉验收。
 - 跨客户端图片说明、选择消息重连、会话隐藏/恢复和破坏性操作仍需打包 Desktop 连接兼容 Server 的联调冒烟验收。
 
+## 平台验收矩阵
+
+- 自动化：协议、缓存、搜索、ASR Bridge/Controller、PCM 编码、语音上传/播放和资源清理已纳入
+  Vitest；Renderer 边界检查确保未引入 Node/Electron 或 `client-web/src` 依赖。
+- macOS：当前开发环境已完成自动化与生产构建验证；麦克风权限、真实 ASR、系统代理、
+  休眠/恢复及正式安装包 M4A 播放仍需人工记录。
+- Windows：正式安装包中的麦克风、ASR、代理、休眠/恢复和 M4A/AAC-LC 尚未人工验收。
+- Linux：正式安装包中的麦克风、ASR、代理、休眠/恢复和 M4A/AAC-LC 尚未人工验收。
+- M4A 预期：项目锁定 `electron@43.2.0`，官方 Electron 发行构建具备 proprietary codecs
+  与 AAC/MP4 解码基础；这只构成预期能力。发布前必须使用 Server 接受的真实受保护
+  M4A/AAC-LC 文件，在每个支持的操作系统和架构记录 Electron/Chromium、
+  `canPlayType('audio/mp4; codecs="mp4a.40.2"')` 和首播、暂停/继续、seek、切换、失败重试、
+  卸载的端到端结果。
+
+## 回滚说明
+
+- 群公告、`editable_body`、语音 `transcript` 和 `audio/mp4` 属于已生效的向后兼容协议消费；
+  即使回滚 UI，也应保留 normalizer 和缓存兼容，避免合法 Server 数据再次降级。
+- 搜索入口可临时关闭，但独立 history snapshot 和连续缓存游标不得混合；不要改回把不连续
+  历史页面提交到 latest working set。
+- ASR 可按 Shared/Preload/Main/Renderer 整体切片关闭，普通 MediaRecorder 语音发送必须继续
+  可用；不得以 Renderer 直连远端 WebSocket 作为回滚替代。
+- 展示样式和播放状态机可独立回滚，但受保护资源转换、原生图片复制、文件下载和外链安全
+  策略必须保留。
+
 ## 明确不纳入本轮
 
-- Web 中尚未形成完整产品能力的项目目标、消息历史、文档和任务全局搜索功能不在本轮对齐范围内；Desktop 仅同步其“待完善”占位展示。
+- Web 中尚未形成完整产品能力的项目目标、文档和任务全局搜索功能不在本轮对齐范围内；
+  Desktop 仅同步其“待完善”占位展示。
 
 ## 说明
 

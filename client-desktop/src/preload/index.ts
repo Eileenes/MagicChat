@@ -6,11 +6,19 @@ import {
   type DesktopBridge,
   type UpdaterState,
 } from "@shared/bridge"
+import type { ASREvent } from "@shared/asr-contract"
 import type { RealtimeEnvelope } from "@shared/client-contract"
 
 const bridge: DesktopBridge = {
   version: BRIDGE_VERSION,
   app: { info: () => ipcRenderer.invoke(IPC.appInfo) },
+  asr: {
+    close: (sessionId) => ipcRenderer.invoke(IPC.asrClose, sessionId),
+    commit: (sessionId) => ipcRenderer.invoke(IPC.asrCommit, sessionId),
+    connect: (target) => ipcRenderer.invoke(IPC.asrConnect, target),
+    sendFrame: (sessionId, frame) => ipcRenderer.invoke(IPC.asrSendFrame, sessionId, frame),
+    subscribe: (listener) => subscribe<ASREvent>(IPC.asrEvent, listener),
+  },
   appearance: {
     setThemeSource: (source) => ipcRenderer.invoke(IPC.appearanceThemeSet, source),
   },
@@ -45,6 +53,8 @@ const bridge: DesktopBridge = {
     getStats: (target) => ipcRenderer.invoke(IPC.messageCacheGetStats, target),
     getSyncState: (scope) => ipcRenderer.invoke(IPC.messageCacheGetSyncState, scope),
     listSyncStates: (target) => ipcRenderer.invoke(IPC.messageCacheListSyncStates, target),
+    readAround: (scope, targetSeq, limit) =>
+      ipcRenderer.invoke(IPC.messageCacheReadAround, scope, targetSeq, limit),
     readBefore: (scope, beforeSeq, limit) =>
       ipcRenderer.invoke(IPC.messageCacheReadBefore, scope, beforeSeq, limit),
     readRecent: (scope, limit) => ipcRenderer.invoke(IPC.messageCacheReadRecent, scope, limit),

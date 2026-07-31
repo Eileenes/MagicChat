@@ -122,17 +122,20 @@ function TopicDrawerContent({ conversationId, onOpenChange, open }: TopicDrawerP
   const {
     contactApps,
     compactConversationMessages,
+    consumeConversationMessageFocus,
     contacts,
     conversations,
     ensureConversationMessages,
     getConversation,
     getConversationMessageState,
+    loadAfterConversationMessages,
     loadBeforeConversationMessages,
     markConversationRead,
     me,
     mergeIncomingConversationMessage,
     refreshConversations,
     registerConversationMessageView,
+    replaceWithLatestMessages,
     respondToChoice,
     revokeConversationMessage,
     sendConversationFile,
@@ -363,12 +366,13 @@ function TopicDrawerContent({ conversationId, onOpenChange, open }: TopicDrawerP
       !conversation ||
       !conversation.topic?.participating ||
       !messageState?.loaded ||
+      messageState.viewMode === "history" ||
       conversation.lastReadSeq >= conversation.lastMessageSeq
     ) {
       return
     }
     void markConversationRead(conversation.id).catch(() => undefined)
-  }, [conversation, markConversationRead, messageState?.loaded, open])
+  }, [conversation, markConversationRead, messageState?.loaded, messageState?.viewMode, open])
 
   function updateDraft(value: string, mentions: ConversationDraftMention[]) {
     setDraft(value)
@@ -646,8 +650,12 @@ function TopicDrawerContent({ conversationId, onOpenChange, open }: TopicDrawerP
               </>
             }
             historyError={messageState?.error ?? null}
+            historyFocus={messageState?.focus ?? null}
             historyLoading={Boolean(messageState && !messageState.loaded && !messageState.error)}
+            historyLoadingAfter={Boolean(messageState?.loadingAfter)}
             historyLoadingBefore={Boolean(messageState?.loadingBefore)}
+            historyMode={messageState?.viewMode === "history"}
+            historyPendingLatestMessageCount={messageState?.pendingLatestMessageCount ?? 0}
             historyHeader={
               <TopicSourceBanner
                 reactionConversationId={sourceConversationId}
@@ -683,13 +691,18 @@ function TopicDrawerContent({ conversationId, onOpenChange, open }: TopicDrawerP
             onCancelMessageSelection={messageSelection.cancel}
             onCancelReply={() => setReplyTarget(null)}
             onCompactMessages={() => compactConversationMessages?.(conversation.id)}
+            onConsumeHistoryFocus={(focus) =>
+              consumeConversationMessageFocus(conversation.id, focus)
+            }
             onRegisterMessageView={registerConversationMessageView}
             onDraftChange={updateDraft}
             onForwardMessage={forwardMessage}
             onForwardSelectedMessages={(mode) =>
               openForwardOperation(selectedForwardMessages, mode)
             }
+            onLoadAfterMessages={() => loadAfterConversationMessages(conversation.id)}
             onLoadBeforeMessages={() => loadBeforeConversationMessages(conversation.id)}
+            onReturnToLatestMessages={() => replaceWithLatestMessages(conversation.id)}
             onReplyToMessage={replyToMessage}
             onStartMessageSelection={startMessageSelection}
             onRevokeMessage={(message) =>

@@ -49,6 +49,8 @@ function execute(operation: MessageCacheWorkerOperation): unknown {
       return store.health()
     case "listSyncStates":
       return store.listSyncStates(operation.target)
+    case "readAround":
+      return store.readAround(operation.scope, operation.targetSeq, operation.limit)
     case "readBefore":
       return store.readBefore(operation.scope, operation.beforeSeq, operation.limit)
     case "readRecent":

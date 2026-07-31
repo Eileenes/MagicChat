@@ -17,6 +17,11 @@ import type { MessageRepository } from "./message-repository"
 import { deserializeMessage } from "./message-serializer"
 import { MessageTombstones } from "./message-tombstones"
 import { MessageWorkingSet } from "./message-working-set"
+import {
+  HistoryWindowStore,
+  type HistoryWindowSnapshot,
+  type HistoryWindowTarget,
+} from "./history-window-store"
 import { preserveNewerMessageState } from "./message-state"
 import { MessageOperationCancelledError, type MessageOperationToken } from "./message-operation"
 import {
@@ -26,12 +31,14 @@ import {
 } from "./message-catch-up"
 
 export type MessageSource = "after" | "before" | "cache" | "latest" | "local" | "realtime"
+export type HistoryRequestGuard = () => boolean
 
 export class MessageManager {
   private readonly listeners = new Set<MessageManagerListener>()
   private readonly singleFlight = new MessageSyncSingleFlight()
   private readonly tombstones = new MessageTombstones()
   private readonly workingSet = new MessageWorkingSet()
+  private readonly historyWindows: HistoryWindowStore
   private readonly queues = new Map<string, Promise<void>>()
   private readonly memoryCursors = new Map<string, number>()
   private readonly conversationEpochs = new Map<string, number>()
@@ -41,7 +48,12 @@ export class MessageManager {
   private scopeActive = true
   private scopeEpoch = 0
 
-  constructor(private readonly repository: MessageRepository) {}
+  constructor(
+    private readonly repository: MessageRepository,
+    historyWindowLimit = 300,
+  ) {
+    this.historyWindows = new HistoryWindowStore(historyWindowLimit)
+  }
 
   subscribe(listener: MessageManagerListener): () => void {
     this.listeners.add(listener)
@@ -50,6 +62,92 @@ export class MessageManager {
 
   getMessages(conversationId: string): ClientMessage[] {
     return this.workingSet.get(conversationId)
+  }
+
+  getHistoryWindow(conversationId: string): HistoryWindowSnapshot {
+    return this.historyWindows.get(conversationId)
+  }
+
+  async replaceHistoryWindow(
+    token: MessageOperationToken,
+    target: HistoryWindowTarget,
+    messages: ReadonlyArray<ClientMessage>,
+    boundaries: Readonly<{ hasMoreAfter: boolean; hasMoreBefore: boolean }>,
+    guard?: HistoryRequestGuard,
+  ): Promise<HistoryWindowSnapshot> {
+    return this.commitHistoryWindow(token, messages, guard, (accepted) =>
+      this.historyWindows.replace(token.conversationId, target, accepted, boundaries),
+    )
+  }
+
+  async mergeHistoryBefore(
+    token: MessageOperationToken,
+    messages: ReadonlyArray<ClientMessage>,
+    hasMoreBefore: boolean,
+    guard?: HistoryRequestGuard,
+  ): Promise<HistoryWindowSnapshot> {
+    return this.commitHistoryWindow(token, messages, guard, (accepted) =>
+      this.historyWindows.mergeBefore(token.conversationId, accepted, hasMoreBefore),
+    )
+  }
+
+  async mergeHistoryAfter(
+    token: MessageOperationToken,
+    messages: ReadonlyArray<ClientMessage>,
+    hasMoreAfter: boolean,
+    guard?: HistoryRequestGuard,
+  ): Promise<HistoryWindowSnapshot> {
+    return this.commitHistoryWindow(token, messages, guard, (accepted) =>
+      this.historyWindows.mergeAfter(token.conversationId, accepted, hasMoreAfter),
+    )
+  }
+
+  async hydrateHistoryAround(
+    token: MessageOperationToken,
+    target: HistoryWindowTarget,
+    limit: number,
+    guard?: HistoryRequestGuard,
+  ): Promise<HistoryWindowSnapshot | null> {
+    await this.awaitScopeBarrier(token)
+    this.assertHistoryRequestCurrent(token, guard)
+    if (this.persistentCacheDisabled) return null
+    const page = await this.repository.readAround(token.conversationId, target.seq, limit)
+    this.assertHistoryRequestCurrent(token, guard)
+    const messages = page.messages
+      .map(deserializeMessage)
+      .filter((message): message is ClientMessage => message !== null)
+    if (
+      !page.complete ||
+      messages.length !== page.messages.length ||
+      !messages.some((message) => message.id === target.messageId)
+    ) {
+      return null
+    }
+    return this.enqueue(token, async () => {
+      this.assertHistoryRequestCurrent(token, guard)
+      const accepted = messages.filter(
+        (message) => !this.tombstones.has(token.conversationId, message.id),
+      )
+      if (!accepted.some((message) => message.id === target.messageId)) return null
+      const snapshot = this.historyWindows.replace(token.conversationId, target, accepted, {
+        hasMoreAfter: page.hasMoreAfter,
+        hasMoreBefore: page.hasMoreBefore,
+      })
+      this.publish({
+        conversationId: token.conversationId,
+        kind: "history-window-changed",
+        snapshot,
+      })
+      return snapshot
+    })
+  }
+
+  async clearHistoryWindow(conversationId: string): Promise<void> {
+    const token = this.beginConversationOperation(conversationId)
+    await this.enqueue(token, async () => {
+      const snapshot = this.historyWindows.clearConversation(conversationId)
+      this.publish({ conversationId, kind: "history-window-changed", snapshot })
+    })
   }
 
   beginConversationOperation(conversationId: string): MessageOperationToken {
@@ -185,6 +283,10 @@ export class MessageManager {
       )
       const next = this.workingSet.merge(conversationId, acceptedMessages)
       this.publish({ conversationId, kind: "messages-changed", messages: next })
+      const history = this.historyWindows.updateExisting(conversationId, acceptedMessages)
+      if (history) {
+        this.publish({ conversationId, kind: "history-window-changed", snapshot: history })
+      }
       if (this.persistentCacheDisabled) return next
       try {
         const generation = await this.operationGeneration(token)
@@ -428,6 +530,10 @@ export class MessageManager {
     await this.enqueue(token, async () => {
       const next = this.workingSet.remove(conversationId, messageId)
       this.publish({ conversationId, kind: "messages-changed", messages: next })
+      const history = this.historyWindows.remove(conversationId, messageId)
+      if (history) {
+        this.publish({ conversationId, kind: "history-window-changed", snapshot: history })
+      }
       if (this.persistentCacheDisabled) return
       try {
         const generation = await this.operationGeneration(token)
@@ -444,6 +550,7 @@ export class MessageManager {
   async clearConversation(conversationId: string): Promise<void> {
     this.invalidateConversation(conversationId)
     this.workingSet.clearConversation(conversationId)
+    this.historyWindows.clearConversation(conversationId)
     this.memoryCursors.delete(conversationId)
     this.tombstones.clearConversation(conversationId)
     this.publish({ conversationId, kind: "conversation-cleared" })
@@ -456,6 +563,7 @@ export class MessageManager {
     this.scopeActive = false
     this.scopeEpoch += 1
     this.workingSet.clear()
+    this.historyWindows.clear()
     this.memoryCursors.clear()
     this.tombstones.clear()
     this.publish({ kind: "scope-cleared" })
@@ -490,7 +598,10 @@ export class MessageManager {
       const inMemory = this.workingSet
         .get(conversationId)
         .find((message) => message.id === messageId)
-      let current = inMemory
+      const inHistory = this.historyWindows
+        .get(conversationId)
+        .messages.find((message) => message.id === messageId)
+      let current = inMemory ?? inHistory
       if (!current && !this.persistentCacheDisabled) {
         try {
           current = (await this.repository.getById(conversationId, messageId)) ?? undefined
@@ -505,6 +616,10 @@ export class MessageManager {
       const nextMessage = updater(current)
       const next = this.workingSet.update(conversationId, messageId, () => nextMessage)
       if (inMemory) this.publish({ conversationId, kind: "messages-changed", messages: next })
+      const history = this.historyWindows.update(conversationId, messageId, () => nextMessage)
+      if (history) {
+        this.publish({ conversationId, kind: "history-window-changed", snapshot: history })
+      }
       if (this.persistentCacheDisabled) return
       try {
         const generation = await this.operationGeneration(token)
@@ -537,6 +652,57 @@ export class MessageManager {
     return result.finally(() => {
       if (this.queues.get(conversationId) === settled) this.queues.delete(conversationId)
     })
+  }
+
+  private commitHistoryWindow(
+    token: MessageOperationToken,
+    messages: ReadonlyArray<ClientMessage>,
+    guard: HistoryRequestGuard | undefined,
+    commit: (accepted: ReadonlyArray<ClientMessage>) => HistoryWindowSnapshot,
+  ): Promise<HistoryWindowSnapshot> {
+    const { conversationId } = token
+    if (messages.some((message) => message.conversationId !== conversationId)) {
+      return Promise.reject(new Error("历史窗口消息会话不一致"))
+    }
+    return this.enqueue(token, async () => {
+      this.assertHistoryRequestCurrent(token, guard)
+      const accepted = messages.filter(
+        (message) => !this.tombstones.has(conversationId, message.id),
+      )
+      let snapshotMessages = accepted
+      if (!this.persistentCacheDisabled && accepted.length > 0) {
+        try {
+          const generation = await this.operationGeneration(token)
+          this.assertHistoryRequestCurrent(token, guard)
+          const mergedRecords = await Promise.all(
+            accepted.map(async (message) => {
+              const persisted = await this.repository.getById(conversationId, message.id)
+              this.assertHistoryRequestCurrent(token, guard)
+              return preserveNewerMessageState(persisted ?? undefined, message)
+            }),
+          )
+          snapshotMessages = mergedRecords
+          this.assertHistoryRequestCurrent(token, guard)
+          await this.repository.upsert(conversationId, mergedRecords, generation)
+          this.assertHistoryRequestCurrent(token, guard)
+        } catch {
+          this.assertHistoryRequestCurrent(token, guard)
+          this.disablePersistentCache(conversationId)
+        }
+      }
+      this.assertHistoryRequestCurrent(token, guard)
+      const snapshot = commit(snapshotMessages)
+      this.publish({ conversationId, kind: "history-window-changed", snapshot })
+      return snapshot
+    })
+  }
+
+  private assertHistoryRequestCurrent(
+    token: MessageOperationToken,
+    guard: HistoryRequestGuard | undefined,
+  ): void {
+    this.assertOperationCurrent(token)
+    if (guard && !guard()) throw new MessageOperationCancelledError(token.conversationId)
   }
 
   private async awaitScopeBarrier(token: MessageOperationToken): Promise<void> {
