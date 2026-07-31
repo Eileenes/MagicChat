@@ -2,7 +2,10 @@ import { focusManager, QueryClientProvider } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import { AppState, useColorScheme } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
-import { SafeAreaProvider } from "react-native-safe-area-context"
+import {
+  initialWindowMetrics,
+  SafeAreaProvider,
+} from "react-native-safe-area-context"
 import { TamaguiProvider, ToastProvider, YStack } from "tamagui"
 
 import { tamaguiConfig } from "../../tamagui.config"
@@ -34,7 +37,7 @@ export function AppProviders({ children }: React.PropsWithChildren) {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaProvider>
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <TamaguiProvider
             config={tamaguiConfig}
             defaultTheme={theme.tamaguiTheme}

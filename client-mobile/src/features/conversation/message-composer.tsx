@@ -1,3 +1,4 @@
+import { ImpactFeedbackStyle, impactAsync } from "expo-haptics"
 import {
   CirclePlus,
   Keyboard as KeyboardIcon,
@@ -17,11 +18,10 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Vibration,
+  useWindowDimensions,
 } from "react-native"
 import {
   Button,
-  SizableText,
   type TamaguiElement,
   useToastController,
   XStack,
@@ -58,6 +58,7 @@ import {
   pickLibraryImageMessage,
 } from "@/features/conversation/message-upload-picker"
 import { MessageUploadDialog } from "@/features/conversation/message-upload-dialog"
+import { MessageVoiceGestureOverlay } from "@/features/conversation/message-voice-gesture-overlay"
 import { MessageVoiceDialog } from "@/features/conversation/message-voice-dialog"
 import {
   MessageReplyPreview,
@@ -111,7 +112,12 @@ export const MessageComposer = forwardRef<
   ref
 ) {
   const toast = useToastController()
-  const voiceRecorder = useVoiceMessageRecorder()
+  const windowDimensions = useWindowDimensions()
+  const [voiceTranscript, setVoiceTranscript] = useState("")
+  const voiceRecorder = useVoiceMessageRecorder({
+    onTranscript: setVoiceTranscript,
+    serverUrl: server.url,
+  })
   const inputRef = useRef<TamaguiElement>(null)
   const contentRef = useRef("")
   const mentionsRef = useRef<DraftMention[]>([])
@@ -120,6 +126,9 @@ export const MessageComposer = forwardRef<
   const selectedUploadRef = useRef<PreparedClientMessageUpload | null>(null)
   const shouldFocusAfterPickerCloseRef = useRef(false)
   const uploadInFlightRef = useRef(false)
+  const voiceDialogClosingRef = useRef(false)
+  const voicePrewarmTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null)
   const voiceUploadInFlightRef = useRef(false)
   const voiceRecordingRef = useRef<PreparedClientVoiceMessage | null>(null)
   const mountedRef = useRef(true)
@@ -132,15 +141,23 @@ export const MessageComposer = forwardRef<
     useState<PreparedClientMessageUpload | null>(null)
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false)
   const [voiceMode, setVoiceMode] = useState(false)
+  const [voiceGestureActive, setVoiceGestureActive] = useState(false)
   const [pendingSelection, setPendingSelection] =
     useState<TextSelection>()
   const canSend = content.trim().length > 0 && !disabled
   const voiceInteractionActive =
     voiceRecorder.status === "requesting" ||
     voiceRecorder.status === "recording" ||
-    voiceRecorder.status === "processing"
+    voiceRecorder.status === "processing" ||
+    voiceRecorder.status === "transcribing"
+  const voiceDialogOpen =
+    voiceMode &&
+    (voiceRecorder.status === "processing" ||
+      voiceRecorder.status === "transcribing" ||
+      voiceRecorder.status === "recorded")
+  const voiceGestureOverlayOpen = voiceGestureActive
   const interactionDisabled =
-    disabled || preparingUpload || voiceInteractionActive
+    disabled || preparingUpload || voiceInteractionActive || voiceDialogOpen
   const voicePrompt = getVoicePrompt(
     voiceRecorder.status,
     voiceRecorder.elapsedMS
@@ -160,10 +177,6 @@ export const MessageComposer = forwardRef<
   useEffect(() => {
     voiceRecordingRef.current = voiceRecorder.recording
   }, [voiceRecorder.recording])
-
-  useEffect(() => {
-    if (voiceRecorder.status === "recording") Vibration.vibrate(35)
-  }, [voiceRecorder.status])
 
   useEffect(() => {
     if (!voiceRecorder.error) return
@@ -187,6 +200,10 @@ export const MessageComposer = forwardRef<
     mountedRef.current = true
     return () => {
       mountedRef.current = false
+      if (voicePrewarmTimerRef.current !== null) {
+        clearTimeout(voicePrewarmTimerRef.current)
+        voicePrewarmTimerRef.current = null
+      }
       if (!uploadInFlightRef.current) {
         selectedUploadRef.current?.cleanup?.()
         selectedUploadRef.current = null
@@ -203,7 +220,7 @@ export const MessageComposer = forwardRef<
       setAccessoryMode(null)
     },
     focus() {
-      setVoiceMode(false)
+      leaveVoiceMode()
       setAccessoryMode(null)
       setMentionPickerOpen(false)
       focusInputAfterRender()
@@ -309,7 +326,7 @@ export const MessageComposer = forwardRef<
     const nextSelection = { end: result.cursor, start: result.cursor }
 
     updateDraft(result.value, result.mentions)
-    setVoiceMode(false)
+    leaveVoiceMode()
     requestSelection(nextSelection)
     mentionTriggerRef.current = null
     setAccessoryMode(null)
@@ -371,7 +388,7 @@ export const MessageComposer = forwardRef<
     if (interactionDisabled) return
 
     Keyboard.dismiss()
-    setVoiceMode(false)
+    leaveVoiceMode()
     setMentionPickerOpen(false)
     setAccessoryMode((current) => (current === mode ? null : mode))
   }
@@ -379,7 +396,7 @@ export const MessageComposer = forwardRef<
   function handleEmojiPress(emoji: string) {
     if (interactionDisabled) return
 
-    setVoiceMode(false)
+    leaveVoiceMode()
     const currentValue = contentRef.current
     const selection = clampSelection(selectionRef.current, currentValue.length)
     const nextValue =
@@ -443,18 +460,57 @@ export const MessageComposer = forwardRef<
     const nextVoiceMode = !voiceMode
     setAccessoryMode(null)
     setMentionPickerOpen(false)
-    setVoiceMode(nextVoiceMode)
-    if (nextVoiceMode) Keyboard.dismiss()
-    else focusInputAfterRender()
+    if (nextVoiceMode) {
+      setVoiceMode(true)
+      Keyboard.dismiss()
+      void voiceRecorder.prepareRecording()
+    } else {
+      leaveVoiceMode()
+      focusInputAfterRender()
+    }
+  }
+
+  function leaveVoiceMode() {
+    cancelScheduledVoicePrewarm()
+    setVoiceMode(false)
+    voiceRecorder.resetRecording()
+  }
+
+  function cancelScheduledVoicePrewarm() {
+    if (voicePrewarmTimerRef.current !== null) {
+      clearTimeout(voicePrewarmTimerRef.current)
+      voicePrewarmTimerRef.current = null
+    }
+    voiceDialogClosingRef.current = false
+  }
+
+  function resetAndScheduleVoicePrewarm() {
+    if (voiceDialogClosingRef.current) return
+
+    voiceDialogClosingRef.current = true
+    setVoiceTranscript("")
+    voiceRecorder.resetRecording()
+    voicePrewarmTimerRef.current = setTimeout(() => {
+      voicePrewarmTimerRef.current = null
+      voiceDialogClosingRef.current = false
+      if (mountedRef.current && voiceMode) {
+        void voiceRecorder.prepareRecording()
+      }
+    }, 300)
   }
 
   function handleVoicePressIn() {
     if (interactionDisabled || !voiceMode) return
+    cancelScheduledVoicePrewarm()
+    setVoiceGestureActive(true)
+    setVoiceTranscript("")
+    void impactAsync(ImpactFeedbackStyle.Medium)
     void voiceRecorder.startRecording()
   }
 
   function handleVoicePressOut() {
     if (!voiceMode) return
+    setVoiceGestureActive(false)
     void voiceRecorder.stopRecording()
   }
 
@@ -464,7 +520,14 @@ export const MessageComposer = forwardRef<
 
     voiceUploadInFlightRef.current = true
     try {
-      if (await onSendVoice(recording)) voiceRecorder.resetRecording()
+      if (
+        await onSendVoice({
+          ...recording,
+          transcript: voiceTranscript.trim(),
+        })
+      ) {
+        resetAndScheduleVoicePrewarm()
+      }
     } finally {
       voiceUploadInFlightRef.current = false
       if (!mountedRef.current && voiceRecordingRef.current === recording) {
@@ -472,6 +535,20 @@ export const MessageComposer = forwardRef<
         voiceRecordingRef.current = null
       }
     }
+  }
+
+  async function handleVoiceSendText() {
+    const message = voiceTranscript.trim()
+    if (voiceRecorder.status !== "recorded" || !message || disabled) return
+
+    if (await onSend(message)) {
+      resetAndScheduleVoicePrewarm()
+    }
+  }
+
+  function handleVoiceCancel() {
+    setVoiceGestureActive(false)
+    resetAndScheduleVoicePrewarm()
   }
 
   return (
@@ -487,7 +564,7 @@ export const MessageComposer = forwardRef<
           px="$2"
         >
           <CompactIconButton
-            accessibilityLabel={voiceMode ? "切换到键盘输入" : "切换到语音输入"}
+            accessibilityLabel={voiceMode ? "切换到文字输入" : "切换到语音输入"}
             disabled={interactionDisabled}
             icon={voiceMode ? KeyboardIcon : Mic}
             iconSize={26}
@@ -508,55 +585,41 @@ export const MessageComposer = forwardRef<
                 onPressOut={handleVoicePressOut}
                 prompt={voicePrompt}
                 recording={voiceInteractionActive}
+                screenHeight={windowDimensions.height}
+                screenWidth={windowDimensions.width}
               />
             ) : (
-              <>
-                {voiceInteractionActive ? (
-                  <XStack
-                    height={inputHeight}
-                    items="center"
-                    justify="center"
-                    px={COMPOSER_INPUT_HORIZONTAL_PADDING}
-                    width="100%"
-                  >
-                    <SizableText size="$4" text="center">
-                      {voicePrompt}
-                    </SizableText>
-                  </XStack>
-                ) : (
-                  <AppInput
-                    autoCapitalize="sentences"
-                    bg="transparent"
-                    borderWidth={0}
-                    color="$gray12"
-                    disabled={disabled}
-                    fontFamily="$body"
-                    fontSize="$4"
-                    focusStyle={{ borderWidth: 0, outlineWidth: 0 }}
-                    height={inputHeight}
-                    includeFontPadding={false}
-                    minH={0}
-                    multiline
-                    onChangeText={handleContentChange}
-                    onContentSizeChange={handleInputContentSizeChange}
-                    onFocus={() => setAccessoryMode(null)}
-                    onSelectionChange={handleSelectionChange}
-                    placeholder="发消息"
-                    placeholderTextColor="$gray9"
-                    px={COMPOSER_INPUT_HORIZONTAL_PADDING}
-                    py={inputVerticalPadding}
-                    ref={inputRef}
-                    returnKeyType="default"
-                    scrollEnabled={inputScrollEnabled}
-                    selection={pendingSelection}
-                    submitBehavior="newline"
-                    textAlignVertical="center"
-                    unstyled
-                    value={content}
-                    width="100%"
-                  />
-                )}
-              </>
+              <AppInput
+                autoCapitalize="sentences"
+                bg="transparent"
+                borderWidth={0}
+                color="$gray12"
+                disabled={disabled}
+                fontFamily="$body"
+                fontSize="$4"
+                focusStyle={{ borderWidth: 0, outlineWidth: 0 }}
+                height={inputHeight}
+                includeFontPadding={false}
+                minH={0}
+                multiline
+                onChangeText={handleContentChange}
+                onContentSizeChange={handleInputContentSizeChange}
+                onFocus={() => setAccessoryMode(null)}
+                onSelectionChange={handleSelectionChange}
+                placeholder="发消息"
+                placeholderTextColor="$gray9"
+                px={COMPOSER_INPUT_HORIZONTAL_PADDING}
+                py={inputVerticalPadding}
+                ref={inputRef}
+                returnKeyType="default"
+                scrollEnabled={inputScrollEnabled}
+                selection={pendingSelection}
+                submitBehavior="newline"
+                textAlignVertical="center"
+                unstyled
+                value={content}
+                width="100%"
+              />
             )}
           </YStack>
           <XStack gap="$1" items="center">
@@ -617,11 +680,25 @@ export const MessageComposer = forwardRef<
         selection={selectedUpload}
         sending={disabled}
       />
+      <MessageVoiceGestureOverlay
+        active={voiceGestureOverlayOpen}
+        elapsedMS={voiceRecorder.elapsedMS}
+        screenWidth={windowDimensions.width}
+        status={voiceRecorder.status}
+        transcript={voiceTranscript}
+      />
       <MessageVoiceDialog
-        onCancel={voiceRecorder.resetRecording}
-        onConfirm={() => void handleVoiceConfirm()}
+        elapsedMS={voiceRecorder.elapsedMS}
+        error={voiceRecorder.error}
+        onCancel={handleVoiceCancel}
+        onSendText={() => void handleVoiceSendText()}
+        onSendVoice={() => void handleVoiceConfirm()}
+        open={voiceDialogOpen}
         recording={voiceRecorder.recording}
         sending={disabled}
+        status={voiceRecorder.status}
+        transcript={voiceTranscript}
+        transcriptionError={voiceRecorder.transcriptionError}
       />
     </>
   )
@@ -635,7 +712,8 @@ function getVoicePrompt(
     return `正在录音 ${formatRecordingDuration(elapsedMS)}`
   }
   if (status === "processing") return "正在生成语音…"
-  return "按住 说话"
+  if (status === "transcribing") return "正在识别语音…"
+  return "按住说话"
 }
 
 function formatRecordingDuration(durationMS: number) {
@@ -651,12 +729,16 @@ function VoiceRecordButton({
   onPressOut,
   prompt,
   recording,
+  screenHeight,
+  screenWidth,
 }: {
   disabled: boolean
   onPressIn: () => void
   onPressOut: () => void
   prompt: string
   recording: boolean
+  screenHeight: number
+  screenWidth: number
 }) {
   return (
     <Pressable
@@ -666,6 +748,12 @@ function VoiceRecordButton({
       disabled={disabled}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
+      pressRetentionOffset={{
+        bottom: screenHeight,
+        left: screenWidth,
+        right: screenWidth,
+        top: screenHeight,
+      }}
       style={styles.voicePressTarget}
     >
       {({ pressed }) => (

@@ -235,6 +235,7 @@ export function useSendConversationVoiceMessage(
       clientMessageId: string
       durationMS: number
       replyToMessageId?: string
+      transcript?: string
       voice: ClientMessageUpload
     }) => messageManager.sendVoice(server, conversationId, input)
   )

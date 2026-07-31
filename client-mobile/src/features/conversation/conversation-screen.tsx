@@ -109,6 +109,7 @@ export function ConversationScreen() {
   )
   const appIsActiveRef = useRef(appIsActive)
   const composerRef = useRef<MessageComposerHandle>(null)
+  const openingTopicRef = useRef(false)
   const [forwardMessageState, setForwardMessage] =
     useState<ScopedMessageActionTarget | null>(null)
   const [forwardSheetOpen, setForwardSheetOpen] = useState(false)
@@ -351,6 +352,10 @@ export function ConversationScreen() {
   }, [activateConversation, conversationId, isFocused])
 
   useEffect(() => {
+    if (isFocused) openingTopicRef.current = false
+  }, [isFocused])
+
+  useEffect(() => {
     if (!isFocused || !parentConversationId) return
 
     const subscription = BackHandler.addEventListener(
@@ -362,7 +367,7 @@ export function ConversationScreen() {
           }
           return true
         }
-        router.replace(buildConversationHref(parentConversationId))
+        router.dismissTo(buildConversationHref(parentConversationId))
         return true
       }
     )
@@ -503,6 +508,7 @@ export function ConversationScreen() {
         clientMessageId: createClientMessageId(),
         durationMS: recording.durationMS,
         replyToMessageId,
+        transcript: recording.transcript,
         voice: recording.upload,
       })
       clearReplyTargetAfterSend(replyToMessageId)
@@ -636,6 +642,9 @@ export function ConversationScreen() {
   }
 
   function handleOpenTopic(topicConversationId: string) {
+    if (openingTopicRef.current) return
+
+    openingTopicRef.current = true
     router.push(
       buildTopicConversationHref(conversationId, topicConversationId)
     )
@@ -643,7 +652,7 @@ export function ConversationScreen() {
 
   function handleBack() {
     if (parentConversationId) {
-      router.replace(buildConversationHref(parentConversationId))
+      router.dismissTo(buildConversationHref(parentConversationId))
       return
     }
     router.back()
@@ -737,27 +746,28 @@ export function ConversationScreen() {
         title={conversation?.name ?? "对话"}
       />
 
-      <KeyboardAwareScreen
-        contentBackground="$backgroundLight"
-        edges={["bottom"]}
-        keyboardVerticalOffset={insets.top + PAGE_HEADER_HEIGHT}
-        scrollable={false}
-      >
-        {!conversation ? (
-          <ContentState
-            loading={expectsTopic && topicQuery.isLoading}
-            message={
-              expectsTopic
-                ? topicQuery.error?.message ?? "正在加载话题"
-                : "该会话不存在或已被移除"
-            }
-            tone={topicQuery.error ? "error" : undefined}
-          />
-        ) : !currentUser ? (
-          <ContentState loading message="正在加载用户信息" />
-        ) : (
-          <>
-            <MessageList
+      <YStack bg="$background" flex={1} pb={insets.bottom}>
+        <KeyboardAwareScreen
+          contentBackground="$backgroundLight"
+          edges={[]}
+          keyboardVerticalOffset={insets.top + PAGE_HEADER_HEIGHT}
+          scrollable={false}
+        >
+          {!conversation ? (
+            <ContentState
+              loading={expectsTopic && topicQuery.isLoading}
+              message={
+                expectsTopic
+                  ? topicQuery.error?.message ?? "正在加载话题"
+                  : "该会话不存在或已被移除"
+              }
+              tone={topicQuery.error ? "error" : undefined}
+            />
+          ) : !currentUser ? (
+            <ContentState loading message="正在加载用户信息" />
+          ) : (
+            <>
+              <MessageList
               canAddReaction={!topicArchived}
               canRespondToChoice={conversation.canSend && !topicArchived}
               conversationId={conversation.id}
@@ -797,29 +807,30 @@ export function ConversationScreen() {
               showChoiceResponseCounts={
                 shouldShowMessageChoiceResponseCounts(conversation)
               }
-            />
-            {topicArchived ? (
-              <YStack bg="$background" items="center" p="$4">
-                <SizableText color="$color10" size="$3">
-                  话题已关闭，无法继续发言
-                </SizableText>
-              </YStack>
-            ) : (
-              <MessageComposer
-                disabled={isSending || !conversation.canSend}
-                mentionCandidates={mentionCandidates}
-                onClearReply={() => setReplyTarget(null)}
-                onSend={handleSend}
-                onSendUpload={handleSendUpload}
-                onSendVoice={handleSendVoice}
-                ref={composerRef}
-                replyTarget={replyTarget}
-                server={session}
               />
-            )}
-          </>
-        )}
-      </KeyboardAwareScreen>
+              {topicArchived ? (
+                <YStack bg="$background" items="center" p="$4">
+                  <SizableText color="$color10" size="$3">
+                    话题已关闭，无法继续发言
+                  </SizableText>
+                </YStack>
+              ) : (
+                <MessageComposer
+                  disabled={isSending || !conversation.canSend}
+                  mentionCandidates={mentionCandidates}
+                  onClearReply={() => setReplyTarget(null)}
+                  onSend={handleSend}
+                  onSendUpload={handleSendUpload}
+                  onSendVoice={handleSendVoice}
+                  ref={composerRef}
+                  replyTarget={replyTarget}
+                  server={session}
+                />
+              )}
+            </>
+          )}
+        </KeyboardAwareScreen>
+      </YStack>
 
       <TopicArchiveDialog
         onConfirm={() => void handleArchiveTopic()}

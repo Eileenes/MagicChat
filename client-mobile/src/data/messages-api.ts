@@ -15,7 +15,10 @@ import type {
   MessageReactionSnapshot,
   SubmitChoiceResponseResult,
 } from "@/data/models"
-import type { ClientMessageUpload } from "@/data/message-upload"
+import {
+  createVoiceMessageExtraFields,
+  type ClientMessageUpload,
+} from "@/data/message-upload"
 
 type ApiOptions = {
   fetcher?: ApiFetch
@@ -365,6 +368,7 @@ export function sendConversationVoiceMessage(
     clientMessageId: string
     durationMS: number
     replyToMessageId?: string
+    transcript?: string
     voice: ClientMessageUpload
   },
   options: ApiOptions = {}
@@ -374,7 +378,10 @@ export function sendConversationVoiceMessage(
     conversationId,
     {
       clientMessageId: input.clientMessageId,
-      extraFields: { duration_ms: String(input.durationMS) },
+      extraFields: createVoiceMessageExtraFields(
+        input.durationMS,
+        input.transcript
+      ),
       fieldName: "voice",
       path: "voices",
       replyToMessageId: input.replyToMessageId,

@@ -384,7 +384,7 @@ function collectBodyResources(
     resources.set(body.fileId, {
       expectedSizeBytes: body.sizeBytes,
       fileId: body.fileId,
-      fileName: "voice.webm",
+      fileName: body.contentType === "audio/mp4" ? "voice.m4a" : "voice.webm",
       kind: "voice",
       mimeType: body.contentType,
       type: "attachment",

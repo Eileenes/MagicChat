@@ -306,6 +306,7 @@ async function sendVoice(
   conversationId: string,
   input: SendUploadInput & {
     durationMS: number
+    transcript?: string
     voice: ClientMessageUpload
   }
 ) {

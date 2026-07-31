@@ -375,7 +375,7 @@ function normalizeMessageBody(
     const fileId = asString(body.file_id)
     const sizeBytes = asNumber(body.size_bytes)
     if (
-      !contentType ||
+      (contentType !== "audio/webm" && contentType !== "audio/mp4") ||
       !durationMS ||
       durationMS < 0 ||
       durationMS > 60_000 ||
