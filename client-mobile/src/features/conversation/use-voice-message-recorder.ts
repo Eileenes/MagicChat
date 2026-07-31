@@ -41,7 +41,7 @@ const VOICE_RECORDING_OPTIONS: RecordingOptions = {
     maxFileSize: VOICE_MESSAGE_MAX_BYTES,
     outputFormat: "webm",
   },
-  bitRate: 24_000,
+  bitRate: Platform.OS === "ios" ? 64_000 : 24_000,
   directory: "cache",
   extension: VOICE_RECORDING_FORMAT.extension,
   ios: {
@@ -50,7 +50,7 @@ const VOICE_RECORDING_OPTIONS: RecordingOptions = {
   },
   isMeteringEnabled: true,
   numberOfChannels: 1,
-  sampleRate: 48_000,
+  sampleRate: Platform.OS === "ios" ? 44_100 : 48_000,
   web: {
     bitsPerSecond: 24_000,
     mimeType: "audio/webm;codecs=opus",

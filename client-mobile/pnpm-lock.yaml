@@ -5,8 +5,12 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@tamagui/radio-group@2.4.5': 62453fe6c40727724d2a3835dcc719075bfd657e21a86351db04d3a0b3111862
-  expo-audio@57.0.2: 62c63ff4d2697e518e579da511a100bd0e49ef1bb5bd2788aaa3066b8fdfba51
+  '@tamagui/radio-group@2.4.5':
+    hash: 62453fe6c40727724d2a3835dcc719075bfd657e21a86351db04d3a0b3111862
+    path: patches/@tamagui__radio-group@2.4.5.patch
+  expo-audio@57.0.2:
+    hash: 62c63ff4d2697e518e579da511a100bd0e49ef1bb5bd2788aaa3066b8fdfba51
+    path: patches/expo-audio@57.0.2.patch
 
 importers:
 

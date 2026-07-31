@@ -9,6 +9,10 @@ import {
   removeServerResourceCache as removeServerResourceCacheStore,
 } from "@/data/resources/resource-cache-store"
 import { downloadResource } from "@/data/resources/resource-downloader"
+import {
+  getAttachmentCacheExtension,
+  hasExpectedVoiceCacheExtension,
+} from "@/data/resources/resource-file-extension"
 import { requestResourceReadUrl } from "@/data/resources/resource-request-pool"
 import type {
   AttachmentResourceReference,
@@ -23,11 +27,17 @@ export async function getCachedAttachmentResource(
   server: ServerTarget,
   reference: AttachmentResourceReference
 ) {
+  const identity = getAttachmentIdentity(reference.fileId)
   const resource = await getCachedResource(
     server,
-    getAttachmentIdentity(reference.fileId)
+    identity
   )
-  return resource ? withMimeType(resource, reference.mimeType) : null
+  if (!resource) return null
+  if (!hasExpectedVoiceCacheExtension(reference, resource.uri)) {
+    await removeCachedResource(server, identity)
+    return null
+  }
+  return withMimeType(resource, reference.mimeType)
 }
 
 export async function ensureAttachmentResource(
@@ -36,11 +46,11 @@ export async function ensureAttachmentResource(
   options: { signal?: AbortSignal } = {}
 ) {
   const identity = getAttachmentIdentity(reference.fileId)
-  const cached = await getCachedResource(session, identity)
-  if (cached) return withMimeType(cached, reference.mimeType)
+  const cached = await getCachedAttachmentResource(session, reference)
+  if (cached) return cached
 
   const resource = await runDownloadOnce(session, identity, async () => {
-    const rechecked = await getCachedResource(session, identity)
+    const rechecked = await getCachedAttachmentResource(session, reference)
     if (rechecked) return rechecked
 
     const readUrl = await requestResourceReadUrl(session, reference.fileId)
@@ -55,7 +65,7 @@ export async function ensureAttachmentResource(
 
     return downloadToCache({
       expectedSizeBytes: readUrl.sizeBytes ?? reference.expectedSizeBytes,
-      extension: getAttachmentExtension(reference, readUrl.url),
+      extension: getAttachmentCacheExtension(reference, readUrl.url),
       identity,
       server: session,
       signal: options.signal,
@@ -207,17 +217,6 @@ function getAttachmentIdentity(fileId: string) {
 
 function getAvatarIdentity(url: string) {
   return `avatar:${url}`
-}
-
-function getAttachmentExtension(
-  reference: AttachmentResourceReference,
-  sourceUrl: string
-) {
-  if (reference.kind === "image") return getUrlExtension(sourceUrl, ".webp")
-  if (reference.kind === "voice") return ".webm"
-
-  const fileNameExtension = getPathExtension(reference.fileName ?? "")
-  return fileNameExtension || getUrlExtension(sourceUrl, ".file")
 }
 
 function getUrlExtension(value: string, fallback: string) {

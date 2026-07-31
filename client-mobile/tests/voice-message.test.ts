@@ -3,6 +3,10 @@ import test from "node:test"
 
 import { normalizeClientMessage } from "../src/data/message-normalizer.ts"
 import { createVoiceMessageExtraFields } from "../src/data/message-upload.ts"
+import {
+  getAttachmentCacheExtension,
+  hasExpectedVoiceCacheExtension,
+} from "../src/data/resources/resource-file-extension.ts"
 import { collectMessageResources } from "../src/domain/messages/message-presenter.ts"
 import { getVoiceRecordingFormat } from "../src/domain/audio/voice-recording-format.ts"
 
@@ -48,6 +52,28 @@ test("normalizes M4A voice messages and uses an m4a cache name", () => {
   const [resource] = collectMessageResources([message])
   assert.equal(resource?.fileName, "voice.m4a")
   assert.equal(resource?.mimeType, "audio/mp4")
+  assert.equal(resource && getAttachmentCacheExtension(resource, ""), ".m4a")
+  assert.equal(
+    resource && hasExpectedVoiceCacheExtension(resource, "file:///voice.webm"),
+    false
+  )
+  assert.equal(
+    resource && hasExpectedVoiceCacheExtension(resource, "file:///voice.m4a"),
+    true
+  )
+})
+
+test("keeps WebM voice resources in WebM cache files", () => {
+  const resource = {
+    fileId: "voice-file",
+    fileName: "voice.webm",
+    kind: "voice",
+    mimeType: "audio/webm",
+    type: "attachment",
+  } as const
+
+  assert.equal(getAttachmentCacheExtension(resource, ""), ".webm")
+  assert.equal(hasExpectedVoiceCacheExtension(resource, "file:///voice.webm"), true)
 })
 
 test("rejects unsupported voice content types", () => {

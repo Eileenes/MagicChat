@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "cloud.baizhi.chat",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "icon": "./assets/images/icon.png",
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -48,7 +48,7 @@
         "expo-image-picker",
         {
           "cameraPermission": "允许即应使用相机拍摄并发送图片",
-          "microphonePermission": false,
+          "microphonePermission": "允许即应使用麦克风录制并发送语音消息",
           "photosPermission": "允许即应从相册选择并发送图片"
         }
       ],
