@@ -25,7 +25,7 @@
 - `863789d`：图片动态范围。目标为 Renderer 全局图片样式；使用渐进增强，不增加脚本探测。
   验收覆盖支持与不支持 `dynamic-range-limit` 的平台。
 - `53f19a9`：富消息紧凑布局。目标为文件、链接、卡片、合并转发及语音组件；保留原生下载、
-  HTTPS 外链和键盘焦点。验收覆盖 320 px 上限、长文本和三档窗口。
+  外链安全策略和键盘焦点。验收覆盖 320 px 上限、长文本和三档窗口。
 - `d00796a`：M4A/AAC 与跨端语音摘要。目标为语音 normalizer、上传和摘要；保留受保护媒体
   transport。验收覆盖 WebM、真实 M4A/AAC-LC 和未知类型降级。
 - `25457e1`：稳定语音播放。目标为 Desktop 单实例播放状态机、15 秒启动超时、失败重试和
@@ -79,8 +79,8 @@
 - ASR 保持 Desktop 安全架构：Renderer 只采集 PCM 并调用窄化、版本化 Bridge；Main 使用
   不可变 `AuthenticatedTarget`、Session Cookie、系统代理和 TLS 信任链连接固定
   `/api/client/asr/realtime`，Renderer 无法指定 URL、Header、Cookie 或通用 WebSocket 数据。
-- 图片继续使用 `magicchat-media://`/受控资源 URL 和原生复制；文件继续使用原生下载；外链
-  继续执行既有 HTTPS/系统浏览器策略；语音保留 Desktop seek 控件。
+- 图片继续使用 `magicchat-media://`/受控资源 URL 和原生复制；文件继续使用原生下载；HTTPS
+  外链直接交给系统浏览器，HTTP 外链经用户确认后打开；语音保留 Desktop seek 控件。
 - 通知架构保持端侧差异：Web 继续使用浏览器通知偏好；Desktop 使用系统通知权限、全局隐私设置和服务端免打扰状态，对应测试也按 Desktop 原生链路组织。
 - 接近 200 MiB 文件的峰值内存、取消及失败清理仍需在打包应用连接兼容 Server 后实测。
 - 1280x820、1024x640、760x560 三档窗口的浅色/深色主题、长文本、焦点、对话框、筛选、嵌套话题和活动上传仍需真机视觉验收。

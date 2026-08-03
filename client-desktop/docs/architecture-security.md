@@ -31,8 +31,10 @@ GitHub Token、完整更新 URL、Header 或本地缓存路径；手动下载地
 - `src/shared` 只存放进程间契约，不承载页面或平台业务实现。
 
 生产 Renderer 从 `magicchat-app://app/` 加载。主窗口拒绝远程导航和任意新窗口，
-外部 HTTPS 链接必须通过 Bridge 交给系统浏览器。CSP 禁止远程脚本、对象、Frame
-和 Renderer 直接发起任意网络连接。
+工作区中的外部 HTTPS 链接通过 Bridge 直接交给系统浏览器；HTTP 链接必须先由 Renderer
+展示目标地址和未加密风险，用户确认后再打开。Main 仍会校验协议，主窗口拒绝绕过统一
+外链流程的远程导航和任意新窗口。CSP 禁止远程脚本、对象、Frame 和 Renderer 直接发起
+任意网络连接。外部 HTTP 图片仍不得自动加载。
 
 ## Renderer 独立策略
 

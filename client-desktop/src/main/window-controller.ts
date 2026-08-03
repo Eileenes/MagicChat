@@ -1,10 +1,4 @@
-import {
-  app,
-  BrowserWindow,
-  shell,
-  type BrowserWindowConstructorOptions,
-  type Event,
-} from "electron"
+import { app, BrowserWindow, type BrowserWindowConstructorOptions, type Event } from "electron"
 import { ConfigStore } from "@main/config-store"
 import { Diagnostics } from "@main/diagnostics"
 import { resolveWindowCloseAction } from "@main/window-close-policy"
@@ -112,14 +106,10 @@ export class WindowController {
   }
 
   private installSecurity(window: BrowserWindow): void {
-    window.webContents.setWindowOpenHandler(({ url }) => {
-      if (isAllowedExternal(url)) void shell.openExternal(url)
-      return { action: "deny" }
-    })
+    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
     window.webContents.on("will-navigate", (event, url) => {
       if (isTrustedRenderer(url)) return
       event.preventDefault()
-      if (isAllowedExternal(url)) void shell.openExternal(url)
     })
   }
 
@@ -171,12 +161,4 @@ function isTrustedRenderer(rawUrl: string): boolean {
     }
   }
   return false
-}
-
-function isAllowedExternal(rawUrl: string): boolean {
-  try {
-    return new URL(rawUrl).protocol === "https:"
-  } catch {
-    return false
-  }
 }

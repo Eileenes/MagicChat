@@ -1,3 +1,5 @@
+import { parseExternalWebLink } from "@shared/external-link"
+
 export type DesktopLinkAction = "blocked" | "external" | "internal" | "unhandled"
 
 export function classifyDesktopLink(
@@ -19,12 +21,8 @@ export function classifyDesktopLink(
   if (targetUrl.origin === currentUrl.origin) {
     return { action: "internal" }
   }
-  if (targetUrl.protocol === "https:") {
-    return { action: "external", url: targetUrl.toString() }
-  }
-  if (targetUrl.protocol === "http:") {
-    return { action: "blocked" }
-  }
+  const externalLink = parseExternalWebLink(targetUrl.toString())
+  if (externalLink) return { action: "external", url: externalLink.url }
 
   return { action: "unhandled" }
 }
