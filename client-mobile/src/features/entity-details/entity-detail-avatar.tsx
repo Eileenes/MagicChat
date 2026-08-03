@@ -4,7 +4,7 @@ import { Avatar, SizableText } from "tamagui"
 import { GroupAvatar } from "@/components/avatar/group-avatar"
 import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
 import { ThemedIcon } from "@/components/icons/themed-icon"
-import type { ServerTarget } from "@/data/query"
+import type { ServerTarget } from "@/core/server-target"
 import type { EntityProfile } from "@/domain/entities/entity-profile"
 
 const PROFILE_AVATAR_SIZE = 88

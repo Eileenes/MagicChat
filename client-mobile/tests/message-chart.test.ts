@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { normalizeClientMessage } from "../src/data/message-normalizer.ts"
+import { normalizeClientMessage } from "../src/data/messages/message-normalizer.ts"
 import {
   createLinePathSegments,
   createPieSlicePath,

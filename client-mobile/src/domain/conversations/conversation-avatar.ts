@@ -1,4 +1,4 @@
-import type { ClientConversation } from "@/data/models"
+import type { ClientConversation } from "@/core/models"
 
 export type ConversationAvatarType = Exclude<
   ClientConversation["type"],

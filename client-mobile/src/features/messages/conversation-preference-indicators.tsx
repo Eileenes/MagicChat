@@ -1,7 +1,7 @@
 import { BellOff, Pin } from "lucide-react-native"
 import { useTheme, XStack } from "tamagui"
 
-import type { ClientConversation } from "@/data/models"
+import type { ClientConversation } from "@/core/models"
 
 export function ConversationPreferenceIndicators({
   conversation,

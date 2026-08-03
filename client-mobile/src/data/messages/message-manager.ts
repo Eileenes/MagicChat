@@ -10,7 +10,7 @@ import {
   sendConversationVoiceMessage,
   setConversationMessageReaction,
   submitConversationMessageChoiceResponse,
-} from "@/data/messages-api"
+} from "@/data/messages/messages-api"
 import type {
   ClientMessage,
   ClientMessageList,
@@ -19,8 +19,8 @@ import type {
   MessageChoiceUpdatedEvent,
   MessageReactionsUpdatedEvent,
   MessageReactionSnapshot,
-} from "@/data/models"
-import type { ClientMessageUpload } from "@/data/message-upload"
+} from "@/core/models"
+import type { ClientMessageUpload } from "@/data/messages/message-upload"
 import {
   getMessageSyncState,
   listMessageSyncStates,
@@ -47,7 +47,7 @@ import {
   loadCachedMessagePageBefore,
   loadLatestCachedMessagePage,
 } from "@/data/messages/message-repository"
-import type { AuthenticatedTarget, ServerTarget } from "@/data/query"
+import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
 import {
   applyMessageChoiceEvent,
   applyMessageChoiceSnapshot,
@@ -306,6 +306,7 @@ async function sendVoice(
   conversationId: string,
   input: SendUploadInput & {
     durationMS: number
+    transcript?: string
     voice: ClientMessageUpload
   }
 ) {

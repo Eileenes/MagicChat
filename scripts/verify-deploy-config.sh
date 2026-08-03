@@ -217,6 +217,85 @@ assert_not_contains ".github/workflows/docker.yml" "deploy/nginx/Dockerfile"
 assert_contains ".github/workflows/docker.yml" "docker/build-push-action@v7"
 assert_contains ".github/workflows/docker.yml" 'build_args: CLIENT_BUILD_COMMIT=${{ github.sha }}'
 assert_contains ".github/workflows/docker.yml" 'build-args: ${{ matrix.build_args }}'
+assert_contains ".github/workflows/docker.yml" "working-directory: homepage"
+assert_contains ".github/workflows/docker.yml" "image: homepage"
+assert_contains ".github/workflows/docker.yml" "dockerfile: homepage/Dockerfile"
+assert_contains ".github/workflows/docker.yml" "SITE_URL=https://jiying.chat"
+
+assert_file "homepage/Dockerfile"
+assert_file "homepage/Caddyfile"
+assert_file "homepage/compose.yml"
+assert_file "homepage/systemd/jiying-homepage-update"
+assert_file "homepage/systemd/jiying-homepage-update.service"
+assert_file "homepage/systemd/jiying-homepage-update.timer"
+assert_file "homepage/src/assets/fonts/maple-mono/LICENSE.txt"
+assert_file "homepage/src/assets/fonts/maple-mono/glyphs.txt"
+assert_file "homepage/src/assets/fonts/maple-mono/manifest.json"
+assert_file "homepage/scripts/build-maple-fonts.mjs"
+assert_file "homepage/scripts/check-maple-fonts.mjs"
+assert_file "homepage/scripts/maple-font-glyphs.mjs"
+assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-regular-v7.9.woff2"
+assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-semibold-v7.9.woff2"
+assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-bold-v7.9.woff2"
+assert_contains "homepage/src/styles/global.css" 'font-family: "Maple Mono CN"'
+assert_contains "homepage/src/styles/global.css" "--teal: #4a90a4"
+assert_contains "homepage/src/styles/global.css" "--violet: #6bb5a2"
+assert_contains "homepage/src/styles/global.css" "--coral: #f4a261"
+assert_contains "homepage/src/styles/global.css" "--container: 1280px"
+assert_contains "homepage/src/styles/global.css" "--radius-md: 16px"
+assert_contains "homepage/src/styles/global.css" "outline: 3px solid var(--teal-dark)"
+assert_contains "homepage/src/styles/global.css" "@media (max-width: 1279px)"
+assert_not_contains "homepage/src/styles/global.css" ".capability-card:hover"
+assert_not_contains "homepage/src/styles/global.css" "harmonyos-sans-sc-webfont-splitted"
+assert_contains "homepage/src/components/SiteHeader.astro" 'href="https://github.com/chaitin/MagicChat"'
+assert_contains "homepage/src/components/SiteHeader.astro" 'target="_blank"'
+assert_contains "homepage/src/components/SiteHeader.astro" 'rel="noopener noreferrer"'
+assert_contains "homepage/src/components/SiteHeader.astro" 'name="tabler:brand-github-filled"'
+assert_contains "homepage/src/pages/index.astro" "开源 · 免费私有化部署"
+assert_contains "homepage/src/pages/index.astro" "AGPL v3 开源"
+assert_contains "homepage/src/pages/index.astro" "Docker 私有部署"
+assert_contains "homepage/src/pages/index.astro" "办公 AI 助理"
+assert_contains "homepage/src/pages/index.astro" 'href="https://app.jiying.chat/"'
+assert_contains "homepage/src/components/SiteFooter.astro" 'href="https://app.jiying.chat/"'
+assert_not_contains "homepage/src/pages/index.astro" "chat.chaitin.net"
+assert_not_contains "homepage/src/components/SiteFooter.astro" "chat.chaitin.net"
+assert_not_contains "homepage/src/pages/index.astro" "茉莉"
+assert_not_contains "homepage/src/components/SiteFooter.astro" "茉莉"
+assert_not_contains "homepage/src/components/SiteHeader.astro" "desktop-nav"
+assert_not_contains "homepage/src/components/SiteHeader.astro" "mobile-nav"
+assert_contains "homepage/package.json" '"astro-icon"'
+assert_contains "homepage/package.json" '"@iconify-json/tabler"'
+assert_not_contains "homepage/package.json" '"@lucide/astro"'
+assert_not_contains "homepage/package.json" "harmonyos-sans-sc-webfont-splitted"
+assert_contains "homepage/package.json" '"fonts:build": "node scripts/build-maple-fonts.mjs"'
+assert_contains "homepage/package.json" '"fonts:check": "node scripts/check-maple-fonts.mjs"'
+assert_contains "homepage/Dockerfile" "FROM caddy:2-alpine"
+assert_contains "homepage/Dockerfile" "npm ci"
+assert_contains "homepage/Dockerfile" "npm run build"
+assert_contains "homepage/Dockerfile" "caddy validate"
+assert_contains "homepage/Caddyfile" '{$SITE_ADDRESS:jiying.chat}'
+assert_contains "homepage/Caddyfile" "output file /var/log/caddy/access.log"
+assert_contains "homepage/Caddyfile" "output file /var/log/caddy/error.log"
+assert_contains "homepage/Caddyfile" "handle_path /releases/*"
+assert_contains "homepage/Caddyfile" "root * /srv/releases"
+assert_contains "homepage/Caddyfile" "http://127.0.0.1:8080"
+assert_contains "homepage/Caddyfile" "rewrite * /index.html"
+assert_contains "homepage/Caddyfile" 'Cache-Control "public, max-age=31536000, immutable"'
+assert_contains "homepage/compose.yml" "ghcr.1ms.run/chaitin/magicchat/homepage"
+assert_contains "homepage/compose.yml" "80:80"
+assert_contains "homepage/compose.yml" "443:443"
+assert_contains "homepage/compose.yml" "./data/caddy/data:/data"
+assert_contains "homepage/compose.yml" "./data/caddy/config:/config"
+assert_contains "homepage/compose.yml" "./data/caddy/logs:/var/log/caddy"
+assert_contains "homepage/compose.yml" "./data/releases:/srv/releases:ro"
+assert_contains "homepage/compose.yml" "http://127.0.0.1:8080/healthz"
+assert_not_contains "homepage/compose.yml" "http://127.0.0.1:2019/config/"
+assert_contains "homepage/systemd/jiying-homepage-update" "docker compose up -d --pull always --remove-orphans"
+assert_contains "homepage/systemd/jiying-homepage-update" "Homepage image updated"
+assert_contains "homepage/systemd/jiying-homepage-update.service" "RequiresMountsFor=/data/homepage"
+assert_contains "homepage/systemd/jiying-homepage-update.timer" "OnCalendar=hourly"
+assert_contains "homepage/systemd/jiying-homepage-update.timer" "RandomizedDelaySec=5m"
+assert_contains "homepage/systemd/jiying-homepage-update.timer" "Persistent=true"
 
 assert_contains "deploy/caddy/Caddyfile" "@client_version path /version.json"
 assert_contains "deploy/caddy/Caddyfile" 'Cache-Control "no-store, no-cache, must-revalidate"'

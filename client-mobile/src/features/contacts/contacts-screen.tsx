@@ -4,8 +4,8 @@ import { SizableText, Tabs, YStack } from "tamagui"
 
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { appConfig } from "@/config/app-config"
-import { useCachedAppInfo } from "@/data/hooks"
-import { useAuthenticatedSession } from "@/features/auth/auth-context"
+import { useCachedAppInfo } from "@/data/auth/auth-hooks"
+import { useAuthenticatedSession } from "@/providers/auth-provider"
 import {
   buildDirectorySections,
   type DirectoryItem,

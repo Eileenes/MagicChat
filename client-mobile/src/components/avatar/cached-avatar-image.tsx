@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Avatar, Image } from "tamagui"
 
-import type { ServerTarget } from "@/data/query"
+import type { ServerTarget } from "@/core/server-target"
 import { useCachedAvatar } from "@/data/resources"
 
 export function CachedAvatarImage({

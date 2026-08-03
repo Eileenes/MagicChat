@@ -14,16 +14,16 @@ import {
 } from "tamagui"
 
 import { ApiRequestError, isUnauthorizedError } from "@/data/api-client"
-import { fetchCurrentUser } from "@/data/current-user-api"
+import { fetchCurrentUser } from "@/data/users/current-user-api"
 import {
   appInfoQueryOptions,
   contactsQueryOptions,
   conversationsQueryOptions,
   queryKeys,
 } from "@/data/query"
-import { clearAuthenticatedServerData } from "@/data/session-cache"
-import { useAuth } from "@/features/auth/auth-context"
-import { useServers } from "@/features/servers/server-context"
+import { clearAuthenticatedServerData } from "@/data/auth/session-cache"
+import { useAuth } from "@/providers/auth-provider"
+import { useServers } from "@/providers/server-provider"
 
 const MINIMUM_LOADING_TIME_MS = 2_000
 

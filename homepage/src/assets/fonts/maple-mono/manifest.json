@@ -1,0 +1,13 @@
+{
+  "archiveSha256": "cb1e79b2c23dff772ae351784ef2b84454a61b3920e9b20bd5db4bf207e4472d",
+  "files": {
+    "maple-mono-cn-regular-v7.9.woff2": "b8048581fa3e01d24c3a87fd23deae53c8a3c4c7d9721bd8dc7a956ceb7d89d8",
+    "maple-mono-cn-regular-v7.9.woff": "72eab80f079d9d492b04e268fac12b4d2daa6ef4955bb1750aa452f45d6583f5",
+    "maple-mono-cn-semibold-v7.9.woff2": "d6fb660cf39cedc991996ba8979a91a1a1997a7857d98d3e2ae07dc683cc0ebc",
+    "maple-mono-cn-semibold-v7.9.woff": "85f55d7e8fa226fa9512d8de01024c78e906ca6999cb0b20678a5408a743660b",
+    "maple-mono-cn-bold-v7.9.woff2": "a3bf5cb57d0e94bdfec67078f535bf473a8ff19a85d39aabb72eac393f598a0d",
+    "maple-mono-cn-bold-v7.9.woff": "448c7ec79304c51647c7c9cf0cba2b2c5d87a359a5c6186403e2a6214cdf18b5"
+  },
+  "glyphsSha256": "2186b125fb5c468eb7bc0e0d4e0b5a46c5854ce1eb162e58d3ed31d6c81867db",
+  "version": "7.9"
+}

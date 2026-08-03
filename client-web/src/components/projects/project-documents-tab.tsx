@@ -42,35 +42,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
+import {
+  getPrototypeDocumentPath,
+  initialDocumentTree,
+  type ProjectDocumentNode,
+  type ProjectDocumentType,
+} from "@/lib/document-prototype-data"
 import { cn } from "@/lib/utils"
-
-type ProjectDocumentType =
-  "document" | "file" | "markdown" | "mindmap" | "spreadsheet"
-
-type ProjectDocumentCreator = {
-  id: string
-  name: string
-}
-
-type ProjectDocumentNodeBase = {
-  creator: ProjectDocumentCreator
-  id: string
-  name: string
-  updatedAt: string
-  updatedBy: ProjectDocumentCreator
-}
-
-type ProjectDocumentFile = ProjectDocumentNodeBase & {
-  kind: "document"
-  type: ProjectDocumentType
-}
-
-type ProjectDocumentFolder = ProjectDocumentNodeBase & {
-  children: ProjectDocumentNode[]
-  kind: "folder"
-}
-
-type ProjectDocumentNode = ProjectDocumentFile | ProjectDocumentFolder
 
 type DocumentDropTarget =
   | { folderId: string; kind: "folder" }
@@ -106,93 +84,6 @@ const documentTypeMetadata = {
   ProjectDocumentType,
   { icon: LucideIcon; iconClassName: string; label: string }
 >
-
-const initialDocumentTree: ProjectDocumentNode[] = [
-  {
-    children: [
-      {
-        creator: { id: "user-1", name: "林晓" },
-        id: "document-1",
-        kind: "document",
-        name: "产品需求文档",
-        type: "document",
-        updatedAt: "2026-07-21 16:42",
-        updatedBy: { id: "user-2", name: "陈默" },
-      },
-      {
-        creator: { id: "user-1", name: "林晓" },
-        id: "document-4",
-        kind: "document",
-        name: "视觉设计规范",
-        type: "file",
-        updatedAt: "2026-07-18 15:07",
-        updatedBy: { id: "user-1", name: "林晓" },
-      },
-    ],
-    creator: { id: "user-1", name: "林晓" },
-    id: "folder-product",
-    kind: "folder",
-    name: "产品资料",
-    updatedAt: "2026-07-21 16:42",
-    updatedBy: { id: "user-2", name: "陈默" },
-  },
-  {
-    children: [
-      {
-        creator: { id: "user-2", name: "陈默" },
-        id: "document-2",
-        kind: "document",
-        name: "API 接入说明",
-        type: "markdown",
-        updatedAt: "2026-07-20 18:15",
-        updatedBy: { id: "user-3", name: "顾然" },
-      },
-      {
-        children: [
-          {
-            creator: { id: "user-3", name: "顾然" },
-            id: "document-6",
-            kind: "document",
-            name: "消息分区设计",
-            type: "mindmap",
-            updatedAt: "2026-07-19 14:25",
-            updatedBy: { id: "user-1", name: "林晓" },
-          },
-        ],
-        creator: { id: "user-3", name: "顾然" },
-        id: "folder-technical",
-        kind: "folder",
-        name: "技术方案",
-        updatedAt: "2026-07-19 14:25",
-        updatedBy: { id: "user-1", name: "林晓" },
-      },
-    ],
-    creator: { id: "user-2", name: "陈默" },
-    id: "folder-development",
-    kind: "folder",
-    name: "开发文档",
-    updatedAt: "2026-07-20 18:15",
-    updatedBy: { id: "user-3", name: "顾然" },
-  },
-  {
-    creator: { id: "user-3", name: "顾然" },
-    id: "document-3",
-    kind: "document",
-    name: "项目排期与里程碑",
-    type: "spreadsheet",
-    updatedAt: "2026-07-19 11:36",
-    updatedBy: { id: "user-2", name: "陈默" },
-  },
-  {
-    creator: { id: "user-2", name: "陈默" },
-    id: "document-5",
-    kind: "document",
-    name: "项目会议纪要",
-    type: "document",
-    updatedAt: "2026-07-17 17:28",
-    updatedBy: { id: "user-2", name: "陈默" },
-  },
-]
 
 export function ProjectDocumentsTab() {
   const [activeId, setActiveId] = React.useState<string | null>(null)
@@ -501,6 +392,8 @@ function DocumentTreeRow({
   )
   const metadata =
     node.kind === "document" ? documentTypeMetadata[node.type] : null
+  const documentPath =
+    node.kind === "document" ? getPrototypeDocumentPath(node) : null
   const NodeIcon =
     node.kind === "folder" ? (open ? FolderOpen : Folder) : metadata!.icon
   const nameContent = (
@@ -550,6 +443,18 @@ function DocumentTreeRow({
                 {nameContent}
               </button>
             </CollapsibleTrigger>
+          ) : documentPath ? (
+            <a
+              className="flex max-w-full min-w-0 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              href={documentPath}
+              onClick={(event) => {
+                if (isDragging) event.preventDefault()
+              }}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {nameContent}
+            </a>
           ) : (
             <button
               className="flex max-w-full min-w-0 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"

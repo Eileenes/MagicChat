@@ -1,4 +1,4 @@
-import type { ClientConversation } from "@/data/models"
+import type { ClientConversation } from "@/core/models"
 
 const BUILTIN_ASSISTANT_APP_ID = "00000000-0000-0000-0000-000000000001"
 const TOPIC_CONVERSATION_LIST_ACTIVITY_WINDOW_MS = 30 * 60 * 1000

@@ -1,6 +1,6 @@
 import { Redirect, Stack } from "expo-router"
 
-import { useAuth } from "@/features/auth/auth-context"
+import { useAuth } from "@/providers/auth-provider"
 
 export default function AppStackLayout() {
   const { isAuthenticated } = useAuth()

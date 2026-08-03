@@ -8,8 +8,9 @@ import type {
   ClientMessage,
   ClientMessageSender,
   ClientUser,
-} from "@/data/models"
-import { queryKeys, type AuthenticatedTarget } from "@/data/query"
+} from "@/core/models"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { queryKeys } from "@/data/query"
 import {
   createMessageMentionLabelResolver,
   formatClientMessageBodySummary,

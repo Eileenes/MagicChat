@@ -1,5 +1,5 @@
-import type { ClientMessage, MessageChoiceSnapshot } from "@/data/models"
-import type { AuthenticatedTarget, ServerTarget } from "@/data/query"
+import type { ClientMessage, MessageChoiceSnapshot } from "@/core/models"
+import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
 
 type ChoiceMessageTombstoneStatus = "deleted" | "revoked"
 

@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useState } from "react"
 
-import { queryKeys, type AuthenticatedTarget, type ServerTarget } from "@/data/query"
+import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
+import { queryKeys } from "@/data/query"
 import {
   ensureAttachmentResource,
   ensureAvatarResource,
@@ -14,7 +15,7 @@ import type {
   AttachmentResourceReference,
   ResourceLoadState,
   ResolvedResource,
-} from "@/data/resources/resource-types"
+} from "@/core/resource-models"
 
 export function useCachedAvatar(server: ServerTarget, avatar: string) {
   const sourceUrl = resolveAvatarResourceUrl(server, avatar)

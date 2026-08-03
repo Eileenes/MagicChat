@@ -24,7 +24,7 @@ import {
 
 import { ListItemContent } from "@/components/lists/list-item-content"
 import { useSheetBackHandler } from "@/components/overlays/use-sheet-back-handler"
-import type { ServerTarget } from "@/data/query"
+import type { ServerTarget } from "@/core/server-target"
 import { isBuiltinAssistantConversation } from "@/domain/conversations/conversation-order"
 import { ConversationAvatar } from "@/features/messages/conversation-avatar"
 import type { ConversationListItemModel } from "@/features/messages/conversation-list-model"

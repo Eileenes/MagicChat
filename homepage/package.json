@@ -1,0 +1,23 @@
+{
+  "name": "magicchat-homepage",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "npm run check && astro build",
+    "check": "astro check && npm run fonts:check",
+    "fonts:build": "node scripts/build-maple-fonts.mjs",
+    "fonts:check": "node scripts/check-maple-fonts.mjs",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@iconify-json/tabler": "^1.2.38",
+    "astro": "^7.1.6",
+    "astro-icon": "^1.1.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "typescript": "^6.0.3"
+  }
+}

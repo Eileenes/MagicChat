@@ -1,4 +1,4 @@
-import type { AuthenticatedTarget } from "@/data/query"
+import type { AuthenticatedTarget } from "@/core/server-target"
 import {
   fetchResourceReadUrls,
   type ResourceReadUrl,

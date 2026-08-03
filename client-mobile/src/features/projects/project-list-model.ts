@@ -1,4 +1,4 @@
-import type { ClientProjectSummary } from "@/data/models"
+import type { ClientProjectSummary } from "@/core/models"
 
 export type ProjectListSection = {
   data: ClientProjectSummary[]

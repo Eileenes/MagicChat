@@ -3,8 +3,8 @@ import type {
   ClientMessageList,
   MessageChoiceSnapshot,
   MessageChoiceUpdatedEvent,
-} from "@/data/models"
-import type { AuthenticatedTarget } from "@/data/query"
+} from "@/core/models"
+import type { AuthenticatedTarget } from "@/core/server-target"
 
 export type ConversationMessagesChangedEvent =
   | { page: ClientMessageList; type: "latest-page" }

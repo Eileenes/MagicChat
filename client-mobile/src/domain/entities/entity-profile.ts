@@ -4,7 +4,7 @@ import type {
   ClientConversationMember,
   ClientUser,
   ContactGroupAvatarMember,
-} from "@/data/models"
+} from "@/core/models"
 import { getContactDisplayName } from "@/domain/contacts/contact-display"
 
 export type EntityType = "user" | "app" | "group"

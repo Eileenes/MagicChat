@@ -19,13 +19,13 @@ import {
   loadLoginCredentials,
   saveLoginAccount,
   saveLoginCredentials,
-} from "@/data/auth-credential-store"
+} from "@/data/auth/credential-store"
 import {
   useEmailCodeLoginMutation,
   useLoginMutation,
   useRequestEmailCodeMutation,
-} from "@/data/hooks"
-import type { ServerTarget } from "@/data/query"
+} from "@/data/auth/auth-hooks"
+import type { ServerTarget } from "@/core/server-target"
 import { EmailCodeInput } from "@/features/auth/email-code-input"
 import {
   LoginMethodTabs,

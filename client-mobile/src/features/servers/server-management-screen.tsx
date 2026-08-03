@@ -15,11 +15,11 @@ import {
 import { AppButton } from "@/components/forms/app-button"
 import { ThemedIcon } from "@/components/icons/themed-icon"
 import { PageHeader } from "@/components/navigation/page-header"
-import { useAuth } from "@/features/auth/auth-context"
+import { useAuth } from "@/providers/auth-provider"
 import { AddServerDialog } from "@/features/servers/add-server-dialog"
-import { useServers } from "@/features/servers/server-context"
+import { useServers } from "@/providers/server-provider"
 import { ServerListItem } from "@/features/servers/server-list-item"
-import type { ServerConfig } from "@/features/servers/server-model"
+import type { ServerConfig } from "@/core/server-model"
 
 export function ServerManagementScreen() {
   const router = useRouter()

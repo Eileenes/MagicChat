@@ -12,7 +12,7 @@ import Animated, {
 } from "react-native-reanimated"
 import { Button, ListItem, SizableText, useTheme, YStack } from "tamagui"
 
-import type { ServerConfig } from "@/features/servers/server-model"
+import type { ServerConfig } from "@/core/server-model"
 
 export function ServerListItem({
   isSelected,

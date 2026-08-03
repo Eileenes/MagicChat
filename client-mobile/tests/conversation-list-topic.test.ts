@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { fetchConversations } from "../src/data/conversations-api.ts"
+import { fetchConversations } from "../src/data/conversations/conversations-api.ts"
 import type {
   ClientContacts,
   ClientConversation,
-} from "../src/data/models.ts"
+} from "../src/core/models.ts"
 import {
   isConversationTopicVisibleInList,
   orderConversations,

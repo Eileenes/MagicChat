@@ -6,7 +6,7 @@ import {
   CachedAvatarTileImage,
 } from "@/components/avatar/cached-avatar-image"
 import { ThemedIcon } from "@/components/icons/themed-icon"
-import type { ServerTarget } from "@/data/query"
+import type { ServerTarget } from "@/core/server-target"
 
 export type GroupAvatarMember = {
   avatar: string

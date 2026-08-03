@@ -10,7 +10,7 @@ import { AppInput } from "@/components/forms/app-input"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { HeaderButton } from "@/components/navigation/header-button"
 import { PAGE_HEADER_HEIGHT } from "@/components/navigation/page-header"
-import { useAuthenticatedSession } from "@/features/auth/auth-context"
+import { useAuthenticatedSession } from "@/providers/auth-provider"
 import { SearchResultList } from "@/features/search/search-result-list"
 import {
   buildGlobalSearchResults,

@@ -1,10 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query"
 
-import { normalizeMessageChoiceState } from "@/data/message-normalizer"
+import { normalizeMessageChoiceState } from "@/data/messages/message-normalizer"
 import { messageManager } from "@/data/messages"
 import { applyConversationMessagesChangedEvent } from "@/data/messages/message-query-cache"
-import type { MessageChoiceUpdatedEvent } from "@/data/models"
-import type { AuthenticatedTarget } from "@/data/query"
+import type { MessageChoiceUpdatedEvent } from "@/core/models"
+import type { AuthenticatedTarget } from "@/core/server-target"
 
 const CHOICE_SNAPSHOT_BATCH_SIZE = 100
 

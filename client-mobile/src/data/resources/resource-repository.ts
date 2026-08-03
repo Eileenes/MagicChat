@@ -1,6 +1,6 @@
 import { Platform } from "react-native"
 
-import type { AuthenticatedTarget, ServerTarget } from "@/data/query"
+import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
 import {
   commitResourceCacheTarget,
   createResourceCacheTarget,
@@ -9,25 +9,36 @@ import {
   removeServerResourceCache as removeServerResourceCacheStore,
 } from "@/data/resources/resource-cache-store"
 import { downloadResource } from "@/data/resources/resource-downloader"
+import {
+  getAttachmentCacheExtension,
+  hasExpectedVoiceCacheExtension,
+} from "@/data/resources/resource-file-extension"
 import { requestResourceReadUrl } from "@/data/resources/resource-request-pool"
 import type {
   AttachmentResourceReference,
   AvatarResourceReference,
   ResolvedResource,
-} from "@/data/resources/resource-types"
+} from "@/core/resource-models"
+import { SharedTaskPool } from "@/data/resources/shared-task-pool"
 import { resolveServerAssetUrl } from "@/lib/server-asset-url"
 
-const downloadTasks = new Map<string, Promise<ResolvedResource>>()
+const downloadTasks = new SharedTaskPool<ResolvedResource>()
 
 export async function getCachedAttachmentResource(
   server: ServerTarget,
   reference: AttachmentResourceReference
 ) {
+  const identity = getAttachmentIdentity(reference.fileId)
   const resource = await getCachedResource(
     server,
-    getAttachmentIdentity(reference.fileId)
+    identity
   )
-  return resource ? withMimeType(resource, reference.mimeType) : null
+  if (!resource) return null
+  if (!hasExpectedVoiceCacheExtension(reference, resource.uri)) {
+    await removeCachedResource(server, identity)
+    return null
+  }
+  return withMimeType(resource, reference.mimeType)
 }
 
 export async function ensureAttachmentResource(
@@ -36,32 +47,36 @@ export async function ensureAttachmentResource(
   options: { signal?: AbortSignal } = {}
 ) {
   const identity = getAttachmentIdentity(reference.fileId)
-  const cached = await getCachedResource(session, identity)
-  if (cached) return withMimeType(cached, reference.mimeType)
+  const cached = await getCachedAttachmentResource(session, reference)
+  if (cached) return cached
 
-  const resource = await runDownloadOnce(session, identity, async () => {
-    const rechecked = await getCachedResource(session, identity)
-    if (rechecked) return rechecked
+  const resource = await runDownloadOnce(
+    session,
+    identity,
+    async () => {
+      const rechecked = await getCachedAttachmentResource(session, reference)
+      if (rechecked) return rechecked
 
-    const readUrl = await requestResourceReadUrl(session, reference.fileId)
-    if (Platform.OS === "web") {
-      return createRemoteResource(
+      const readUrl = await requestResourceReadUrl(session, reference.fileId)
+      if (Platform.OS === "web") {
+        return createRemoteResource(
+          identity,
+          readUrl.url,
+          readUrl.sizeBytes ?? reference.expectedSizeBytes ?? 0,
+          reference.mimeType
+        )
+      }
+
+      return downloadToCache({
+        expectedSizeBytes: readUrl.sizeBytes ?? reference.expectedSizeBytes,
+        extension: getAttachmentCacheExtension(reference, readUrl.url),
         identity,
-        readUrl.url,
-        readUrl.sizeBytes ?? reference.expectedSizeBytes ?? 0,
-        reference.mimeType
-      )
-    }
-
-    return downloadToCache({
-      expectedSizeBytes: readUrl.sizeBytes ?? reference.expectedSizeBytes,
-      extension: getAttachmentExtension(reference, readUrl.url),
-      identity,
-      server: session,
-      signal: options.signal,
-      sourceUrl: readUrl.url,
-    })
-  })
+        server: session,
+        sourceUrl: readUrl.url,
+      })
+    },
+    options.signal
+  )
 
   return withMimeType(resource, reference.mimeType)
 }
@@ -104,18 +119,22 @@ export async function ensureAvatarResource(
     return createRemoteResource(identity, sourceUrl, 0)
   }
 
-  return runDownloadOnce(server, identity, async () => {
-    const rechecked = await getCachedResource(server, identity)
-    if (rechecked) return rechecked
+  return runDownloadOnce(
+    server,
+    identity,
+    async () => {
+      const rechecked = await getCachedResource(server, identity)
+      if (rechecked) return rechecked
 
-    return downloadToCache({
-      extension: getUrlExtension(sourceUrl, ".image"),
-      identity,
-      server,
-      signal: options.signal,
-      sourceUrl,
-    })
-  })
+      return downloadToCache({
+        extension: getUrlExtension(sourceUrl, ".image"),
+        identity,
+        server,
+        sourceUrl,
+      })
+    },
+    options.signal
+  )
 }
 
 export function invalidateAvatarResource(
@@ -129,9 +148,7 @@ export function invalidateAvatarResource(
 
 export async function removeServerResourceCache(server: ServerTarget) {
   const taskPrefix = createDownloadTaskPrefix(server)
-  const activeTasks = Array.from(downloadTasks)
-    .filter(([taskKey]) => taskKey.startsWith(taskPrefix))
-    .map(([, task]) => task)
+  const activeTasks = downloadTasks.listByPrefix(taskPrefix)
 
   await Promise.allSettled(activeTasks)
   await removeServerResourceCacheStore(server)
@@ -142,20 +159,17 @@ async function downloadToCache({
   extension,
   identity,
   server,
-  signal,
   sourceUrl,
 }: {
   expectedSizeBytes?: number
   extension: string
   identity: string
   server: ServerTarget
-  signal?: AbortSignal
   sourceUrl: string
 }) {
   const target = await createResourceCacheTarget(server, identity, extension)
   const downloaded = await downloadResource({
     expectedSizeBytes,
-    signal,
     sourceUrl,
     temporaryFile: target.temporaryFile,
   })
@@ -165,17 +179,11 @@ async function downloadToCache({
 function runDownloadOnce(
   server: ServerTarget,
   identity: string,
-  operation: () => Promise<ResolvedResource>
+  operation: () => Promise<ResolvedResource>,
+  signal?: AbortSignal
 ) {
   const taskKey = `${createDownloadTaskPrefix(server)}${identity}`
-  const existing = downloadTasks.get(taskKey)
-  if (existing) return existing
-
-  const task = operation().finally(() => {
-    if (downloadTasks.get(taskKey) === task) downloadTasks.delete(taskKey)
-  })
-  downloadTasks.set(taskKey, task)
-  return task
+  return downloadTasks.run(taskKey, operation, signal)
 }
 
 function createDownloadTaskPrefix(server: ServerTarget) {
@@ -207,17 +215,6 @@ function getAttachmentIdentity(fileId: string) {
 
 function getAvatarIdentity(url: string) {
   return `avatar:${url}`
-}
-
-function getAttachmentExtension(
-  reference: AttachmentResourceReference,
-  sourceUrl: string
-) {
-  if (reference.kind === "image") return getUrlExtension(sourceUrl, ".webp")
-  if (reference.kind === "voice") return ".webm"
-
-  const fileNameExtension = getPathExtension(reference.fileName ?? "")
-  return fileNameExtension || getUrlExtension(sourceUrl, ".file")
 }
 
 function getUrlExtension(value: string, fallback: string) {

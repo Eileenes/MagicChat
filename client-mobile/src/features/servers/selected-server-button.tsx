@@ -4,7 +4,7 @@ import { SizableText } from "tamagui"
 
 import { AppButton } from "@/components/forms/app-button"
 import { ThemedIcon } from "@/components/icons/themed-icon"
-import { useServers } from "@/features/servers/server-context"
+import { useServers } from "@/providers/server-provider"
 
 const SERVER_SWITCH_ID = "login-server"
 

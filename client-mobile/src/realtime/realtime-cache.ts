@@ -1,14 +1,15 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query"
 
-import { normalizeClientMessage } from "@/data/message-normalizer"
+import { normalizeClientMessage } from "@/data/messages/message-normalizer"
 import { messageManager } from "@/data/messages"
 import type {
   ClientConversation,
   ClientMessage,
   ClientMessageList,
   ClientTopicDetail,
-} from "@/data/models"
-import { queryKeys, type AuthenticatedTarget } from "@/data/query"
+} from "@/core/models"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { queryKeys } from "@/data/query"
 import { formatClientMessageBodySummary } from "@/domain/messages/message-presenter"
 import {
   applyRealtimeMessageChoiceEvent,

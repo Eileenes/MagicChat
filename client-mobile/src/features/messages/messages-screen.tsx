@@ -9,10 +9,10 @@ import {
   useDismissConversation,
   useSetConversationMuted,
   useSetConversationPinned,
-} from "@/data/conversation-hooks"
-import type { ClientConversation } from "@/data/models"
+} from "@/data/conversations/conversation-hooks"
+import type { ClientConversation } from "@/core/models"
 import { hydrateConversationMessagesQuery } from "@/data/messages"
-import { useAuthenticatedSession } from "@/features/auth/auth-context"
+import { useAuthenticatedSession } from "@/providers/auth-provider"
 import {
   ConversationActionSheet,
   type ConversationAction,

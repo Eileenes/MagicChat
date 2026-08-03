@@ -1,0 +1,29 @@
+---
+import { Icon } from 'astro-icon/components';
+
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container footer-cta">
+    <div>
+      <span class="eyebrow eyebrow-light">OPEN SOURCE · SELF-HOSTED</span>
+      <h2>把 AI 工作空间，部署到自己的环境。</h2>
+      <p>免费使用开源版本，连接自己的模型和业务系统，让团队成员、办公 AI 助理和应用一起工作。</p>
+    </div>
+    <a class="button button-mint" href="https://app.jiying.chat/" target="_blank" rel="noreferrer">
+      进入即应 <Icon name="tabler:arrow-right" size={17} aria-hidden="true" />
+    </a>
+  </div>
+  <div class="container footer-bottom">
+    <a class="brand brand-light" href={import.meta.env.BASE_URL} aria-label="即应官网首页">
+      <img src={`${import.meta.env.BASE_URL}favicon.webp`} width="34" height="34" alt="" />
+      <span>即应</span>
+    </a>
+    <p>开源的企业 AI 工作空间。</p>
+    <div class="footer-links">
+      <a href={`${import.meta.env.BASE_URL}privacy/`}>隐私说明</a>
+      <span>© {year}</span>
+    </div>
+  </div>
+</footer>

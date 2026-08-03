@@ -42,6 +42,11 @@
 
 - [第三方应用接入开发指南](APPLICATION_DEVELOPMENT.md)
 
+## 产品主页
+
+- 官网源码位于 [`homepage`](homepage)。
+- 在该目录执行 `npm install && npm run dev` 可启动本地开发环境。
+
 ## 未来方向
 
 长期来看，即应希望成为企业里的 AI 工作控制层。
