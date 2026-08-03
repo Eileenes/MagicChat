@@ -134,15 +134,45 @@ describe("AppLayout", () => {
     expect(within(dialog).getByText("iOS")).toBeInTheDocument()
     expect(
       within(dialog).getByRole("link", {
+        name: "下载 Windows 客户端",
+      })
+    ).toMatchObject({
+      href: "https://jiying.chat/releases/jiying.exe",
+      target: "_blank",
+    })
+    expect(
+      within(dialog).getByRole("link", {
+        name: "下载 macOS 客户端",
+      })
+    ).toMatchObject({
+      href: "https://jiying.chat/releases/jiying.dmg",
+      target: "_blank",
+    })
+    expect(
+      within(dialog).getByRole("link", {
         name: "下载 Android 客户端",
       })
     ).toMatchObject({
-      href: "https://chat-public-1450770193.cos.ap-guangzhou.myqcloud.com/releases/magic-chat.apk.1",
+      href: "https://jiying.chat/releases/jiying.apk",
       target: "_blank",
     })
     expect(
       within(dialog).getAllByRole("button", { name: "敬请期待" })
-    ).toHaveLength(3)
+    ).toHaveLength(1)
+  })
+
+  it("opens the product homepage in a new tab", () => {
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>
+    )
+
+    expect(screen.getByRole("link", { name: "访问即应官网" })).toMatchObject({
+      href: "https://jiying.chat/",
+      rel: "noopener noreferrer",
+      target: "_blank",
+    })
   })
 
   it("opens the MagicChat repository in a new tab", () => {
