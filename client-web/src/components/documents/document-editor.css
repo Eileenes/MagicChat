@@ -1,3 +1,17 @@
+.document-editor {
+  position: relative;
+}
+
+.document-block-handle {
+  display: flex;
+  padding-right: 0.5rem;
+  transform: translateY(0.125rem);
+}
+
+.document-block-handle[data-dragging="true"] {
+  opacity: 0.45;
+}
+
 .document-editor .tiptap {
   min-height: 58vh;
   color: var(--foreground);
@@ -56,6 +70,39 @@
 
 .document-editor .tiptap li > p {
   margin: 0;
+}
+
+.document-editor .tiptap ul[data-type="taskList"] {
+  padding-left: 0;
+  list-style: none;
+}
+
+.document-editor .tiptap li[data-type="taskItem"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.document-editor .tiptap li[data-type="taskItem"] > label {
+  display: flex;
+  margin-top: 0.35rem;
+  user-select: none;
+}
+
+.document-editor .tiptap li[data-type="taskItem"] > label input {
+  accent-color: var(--primary);
+}
+
+.document-editor .tiptap li[data-type="taskItem"] > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.document-editor .tiptap a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+  cursor: pointer;
 }
 
 .document-editor .tiptap blockquote {

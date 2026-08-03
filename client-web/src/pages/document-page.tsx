@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Ellipsis, FileText, Share2 } from "lucide-react"
+import { Ellipsis, FileText } from "lucide-react"
 import { useParams } from "react-router"
 import { toast } from "sonner"
 
@@ -56,7 +56,7 @@ function DocumentWorkspace({
             <FileText className="size-5" />
           </span>
           <input
-            aria-label="文档标题"
+            aria-label="顶部文档标题"
             className="min-w-0 flex-1 bg-transparent text-base font-semibold outline-none placeholder:text-muted-foreground"
             onChange={(event) => setTitle(event.target.value)}
             placeholder="无标题文档"
@@ -65,15 +65,6 @@ function DocumentWorkspace({
           <span className="hidden shrink-0 text-xs text-muted-foreground xl:inline">
             临时编辑 · 关闭后内容将丢失
           </span>
-          <Button
-            onClick={() => toast.info("分享功能暂未开放")}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <Share2 />
-            <span className="hidden sm:inline">分享</span>
-          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -96,7 +87,7 @@ function DocumentWorkspace({
             </DropdownMenuContent>
           </DropdownMenu>
         </header>
-        <DocumentEditor />
+        <DocumentEditor onTitleChange={setTitle} title={title} />
       </section>
     </main>
   )
