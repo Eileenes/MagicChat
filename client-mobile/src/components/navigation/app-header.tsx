@@ -16,7 +16,7 @@ export function AppHeader({
   title,
 }: {
   actions?: HeaderAction[]
-  onMenuPress: () => void
+  onMenuPress?: () => void
   title: string
 }) {
   const insets = useSafeAreaInsets()
@@ -25,13 +25,15 @@ export function AppHeader({
     <YStack bg="$background" pt={insets.top}>
       <XStack height={56} items="center" px="$3">
         <XStack width={72}>
-          <CompactIconButton
-            accessibilityLabel="打开菜单"
-            icon={Menu}
-            iconSize={26}
-            onPress={onMenuPress}
-            strokeWidth={1.5}
-          />
+          {onMenuPress ? (
+            <CompactIconButton
+              accessibilityLabel="打开菜单"
+              icon={Menu}
+              iconSize={26}
+              onPress={onMenuPress}
+              strokeWidth={1.5}
+            />
+          ) : null}
         </XStack>
 
         <SizableText flex={1} numberOfLines={1} size="$4" text="center">
