@@ -1,4 +1,5 @@
 import * as React from "react"
+import Collaboration from "@tiptap/extension-collaboration"
 import { DragHandle } from "@tiptap/extension-drag-handle-react"
 import Placeholder from "@tiptap/extension-placeholder"
 import TaskItem from "@tiptap/extension-task-item"
@@ -7,6 +8,7 @@ import TextAlign from "@tiptap/extension-text-align"
 import { Color, TextStyle } from "@tiptap/extension-text-style"
 import { EditorContent, useEditor, type Editor } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
+import type * as Y from "yjs"
 import {
   AlignCenter,
   AlignJustify,
@@ -58,14 +60,17 @@ import { cn } from "@/lib/utils"
 import "./document-editor.css"
 
 export function DocumentEditor({
+  collaborationDocument,
+  onTitleBlur,
   onTitleChange,
   title,
 }: {
+  collaborationDocument: Y.Doc
+  onTitleBlur?: () => void
   onTitleChange: (title: string) => void
   title: string
 }) {
   const editor = useEditor({
-    content: "",
     editorProps: {
       attributes: {
         "aria-label": "文档正文",
@@ -76,6 +81,10 @@ export function DocumentEditor({
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
         link: { openOnClick: false },
+        undoRedo: false,
+      }),
+      Collaboration.configure({
+        fragment: collaborationDocument.getXmlFragment("body"),
       }),
       TextStyle,
       Color,
@@ -99,6 +108,7 @@ export function DocumentEditor({
           <input
             aria-label="文档页面标题"
             className="mb-8 w-full border-b bg-transparent pb-5 text-4xl font-bold tracking-tight outline-none placeholder:text-muted-foreground/60"
+            onBlur={onTitleBlur}
             onChange={(event) => onTitleChange(event.target.value)}
             placeholder="无标题文档"
             value={title}
@@ -113,6 +123,8 @@ export function DocumentEditor({
 
 function DocumentBlockHandle({ editor }: { editor: Editor }) {
   const [menuOpen, setMenuOpen] = React.useState(false)
+  const activeBlockElementRef = React.useRef<Element | null>(null)
+  const handleHoveredRef = React.useRef(false)
   const [activeBlock, setActiveBlock] = React.useState<{
     nodeSize: number
     pos: number
@@ -120,10 +132,29 @@ function DocumentBlockHandle({ editor }: { editor: Editor }) {
 
   const handleNodeChange = React.useCallback(
     ({ node, pos }: { node: { nodeSize: number } | null; pos: number }) => {
+      activeBlockElementRef.current?.classList.remove("document-block-active")
+      const nodeDOM = node ? editor.view.nodeDOM(pos) : null
+      activeBlockElementRef.current =
+        nodeDOM instanceof Element
+          ? nodeDOM
+          : nodeDOM?.parentElement instanceof Element
+            ? nodeDOM.parentElement
+            : null
+      if (handleHoveredRef.current) {
+        activeBlockElementRef.current?.classList.add("document-block-active")
+      }
       setActiveBlock(node ? { nodeSize: node.nodeSize, pos } : null)
     },
-    []
+    [editor]
   )
+
+  function setBlockHighlight(highlighted: boolean) {
+    handleHoveredRef.current = highlighted
+    activeBlockElementRef.current?.classList.toggle(
+      "document-block-active",
+      highlighted
+    )
+  }
 
   function handleMenuOpenChange(open: boolean) {
     setMenuOpen(open)
@@ -226,6 +257,8 @@ function DocumentBlockHandle({ editor }: { editor: Editor }) {
           <Button
             aria-label="块操作"
             className="cursor-grab bg-background shadow-xs active:cursor-grabbing"
+            onMouseEnter={() => setBlockHighlight(true)}
+            onMouseLeave={() => setBlockHighlight(false)}
             size="icon-xs"
             title="点击打开菜单，拖动调整位置"
             type="button"

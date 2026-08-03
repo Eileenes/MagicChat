@@ -13,6 +13,20 @@ describe("vite dev proxy", () => {
       throw new Error("expected object proxy config")
     }
 
+    const documentCollaborationProxy =
+      proxy["/api/client/document/collaboration"]
+    if (
+      !documentCollaborationProxy ||
+      typeof documentCollaborationProxy === "string"
+    ) {
+      throw new Error("expected document collaboration proxy options")
+    }
+
+    expect(documentCollaborationProxy.target).toBe("http://localhost:20100")
+    expect(documentCollaborationProxy.ws).toBe(true)
+    expect(documentCollaborationProxy.changeOrigin).toBe(true)
+    expect(documentCollaborationProxy.rewriteWsOrigin).toBe(true)
+
     const clientWebSocketProxy = proxy["/api/client/ws"]
     if (!clientWebSocketProxy || typeof clientWebSocketProxy === "string") {
       throw new Error("expected /api/client/ws proxy options")

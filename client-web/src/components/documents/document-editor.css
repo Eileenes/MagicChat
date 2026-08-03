@@ -4,8 +4,8 @@
 
 .document-block-handle {
   display: flex;
+  align-items: center;
   padding-right: 0.5rem;
-  transform: translateY(0.125rem);
 }
 
 .document-block-handle[data-dragging="true"] {
@@ -20,6 +20,14 @@
 
 .document-editor .tiptap > * + * {
   margin-top: 0.8em;
+}
+
+.document-editor .tiptap .document-block-active {
+  border-radius: 0.375rem;
+  background: color-mix(in oklch, var(--muted) 72%, transparent);
+  box-shadow:
+    -2.25rem 0 0 0.25rem color-mix(in oklch, var(--muted) 72%, transparent),
+    0.25rem 0 0 0.25rem color-mix(in oklch, var(--muted) 72%, transparent);
 }
 
 .document-editor .tiptap h1,
@@ -52,7 +60,7 @@
 }
 
 .document-editor .tiptap p {
-  line-height: 1.85;
+  line-height: 1.5;
 }
 
 .document-editor .tiptap ul,

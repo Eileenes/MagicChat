@@ -52,6 +52,7 @@ jobs:
           cache-dependency-path: |
             client-web/pnpm-lock.yaml
             admin-web/pnpm-lock.yaml
+            document-server/pnpm-lock.yaml
 
       - name: Verify client web
         working-directory: client-web
@@ -69,6 +70,14 @@ jobs:
           pnpm test
           pnpm typecheck
           pnpm lint
+          pnpm build
+
+      - name: Verify document server
+        working-directory: document-server
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm typecheck
           pnpm build
 
       - name: Verify homepage
@@ -96,6 +105,9 @@ jobs:
             build_args: ""
           - image: assistant
             dockerfile: assistant/Dockerfile
+            build_args: ""
+          - image: document-server
+            dockerfile: document-server/Dockerfile
             build_args: ""
           - image: caddy
             dockerfile: deploy/caddy/Dockerfile

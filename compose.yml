@@ -81,11 +81,48 @@ services:
       retries: 10
       start_period: 10s
 
+  document-server:
+    container_name: magic-chat-document-server
+    image: ${IMAGE_REGISTRY:-ghcr.1ms.run/chaitin/magicchat}/document-server:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    stop_grace_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-magic-chat}
+      POSTGRES_USER: ${POSTGRES_USER:-magic-chat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      DOCUMENT_SERVER_HOST: 0.0.0.0
+      DOCUMENT_SERVER_PORT: 20100
+      DOCUMENT_ALLOWED_ORIGINS: ${DOCUMENT_ALLOWED_ORIGINS:-}
+      DOCUMENT_AUTH_RECHECK_MS: ${DOCUMENT_AUTH_RECHECK_MS:-30000}
+      DOCUMENT_STORE_DEBOUNCE_MS: ${DOCUMENT_STORE_DEBOUNCE_MS:-2000}
+      DOCUMENT_STORE_MAX_DEBOUNCE_MS: ${DOCUMENT_STORE_MAX_DEBOUNCE_MS:-10000}
+      DOCUMENT_PERSISTENCE_RETRY_INITIAL_MS: ${DOCUMENT_PERSISTENCE_RETRY_INITIAL_MS:-250}
+      DOCUMENT_PERSISTENCE_RETRY_MAX_MS: ${DOCUMENT_PERSISTENCE_RETRY_MAX_MS:-5000}
+      DOCUMENT_SHUTDOWN_TIMEOUT_MS: ${DOCUMENT_SHUTDOWN_TIMEOUT_MS:-30000}
+      DOCUMENT_MAX_MESSAGE_BYTES: ${DOCUMENT_MAX_MESSAGE_BYTES:-16777216}
+      DOCUMENT_DB_POOL_SIZE: ${DOCUMENT_DB_POOL_SIZE:-10}
+      DOCUMENT_DB_CONNECTION_TIMEOUT_MS: ${DOCUMENT_DB_CONNECTION_TIMEOUT_MS:-5000}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:20100/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   caddy:
     container_name: magic-chat-caddy
     image: ${IMAGE_REGISTRY:-ghcr.1ms.run/chaitin/magicchat}/caddy:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
+      document-server:
+        condition: service_healthy
       server:
         condition: service_healthy
     environment:

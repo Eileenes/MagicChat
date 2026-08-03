@@ -37,6 +37,14 @@ https://{$PUBLIC_HOSTNAME:localhost} {
 			respond "ok" 200
 		}
 
+		handle /api/client/document/collaboration/* {
+			reverse_proxy document-server:20100
+		}
+
+		handle /api/client/document/collaboration {
+			reverse_proxy document-server:20100
+		}
+
 		@client_api path /api/client/* /api/app/*
 		handle @client_api {
 			request_body {

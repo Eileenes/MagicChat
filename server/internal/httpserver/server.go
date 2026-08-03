@@ -16,6 +16,7 @@ import (
 	contactapp "app/internal/application/contact"
 	conversationapp "app/internal/application/conversation"
 	"app/internal/application/dashboard"
+	documentapp "app/internal/application/document"
 	"app/internal/application/emailauth"
 	entitycardapp "app/internal/application/entitycard"
 	externalauthapp "app/internal/application/externalauth"
@@ -78,6 +79,8 @@ type Server struct {
 	adminEmailLogin     *adminapi.EmailLoginSettingsAPI
 	projects            *projectapp.Service
 	clientProjects      *clientapi.ProjectAPI
+	documents           *documentapp.Service
+	clientDocuments     *clientapi.DocumentAPI
 	entityCards         entitycardapp.Resolver
 	tasks               *taskapp.Service
 	clientTasks         *clientapi.TaskAPI
@@ -151,6 +154,8 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		Files: server.files,
 	})
 	server.clientProjects = clientapi.NewProjectAPI(server.projects)
+	server.documents = documentapp.NewService(documentapp.Dependencies{DB: db})
+	server.clientDocuments = clientapi.NewDocumentAPI(server.documents)
 	server.entityCards = entitycardapp.NewService(entitycardapp.Dependencies{
 		DB: db, Projects: server.projects,
 	})
@@ -244,6 +249,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientApps.RegisterRoutes(client)
 	server.clientFiles.RegisterRoutes(client)
 	server.clientProjects.RegisterRoutes(client)
+	server.clientDocuments.RegisterRoutes(client)
 	server.clientTasks.RegisterRoutes(client)
 	server.clientConversations.RegisterRoutes(client)
 	server.clientContacts.RegisterRoutes(client)

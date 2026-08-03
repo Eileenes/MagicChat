@@ -102,6 +102,8 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.DirectConversation{},
 		&store.Project{},
 		&store.ProjectGroup{},
+		&store.Document{},
+		&store.DocumentCollabState{},
 		&store.Task{},
 		&store.TaskReminder{},
 		&store.TemporaryFile{},
