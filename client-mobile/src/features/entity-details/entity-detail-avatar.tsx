@@ -1,4 +1,5 @@
 import { Bot } from "lucide-react-native"
+import { Pressable } from "react-native"
 import { Avatar, SizableText } from "tamagui"
 
 import { GroupAvatar } from "@/components/avatar/group-avatar"
@@ -10,14 +11,16 @@ import type { EntityProfile } from "@/domain/entities/entity-profile"
 const PROFILE_AVATAR_SIZE = 88
 
 export function EntityDetailAvatar({
+  onPress,
   profile,
   server,
 }: {
+  onPress?: () => void
   profile: EntityProfile
   server: ServerTarget
 }) {
-  if (profile.type === "group") {
-    return (
+  const avatar =
+    profile.type === "group" ? (
       <GroupAvatar
         avatar={profile.avatar}
         members={profile.avatarMembers}
@@ -25,25 +28,34 @@ export function EntityDetailAvatar({
         server={server}
         size={PROFILE_AVATAR_SIZE}
       />
+    ) : (
+      <Avatar rounded="$3" size={PROFILE_AVATAR_SIZE}>
+        <CachedAvatarImage avatar={profile.avatar} server={server} />
+        <Avatar.Fallback
+          bg="$backgroundFocus"
+          items="center"
+          justify="center"
+        >
+          {profile.type === "app" ? (
+            <ThemedIcon icon={Bot} size={34} />
+          ) : (
+            <SizableText fontWeight="600" size="$7">
+              {Array.from(profile.displayName.trim())[0]?.toUpperCase() ?? "?"}
+            </SizableText>
+          )}
+        </Avatar.Fallback>
+      </Avatar>
     )
-  }
+
+  if (!onPress) return avatar
 
   return (
-    <Avatar rounded="$3" size={PROFILE_AVATAR_SIZE}>
-      <CachedAvatarImage avatar={profile.avatar} server={server} />
-      <Avatar.Fallback
-        bg="$backgroundFocus"
-        items="center"
-        justify="center"
-      >
-        {profile.type === "app" ? (
-          <ThemedIcon icon={Bot} size={34} />
-        ) : (
-          <SizableText fontWeight="600" size="$7">
-            {Array.from(profile.displayName.trim())[0]?.toUpperCase() ?? "?"}
-          </SizableText>
-        )}
-      </Avatar.Fallback>
-    </Avatar>
+    <Pressable
+      accessibilityLabel={`预览${profile.displayName}的头像`}
+      accessibilityRole="button"
+      onPress={onPress}
+    >
+      {avatar}
+    </Pressable>
   )
 }

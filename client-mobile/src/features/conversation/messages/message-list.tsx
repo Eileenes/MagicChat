@@ -2,7 +2,6 @@ import { ArrowDown } from "lucide-react-native"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   FlatList,
-  RefreshControl,
   StyleSheet,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -11,7 +10,6 @@ import {
   Button,
   SizableText,
   Spinner,
-  useTheme,
   XStack,
   YStack,
 } from "tamagui"
@@ -41,14 +39,13 @@ export function MessageList({
   hasOlder,
   isFetchingOlder,
   isLoading,
-  isPullRefreshing,
   messages,
   onAvatarPress,
   onAvatarLongPress,
   onContentTouch,
   onImagePress,
   onLoadOlder,
-  onRefresh,
+  onRetry,
   onResourceError,
   onResourcePress,
   onRespondChoice,
@@ -69,14 +66,13 @@ export function MessageList({
   hasOlder: boolean
   isFetchingOlder: boolean
   isLoading: boolean
-  isPullRefreshing: boolean
   messages: PresentedMessage[]
   onAvatarLongPress?: (sender: EntityReference) => void
   onAvatarPress: (sender: EntityReference) => void
   onContentTouch: () => void
-  onImagePress: (fileId: string) => void
+  onImagePress: (fileId: string, messageId: string) => void
   onLoadOlder: () => void
-  onRefresh: () => void
+  onRetry: () => void
   onResourceError: (fileId: string) => void
   onResourcePress: (fileId: string) => void
   onRespondChoice?: (messageId: string, optionIds: string[]) => Promise<void>
@@ -93,7 +89,6 @@ export function MessageList({
   server: ServerTarget
   showChoiceResponseCounts: boolean
 }) {
-  const theme = useTheme()
   const listItems = useMemo(() => buildMessageListItems(messages), [messages])
   const listRef = useRef<FlatList<MessageListItem>>(null)
   const nearBottomRef = useRef(true)
@@ -179,7 +174,7 @@ export function MessageList({
         <YStack maxW={240} width="100%">
           <AppButton
             accessibilityLabel="重新加载消息"
-            onPress={onRefresh}
+            onPress={onRetry}
             theme="gray"
             variant="outlined"
             width="100%"
@@ -225,14 +220,6 @@ export function MessageList({
         onEndReachedThreshold={0.2}
         onScroll={handleScroll}
         onTouchStart={onContentTouch}
-        refreshControl={
-          <RefreshControl
-            colors={[String(theme.color10.val)]}
-            onRefresh={onRefresh}
-            refreshing={isPullRefreshing}
-            tintColor={String(theme.color10.val)}
-          />
-        }
         renderItem={({ item }) =>
           item.type === "time" ? (
             <MessageTimeMarker createdAt={item.createdAt} />

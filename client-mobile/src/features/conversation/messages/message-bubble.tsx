@@ -49,7 +49,7 @@ export function MessageBubble({
   message: PresentedMessage
   onAvatarLongPress?: (sender: EntityReference) => void
   onAvatarPress: (sender: EntityReference) => void
-  onImagePress: (fileId: string) => void
+  onImagePress: (fileId: string, messageId: string) => void
   onMentionPress: (target: EntityReference) => void
   onOpenTopic: (conversationId: string) => void
   onResourceError: (fileId: string) => void
@@ -247,7 +247,7 @@ export function MessageBubble({
                 body={message.body}
                 currentUserId={currentUserId}
                 flushImage={flushImageBubble}
-                onImagePress={onImagePress}
+                onImagePress={(fileId) => onImagePress(fileId, message.id)}
                 onMentionPress={onMentionPress}
                 onResourceError={onResourceError}
                 onResourcePress={onResourcePress}

@@ -146,6 +146,52 @@ export function invalidateAvatarResource(
   return removeCachedResource(server, getAvatarIdentity(sourceUrl))
 }
 
+export async function ensureImageUrlResource(
+  server: ServerTarget,
+  sourceUrl: string,
+  options: { signal?: AbortSignal } = {}
+) {
+  const normalizedUrl = normalizeImageUrl(sourceUrl)
+  const identity = getImageUrlIdentity(normalizedUrl)
+  const cached = await getCachedResource(server, identity)
+  if (cached) return cached
+
+  if (Platform.OS === "web") {
+    return createRemoteResource(identity, normalizedUrl, 0)
+  }
+
+  return runDownloadOnce(
+    server,
+    identity,
+    async () => {
+      const rechecked = await getCachedResource(server, identity)
+      if (rechecked) return rechecked
+
+      return downloadToCache({
+        extension: getUrlExtension(normalizedUrl, ".image"),
+        identity,
+        server,
+        sourceUrl: normalizedUrl,
+      })
+    },
+    options.signal
+  )
+}
+
+export function invalidateImageUrlResource(
+  server: ServerTarget,
+  sourceUrl: string
+) {
+  try {
+    return removeCachedResource(
+      server,
+      getImageUrlIdentity(normalizeImageUrl(sourceUrl))
+    )
+  } catch {
+    return Promise.resolve()
+  }
+}
+
 export async function removeServerResourceCache(server: ServerTarget) {
   const taskPrefix = createDownloadTaskPrefix(server)
   const activeTasks = downloadTasks.listByPrefix(taskPrefix)
@@ -215,6 +261,19 @@ function getAttachmentIdentity(fileId: string) {
 
 function getAvatarIdentity(url: string) {
   return `avatar:${url}`
+}
+
+function getImageUrlIdentity(url: string) {
+  return `image-url:${url}`
+}
+
+function normalizeImageUrl(value: string) {
+  const url = new URL(value.trim())
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("图片地址无效")
+  }
+  url.hash = ""
+  return url.toString()
 }
 
 function getUrlExtension(value: string, fallback: string) {
