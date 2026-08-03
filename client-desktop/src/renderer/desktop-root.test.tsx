@@ -7,7 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DesktopRoot } from "./desktop-root"
 import { releaseChannelLabel } from "@/release-channel"
-import type { DesktopBridge, ServerProfile, UpdaterState } from "@shared/bridge"
+import {
+  DESKTOP_TITLEBAR_HEIGHT,
+  type DesktopAppInfo,
+  type DesktopBridge,
+  type ServerProfile,
+  type UpdaterState,
+} from "@shared/bridge"
+import type { ScreenshotStartFailure } from "@shared/screenshot-contract"
 
 const profile: ServerProfile = {
   createdAt: "2026-07-23T00:00:00.000Z",
@@ -22,6 +29,11 @@ const mocks = vi.hoisted(() => ({
   openSettings: undefined as (() => void) | undefined,
   messageNotificationSoundEnabled: undefined as (() => boolean) | undefined,
   remove: vi.fn(),
+  screenshotStartFailureSubscriber: undefined as
+    | ((failure: ScreenshotStartFailure) => void)
+    | undefined,
+  screenshotStartFailureUnsubscribe: vi.fn(),
+  showScreenshotStartError: vi.fn(),
 }))
 
 vi.mock("@/app/App", () => ({
@@ -56,6 +68,10 @@ vi.mock("@/lib/desktop-resource-url", () => ({
   resolveDesktopResourceUrl: (_profile: ServerProfile, url: string) => url,
 }))
 
+vi.mock("@/lib/screenshot-start-error", () => ({
+  showScreenshotStartError: mocks.showScreenshotStartError,
+}))
+
 vi.mock("./desktop-transport", () => ({
   DesktopWebSocket: class DesktopWebSocket {},
   installDesktopFetch: () => () => undefined,
@@ -65,6 +81,9 @@ describe("桌面设置服务器管理", () => {
   beforeEach(() => {
     mocks.openSettings = undefined
     mocks.messageNotificationSoundEnabled = undefined
+    mocks.screenshotStartFailureSubscriber = undefined
+    mocks.screenshotStartFailureUnsubscribe.mockReset()
+    mocks.showScreenshotStartError.mockReset()
     mocks.openManual.mockReset().mockResolvedValue(undefined)
     mocks.openRelease.mockReset().mockResolvedValue(undefined)
     mocks.remove.mockResolvedValue(undefined)
@@ -77,6 +96,125 @@ describe("桌面设置服务器管理", () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it("全局截图快捷键权限失败时展示 Renderer 权限提示并清理订阅", async () => {
+    const view = render(<DesktopRoot />)
+
+    await waitFor(() => expect(mocks.screenshotStartFailureSubscriber).toBeTypeOf("function"))
+    act(() => {
+      mocks.screenshotStartFailureSubscriber?.({ code: "permission_denied" })
+    })
+
+    expect(mocks.showScreenshotStartError).toHaveBeenCalledWith("permission_denied")
+    view.unmount()
+    expect(mocks.screenshotStartFailureUnsubscribe).toHaveBeenCalledOnce()
+  })
+
+  it("Windows 顶栏展示即应 Logo", async () => {
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: createDesktopBridge(undefined, undefined, "win32"),
+    })
+
+    render(<DesktopRoot />)
+
+    expect(await screen.findByRole("img", { name: "即应" })).toBeInTheDocument()
+  })
+
+  it("macOS 顶栏为原生交通灯保留左侧空间", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+
+    render(<DesktopRoot />)
+
+    await waitFor(() => expect(bridge.app.info).toHaveBeenCalled())
+    expect(screen.queryByRole("img", { name: "即应" })).not.toBeInTheDocument()
+  })
+
+  it("平台信息返回前不把设置抽屉误判为 Windows 或 Linux 布局", async () => {
+    const bridge = createDesktopBridge()
+    let resolveAppInfo!: (info: DesktopAppInfo) => void
+    const appInfo = new Promise<DesktopAppInfo>((resolve) => {
+      resolveAppInfo = resolve
+    })
+    bridge.app.info = vi.fn(() => appInfo)
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    const settings = screen.getByRole("dialog", { name: "设置" })
+    const settingsOverlay = document.querySelector('[data-slot="sheet-overlay"]')
+    expect(settings).not.toHaveClass("desktop-settings-below-titlebar")
+    expect(settingsOverlay).not.toHaveClass("desktop-settings-overlay-below-titlebar")
+
+    resolveAppInfo({
+      arch: "x64",
+      build: "test",
+      channel: "test",
+      packaged: false,
+      platform: "win32",
+      version: "0.1.0",
+    })
+
+    await waitFor(() => expect(settings).toHaveClass("desktop-settings-below-titlebar"))
+    expect(settingsOverlay).toHaveClass("desktop-settings-overlay-below-titlebar")
+  })
+
+  it.each(["win32", "linux"])("%s 设置抽屉和遮罩位于应用顶栏下方", async (platform) => {
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: createDesktopBridge(undefined, undefined, platform),
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await screen.findByRole("img", { name: "即应" })
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    const settings = screen.getByRole("dialog", { name: "设置" })
+    const settingsOverlay = document.querySelector('[data-slot="sheet-overlay"]')
+    const styles = await readFile(path.resolve(process.cwd(), "src/renderer/styles.css"), "utf8")
+
+    expect(settings).toHaveClass("desktop-settings", "desktop-settings-below-titlebar")
+    expect(settingsOverlay).toHaveClass("desktop-settings-overlay-below-titlebar")
+    expect(styles).toContain(`--desktop-titlebar-height: ${DESKTOP_TITLEBAR_HEIGHT}px`)
+    expect(styles).toMatch(
+      /\.desktop-settings-below-titlebar\s*\{[^}]*height:\s*calc\(100% - var\(--desktop-titlebar-height\)\)/,
+    )
+  })
+
+  it("macOS 设置抽屉保持全高且遮罩覆盖标题栏", async () => {
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await waitFor(() => expect(window.desktop.app.info).toHaveBeenCalled())
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    const settings = screen.getByRole("dialog", { name: "设置" })
+    const settingsOverlay = document.querySelector('[data-slot="sheet-overlay"]')
+
+    expect(settings).toHaveClass("desktop-settings")
+    await waitFor(() => expect(settings).not.toHaveClass("desktop-settings-below-titlebar"))
+    expect(settingsOverlay).not.toHaveClass("desktop-settings-overlay-below-titlebar")
+  })
+
+  it("设置面板使用左侧收起按钮", async () => {
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    const closeButton = screen.getByRole("button", { name: "收起设置面板" })
+    const settingsHeader = closeButton.closest('[data-slot="sheet-header"]')
+
+    expect(settingsHeader?.firstElementChild).toBe(closeButton)
+    await user.click(closeButton)
+    expect(screen.queryByRole("dialog", { name: "设置" })).not.toBeInTheDocument()
   })
 
   it("移除成功后回到服务器输入页面", async () => {
@@ -463,7 +601,7 @@ describe("桌面设置服务器管理", () => {
     expect(
       (await screen.findByRole("button", { name: "新版本" })).closest("aside"),
     ).toHaveAccessibleName("应用侧边栏")
-    expect(bridge.app.info).not.toHaveBeenCalled()
+    expect(bridge.app.info).toHaveBeenCalledOnce()
   })
 
   it("没有新版本时不显示左下角更新入口", async () => {
@@ -639,6 +777,7 @@ describe("发布通道显示", () => {
 function createDesktopBridge(
   updaterState?: UpdaterState,
   subscriptionState?: UpdaterState,
+  platform = "darwin",
 ): DesktopBridge {
   const unsubscribe = () => undefined
   const initialUpdaterState: UpdaterState = updaterState ?? {
@@ -669,7 +808,7 @@ function createDesktopBridge(
         build: "test",
         channel: "test",
         packaged: false,
-        platform: "darwin",
+        platform,
         version: "0.1.0",
       }),
     },
@@ -715,7 +854,7 @@ function createDesktopBridge(
       subscribeUnknownServer: vi.fn().mockReturnValue(unsubscribe),
     },
     notifications: { show: vi.fn() },
-    permissions: { request: vi.fn() },
+    permissions: { openSettings: vi.fn(), request: vi.fn() },
     realtime: {
       close: vi.fn(),
       connect: vi.fn(),
@@ -726,6 +865,10 @@ function createDesktopBridge(
     screenshot: {
       start: vi.fn(),
       subscribeCompleted: vi.fn().mockReturnValue(unsubscribe),
+      subscribeStartFailed: vi.fn().mockImplementation((listener) => {
+        mocks.screenshotStartFailureSubscriber = listener
+        return mocks.screenshotStartFailureUnsubscribe
+      }),
     },
     servers: {
       add: vi.fn(),

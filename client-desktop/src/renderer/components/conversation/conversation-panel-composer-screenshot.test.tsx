@@ -1,18 +1,30 @@
 import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { ScreenshotConversationResult } from "@shared/screenshot-contract"
+import type {
+  ScreenshotConversationResult,
+  ScreenshotStartResult,
+} from "@shared/screenshot-contract"
 import type { ClientConversation } from "@/lib/client-data-api"
 
 const mocks = vi.hoisted(() => ({
   compressImage: vi.fn(async (file: File) => file),
+  openPermissionSettings: vi.fn(),
   screenshotStart: vi.fn(),
   screenshotSubscriber: undefined as ((result: ScreenshotConversationResult) => void) | undefined,
+  toastDismiss: vi.fn(),
   toastError: vi.fn(),
+  toastWarning: vi.fn(),
   unsubscribe: vi.fn(),
 }))
 
-vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }))
+vi.mock("sonner", () => ({
+  toast: {
+    dismiss: mocks.toastDismiss,
+    error: mocks.toastError,
+    warning: mocks.toastWarning,
+  },
+}))
 vi.mock("@/lib/image-message", () => ({
   compressImageForMessage: mocks.compressImage,
   imageMessageMaxBytes: 2 * 1024 * 1024,
@@ -44,10 +56,14 @@ describe("ConversationPanelComposer 截图", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.screenshotSubscriber = undefined
+    mocks.openPermissionSettings.mockResolvedValue(true)
     mocks.screenshotStart.mockResolvedValue({ sessionId: "session-1", status: "started" })
     Object.defineProperty(window, "desktop", {
       configurable: true,
       value: {
+        permissions: {
+          openSettings: mocks.openPermissionSettings,
+        },
         screenshot: {
           start: mocks.screenshotStart,
           subscribeCompleted: (listener: (result: ScreenshotConversationResult) => void) => {
@@ -70,6 +86,7 @@ describe("ConversationPanelComposer 截图", () => {
     await user.click(screen.getByRole("button", { name: "截取屏幕" }))
 
     expect(mocks.screenshotStart).toHaveBeenCalledWith({ conversationId: "conversation-1" })
+    expect(mocks.toastDismiss).toHaveBeenCalledWith("screenshot-screen-permission-required")
     expect(mocks.screenshotSubscriber).toBeTypeOf("function")
 
     act(() => {
@@ -104,7 +121,71 @@ describe("ConversationPanelComposer 截图", () => {
 
     await user.click(screen.getByRole("button", { name: "截取屏幕" }))
 
-    expect(mocks.toastError).toHaveBeenCalledWith("请在系统设置中允许 MagicChat 录制屏幕")
+    expect(mocks.toastWarning).toHaveBeenCalledWith(
+      "截图需要屏幕录制权限，请前往“系统设置 > 隐私与安全性 > 屏幕录制”允许 MagicChat",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "前往设置" }),
+        closeButton: true,
+        duration: Infinity,
+        id: "screenshot-screen-permission-required",
+      }),
+    )
+
+    const options = mocks.toastWarning.mock.calls[0][1] as {
+      action: { onClick(event: { preventDefault(): void }): void }
+    }
+    const preventDefault = vi.fn()
+    options.action.onClick({ preventDefault })
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(mocks.openPermissionSettings).toHaveBeenCalledWith("screen")
+  })
+
+  it("权限恢复后遇到其他截图错误时清除旧权限提示", async () => {
+    mocks.screenshotStart.mockResolvedValue({ code: "capture_timeout", status: "error" })
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole("button", { name: "截取屏幕" }))
+
+    expect(mocks.toastDismiss).toHaveBeenCalledWith("screenshot-screen-permission-required")
+    expect(mocks.toastError).toHaveBeenCalledWith("屏幕截图响应超时，请重试")
+  })
+
+  it("截图启动异常时清除旧权限提示", async () => {
+    mocks.screenshotStart.mockRejectedValue(new Error("IPC failed"))
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole("button", { name: "截取屏幕" }))
+
+    expect(mocks.toastDismiss).toHaveBeenCalledWith("screenshot-screen-permission-required")
+    expect(mocks.toastError).toHaveBeenCalledWith("无法启动截图")
+  })
+
+  it("启动截图期间保持静态截图图标并拦截重复触发", async () => {
+    let resolveStart!: (result: ScreenshotStartResult) => void
+    mocks.screenshotStart.mockImplementation(
+      () =>
+        new Promise<ScreenshotStartResult>((resolve) => {
+          resolveStart = resolve
+        }),
+    )
+    const user = userEvent.setup()
+    renderComposer()
+    const screenshotButton = screen.getByRole("button", { name: "截取屏幕" })
+
+    await user.click(screenshotButton)
+
+    expect(screenshotButton).toBeEnabled()
+    expect(screenshotButton.querySelector(".lucide-scan-line")).not.toBeNull()
+    expect(screenshotButton.querySelector(".animate-spin")).toBeNull()
+
+    await user.click(screenshotButton)
+    expect(mocks.screenshotStart).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      resolveStart({ sessionId: "session-1", status: "started" })
+    })
   })
 
   it("切换对话时取消未完成的截图读取并忽略旧结果", async () => {

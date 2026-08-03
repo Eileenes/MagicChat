@@ -14,6 +14,7 @@ import {
   type CaptureResultFinish,
   type CaptureSessionMetadata,
   type ScreenshotConversationResult,
+  type ScreenshotStartFailure,
   type ScreenshotStartResult,
 } from "@shared/screenshot-contract"
 
@@ -77,7 +78,10 @@ const bridge: DesktopBridge = {
     subscribeUnknownServer: (listener) =>
       subscribe<{ serverId: string }>(IPC.unknownServer, listener),
   },
-  permissions: { request: (kind) => ipcRenderer.invoke(IPC.permissionsRequest, kind) },
+  permissions: {
+    openSettings: (kind) => ipcRenderer.invoke(IPC.permissionsOpenSettings, kind),
+    request: (kind) => ipcRenderer.invoke(IPC.permissionsRequest, kind),
+  },
   realtime: {
     close: (target) => ipcRenderer.invoke(IPC.realtimeClose, target),
     connect: (target) => ipcRenderer.invoke(IPC.realtimeConnect, target),
@@ -91,6 +95,8 @@ const bridge: DesktopBridge = {
       ipcRenderer.invoke(IPC.screenshotStart, input),
     subscribeCompleted: (listener) =>
       subscribe<ScreenshotConversationResult>(IPC.screenshotCompleted, listener),
+    subscribeStartFailed: (listener) =>
+      subscribe<ScreenshotStartFailure>(IPC.screenshotStartFailed, listener),
   },
   servers: {
     add: (url, name) => ipcRenderer.invoke(IPC.serversAdd, url, name),

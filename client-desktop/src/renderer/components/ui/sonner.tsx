@@ -31,7 +31,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
         } as React.CSSProperties
       }
       toastOptions={{
+        closeButtonAriaLabel: "关闭提示",
         classNames: {
+          closeButton: "desktop-toast-close",
           toast: "cn-toast",
         },
       }}

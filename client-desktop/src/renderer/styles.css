@@ -4,6 +4,9 @@ body,
   height: 100%;
   margin: 0;
 }
+:root {
+  --desktop-titlebar-height: 40px;
+}
 .desktop-frame {
   height: 100%;
   position: relative;
@@ -15,12 +18,31 @@ body,
   background: color-mix(in oklch, var(--background) 90%, var(--muted));
   box-shadow: 0 6px 18px oklch(0 0 0 / 5%);
   box-sizing: border-box;
-  height: 40px;
+  height: var(--desktop-titlebar-height);
   left: 0;
   position: fixed;
   right: 0;
   top: 0;
   z-index: 50;
+}
+.desktop-titlebar-brand {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  padding-left: 12px;
+  width: max-content;
+}
+.desktop-titlebar-brand img {
+  border-radius: 5px;
+  height: 22px;
+  object-fit: cover;
+  pointer-events: none;
+  width: 22px;
+}
+.cn-toast,
+.desktop-toast-close,
+.cn-toast [data-button] {
+  -webkit-app-region: no-drag;
 }
 .dark .desktop-titlebar-drag-region {
   box-shadow: 0 6px 18px oklch(0 0 0 / 22%);
@@ -359,6 +381,14 @@ body,
   padding: 0;
   width: min(480px, 100vw);
 }
+.desktop-settings-below-titlebar {
+  border-top: 1px solid color-mix(in oklch, var(--border) 75%, transparent);
+  height: calc(100% - var(--desktop-titlebar-height));
+  top: var(--desktop-titlebar-height);
+}
+.desktop-settings-overlay-below-titlebar {
+  top: var(--desktop-titlebar-height);
+}
 .desktop-settings-header {
   align-items: center;
   background: linear-gradient(
@@ -369,9 +399,18 @@ body,
   border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
+  gap: 14px;
+  justify-content: flex-start;
   margin: 0;
   padding: 20px 22px;
+}
+.desktop-settings-close {
+  background: color-mix(in oklch, var(--popover) 72%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 8px;
+  flex: none;
+  height: 42px;
+  width: 42px;
 }
 .desktop-settings-brand {
   align-items: center;

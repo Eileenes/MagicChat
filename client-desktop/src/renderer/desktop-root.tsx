@@ -9,13 +9,13 @@ import {
   LockKeyhole,
   MessageCircleMore,
   MonitorCog,
+  PanelRightClose,
   RefreshCw,
   Server,
   ShieldCheck,
   Sparkles,
   Trash2,
   UsersRound,
-  XIcon,
 } from "lucide-react"
 import { BrowserRouter } from "react-router"
 import { toast } from "sonner"
@@ -38,29 +38,75 @@ import type {
 import { DesktopWebSocket, installDesktopFetch } from "./desktop-transport"
 import { resolveDesktopResourceUrl } from "@/lib/desktop-resource-url"
 import { installDesktopLinkNavigation } from "@/lib/desktop-link-navigation"
+import { cn } from "@/lib/utils"
 import { startRuntimeDiagnostics } from "@/lib/runtime-diagnostics"
+import { showScreenshotStartError } from "@/lib/screenshot-start-error"
 import { releaseChannelLabel } from "@/release-channel"
 import { BrandLoadingScreen } from "@/components/brand-loading-screen"
 import { clearManagedMessageCache, configureMessageCacheTarget } from "@/lib/messages"
 import type { MessageCacheStats } from "@shared/message-cache-contract"
 
 export function DesktopRoot() {
+  const platform = useDesktopPlatform()
+
+  useEffect(
+    () =>
+      window.desktop.screenshot.subscribeStartFailed(({ code }) => {
+        showScreenshotStartError(code)
+      }),
+    [],
+  )
+
   return (
     <ThemeProvider>
       <TooltipProvider>
         <div className="desktop-frame">
-          <div aria-hidden="true" className="desktop-titlebar-drag-region" />
+          <DesktopTitlebar platform={platform} />
           <div className="desktop-content">
-            <DesktopRootContent />
+            <DesktopRootContent platform={platform} />
           </div>
         </div>
-        <Toaster position="top-center" />
+        <Toaster
+          offset={{ top: "calc(var(--desktop-titlebar-height) + 12px)" }}
+          position="top-center"
+        />
       </TooltipProvider>
     </ThemeProvider>
   )
 }
 
-function DesktopRootContent() {
+function useDesktopPlatform() {
+  const [platform, setPlatform] = useState<string>()
+
+  useEffect(() => {
+    let mounted = true
+    void window.desktop.app.info().then(
+      (info) => {
+        if (mounted) setPlatform(info.platform)
+      },
+      () => undefined,
+    )
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  return platform
+}
+
+function DesktopTitlebar({ platform }: { platform?: string }) {
+  return (
+    <div className="desktop-titlebar-drag-region">
+      {platform && platform !== "darwin" && (
+        <div className="desktop-titlebar-brand">
+          <img alt="即应" draggable={false} src="/logo.png" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DesktopRootContent({ platform }: { platform?: string }) {
   const [profiles, setProfiles] = useState<ReadonlyArray<ServerProfile>>([])
   const [selectedId, setSelectedId] = useState<string>()
   const [messageSoundEnabled, setMessageSoundEnabled] = useState(true)
@@ -110,6 +156,7 @@ function DesktopRootContent() {
         <DesktopWorkspace
           key={`${selected.id}:${selected.lastUserId ?? "anonymous"}`}
           messageSoundEnabled={messageSoundEnabled}
+          platform={platform}
           profile={selected}
           updater={updater}
           onMessageSoundEnabledChange={setMessageSoundEnabled}
@@ -125,6 +172,7 @@ function DesktopRootContent() {
 
 function DesktopWorkspace({
   messageSoundEnabled,
+  platform,
   profile,
   updater,
   onMessageSoundEnabledChange,
@@ -132,6 +180,7 @@ function DesktopWorkspace({
   onUpdaterChange,
 }: {
   messageSoundEnabled: boolean
+  platform?: string
   profile: ServerProfile
   updater: UpdaterState
   onMessageSoundEnabledChange(enabled: boolean): void
@@ -161,6 +210,7 @@ function DesktopWorkspace({
       </BrowserRouter>
       {settingsOpen && (
         <DesktopSettingsPanel
+          platform={platform}
           profile={profile}
           target={target}
           updater={updater}
@@ -422,6 +472,7 @@ function DesktopHostedApp({
 }
 
 function DesktopSettingsPanel({
+  platform,
   profile,
   target,
   updater,
@@ -430,6 +481,7 @@ function DesktopSettingsPanel({
   onRemoved,
   onUpdaterChange,
 }: {
+  platform?: string
   profile: ServerProfile
   target: AuthenticatedTarget
   updater: UpdaterState
@@ -438,6 +490,7 @@ function DesktopSettingsPanel({
   onRemoved(serverId: string): void
   onUpdaterChange(state: UpdaterState): void
 }) {
+  const usesTitleBarOverlay = platform === "win32" || platform === "linux"
   const [settings, setSettings] = useState<DesktopSettings>()
   const [appInfo, setAppInfo] = useState<DesktopAppInfo>()
   const [name, setName] = useState(profile.displayName)
@@ -517,11 +570,23 @@ function DesktopSettingsPanel({
       <SheetContent
         aria-describedby={undefined}
         aria-label="设置"
-        className="desktop-settings"
+        className={cn("desktop-settings", usesTitleBarOverlay && "desktop-settings-below-titlebar")}
+        overlayClassName={
+          usesTitleBarOverlay ? "desktop-settings-overlay-below-titlebar" : undefined
+        }
         side="right"
         showCloseButton={false}
       >
         <SheetHeader className="desktop-settings-header">
+          <button
+            aria-label="收起设置面板"
+            className="desktop-icon-button desktop-settings-close"
+            onClick={() => onOpenChange(false)}
+            title="收起设置面板"
+            type="button"
+          >
+            <PanelRightClose aria-hidden="true" size={18} />
+          </button>
           <div className="desktop-settings-brand">
             <img alt="即应" src="/logo.png" />
             <div>
@@ -529,15 +594,6 @@ function DesktopSettingsPanel({
               <p>让即应更符合你的工作习惯</p>
             </div>
           </div>
-          <button
-            aria-label="关闭设置"
-            className="desktop-icon-button"
-            onClick={() => onOpenChange(false)}
-            title="关闭设置"
-            type="button"
-          >
-            <XIcon size={17} />
-          </button>
         </SheetHeader>
         {!settings ? (
           <div className="desktop-settings-loading">

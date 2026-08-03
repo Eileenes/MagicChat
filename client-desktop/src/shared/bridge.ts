@@ -12,6 +12,8 @@ import type { ScreenshotBridge } from "@shared/screenshot-contract"
 
 export const BRIDGE_VERSION = 1 as const
 
+export const DESKTOP_TITLEBAR_HEIGHT = 40
+
 export const MAX_TRAY_MESSAGES = 20
 
 export const IPC = {
@@ -52,6 +54,7 @@ export const IPC = {
   notificationShow: "desktop:v1:notification-show",
   navigate: "desktop:v1:navigate",
   openExternal: "desktop:v1:open-external",
+  permissionsOpenSettings: "desktop:v1:permissions-open-settings",
   permissionsRequest: "desktop:v1:permissions-request",
   realtimeClose: "desktop:v1:realtime-close",
   realtimeConnect: "desktop:v1:realtime-connect",
@@ -60,6 +63,7 @@ export const IPC = {
   realtimeUnauthorized: "desktop:v1:realtime-unauthorized",
   screenshotCancel: "desktop:v1:screenshot-cancel",
   screenshotCompleted: "desktop:v1:screenshot-completed",
+  screenshotStartFailed: "desktop:v1:screenshot-start-failed",
   screenshotMetadata: "desktop:v1:screenshot-metadata",
   screenshotResultChunk: "desktop:v1:screenshot-result-chunk",
   screenshotResultFinish: "desktop:v1:screenshot-result-finish",
@@ -232,7 +236,10 @@ export interface DesktopBridge {
     subscribe(listener: (route: string) => void): () => void
     subscribeUnknownServer(listener: (input: { serverId: string }) => void): () => void
   }
-  permissions: { request(kind: "microphone" | "notifications"): Promise<boolean> }
+  permissions: {
+    openSettings(kind: "screen"): Promise<boolean>
+    request(kind: "microphone" | "notifications"): Promise<boolean>
+  }
   realtime: {
     close(target: AuthenticatedTarget): Promise<void>
     connect(target: AuthenticatedTarget): Promise<RealtimeSnapshot>

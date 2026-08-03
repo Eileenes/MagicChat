@@ -10,27 +10,27 @@ import {
 } from "electron"
 import type { AuthenticatedTarget, ClientRequest } from "@shared/client-contract"
 import { IPC, type DesktopThemeSource, type NotificationInput } from "@shared/bridge"
-import { AuthController } from "@main/auth-controller"
-import { ConfigStore } from "@main/config-store"
-import { CredentialStore } from "@main/credential-store"
-import { Diagnostics, releaseChannel } from "@main/diagnostics"
-import { FileService } from "@main/file-service"
-import { HttpTransport } from "@main/http-transport"
-import { NotificationService } from "@main/notification-service"
-import { MessageCacheService } from "@main/message-cache"
-import { RealtimeController } from "@main/realtime-controller"
-import { ServerProfiles } from "@main/server-profiles"
-import { SessionController } from "@main/session-controller"
-import { SystemIntegration } from "@main/system-integration"
-import { StreamingUploadController } from "@main/streaming-upload"
-import { UpdaterService } from "@main/updater-service"
+import type { AuthController } from "@main/auth-controller"
+import type { ConfigStore } from "@main/config-store"
+import type { CredentialStore } from "@main/credential-store"
+import { releaseChannel, type Diagnostics } from "@main/diagnostics"
+import type { FileService } from "@main/file-service"
+import type { HttpTransport } from "@main/http-transport"
+import type { NotificationService } from "@main/notification-service"
+import type { MessageCacheService } from "@main/message-cache"
+import type { RealtimeController } from "@main/realtime-controller"
+import type { ServerProfiles } from "@main/server-profiles"
+import type { SessionController } from "@main/session-controller"
+import type { SystemIntegration } from "@main/system-integration"
+import type { StreamingUploadController } from "@main/streaming-upload"
+import type { UpdaterService } from "@main/updater-service"
 import { assertTrustedIpcSender } from "@main/ipc-security"
 import { parseDesktopSettingsPatch } from "@main/settings-validation"
 import { registerRuntimeDiagnosticsIpc } from "@main/runtime-diagnostics-ipc"
 import { parseTrayMessages } from "@main/tray-message-validation"
 import { removeServerResources } from "@main/server-removal"
 import { handleUnauthorizedCacheLifecycle } from "@main/authentication-cache-lifecycle"
-import { ASRController } from "@main/asr-controller"
+import type { ASRController } from "@main/asr-controller"
 import type { ASREvent } from "@shared/asr-contract"
 
 export type IpcDependencies = {
@@ -207,6 +207,10 @@ export function registerIpc(deps: IpcDependencies): () => void {
   register(IPC.permissionsRequest, async (_event, kind) => {
     if (kind !== "microphone" && kind !== "notifications") throw new Error("权限类型无效")
     return deps.system.requestPermission(kind)
+  })
+  register(IPC.permissionsOpenSettings, async (_event, kind) => {
+    if (kind !== "screen") throw new Error("权限设置类型无效")
+    return deps.system.openPermissionSettings(kind)
   })
   register(IPC.updaterCheck, () => deps.updater.check())
   register(IPC.updaterDownload, () => deps.updater.download())

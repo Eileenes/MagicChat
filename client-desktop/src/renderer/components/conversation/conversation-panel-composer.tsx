@@ -11,9 +11,13 @@ import {
   X,
 } from "lucide-react"
 import { toast } from "sonner"
-import type { ScreenshotConversationResult, ScreenshotErrorCode } from "@shared/screenshot-contract"
+import type { ScreenshotConversationResult } from "@shared/screenshot-contract"
 import { getAvatarInitial } from "@/lib/avatar"
 import { cn } from "@/lib/utils"
+import {
+  dismissScreenshotPermissionToast,
+  showScreenshotStartError,
+} from "@/lib/screenshot-start-error"
 import {
   type ClientConversation,
   type ClientMessage,
@@ -113,7 +117,6 @@ export const ConversationPanelComposer = React.forwardRef<
   const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
   const [imagePreparing, setImagePreparing] = React.useState(false)
   const [voiceDialogOpen, setVoiceDialogOpen] = React.useState(false)
-  const [screenshotStarting, setScreenshotStarting] = React.useState(false)
   const [mentionTrigger, setMentionTrigger] = React.useState<MentionTrigger | null>(null)
   const [selectedMentionIndex, setSelectedMentionIndex] = React.useState(0)
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
@@ -121,6 +124,7 @@ export const ConversationPanelComposer = React.forwardRef<
   const [imageCaption, setImageCaption] = React.useState("")
   const screenshotImportRef = React.useRef<ScreenshotImportState | undefined>(undefined)
   const screenshotImportIdRef = React.useRef(0)
+  const screenshotStartingRef = React.useRef(false)
   const imagePreparationIdRef = React.useRef(0)
   const currentConversationIdRef = React.useRef(conversation.id)
   const mentionCandidates = React.useMemo(
@@ -463,20 +467,25 @@ export const ConversationPanelComposer = React.forwardRef<
   }
 
   async function handleScreenshotButtonClick() {
-    if (sending || imagePreparing || screenshotStarting) return
+    if (sending || imagePreparing || screenshotStartingRef.current) return
     const screenshot = window.desktop?.screenshot
     if (!screenshot) {
       toast.error("当前版本不支持屏幕截图")
       return
     }
-    setScreenshotStarting(true)
+    screenshotStartingRef.current = true
     try {
       const result = await screenshot.start({ conversationId: conversation.id })
-      if (result.status === "error") toast.error(screenshotErrorMessage(result.code))
+      if (result.status === "error") {
+        showScreenshotStartError(result.code)
+      } else {
+        dismissScreenshotPermissionToast()
+      }
     } catch {
+      dismissScreenshotPermissionToast()
       toast.error("无法启动截图")
     } finally {
-      setScreenshotStarting(false)
+      screenshotStartingRef.current = false
     }
   }
 
@@ -787,18 +796,14 @@ export const ConversationPanelComposer = React.forwardRef<
             </Button>
             <Button
               aria-label="截取屏幕"
-              disabled={sending || imagePreparing || screenshotStarting}
+              disabled={sending || imagePreparing}
               onClick={() => void handleScreenshotButtonClick()}
               size="icon-sm"
               title="截取屏幕"
               type="button"
               variant="ghost"
             >
-              {screenshotStarting ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                <ScanLine className="size-4" />
-              )}
+              <ScanLine className="size-4" />
             </Button>
             <Toggle
               aria-label="支持 markdown"
@@ -871,11 +876,3 @@ export const ConversationPanelComposer = React.forwardRef<
     </footer>
   )
 })
-
-function screenshotErrorMessage(code: ScreenshotErrorCode): string {
-  if (code === "permission_denied") return "请在系统设置中允许 MagicChat 录制屏幕"
-  if (code === "capture_timeout") return "屏幕截图响应超时，请重试"
-  if (code === "unsupported_multi_display") return "当前桌面环境暂不支持多显示器截图"
-  if (code === "capture_unavailable") return "当前没有可用的屏幕截图来源"
-  return "无法完成屏幕截图"
-}
