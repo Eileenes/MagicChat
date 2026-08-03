@@ -271,6 +271,7 @@ assert_contains "homepage/package.json" '"fonts:build": "node scripts/build-mapl
 assert_contains "homepage/package.json" '"fonts:check": "node scripts/check-maple-fonts.mjs"'
 assert_contains "homepage/Dockerfile" "FROM caddy:2-alpine"
 assert_contains "homepage/Dockerfile" "npm ci"
+assert_contains "homepage/Dockerfile" "COPY homepage/scripts ./scripts"
 assert_contains "homepage/Dockerfile" "npm run build"
 assert_contains "homepage/Dockerfile" "caddy validate"
 assert_contains "homepage/Caddyfile" '{$SITE_ADDRESS:jiying.chat}'
