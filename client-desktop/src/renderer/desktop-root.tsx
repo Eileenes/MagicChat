@@ -43,8 +43,10 @@ import { startRuntimeDiagnostics } from "@/lib/runtime-diagnostics"
 import { showScreenshotStartError } from "@/lib/screenshot-start-error"
 import { releaseChannelLabel } from "@/release-channel"
 import { BrandLoadingScreen } from "@/components/brand-loading-screen"
+import { ExternalLinkConfirmationDialog } from "@/components/external-link-confirmation-dialog"
 import { clearManagedMessageCache, configureMessageCacheTarget } from "@/lib/messages"
 import type { MessageCacheStats } from "@shared/message-cache-contract"
+import { parseExternalWebLink } from "@shared/external-link"
 
 export function DesktopRoot() {
   const platform = useDesktopPlatform()
@@ -116,18 +118,26 @@ function DesktopRootContent({ platform }: { platform?: string }) {
   useEffect(() => startRuntimeDiagnostics(), [])
 
   useEffect(() => {
+    let active = true
     void Promise.all([window.desktop.servers.list(), window.desktop.settings.get()]).then(
       ([items, settings]) => {
+        if (!active) return
         setProfiles(items)
         setMessageSoundEnabled(settings.messageSoundEnabled)
         setSelectedId(settings.selectedServerId ?? items[0]?.id)
         setLoading(false)
       },
     )
-    return window.desktop.navigation.subscribeUnknownServer(({ serverId }) => {
-      window.alert(`链接指向尚未配置的服务器 ${serverId}，请先添加并确认服务器地址。`)
-      setSelectedId(undefined)
-    })
+    const unsubscribeUnknownServer = window.desktop.navigation.subscribeUnknownServer(
+      ({ serverId }) => {
+        window.alert(`链接指向尚未配置的服务器 ${serverId}，请先添加并确认服务器地址。`)
+        setSelectedId(undefined)
+      },
+    )
+    return () => {
+      active = false
+      unsubscribeUnknownServer()
+    }
   }, [])
 
   async function select(id: string) {
@@ -385,6 +395,7 @@ function DesktopHostedApp({
   onUpdaterChange(state: UpdaterState): void
 }) {
   const [ready, setReady] = useState(false)
+  const [pendingExternalUrl, setPendingExternalUrl] = useState<string>()
   const messageSoundEnabledRef = useRef(messageSoundEnabled)
 
   useEffect(() => {
@@ -394,6 +405,15 @@ function DesktopHostedApp({
   useEffect(() => {
     const restoreFetch = installDesktopFetch(target)
     const restoreMessageCacheTarget = configureMessageCacheTarget(target)
+    const requestExternalLink = async (url: string) => {
+      const link = parseExternalWebLink(url)
+      if (!link) throw new Error("只允许打开 HTTP 或 HTTPS 外部链接")
+      if (link.protocol === "http:") {
+        setPendingExternalUrl(link.url)
+        return
+      }
+      await window.desktop.shell.openExternal(link.url)
+    }
     const restoreHost = configureDesktopHost({
       cancelThirdPartyLogin: (transactionId) => window.desktop.auth.cancel(transactionId),
       createRealtimeClient: (options) =>
@@ -413,7 +433,7 @@ function DesktopHostedApp({
       openSettings: onOpenSettings,
       openThirdPartyLogin: (providerKey) => window.desktop.auth.start(profile.id, providerKey),
       notificationPermission: () => "granted",
-      openExternal: (url) => window.desktop.shell.openExternal(url),
+      openExternal: requestExternalLink,
       requestMicrophonePermission: () => window.desktop.permissions.request("microphone"),
       requestNotificationPermission: async () =>
         (await window.desktop.permissions.request("notifications")) ? "granted" : "denied",
@@ -448,7 +468,7 @@ function DesktopHostedApp({
       window.dispatchEvent(new PopStateEvent("popstate"))
     })
     const restoreLinkNavigation = installDesktopLinkNavigation((url) => {
-      void window.desktop.shell.openExternal(url)
+      void requestExternalLink(url).catch(() => toast.error("无法使用系统浏览器打开该链接"))
     })
     window.addEventListener("magicchat:authenticated", authenticated)
     setReady(true)
@@ -464,10 +484,28 @@ function DesktopHostedApp({
     }
   }, [onAuthenticated, onOpenSettings, profile, target])
 
-  return ready ? (
-    <App updatePrompt={<DesktopUpdatePrompt state={updater} onStateChange={onUpdaterChange} />} />
-  ) : (
-    <StatusPage detail={profile.displayName} text="正在连接工作空间" />
+  return (
+    <>
+      {ready ? (
+        <App
+          updatePrompt={<DesktopUpdatePrompt state={updater} onStateChange={onUpdaterChange} />}
+        />
+      ) : (
+        <StatusPage detail={profile.displayName} text="正在连接工作空间" />
+      )}
+      <ExternalLinkConfirmationDialog
+        onConfirm={(url) => {
+          setPendingExternalUrl(undefined)
+          void window.desktop.shell
+            .openExternal(url)
+            .catch(() => toast.error("无法使用系统浏览器打开该链接"))
+        }}
+        onOpenChange={(open) => {
+          if (!open) setPendingExternalUrl(undefined)
+        }}
+        url={pendingExternalUrl}
+      />
+    </>
   )
 }
 

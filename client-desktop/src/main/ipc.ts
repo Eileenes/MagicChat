@@ -32,6 +32,7 @@ import { removeServerResources } from "@main/server-removal"
 import { handleUnauthorizedCacheLifecycle } from "@main/authentication-cache-lifecycle"
 import type { ASRController } from "@main/asr-controller"
 import type { ASREvent } from "@shared/asr-contract"
+import { parseExternalWebLink } from "@shared/external-link"
 
 export type IpcDependencies = {
   auth: AuthController
@@ -197,9 +198,9 @@ export function registerIpc(deps: IpcDependencies): () => void {
     deps.files.openLocation(asString(filePath, 4096)),
   )
   register(IPC.openExternal, async (_event, rawUrl) => {
-    const url = new URL(asString(rawUrl, 4096))
-    if (url.protocol !== "https:") throw new Error("只允许打开 HTTPS 外部链接")
-    await shell.openExternal(url.toString())
+    const link = parseExternalWebLink(asString(rawUrl, 4096))
+    if (!link) throw new Error("只允许打开 HTTP 或 HTTPS 外部链接")
+    await shell.openExternal(link.url)
   })
   register(IPC.notificationShow, (_event, input) =>
     deps.notifications.show(notificationInput(input)),

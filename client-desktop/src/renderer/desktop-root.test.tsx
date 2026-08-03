@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-import type { ReactNode } from "react"
+import { StrictMode, type ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DesktopRoot } from "./desktop-root"
@@ -24,16 +24,21 @@ const profile: ServerProfile = {
 }
 
 const mocks = vi.hoisted(() => ({
+  externalLinkHandler: undefined as ((url: string) => void) | undefined,
+  hostOpenExternal: undefined as ((url: string) => Promise<void>) | undefined,
   openManual: vi.fn(),
   openRelease: vi.fn(),
   openSettings: undefined as (() => void) | undefined,
   messageNotificationSoundEnabled: undefined as (() => boolean) | undefined,
+  installDesktopFetch: vi.fn(),
   remove: vi.fn(),
   screenshotStartFailureSubscriber: undefined as
     | ((failure: ScreenshotStartFailure) => void)
     | undefined,
   screenshotStartFailureUnsubscribe: vi.fn(),
   showScreenshotStartError: vi.fn(),
+  restoreFetch: vi.fn(),
+  shellOpenExternal: vi.fn(),
 }))
 
 vi.mock("@/app/App", () => ({
@@ -48,11 +53,14 @@ vi.mock("@/app/App", () => ({
 vi.mock("@/lib/desktop-host", () => ({
   configureDesktopHost: (options: {
     messageNotificationSoundEnabled?(): boolean
+    openExternal?(url: string): Promise<void>
     openSettings(): void
   }) => {
+    mocks.hostOpenExternal = options.openExternal
     mocks.openSettings = options.openSettings
     mocks.messageNotificationSoundEnabled = options.messageNotificationSoundEnabled
     return () => {
+      mocks.hostOpenExternal = undefined
       mocks.openSettings = undefined
       mocks.messageNotificationSoundEnabled = undefined
     }
@@ -61,7 +69,12 @@ vi.mock("@/lib/desktop-host", () => ({
 }))
 
 vi.mock("@/lib/desktop-link-navigation", () => ({
-  installDesktopLinkNavigation: () => () => undefined,
+  installDesktopLinkNavigation: (handler: (url: string) => void) => {
+    mocks.externalLinkHandler = handler
+    return () => {
+      mocks.externalLinkHandler = undefined
+    }
+  },
 }))
 
 vi.mock("@/lib/desktop-resource-url", () => ({
@@ -74,19 +87,24 @@ vi.mock("@/lib/screenshot-start-error", () => ({
 
 vi.mock("./desktop-transport", () => ({
   DesktopWebSocket: class DesktopWebSocket {},
-  installDesktopFetch: () => () => undefined,
+  installDesktopFetch: mocks.installDesktopFetch,
 }))
 
 describe("桌面设置服务器管理", () => {
   beforeEach(() => {
+    mocks.externalLinkHandler = undefined
+    mocks.hostOpenExternal = undefined
     mocks.openSettings = undefined
     mocks.messageNotificationSoundEnabled = undefined
     mocks.screenshotStartFailureSubscriber = undefined
     mocks.screenshotStartFailureUnsubscribe.mockReset()
     mocks.showScreenshotStartError.mockReset()
+    mocks.installDesktopFetch.mockReset().mockReturnValue(mocks.restoreFetch)
     mocks.openManual.mockReset().mockResolvedValue(undefined)
     mocks.openRelease.mockReset().mockResolvedValue(undefined)
     mocks.remove.mockResolvedValue(undefined)
+    mocks.restoreFetch.mockReset()
+    mocks.shellOpenExternal.mockReset().mockResolvedValue(undefined)
     vi.spyOn(window, "confirm").mockReturnValue(true)
     Object.defineProperty(window, "desktop", {
       configurable: true,
@@ -229,6 +247,35 @@ describe("桌面设置服务器管理", () => {
     expect(screen.getByRole("heading", { name: /从沟通到行动/ })).toBeInTheDocument()
     expect(mocks.remove).toHaveBeenCalledWith(profile.id)
     expect(screen.getByLabelText("服务器地址")).toHaveValue("")
+  })
+
+  it("StrictMode 下忽略已失效的启动结果，避免提前挂载工作区", async () => {
+    const bridge = createDesktopBridge()
+    const firstProfiles = deferred<ServerProfile[]>()
+    const currentProfiles = deferred<ServerProfile[]>()
+    vi.mocked(bridge.servers.list)
+      .mockReset()
+      .mockReturnValueOnce(firstProfiles.promise)
+      .mockReturnValueOnce(currentProfiles.promise)
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+
+    render(
+      <StrictMode>
+        <DesktopRoot />
+      </StrictMode>,
+    )
+    await waitFor(() => expect(bridge.servers.list).toHaveBeenCalledTimes(2))
+
+    await act(async () => firstProfiles.resolve([{ ...profile }]))
+    expect(mocks.installDesktopFetch).not.toHaveBeenCalled()
+
+    await act(async () => currentProfiles.resolve([{ ...profile }]))
+    await screen.findByRole("button", { name: "打开设置" })
+    expect(mocks.installDesktopFetch).toHaveBeenCalledTimes(2)
+    expect(mocks.restoreFetch).toHaveBeenCalledOnce()
   })
 
   it("配置页使用应用主题变量且不再绘制突兀圆形装饰", async () => {
@@ -762,6 +809,35 @@ describe("桌面设置服务器管理", () => {
       "自动安装未能启动，请重试检查或使用手动更新",
     )
   })
+
+  it("直接使用系统浏览器打开 HTTPS 外链", async () => {
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    act(() => mocks.externalLinkHandler?.("https://example.com/docs"))
+
+    await waitFor(() =>
+      expect(mocks.shellOpenExternal).toHaveBeenCalledWith("https://example.com/docs"),
+    )
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+  })
+
+  it("确认后才使用系统浏览器打开 HTTP 外链", async () => {
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    act(() => mocks.externalLinkHandler?.("http://intranet.example.test/docs"))
+
+    expect(
+      await screen.findByRole("alertdialog", { name: "打开不安全的 HTTP 链接？" }),
+    ).toBeVisible()
+    expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("button", { name: "继续打开" }))
+
+    expect(mocks.shellOpenExternal).toHaveBeenCalledWith("http://intranet.example.test/docs")
+  })
 })
 
 describe("发布通道显示", () => {
@@ -884,7 +960,7 @@ function createDesktopBridge(
         return { ...settings }
       }),
     },
-    shell: { openExternal: vi.fn() },
+    shell: { openExternal: mocks.shellOpenExternal },
     transport: {
       cancel: vi.fn(),
       request: vi.fn(),
@@ -907,4 +983,12 @@ function createDesktopBridge(
     },
     version: 1,
   }
+}
+
+function deferred<T>() {
+  let resolvePromise!: (value: T) => void
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve
+  })
+  return { promise, resolve: resolvePromise }
 }
