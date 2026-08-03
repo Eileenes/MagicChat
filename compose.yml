@@ -142,7 +142,7 @@ services:
         max-size: "10m"
         max-file: "5"
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-check-certificate --header=\"Host: $${PUBLIC_HOSTNAME}\" -qO- https://127.0.0.1:443/gateway-healthz >/dev/null || exit 1"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
       interval: 10s
       timeout: 5s
       retries: 10

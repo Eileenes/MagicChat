@@ -97,7 +97,7 @@ assert_not_contains "compose.yml" "MYGOD_APP_SECRET"
 assert_contains "compose.yml" "80:80"
 assert_contains "compose.yml" '${CLIENT_HTTPS_PORT:-443}:443'
 assert_contains "compose.yml" '${ADMIN_HTTPS_PORT:-1443}:1443'
-assert_contains "compose.yml" 'https://127.0.0.1:443/gateway-healthz'
+assert_contains "compose.yml" 'http://127.0.0.1:2019/config/'
 assert_not_contains "compose.yml" '${CLIENT_HTTPS_PORT:-443}:${CLIENT_HTTPS_PORT:-443}'
 assert_not_contains "compose.yml" '${ADMIN_HTTPS_PORT:-1443}:${ADMIN_HTTPS_PORT:-1443}'
 assert_contains "compose.yml" "./data/postgres/data:/var/lib/postgresql/data"
@@ -204,6 +204,7 @@ assert_contains "server/Dockerfile" "COPY server/migrations"
 assert_contains "server/Dockerfile" "COPY api-docs"
 assert_not_contains "server/Dockerfile" "config.example.yaml"
 assert_contains "assistant/Dockerfile" "go build"
+assert_contains "document-server/Dockerfile" "corepack prepare pnpm@10.32.1 --activate"
 assert_contains "document-server/Dockerfile" "pnpm install --frozen-lockfile"
 assert_contains "document-server/Dockerfile" 'ENTRYPOINT ["node", "dist/index.js"]'
 assert_contains "assistant/internal/config/config.go" 'AIAssistantAppID        = "00000000-0000-0000-0000-000000000001"'
