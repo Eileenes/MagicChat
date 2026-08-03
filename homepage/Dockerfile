@@ -14,7 +14,6 @@ RUN npm ci
 
 COPY homepage/astro.config.mjs homepage/tsconfig.json homepage/README.md ./
 COPY homepage/public ./public
-COPY homepage/scripts ./scripts
 COPY homepage/src ./src
 RUN npm run build
 

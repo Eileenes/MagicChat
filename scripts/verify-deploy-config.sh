@@ -228,16 +228,12 @@ assert_file "homepage/compose.yml"
 assert_file "homepage/systemd/jiying-homepage-update"
 assert_file "homepage/systemd/jiying-homepage-update.service"
 assert_file "homepage/systemd/jiying-homepage-update.timer"
-assert_file "homepage/src/assets/fonts/maple-mono/LICENSE.txt"
-assert_file "homepage/src/assets/fonts/maple-mono/glyphs.txt"
-assert_file "homepage/src/assets/fonts/maple-mono/manifest.json"
-assert_file "homepage/scripts/build-maple-fonts.mjs"
-assert_file "homepage/scripts/check-maple-fonts.mjs"
-assert_file "homepage/scripts/maple-font-glyphs.mjs"
-assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-regular-v7.9.woff2"
-assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-semibold-v7.9.woff2"
-assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-bold-v7.9.woff2"
-assert_contains "homepage/src/styles/global.css" 'font-family: "Maple Mono CN"'
+assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-regular"'
+assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-semibold"'
+assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-bold"'
+assert_contains "homepage/src/styles/global.css" '--font-sans: "HarmonyOS Sans SC"'
+assert_not_contains "homepage/src/styles/global.css" "Maple Mono CN"
+assert_not_contains "homepage/src/styles/global.css" "maple-mono"
 assert_contains "homepage/src/styles/global.css" "--teal: #4a90a4"
 assert_contains "homepage/src/styles/global.css" "--violet: #6bb5a2"
 assert_contains "homepage/src/styles/global.css" "--coral: #f4a261"
@@ -246,14 +242,14 @@ assert_contains "homepage/src/styles/global.css" "--radius-md: 16px"
 assert_contains "homepage/src/styles/global.css" "outline: 3px solid var(--teal-dark)"
 assert_contains "homepage/src/styles/global.css" "@media (max-width: 1279px)"
 assert_not_contains "homepage/src/styles/global.css" ".capability-card:hover"
-assert_not_contains "homepage/src/styles/global.css" "harmonyos-sans-sc-webfont-splitted"
+assert_contains "homepage/astro.config.mjs" "harmonyos-sans-sc-webfont-splitted/dist/"
 assert_contains "homepage/src/components/SiteHeader.astro" 'href="https://github.com/chaitin/MagicChat"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'target="_blank"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'rel="noopener noreferrer"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'name="tabler:brand-github-filled"'
-assert_contains "homepage/src/pages/index.astro" "开源 · 免费私有化部署"
+assert_contains "homepage/src/pages/index.astro" "免费私有化部署方案"
 assert_contains "homepage/src/pages/index.astro" "AGPL v3 开源"
-assert_contains "homepage/src/pages/index.astro" "Docker 私有部署"
+assert_contains "homepage/src/pages/index.astro" "使用 Docker 部署"
 assert_contains "homepage/src/pages/index.astro" "办公 AI 助理"
 assert_contains "homepage/src/pages/index.astro" 'href="https://app.jiying.chat/"'
 assert_contains "homepage/src/components/SiteFooter.astro" 'href="https://app.jiying.chat/"'
@@ -266,12 +262,11 @@ assert_not_contains "homepage/src/components/SiteHeader.astro" "mobile-nav"
 assert_contains "homepage/package.json" '"astro-icon"'
 assert_contains "homepage/package.json" '"@iconify-json/tabler"'
 assert_not_contains "homepage/package.json" '"@lucide/astro"'
-assert_not_contains "homepage/package.json" "harmonyos-sans-sc-webfont-splitted"
-assert_contains "homepage/package.json" '"fonts:build": "node scripts/build-maple-fonts.mjs"'
-assert_contains "homepage/package.json" '"fonts:check": "node scripts/check-maple-fonts.mjs"'
+assert_contains "homepage/package.json" '"harmonyos-sans-sc-webfont-splitted"'
+assert_not_contains "homepage/package.json" '"fonts:build"'
+assert_not_contains "homepage/package.json" '"fonts:check"'
 assert_contains "homepage/Dockerfile" "FROM caddy:2-alpine"
 assert_contains "homepage/Dockerfile" "npm ci"
-assert_contains "homepage/Dockerfile" "COPY homepage/scripts ./scripts"
 assert_contains "homepage/Dockerfile" "npm run build"
 assert_contains "homepage/Dockerfile" "caddy validate"
 assert_contains "homepage/Caddyfile" '{$SITE_ADDRESS:jiying.chat}'
