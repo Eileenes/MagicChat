@@ -236,36 +236,39 @@ assert_contains ".github/workflows/docker.yml" "dockerfile: homepage/Dockerfile"
 assert_contains ".github/workflows/docker.yml" "SITE_URL=https://jiying.chat"
 
 assert_file "homepage/Dockerfile"
+assert_file "homepage/package.json"
+assert_file "homepage/package-lock.json"
+assert_not_exists "homepage/pnpm-lock.yaml"
+assert_not_exists "homepage/pnpm-workspace.yaml"
 assert_file "homepage/Caddyfile"
 assert_file "homepage/compose.yml"
 assert_file "homepage/systemd/jiying-homepage-update"
 assert_file "homepage/systemd/jiying-homepage-update.service"
 assert_file "homepage/systemd/jiying-homepage-update.timer"
-assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-regular"'
-assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-semibold"'
-assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-bold"'
-assert_contains "homepage/src/styles/global.css" '--font-sans: "HarmonyOS Sans SC"'
+assert_contains "homepage/src/styles/global.css" '@import "@fontsource-variable/noto-sans-sc"'
+assert_contains "homepage/src/styles/global.css" '--font-sans: "Noto Sans SC Variable"'
+assert_not_contains "homepage/src/styles/global.css" "HarmonyOS Sans SC"
+assert_not_contains "homepage/src/styles/global.css" "harmonyos-sans"
 assert_not_contains "homepage/src/styles/global.css" "Maple Mono CN"
 assert_not_contains "homepage/src/styles/global.css" "maple-mono"
-assert_contains "homepage/src/styles/global.css" "--teal: #4a90a4"
-assert_contains "homepage/src/styles/global.css" "--violet: #6bb5a2"
-assert_contains "homepage/src/styles/global.css" "--coral: #f4a261"
+assert_contains "homepage/src/styles/global.css" "--teal: #14b8a6"
+assert_contains "homepage/src/styles/global.css" "--violet: #8b5cf6"
+assert_contains "homepage/src/styles/global.css" "--coral: #f59e0b"
 assert_contains "homepage/src/styles/global.css" "--container: 1280px"
-assert_contains "homepage/src/styles/global.css" "--radius-md: 16px"
-assert_contains "homepage/src/styles/global.css" "outline: 3px solid var(--teal-dark)"
-assert_contains "homepage/src/styles/global.css" "@media (max-width: 1279px)"
-assert_not_contains "homepage/src/styles/global.css" ".capability-card:hover"
-assert_contains "homepage/astro.config.mjs" "harmonyos-sans-sc-webfont-splitted/dist/"
+assert_contains "homepage/src/styles/global.css" "--transition-fast: 160ms ease"
+assert_contains "homepage/src/styles/global.css" "@media (max-width: 767px)"
+assert_contains "homepage/astro.config.mjs" "plugins: [tailwindcss()]"
+assert_not_contains "homepage/astro.config.mjs" "harmonyos-sans-sc-webfont-splitted"
 assert_contains "homepage/src/components/SiteHeader.astro" 'href="https://github.com/chaitin/MagicChat"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'target="_blank"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'rel="noopener noreferrer"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'name="tabler:brand-github-filled"'
-assert_contains "homepage/src/pages/index.astro" "免费私有化部署方案"
-assert_contains "homepage/src/pages/index.astro" "AGPL v3 开源"
-assert_contains "homepage/src/pages/index.astro" "使用 Docker 部署"
+assert_contains "homepage/src/pages/index.astro" "开源 · 支持免费私有化部署"
+assert_contains "homepage/src/pages/index.astro" "核心产品代码开源"
+assert_contains "homepage/src/pages/index.astro" "免费安装"
 assert_contains "homepage/src/pages/index.astro" "办公 AI 助理"
 assert_contains "homepage/src/pages/index.astro" 'href="https://app.jiying.chat/"'
-assert_contains "homepage/src/components/SiteFooter.astro" 'href="https://app.jiying.chat/"'
+assert_contains "homepage/src/components/SiteFooter.astro" 'href={`${import.meta.env.BASE_URL}privacy/`}'
 assert_not_contains "homepage/src/pages/index.astro" "chat.chaitin.net"
 assert_not_contains "homepage/src/components/SiteFooter.astro" "chat.chaitin.net"
 assert_not_contains "homepage/src/pages/index.astro" "茉莉"
@@ -274,8 +277,11 @@ assert_not_contains "homepage/src/components/SiteHeader.astro" "desktop-nav"
 assert_not_contains "homepage/src/components/SiteHeader.astro" "mobile-nav"
 assert_contains "homepage/package.json" '"astro-icon"'
 assert_contains "homepage/package.json" '"@iconify-json/tabler"'
+assert_contains "homepage/package.json" '"@fontsource-variable/noto-sans-sc"'
+assert_contains "homepage/package.json" '"@tailwindcss/vite"'
+assert_contains "homepage/package.json" '"tailwindcss"'
 assert_not_contains "homepage/package.json" '"@lucide/astro"'
-assert_contains "homepage/package.json" '"harmonyos-sans-sc-webfont-splitted"'
+assert_not_contains "homepage/package.json" '"harmonyos-sans-sc-webfont-splitted"'
 assert_not_contains "homepage/package.json" '"fonts:build"'
 assert_not_contains "homepage/package.json" '"fonts:check"'
 assert_contains "homepage/Dockerfile" "FROM caddy:2-alpine"
