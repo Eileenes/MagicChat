@@ -47,7 +47,7 @@ export function GroupProfilePopover({
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className="w-72"
+          className="w-72 max-w-[calc(100vw-2rem)] overflow-hidden"
           side="right"
           sideOffset={8}
         >
@@ -67,8 +67,8 @@ export function GroupProfilePopover({
                   name={conversation.name}
                 />
               </button>
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium [overflow-wrap:anywhere]">
                   {conversation.name}
                 </div>
                 <div className="truncate text-xs text-muted-foreground">
@@ -118,10 +118,10 @@ function GroupProfileRow({
   value: string
 }) {
   return (
-    <div className="flex items-center gap-3 border-b py-2 last:border-b-0">
-      {icon}
+    <div className="flex min-w-0 items-start gap-3 border-b py-2 last:border-b-0">
+      <span className="mt-0.5 shrink-0">{icon}</span>
       <span className="w-12 shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate">{value}</span>
+      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{value}</span>
     </div>
   )
 }

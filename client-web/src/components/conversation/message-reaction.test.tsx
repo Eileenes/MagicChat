@@ -70,6 +70,17 @@ describe("MessageBubble reactions", () => {
       '[data-slot="message-reaction-chip"]'
     )
     expect(reactionChip).toHaveClass("bg-background/70")
+    expect(reactionChip).toHaveClass(
+      "max-w-full",
+      "flex-wrap",
+      "whitespace-normal"
+    )
+    expect(
+      reactionChip?.querySelector('[data-slot="message-reaction-participants"]')
+    ).toHaveClass("min-w-0", "flex-wrap")
+    expect(
+      reactionChip?.closest('[data-slot="message-reactions"]')
+    ).toHaveClass("min-w-0", "[contain:inline-size]")
     expect(reactionChip).toHaveTextContent(
       "自定义文本李昌志, 朱文磊, 王彪, 赵一, 钱二, 孙三, 周四, 吴五, 郑六, 王七等 16 人"
     )

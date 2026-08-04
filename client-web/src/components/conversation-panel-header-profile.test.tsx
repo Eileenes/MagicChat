@@ -16,9 +16,11 @@ import {
 describe("ConversationPanel header profile", () => {
   it("opens the direct conversation user profile and previews its avatar", async () => {
     const user = userEvent.setup()
+    const longEmail =
+      "an-extraordinarily-long-email-address-without-safe-breakpoints@example-enterprise-domain.test"
     const otherMember = createMember({
       avatar: "/assets/users/li-si.webp",
-      email: "lisi@example.com",
+      email: longEmail,
       id: "user-2",
       name: "李四",
       phone: "13800138000",
@@ -44,7 +46,15 @@ describe("ConversationPanel header profile", () => {
     await user.click(screen.getByRole("button", { name: "李四资料" }))
 
     expect(await screen.findByText("用户资料")).toBeInTheDocument()
-    expect(screen.getByText("lisi@example.com")).toBeInTheDocument()
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "max-w-[calc(100vw-2rem)]",
+      "overflow-hidden"
+    )
+    expect(screen.getByText(longEmail)).toHaveClass(
+      "min-w-0",
+      "flex-1",
+      "[overflow-wrap:anywhere]"
+    )
 
     await user.click(screen.getByRole("button", { name: "预览李四头像" }))
 

@@ -62,7 +62,7 @@ export function MessageReactionChips({
 
   return (
     <div
-      className="flex max-w-full flex-wrap items-center justify-start gap-1"
+      className="flex max-w-full min-w-0 flex-wrap items-center justify-start gap-1 [contain:inline-size]"
       data-slot="message-reactions"
     >
       {reactions.map((reaction) => {
@@ -71,7 +71,7 @@ export function MessageReactionChips({
         return (
           <div
             className={cn(
-              "inline-flex min-h-6 max-w-full items-center gap-1 rounded-md px-2 text-xs whitespace-nowrap transition-colors",
+              "inline-flex min-h-6 max-w-full flex-wrap items-center gap-x-1 gap-y-0.5 rounded-md px-2 py-0.5 text-xs whitespace-normal transition-colors",
               messageReactionChipToneClassName[align],
               !canToggle && "opacity-80"
             )}
@@ -125,15 +125,18 @@ function ReactionParticipantSummary({
 
   const hasMoreUsers = reaction.count > reaction.users.length
   return (
-    <span className="inline-flex items-center whitespace-nowrap">
+    <span
+      className="inline-flex min-w-0 flex-1 flex-wrap items-center"
+      data-slot="message-reaction-participants"
+    >
       {reaction.users.map((user, index) => (
-        <React.Fragment key={user.id}>
+        <span className="inline-flex min-w-0 items-center" key={user.id}>
           {index > 0 && <span>,&nbsp;</span>}
           <ReactionUserName user={user} />
-        </React.Fragment>
+        </span>
       ))}
       {hasMoreUsers && (
-        <>
+        <span className="inline-flex items-center whitespace-nowrap">
           <span>等&nbsp;</span>
           <MessageReactionUsersPopover
             conversationId={conversationId}
@@ -141,7 +144,7 @@ function ReactionParticipantSummary({
             reaction={reaction}
           />
           <span>&nbsp;人</span>
-        </>
+        </span>
       )}
     </span>
   )
@@ -151,7 +154,7 @@ function ReactionUserName({ user }: { user: ClientMessageReactionUser }) {
   return (
     <UserProfilePopover
       triggerAriaLabel={`${user.name}资料`}
-      triggerClassName="transition-colors hover:text-sky-500 focus-visible:text-sky-500 data-[state=open]:text-sky-500"
+      triggerClassName="min-w-0 max-w-full break-all whitespace-normal transition-colors hover:text-sky-500 focus-visible:text-sky-500 data-[state=open]:text-sky-500"
       userId={user.id}
     >
       <span>{user.name}</span>
