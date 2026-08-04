@@ -34,14 +34,15 @@ export function EntityDetailFields({ profile }: { profile: EntityProfile }) {
               icon={<ThemedIcon icon={field.icon} />}
               minH="$5"
               title={
-                <XStack gap="$3" items="center" minW={0} width="100%">
-                  <SizableText size="$4">
+                <XStack gap="$3" items="flex-start" minW={0} width="100%">
+                  <SizableText shrink={0} size="$4">
                     {field.label}
                   </SizableText>
                   <SizableText
                     color="$gray9"
                     flex={1}
-                    numberOfLines={1}
+                    minW={0}
+                    shrink={1}
                     size="$3"
                     text="right"
                   >
