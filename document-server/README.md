@@ -28,8 +28,10 @@ new HocuspocusProvider({
 })
 ```
 
-持久化数据是未包装、未压缩的 `Y.encodeStateAsUpdate()` 结果，存放在 `document_collab_states.ydoc_state`。写入失败会以指数退避持续重试；进程关闭时等待活跃文档完成持久化，超过 `DOCUMENT_SHUTDOWN_TIMEOUT_MS` 后以失败状态退出。
+持久化数据是未包装、未压缩的 `Y.encodeStateAsUpdate()` 结果，存放在 `document_collab_states.ydoc_state`。每个防抖窗口内触发正文变更的用户会被累计，并在同一事务中 Upsert 到 `document_contributors`；创建者、标题修改者也会进入贡献者列表；目录移动和排序不计入协作编辑。写入失败会以指数退避持续重试；进程关闭时等待活跃文档完成持久化，超过 `DOCUMENT_SHUTDOWN_TIMEOUT_MS` 后以失败状态退出。
 
 连接建立后，服务端每隔 `DOCUMENT_AUTH_RECHECK_MS` 重新检查 Session、用户状态和项目成员关系。Session 过期、用户禁用或权限被撤销时，现有连接会以 4403 关闭。
+
+在线人员、光标和选区通过 Yjs Awareness 临时广播，不写入数据库。服务端会在 `beforeHandleAwareness` 中用已认证连接的用户 ID、姓名和头像覆盖客户端声明的身份，防止 Presence 冒充其他用户。
 
 当前部署模型是单实例；启用多实例前需要增加跨实例广播机制。

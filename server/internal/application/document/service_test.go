@@ -196,7 +196,8 @@ func TestServiceAllowsDerivedProjectMembersToManageDocuments(t *testing.T) {
 		t.Fatalf("create project group: %v", err)
 	}
 
-	service := NewService(Dependencies{DB: db})
+	currentTime := now
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return currentTime }})
 	created, err := service.Create(context.Background(), CreateCommand{
 		AccountID: member.ID, ProjectID: project.ID,
 		Kind:  Field[string]{Present: true, Value: KindFolder},
@@ -210,6 +211,28 @@ func TestServiceAllowsDerivedProjectMembersToManageDocuments(t *testing.T) {
 		Title: Field[string]{Present: true, Value: "Member folder updated"},
 	}); err != nil {
 		t.Fatalf("member update: %v", err)
+	}
+	currentTime = currentTime.Add(time.Minute)
+	moved, err := service.Move(context.Background(), MoveCommand{
+		AccountID: owner.ID, DocumentID: created.ID,
+		ParentID: Field[string]{Present: true, Null: true}, Index: 0,
+	})
+	if err != nil {
+		t.Fatalf("owner move: %v", err)
+	}
+	if len(moved.Contributors) != 1 || moved.Contributors[0].ID != member.ID {
+		t.Fatalf("move contributors = %#v", moved.Contributors)
+	}
+	currentTime = currentTime.Add(time.Minute)
+	updated, err := service.Update(context.Background(), UpdateCommand{
+		AccountID: owner.ID, DocumentID: created.ID,
+		Title: Field[string]{Present: true, Value: "Owner and member folder"},
+	})
+	if err != nil {
+		t.Fatalf("owner update: %v", err)
+	}
+	if len(updated.Contributors) != 2 || updated.Contributors[0].ID != owner.ID || updated.Contributors[1].ID != member.ID {
+		t.Fatalf("contributors = %#v", updated.Contributors)
 	}
 	if _, err := service.Delete(context.Background(), GetCommand{AccountID: member.ID, DocumentID: created.ID}); err != nil {
 		t.Fatalf("member delete: %v", err)
@@ -248,7 +271,7 @@ func openDocumentTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&store.User{}, &store.Project{}, &store.Conversation{}, &store.ConversationMember{},
-		&store.ProjectGroup{}, &store.Document{}, &store.DocumentCollabState{},
+		&store.ProjectGroup{}, &store.Document{}, &store.DocumentContributor{}, &store.DocumentCollabState{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}

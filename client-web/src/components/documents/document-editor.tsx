@@ -1,35 +1,45 @@
 import * as React from "react"
 import Collaboration from "@tiptap/extension-collaboration"
+import CollaborationCaret from "@tiptap/extension-collaboration-caret"
 import { DragHandle } from "@tiptap/extension-drag-handle-react"
+import Highlight from "@tiptap/extension-highlight"
 import Placeholder from "@tiptap/extension-placeholder"
-import TaskItem from "@tiptap/extension-task-item"
 import TaskList from "@tiptap/extension-task-list"
+import { TableKit } from "@tiptap/extension-table"
 import TextAlign from "@tiptap/extension-text-align"
 import { Color, TextStyle } from "@tiptap/extension-text-style"
 import { EditorContent, useEditor, type Editor } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
+import type { HocuspocusProvider } from "@hocuspocus/provider"
+import { toast } from "sonner"
 import type * as Y from "yjs"
 import {
   AlignCenter,
-  AlignJustify,
   AlignLeft,
   AlignRight,
+  Baseline,
   Bold,
+  ChevronDown,
   Code,
   Copy,
   GripVertical,
   Heading1,
   Heading2,
   Heading3,
+  ImagePlus,
   Italic,
   Link as LinkIcon,
   List,
   ListOrdered,
   ListTodo,
-  Palette,
+  Minus,
+  Paintbrush,
+  PaintRoller,
   Pilcrow,
   Quote,
   Redo2,
+  RemoveFormatting,
+  Sheet,
   Strikethrough,
   Trash2,
   Underline,
@@ -37,6 +47,13 @@ import {
   Unlink,
 } from "lucide-react"
 
+import { DocumentControlSeparator } from "@/components/documents/document-control-separator"
+import { DocumentHorizontalRule } from "@/components/documents/document-horizontal-rule-extension"
+import { DocumentImage } from "@/components/documents/document-image-extension"
+import { DocumentImageResolutionContext } from "@/components/documents/document-image-resolution"
+import { DocumentTaskItem } from "@/components/documents/document-task-item-extension"
+import { sanitizeDocumentPasteHTML } from "@/components/documents/document-paste-sanitizer"
+import { useDocumentImageResolutions } from "@/components/documents/use-document-image-resolutions"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -55,55 +72,83 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import {
+  safePresenceColor,
+  type DocumentPresenceUser,
+} from "@/lib/document-presence"
 import { cn } from "@/lib/utils"
 
 import "./document-editor.css"
 
 export function DocumentEditor({
   collaborationDocument,
+  collaborationProvider,
+  collaborationUser,
   onTitleBlur,
   onTitleChange,
   title,
 }: {
   collaborationDocument: Y.Doc
+  collaborationProvider: HocuspocusProvider
+  collaborationUser: DocumentPresenceUser
   onTitleBlur?: () => void
   onTitleChange: (title: string) => void
   title: string
 }) {
-  const editor = useEditor({
-    editorProps: {
-      attributes: {
-        "aria-label": "文档正文",
-        class: "document-editor-content",
+  const editor = useEditor(
+    {
+      editorProps: {
+        attributes: {
+          "aria-label": "文档正文",
+          class: "document-editor-content",
+        },
+        transformPastedHTML: sanitizeDocumentPasteHTML,
       },
+      extensions: [
+        StarterKit.configure({
+          heading: { levels: [1, 2, 3] },
+          horizontalRule: false,
+          link: { openOnClick: false },
+          undoRedo: false,
+        }),
+        Collaboration.configure({
+          fragment: collaborationDocument.getXmlFragment("body"),
+        }),
+        CollaborationCaret.configure({
+          provider: collaborationProvider,
+          render: renderCollaborationCaret,
+          selectionRender: renderCollaborationSelection,
+          user: collaborationUser,
+        }),
+        DocumentHorizontalRule,
+        DocumentImage,
+        Highlight.configure({ multicolor: true }),
+        TextStyle,
+        Color,
+        TextAlign.configure({
+          alignments: ["left", "center", "right"],
+          types: ["heading", "paragraph"],
+        }),
+        TaskList,
+        DocumentTaskItem,
+        TableKit.configure({ table: { resizable: true } }),
+        Placeholder.configure({
+          placeholder: "开始撰写文档…",
+        }),
+      ],
+      shouldRerenderOnTransaction: true,
     },
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        link: { openOnClick: false },
-        undoRedo: false,
-      }),
-      Collaboration.configure({
-        fragment: collaborationDocument.getXmlFragment("body"),
-      }),
-      TextStyle,
-      Color,
-      TextAlign.configure({ types: ["heading", "paragraph"] }),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      Placeholder.configure({
-        placeholder: "开始撰写文档…",
-      }),
-    ],
-    shouldRerenderOnTransaction: true,
-  })
+    [collaborationDocument, collaborationProvider, collaborationUser]
+  )
+
+  const imageResolutions = useDocumentImageResolutions(editor)
 
   if (!editor) return null
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DocumentToolbar editor={editor} />
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="document-workspace-canvas min-h-0 flex-1 overflow-y-auto p-4">
         <div className="document-editor mx-auto min-h-full max-w-4xl border bg-background px-8 py-12 shadow-md sm:px-14 sm:py-16">
           <input
             aria-label="文档页面标题"
@@ -113,12 +158,37 @@ export function DocumentEditor({
             placeholder="无标题文档"
             value={title}
           />
-          <EditorContent editor={editor} />
+          <DocumentImageResolutionContext.Provider value={imageResolutions}>
+            <EditorContent editor={editor} />
+          </DocumentImageResolutionContext.Provider>
           <DocumentBlockHandle editor={editor} />
         </div>
       </div>
     </div>
   )
+}
+
+function renderCollaborationCaret(user: Record<string, unknown>) {
+  const color = safePresenceColor(user.color)
+  const cursor = document.createElement("span")
+  cursor.className = "collaboration-carets__caret"
+  cursor.style.borderColor = color
+
+  const label = document.createElement("span")
+  label.className = "collaboration-carets__label"
+  label.style.backgroundColor = color
+  label.textContent = typeof user.name === "string" ? user.name : "协作者"
+  cursor.append(label)
+  return cursor
+}
+
+function renderCollaborationSelection(user: Record<string, unknown>) {
+  const color = safePresenceColor(user.color)
+  return {
+    class: "collaboration-carets__selection",
+    nodeName: "span",
+    style: `background-color: ${color}38`,
+  }
 }
 
 function DocumentBlockHandle({ editor }: { editor: Editor }) {
@@ -340,12 +410,125 @@ type BlockFormat =
   | "blockquote"
   | "code-block"
 
+type SelectionRange = { from: number; to: number }
+
+type TextFormatSnapshot = {
+  marks: Array<{ attrs: Record<string, unknown>; type: string }>
+  textAlign: TextAlignment
+}
+
+function captureTextFormat(editor: Editor): TextFormatSnapshot {
+  const { doc, selection, storedMarks } = editor.state
+  let sourceMarks = selection.empty
+    ? (storedMarks ?? selection.$from.marks())
+    : null
+
+  if (!selection.empty) {
+    doc.nodesBetween(selection.from, selection.to, (node) => {
+      if (!sourceMarks && node.isText) sourceMarks = node.marks
+    })
+  }
+
+  const paragraphAlign = editor.getAttributes("paragraph").textAlign
+  const headingAlign = editor.getAttributes("heading").textAlign
+  const activeAlign = paragraphAlign ?? headingAlign
+  const textAlign: TextAlignment =
+    activeAlign === "center" || activeAlign === "right" ? activeAlign : "left"
+
+  return {
+    marks: (sourceMarks ?? [])
+      .filter((mark) => mark.type.name !== "link")
+      .map((mark) => ({ attrs: { ...mark.attrs }, type: mark.type.name })),
+    textAlign,
+  }
+}
+
+function applyTextFormat(editor: Editor, snapshot: TextFormatSnapshot) {
+  let chain = editor.chain().focus().unsetAllMarks()
+  for (const mark of snapshot.marks) {
+    chain = chain.setMark(mark.type, mark.attrs)
+  }
+  chain =
+    snapshot.textAlign === "left"
+      ? chain.unsetTextAlign()
+      : chain.setTextAlign(snapshot.textAlign)
+  chain.run()
+}
+
 function DocumentToolbar({ editor }: { editor: Editor }) {
+  const [formatPainterActive, setFormatPainterActive] = React.useState(false)
+  const formatPainterRef = React.useRef<TextFormatSnapshot | null>(null)
+  const formatPainterSourceRef = React.useRef<SelectionRange | null>(null)
   const paragraphAlign = editor.getAttributes("paragraph").textAlign as
     string | undefined
   const headingAlign = editor.getAttributes("heading").textAlign as
     string | undefined
-  const currentAlign = paragraphAlign ?? headingAlign ?? "left"
+  const activeAlign = paragraphAlign ?? headingAlign
+  const currentAlign =
+    activeAlign === "center" || activeAlign === "right" ? activeAlign : "left"
+
+  React.useEffect(() => {
+    if (!formatPainterActive) {
+      editor.view.dom.classList.remove("document-format-painter-active")
+      return
+    }
+
+    let animationFrame: number | null = null
+    const cancelFormatPainter = () => {
+      formatPainterRef.current = null
+      formatPainterSourceRef.current = null
+      setFormatPainterActive(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelFormatPainter()
+    }
+    const handleMouseUp = () => {
+      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame)
+      animationFrame = window.requestAnimationFrame(() => {
+        const snapshot = formatPainterRef.current
+        const source = formatPainterSourceRef.current
+        const { from, to } = editor.state.selection
+        if (!snapshot || from === to) return
+        if (source && source.from === from && source.to === to) return
+
+        applyTextFormat(editor, snapshot)
+        cancelFormatPainter()
+      })
+    }
+
+    editor.view.dom.classList.add("document-format-painter-active")
+    editor.view.dom.addEventListener("keydown", handleKeyDown)
+    editor.view.dom.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame)
+      editor.view.dom.classList.remove("document-format-painter-active")
+      editor.view.dom.removeEventListener("keydown", handleKeyDown)
+      editor.view.dom.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [editor, formatPainterActive])
+
+  function toggleFormatPainter() {
+    if (formatPainterActive) {
+      formatPainterRef.current = null
+      formatPainterSourceRef.current = null
+      setFormatPainterActive(false)
+      return
+    }
+
+    formatPainterRef.current = captureTextFormat(editor)
+    formatPainterSourceRef.current = {
+      from: editor.state.selection.from,
+      to: editor.state.selection.to,
+    }
+    setFormatPainterActive(true)
+  }
+
+  function clearFormatting() {
+    formatPainterRef.current = null
+    formatPainterSourceRef.current = null
+    setFormatPainterActive(false)
+    editor.chain().focus().unsetAllMarks().clearNodes().run()
+  }
 
   return (
     <div
@@ -367,7 +550,18 @@ function DocumentToolbar({ editor }: { editor: Editor }) {
       >
         <Redo2 />
       </ToolbarButton>
-      <ToolbarSeparator />
+      <DocumentControlSeparator />
+      <ToolbarButton
+        active={formatPainterActive}
+        label={formatPainterActive ? "取消格式刷" : "格式刷"}
+        onClick={toggleFormatPainter}
+      >
+        <PaintRoller />
+      </ToolbarButton>
+      <ToolbarButton label="清除格式" onClick={clearFormatting}>
+        <RemoveFormatting />
+      </ToolbarButton>
+      <DocumentControlSeparator />
       <ToolbarButton
         active={editor.isActive("bold")}
         label="粗体"
@@ -397,7 +591,8 @@ function DocumentToolbar({ editor }: { editor: Editor }) {
         <Strikethrough />
       </ToolbarButton>
       <TextColorMenu editor={editor} />
-      <ToolbarSeparator />
+      <TextHighlightMenu editor={editor} />
+      <DocumentControlSeparator />
       <ToolbarButton
         active={editor.isActive("bulletList")}
         label="无序列表"
@@ -419,58 +614,385 @@ function DocumentToolbar({ editor }: { editor: Editor }) {
       >
         <ListTodo />
       </ToolbarButton>
-      <ToolbarSeparator />
-      <ToolbarButton
-        active={currentAlign === "left"}
-        label="左对齐"
-        onClick={() => editor.chain().focus().setTextAlign("left").run()}
-      >
-        <AlignLeft />
-      </ToolbarButton>
-      <ToolbarButton
-        active={currentAlign === "center"}
-        label="居中对齐"
-        onClick={() => editor.chain().focus().setTextAlign("center").run()}
-      >
-        <AlignCenter />
-      </ToolbarButton>
-      <ToolbarButton
-        active={currentAlign === "right"}
-        label="右对齐"
-        onClick={() => editor.chain().focus().setTextAlign("right").run()}
-      >
-        <AlignRight />
-      </ToolbarButton>
-      <ToolbarButton
-        active={currentAlign === "justify"}
-        label="两端对齐"
-        onClick={() => editor.chain().focus().setTextAlign("justify").run()}
-      >
-        <AlignJustify />
-      </ToolbarButton>
-      <ToolbarSeparator />
+      <DocumentControlSeparator />
+      <TextAlignmentMenu currentAlign={currentAlign} editor={editor} />
+      <DocumentControlSeparator />
       <LinkMenu editor={editor} />
+      <DocumentControlSeparator />
+      <ToolbarButton
+        disabled={!editor.can().chain().focus().setHorizontalRule().run()}
+        label="插入分割线"
+        onClick={() => editor.chain().focus().setHorizontalRule().run()}
+      >
+        <Minus />
+      </ToolbarButton>
+      <TableInsertMenu editor={editor} />
+      <ImageInsertButton editor={editor} />
     </div>
   )
 }
 
-const textColors = [
-  { label: "默认颜色", value: null },
-  { label: "灰色", value: "#64748b" },
-  { label: "红色", value: "#ef4444" },
-  { label: "橙色", value: "#f97316" },
-  { label: "黄色", value: "#ca8a04" },
-  { label: "绿色", value: "#16a34a" },
-  { label: "青色", value: "#0d9488" },
-  { label: "蓝色", value: "#2563eb" },
-  { label: "紫色", value: "#7c3aed" },
-  { label: "粉色", value: "#db2777" },
+type TextAlignment = "center" | "left" | "right"
+
+const textAlignmentOptions = [
+  { icon: AlignLeft, label: "左对齐", value: "left" },
+  { icon: AlignCenter, label: "居中对齐", value: "center" },
+  { icon: AlignRight, label: "右对齐", value: "right" },
 ] as const
 
-function TextColorMenu({ editor }: { editor: Editor }) {
-  const currentColor = editor.getAttributes("textStyle").color as
-    string | undefined
+function TextAlignmentMenu({
+  currentAlign,
+  editor,
+}: {
+  currentAlign: TextAlignment
+  editor: Editor
+}) {
+  const currentOption =
+    textAlignmentOptions.find((option) => option.value === currentAlign) ??
+    textAlignmentOptions[0]
+  const CurrentIcon = currentOption.icon
 
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={`文本对齐：${currentOption.label}`}
+          className="gap-1 px-2"
+          size="sm"
+          title={currentOption.label}
+          type="button"
+          variant="ghost"
+        >
+          <CurrentIcon />
+          <ChevronDown className="size-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-32">
+        {textAlignmentOptions.map((option) => (
+          <DropdownMenuItem
+            className={cn(currentAlign === option.value && "bg-muted")}
+            key={option.value}
+            onSelect={() =>
+              editor.chain().focus().setTextAlign(option.value).run()
+            }
+          >
+            <option.icon />
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function ImageInsertButton({ editor }: { editor: Editor }) {
+  function insertPlaceholder() {
+    const inserted = editor
+      .chain()
+      .focus()
+      .insertContent({
+        attrs: { alt: "", externalUrl: null, fileId: null },
+        type: DocumentImage.name,
+      })
+      .run()
+    if (!inserted) toast.error("无法在当前位置插入图片")
+  }
+
+  return (
+    <Button
+      aria-label="插入图片"
+      onClick={insertPlaceholder}
+      size="icon-sm"
+      title="插入图片"
+      type="button"
+      variant="ghost"
+    >
+      <ImagePlus />
+    </Button>
+  )
+}
+
+const maximumTableRows = 10
+const maximumTableColumns = 10
+
+function TableInsertMenu({ editor }: { editor: Editor }) {
+  const [open, setOpen] = React.useState(false)
+  const [selection, setSelection] = React.useState({ columns: 3, rows: 3 })
+  const cellRefs = React.useRef(new Map<string, HTMLButtonElement>())
+  const canInsert = editor
+    .can()
+    .chain()
+    .focus()
+    .insertTable({ cols: 3, rows: 3, withHeaderRow: true })
+    .run()
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen)
+    if (nextOpen) setSelection({ columns: 3, rows: 3 })
+  }
+
+  function insertTable(rows: number, columns: number) {
+    editor
+      .chain()
+      .focus()
+      .insertTable({ cols: columns, rows, withHeaderRow: true })
+      .run()
+    setOpen(false)
+  }
+
+  function focusCell(rows: number, columns: number) {
+    const nextSelection = {
+      columns: Math.min(Math.max(columns, 1), maximumTableColumns),
+      rows: Math.min(Math.max(rows, 1), maximumTableRows),
+    }
+    setSelection(nextSelection)
+    requestAnimationFrame(() => {
+      cellRefs.current
+        .get(tableCellKey(nextSelection.rows, nextSelection.columns))
+        ?.focus()
+    })
+  }
+
+  return (
+    <Popover onOpenChange={handleOpenChange} open={open}>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label="插入表格"
+          disabled={!canInsert}
+          size="icon-sm"
+          title="插入表格"
+          type="button"
+          variant="ghost"
+        >
+          <Sheet />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="center" className="w-auto p-3">
+        <div className="mb-2 flex items-center justify-between gap-6 text-xs">
+          <span className="font-medium">插入表格</span>
+          <span className="text-muted-foreground">
+            {selection.rows} × {selection.columns}
+          </span>
+        </div>
+        <div
+          aria-label="选择表格行列数量"
+          className="grid grid-cols-10 gap-1"
+          role="grid"
+        >
+          {Array.from({ length: maximumTableRows }, (_, rowIndex) =>
+            Array.from({ length: maximumTableColumns }, (_, columnIndex) => {
+              const rows = rowIndex + 1
+              const columns = columnIndex + 1
+              const selected =
+                rows <= selection.rows && columns <= selection.columns
+              const active =
+                rows === selection.rows && columns === selection.columns
+              const key = tableCellKey(rows, columns)
+              return (
+                <button
+                  aria-label={`${rows} 行 ${columns} 列`}
+                  aria-pressed={active}
+                  className={cn(
+                    "size-5 rounded-sm border transition-colors",
+                    selected
+                      ? "border-sky-500 bg-sky-100 dark:bg-sky-950"
+                      : "border-border bg-background hover:border-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/50"
+                  )}
+                  key={key}
+                  onClick={() => insertTable(rows, columns)}
+                  onFocus={() => setSelection({ columns, rows })}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowUp") focusCell(rows - 1, columns)
+                    else if (event.key === "ArrowDown")
+                      focusCell(rows + 1, columns)
+                    else if (event.key === "ArrowLeft")
+                      focusCell(rows, columns - 1)
+                    else if (event.key === "ArrowRight")
+                      focusCell(rows, columns + 1)
+                    else return
+                    event.preventDefault()
+                  }}
+                  onMouseEnter={() => setSelection({ columns, rows })}
+                  ref={(element) => {
+                    if (element) cellRefs.current.set(key, element)
+                    else cellRefs.current.delete(key)
+                  }}
+                  role="gridcell"
+                  tabIndex={active ? 0 : -1}
+                  type="button"
+                />
+              )
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function tableCellKey(rows: number, columns: number) {
+  return `${rows}:${columns}`
+}
+
+const documentColorShades = [100, 300, 500, 700, 900] as const
+
+const documentColorRows = [
+  {
+    name: "red",
+    values: [
+      "oklch(93.6% 0.032 17.717)",
+      "oklch(80.8% 0.114 19.571)",
+      "oklch(63.7% 0.237 25.331)",
+      "oklch(50.5% 0.213 27.518)",
+      "oklch(39.6% 0.141 25.723)",
+    ],
+  },
+  {
+    name: "amber",
+    values: [
+      "oklch(96.2% 0.059 95.617)",
+      "oklch(87.9% 0.169 91.605)",
+      "oklch(76.9% 0.188 70.08)",
+      "oklch(55.5% 0.163 48.998)",
+      "oklch(41.4% 0.112 45.904)",
+    ],
+  },
+  {
+    name: "lime",
+    values: [
+      "oklch(96.7% 0.067 122.328)",
+      "oklch(89.7% 0.196 126.665)",
+      "oklch(76.8% 0.233 130.85)",
+      "oklch(53.2% 0.157 131.589)",
+      "oklch(40.5% 0.101 131.063)",
+    ],
+  },
+  {
+    name: "emerald",
+    values: [
+      "oklch(95% 0.052 163.051)",
+      "oklch(84.5% 0.143 164.978)",
+      "oklch(69.6% 0.17 162.48)",
+      "oklch(50.8% 0.118 165.612)",
+      "oklch(37.8% 0.077 168.94)",
+    ],
+  },
+  {
+    name: "cyan",
+    values: [
+      "oklch(95.6% 0.045 203.388)",
+      "oklch(86.5% 0.127 207.078)",
+      "oklch(71.5% 0.143 215.221)",
+      "oklch(52% 0.105 223.128)",
+      "oklch(39.8% 0.07 227.392)",
+    ],
+  },
+  {
+    name: "blue",
+    values: [
+      "oklch(93.2% 0.032 255.585)",
+      "oklch(80.9% 0.105 251.813)",
+      "oklch(62.3% 0.214 259.815)",
+      "oklch(48.8% 0.243 264.376)",
+      "oklch(37.9% 0.146 265.522)",
+    ],
+  },
+  {
+    name: "violet",
+    values: [
+      "oklch(94.3% 0.029 294.588)",
+      "oklch(81.1% 0.111 293.571)",
+      "oklch(60.6% 0.25 292.717)",
+      "oklch(49.1% 0.27 292.581)",
+      "oklch(38% 0.189 293.745)",
+    ],
+  },
+  {
+    name: "fuchsia",
+    values: [
+      "oklch(95.2% 0.037 318.852)",
+      "oklch(83.3% 0.145 321.434)",
+      "oklch(66.7% 0.295 322.15)",
+      "oklch(51.8% 0.253 323.949)",
+      "oklch(40.1% 0.17 325.612)",
+    ],
+  },
+  {
+    name: "olive",
+    values: [
+      "oklch(96.6% 0.005 106.5)",
+      "oklch(88% 0.011 106.6)",
+      "oklch(58% 0.031 107.3)",
+      "oklch(39.4% 0.023 107.4)",
+      "oklch(22.8% 0.013 107.4)",
+    ],
+  },
+  {
+    name: "gray",
+    values: [
+      "oklch(96.7% 0.003 264.542)",
+      "oklch(87.2% 0.01 258.338)",
+      "oklch(55.1% 0.027 264.364)",
+      "oklch(37.3% 0.034 259.733)",
+      "oklch(21% 0.034 264.665)",
+    ],
+  },
+] as const
+
+const documentColors = documentColorShades.flatMap((shade, shadeIndex) =>
+  documentColorRows.map((row) => ({
+    label: `${row.name} ${shade}`,
+    value: row.values[shadeIndex],
+  }))
+)
+
+function DocumentColorPalette({
+  label,
+  onColorSelect,
+  resetLabel,
+  resetSwatchClassName,
+}: {
+  label: string
+  onColorSelect: (color: string | null) => void
+  resetLabel: string
+  resetSwatchClassName: string
+}) {
+  return (
+    <DropdownMenuContent align="center" className="w-auto">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <DropdownMenuLabel className="px-1">{label}</DropdownMenuLabel>
+        <DropdownMenuItem
+          className="h-7 px-2"
+          onSelect={() => onColorSelect(null)}
+        >
+          <span
+            className={cn("size-4 rounded-full border", resetSwatchClassName)}
+          />
+          {resetLabel}
+        </DropdownMenuItem>
+      </div>
+      <DropdownMenuSeparator />
+      <div className="grid grid-cols-10 gap-0.5 p-1">
+        {documentColors.map((color) => (
+          <DropdownMenuItem
+            aria-label={color.label}
+            className="size-6 justify-center rounded-full p-0"
+            key={color.label}
+            onSelect={() => onColorSelect(color.value)}
+            title={color.label}
+          >
+            <span
+              className="size-4 rounded-full border border-black/10"
+              style={{ backgroundColor: color.value }}
+            />
+          </DropdownMenuItem>
+        ))}
+      </div>
+    </DropdownMenuContent>
+  )
+}
+
+function TextColorMenu({ editor }: { editor: Editor }) {
   function setTextColor(color: string | null) {
     if (color) editor.chain().focus().setColor(color).run()
     else editor.chain().focus().unsetColor().run()
@@ -481,46 +1003,49 @@ function TextColorMenu({ editor }: { editor: Editor }) {
       <DropdownMenuTrigger asChild>
         <Button
           aria-label="字体颜色"
-          className="relative"
           size="icon-sm"
           title="字体颜色"
           type="button"
           variant="ghost"
         >
-          <Palette />
-          <span
-            aria-hidden
-            className="absolute right-1 bottom-0.5 left-1 h-0.5 rounded-full bg-foreground"
-            style={currentColor ? { backgroundColor: currentColor } : undefined}
-          />
+          <Baseline />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-48">
-        <DropdownMenuLabel>字体颜色</DropdownMenuLabel>
-        <div className="grid grid-cols-5 gap-1 p-1">
-          {textColors.map((color) => (
-            <DropdownMenuItem
-              aria-label={color.label}
-              className={cn(
-                "size-7 justify-center p-0",
-                currentColor === color.value && "ring-2 ring-ring"
-              )}
-              key={color.label}
-              onSelect={() => setTextColor(color.value)}
-              title={color.label}
-            >
-              {color.value ? (
-                <span
-                  className="size-4 rounded-full border border-black/10"
-                  style={{ backgroundColor: color.value }}
-                />
-              ) : (
-                <span className="text-xs font-semibold">A</span>
-              )}
-            </DropdownMenuItem>
-          ))}
-        </div>
-      </DropdownMenuContent>
+      <DocumentColorPalette
+        label="字体颜色"
+        onColorSelect={setTextColor}
+        resetLabel="默认颜色"
+        resetSwatchClassName="bg-foreground"
+      />
+    </DropdownMenu>
+  )
+}
+
+function TextHighlightMenu({ editor }: { editor: Editor }) {
+  function setTextHighlight(color: string | null) {
+    if (color) editor.chain().focus().setHighlight({ color }).run()
+    else editor.chain().focus().unsetHighlight().run()
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label="文字背景色"
+          size="icon-sm"
+          title="文字背景色"
+          type="button"
+          variant="ghost"
+        >
+          <Paintbrush />
+        </Button>
+      </DropdownMenuTrigger>
+      <DocumentColorPalette
+        label="文字背景色"
+        onColorSelect={setTextHighlight}
+        resetLabel="无背景色"
+        resetSwatchClassName="bg-background"
+      />
     </DropdownMenu>
   )
 }
@@ -634,8 +1159,4 @@ function ToolbarButton({
       {children}
     </Button>
   )
-}
-
-function ToolbarSeparator() {
-  return <span aria-hidden className="mx-1 h-5 w-px bg-border" />
 }

@@ -9433,6 +9433,15 @@ const docTemplate = `{
         "client.documentResponse": {
             "type": "object",
             "properties": {
+                "contributor_count": {
+                    "type": "integer"
+                },
+                "contributors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.projectUserResponse"
+                    }
+                },
                 "created_at": {
                     "type": "string"
                 },

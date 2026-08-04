@@ -17,7 +17,9 @@ export class DocumentAuthorizationError extends Error {
 export type DocumentConnectionContext = {
   documentId: string;
   sessionId: string;
+  userAvatar: string;
   userId: string;
+  userName: string;
 };
 
 export class DocumentAuthorizer {
@@ -32,11 +34,14 @@ export class DocumentAuthorizer {
     if (!token) throw new DocumentAuthorizationError();
 
     const session = await this.pool.query<{
+      avatar: string;
+      name: string;
+      nickname: string;
       session_id: string;
       user_id: string;
     }>(
       `
-        SELECT us.id AS session_id, us.user_id
+        SELECT us.id AS session_id, us.user_id, u.name, u.nickname, u.avatar
         FROM user_sessions us
         JOIN users u ON u.id = us.user_id
         WHERE us.token_hash = $1
@@ -60,7 +65,9 @@ export class DocumentAuthorizer {
     return {
       documentId: documentName,
       sessionId: identity.session_id,
+      userAvatar: identity.avatar,
       userId: identity.user_id,
+      userName: identity.nickname.trim() || identity.name,
     };
   }
 

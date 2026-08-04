@@ -19,6 +19,8 @@ type DocumentUserResponse = {
 }
 
 type DocumentResponse = {
+  contributor_count?: number
+  contributors?: DocumentUserResponse[]
   created_at?: string
   creator?: DocumentUserResponse
   document_type?: string | null
@@ -54,6 +56,8 @@ export type ClientDocumentUser = {
 }
 
 export type ClientDocument = {
+  contributorCount: number
+  contributors: ClientDocumentUser[]
   createdAt: string
   creator: ClientDocumentUser
   documentType: "document" | null
@@ -274,9 +278,21 @@ function normalizeDocument(value: DocumentResponse): ClientDocument {
   ) {
     throw new ClientDataRequestError("文档类型响应格式不正确")
   }
+  const creator = normalizeUser(value.creator)
+  const updatedBy = normalizeUser(value.updated_by)
+  const contributors = Array.isArray(value.contributors)
+    ? value.contributors.map(normalizeUser)
+    : uniqueUsers([creator, updatedBy])
   return {
+    contributorCount:
+      typeof value.contributor_count === "number" &&
+      Number.isInteger(value.contributor_count) &&
+      value.contributor_count >= contributors.length
+        ? value.contributor_count
+        : contributors.length,
+    contributors,
     createdAt: value.created_at,
-    creator: normalizeUser(value.creator),
+    creator,
     documentType,
     id: value.id,
     kind: value.kind,
@@ -286,8 +302,12 @@ function normalizeDocument(value: DocumentResponse): ClientDocument {
     sortOrder: value.sort_order,
     title: value.title,
     updatedAt: value.updated_at,
-    updatedBy: normalizeUser(value.updated_by),
+    updatedBy,
   }
+}
+
+function uniqueUsers(users: ClientDocumentUser[]) {
+  return Array.from(new Map(users.map((user) => [user.id, user])).values())
 }
 
 function normalizeUser(value: DocumentUserResponse): ClientDocumentUser {

@@ -34,6 +34,7 @@ type Document struct {
 	SchemaVersion int
 	Creator       UserSummary
 	UpdatedBy     UserSummary
+	Contributors  []UserSummary
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }

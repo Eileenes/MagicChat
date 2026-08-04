@@ -45,18 +45,20 @@ type moveDocumentRequest struct {
 }
 
 type documentResponse struct {
-	ID            string              `json:"id"`
-	ProjectID     string              `json:"project_id"`
-	ParentID      *string             `json:"parent_id" extensions:"x-nullable"`
-	Kind          string              `json:"kind" enums:"document,folder"`
-	DocumentType  *string             `json:"document_type" extensions:"x-nullable"`
-	Title         string              `json:"title"`
-	SortOrder     int64               `json:"sort_order"`
-	SchemaVersion int                 `json:"schema_version"`
-	Creator       projectUserResponse `json:"creator"`
-	UpdatedBy     projectUserResponse `json:"updated_by"`
-	CreatedAt     time.Time           `json:"created_at"`
-	UpdatedAt     time.Time           `json:"updated_at"`
+	ID               string                `json:"id"`
+	ProjectID        string                `json:"project_id"`
+	ParentID         *string               `json:"parent_id" extensions:"x-nullable"`
+	Kind             string                `json:"kind" enums:"document,folder"`
+	DocumentType     *string               `json:"document_type" extensions:"x-nullable"`
+	Title            string                `json:"title"`
+	SortOrder        int64                 `json:"sort_order"`
+	SchemaVersion    int                   `json:"schema_version"`
+	Creator          projectUserResponse   `json:"creator"`
+	UpdatedBy        projectUserResponse   `json:"updated_by"`
+	Contributors     []projectUserResponse `json:"contributors"`
+	ContributorCount int                   `json:"contributor_count"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
 }
 
 type documentListResponse struct {
@@ -308,13 +310,23 @@ func documentInt64Field(value documentOptionalInt64) document.Field[int64] {
 }
 
 func newDocumentResponse(value document.Document) documentResponse {
+	contributors := make([]projectUserResponse, 0, len(value.Contributors))
+	for _, contributor := range value.Contributors {
+		contributors = append(contributors, projectUserResponse{
+			ID: contributor.ID, Name: contributor.Name, Nickname: contributor.Nickname, Avatar: contributor.Avatar,
+		})
+	}
 	return documentResponse{
 		ID: value.ID, ProjectID: value.ProjectID, ParentID: value.ParentID, Kind: value.Kind,
 		DocumentType: value.DocumentType, Title: value.Title, SortOrder: value.SortOrder, SchemaVersion: value.SchemaVersion,
-		Creator:   projectUserResponse{ID: value.Creator.ID, Name: value.Creator.Name, Nickname: value.Creator.Nickname, Avatar: value.Creator.Avatar},
-		UpdatedBy: projectUserResponse{ID: value.UpdatedBy.ID, Name: value.UpdatedBy.Name, Nickname: value.UpdatedBy.Nickname, Avatar: value.UpdatedBy.Avatar},
+		Creator: documentUserResponse(value.Creator), UpdatedBy: documentUserResponse(value.UpdatedBy),
+		Contributors: contributors, ContributorCount: len(contributors),
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
+}
+
+func documentUserResponse(value document.UserSummary) projectUserResponse {
+	return projectUserResponse{ID: value.ID, Name: value.Name, Nickname: value.Nickname, Avatar: value.Avatar}
 }
 
 func writeDocumentError(c echo.Context, err error) error {
