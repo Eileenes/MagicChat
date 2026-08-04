@@ -508,7 +508,7 @@ function ProjectPanel({
           className="flex min-h-0 flex-1 overflow-hidden"
           value="documents"
         >
-          <ProjectDocumentsTab />
+          <ProjectDocumentsTab key={project.id} projectId={project.id} />
         </TabsContent>
         <TabsContent
           className="flex min-h-0 flex-1 overflow-hidden"

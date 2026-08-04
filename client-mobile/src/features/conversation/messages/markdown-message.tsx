@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router"
 import MarkdownIt from "markdown-it"
 import type Token from "markdown-it/lib/token.mjs"
 import { useMemo, type ReactNode } from "react"
@@ -14,6 +15,7 @@ import {
 import type { EntityReference } from "@/domain/entities/entity-profile"
 import type { MessageMentionLabelResolver } from "@/domain/messages/message-presenter"
 import { MessageMentionText } from "@/features/conversation/messages/message-mention-text"
+import { buildUrlImagePreviewHref } from "@/navigation/image-preview"
 
 type MarkdownNode = {
   children: MarkdownNode[]
@@ -380,6 +382,7 @@ function MarkdownTable({
 }
 
 function MarkdownImage({ serverUrl, token }: { serverUrl: string; token: Token }) {
+  const router = useRouter()
   const source = resolveMarkdownUrl(token.attrGet("src") ?? "", serverUrl)
   const alt = token.content.trim() || "图片"
 
@@ -392,7 +395,7 @@ function MarkdownImage({ serverUrl, token }: { serverUrl: string; token: Token }
       accessibilityLabel={alt}
       height={160}
       objectFit="contain"
-      onPress={() => void openMarkdownUrl(source)}
+      onPress={() => router.push(buildUrlImagePreviewHref(source))}
       rounded="$3"
       src={source}
       width={220}

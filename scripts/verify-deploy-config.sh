@@ -38,6 +38,7 @@ assert_not_contains() {
 assert_file "compose.yml"
 assert_file "server/Dockerfile"
 assert_file "assistant/Dockerfile"
+assert_file "document-server/Dockerfile"
 assert_file "deploy/caddy/Dockerfile"
 assert_file "deploy/caddy/Caddyfile"
 assert_not_exists "deploy/nginx"
@@ -52,6 +53,10 @@ assert_contains "compose.yml" "assistant:"
 assert_contains "compose.yml" "container_name: magic-chat-postgres"
 assert_contains "compose.yml" "container_name: magic-chat-assistant"
 assert_contains "compose.yml" "container_name: magic-chat-server"
+assert_contains "compose.yml" "document-server:"
+assert_contains "compose.yml" "container_name: magic-chat-document-server"
+assert_contains "compose.yml" "stop_grace_period: 40s"
+assert_contains "compose.yml" '${IMAGE_REGISTRY:-ghcr.1ms.run/chaitin/magicchat}/document-server:${IMAGE_TAG:-latest}'
 assert_contains "compose.yml" "caddy:"
 assert_contains "compose.yml" "container_name: magic-chat-caddy"
 assert_not_contains "compose.yml" "name: mygod"
@@ -92,7 +97,7 @@ assert_not_contains "compose.yml" "MYGOD_APP_SECRET"
 assert_contains "compose.yml" "80:80"
 assert_contains "compose.yml" '${CLIENT_HTTPS_PORT:-443}:443'
 assert_contains "compose.yml" '${ADMIN_HTTPS_PORT:-1443}:1443'
-assert_contains "compose.yml" 'https://127.0.0.1:443/gateway-healthz'
+assert_contains "compose.yml" 'http://127.0.0.1:2019/config/'
 assert_not_contains "compose.yml" '${CLIENT_HTTPS_PORT:-443}:${CLIENT_HTTPS_PORT:-443}'
 assert_not_contains "compose.yml" '${ADMIN_HTTPS_PORT:-1443}:${ADMIN_HTTPS_PORT:-1443}'
 assert_contains "compose.yml" "./data/postgres/data:/var/lib/postgresql/data"
@@ -172,6 +177,9 @@ assert_contains "deploy/caddy/Caddyfile" 'https://{$PUBLIC_HOSTNAME:localhost}'
 assert_contains "deploy/caddy/Caddyfile" 'https://{$PUBLIC_HOSTNAME:localhost}:1443'
 assert_contains "deploy/caddy/Caddyfile" "protocols h1 h2"
 assert_contains "deploy/caddy/Caddyfile" "handle /gateway-healthz"
+assert_contains "deploy/caddy/Caddyfile" "handle /api/client/document/collaboration/*"
+assert_contains "deploy/caddy/Caddyfile" "handle /api/client/document/collaboration"
+assert_contains "deploy/caddy/Caddyfile" "reverse_proxy document-server:20100"
 assert_contains "deploy/caddy/Caddyfile" "@client_api path /api/client/* /api/app/*"
 assert_contains "deploy/caddy/Caddyfile" "handle /api/*"
 assert_contains "deploy/caddy/Caddyfile" "reverse_proxy server:20080"
@@ -196,6 +204,9 @@ assert_contains "server/Dockerfile" "COPY server/migrations"
 assert_contains "server/Dockerfile" "COPY api-docs"
 assert_not_contains "server/Dockerfile" "config.example.yaml"
 assert_contains "assistant/Dockerfile" "go build"
+assert_contains "document-server/Dockerfile" "corepack prepare pnpm@10.32.1 --activate"
+assert_contains "document-server/Dockerfile" "pnpm install --frozen-lockfile"
+assert_contains "document-server/Dockerfile" 'ENTRYPOINT ["node", "dist/index.js"]'
 assert_contains "assistant/internal/config/config.go" 'AIAssistantAppID        = "00000000-0000-0000-0000-000000000001"'
 assert_contains "assistant/internal/config/config.go" "DefaultAgentMaxTurns    = 50"
 assert_contains "assistant/internal/config/config.go" "DefaultAgentMaxSessions = 1000"
@@ -211,6 +222,8 @@ assert_contains "deploy/caddy/Dockerfile" "COPY admin-web/public/assets/avatars/
 assert_contains ".github/workflows/docker.yml" "ghcr.io"
 assert_contains ".github/workflows/docker.yml" "server/Dockerfile"
 assert_contains ".github/workflows/docker.yml" "assistant/Dockerfile"
+assert_contains ".github/workflows/docker.yml" "document-server/Dockerfile"
+assert_contains ".github/workflows/docker.yml" "image: document-server"
 assert_contains ".github/workflows/docker.yml" "image: caddy"
 assert_contains ".github/workflows/docker.yml" "deploy/caddy/Dockerfile"
 assert_not_contains ".github/workflows/docker.yml" "deploy/nginx/Dockerfile"
@@ -228,16 +241,12 @@ assert_file "homepage/compose.yml"
 assert_file "homepage/systemd/jiying-homepage-update"
 assert_file "homepage/systemd/jiying-homepage-update.service"
 assert_file "homepage/systemd/jiying-homepage-update.timer"
-assert_file "homepage/src/assets/fonts/maple-mono/LICENSE.txt"
-assert_file "homepage/src/assets/fonts/maple-mono/glyphs.txt"
-assert_file "homepage/src/assets/fonts/maple-mono/manifest.json"
-assert_file "homepage/scripts/build-maple-fonts.mjs"
-assert_file "homepage/scripts/check-maple-fonts.mjs"
-assert_file "homepage/scripts/maple-font-glyphs.mjs"
-assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-regular-v7.9.woff2"
-assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-semibold-v7.9.woff2"
-assert_file "homepage/src/assets/fonts/maple-mono/maple-mono-cn-bold-v7.9.woff2"
-assert_contains "homepage/src/styles/global.css" 'font-family: "Maple Mono CN"'
+assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-regular"'
+assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-semibold"'
+assert_contains "homepage/src/styles/global.css" '@import "harmonyos-sans-bold"'
+assert_contains "homepage/src/styles/global.css" '--font-sans: "HarmonyOS Sans SC"'
+assert_not_contains "homepage/src/styles/global.css" "Maple Mono CN"
+assert_not_contains "homepage/src/styles/global.css" "maple-mono"
 assert_contains "homepage/src/styles/global.css" "--teal: #4a90a4"
 assert_contains "homepage/src/styles/global.css" "--violet: #6bb5a2"
 assert_contains "homepage/src/styles/global.css" "--coral: #f4a261"
@@ -246,14 +255,14 @@ assert_contains "homepage/src/styles/global.css" "--radius-md: 16px"
 assert_contains "homepage/src/styles/global.css" "outline: 3px solid var(--teal-dark)"
 assert_contains "homepage/src/styles/global.css" "@media (max-width: 1279px)"
 assert_not_contains "homepage/src/styles/global.css" ".capability-card:hover"
-assert_not_contains "homepage/src/styles/global.css" "harmonyos-sans-sc-webfont-splitted"
+assert_contains "homepage/astro.config.mjs" "harmonyos-sans-sc-webfont-splitted/dist/"
 assert_contains "homepage/src/components/SiteHeader.astro" 'href="https://github.com/chaitin/MagicChat"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'target="_blank"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'rel="noopener noreferrer"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'name="tabler:brand-github-filled"'
-assert_contains "homepage/src/pages/index.astro" "开源 · 免费私有化部署"
+assert_contains "homepage/src/pages/index.astro" "免费私有化部署方案"
 assert_contains "homepage/src/pages/index.astro" "AGPL v3 开源"
-assert_contains "homepage/src/pages/index.astro" "Docker 私有部署"
+assert_contains "homepage/src/pages/index.astro" "使用 Docker 部署"
 assert_contains "homepage/src/pages/index.astro" "办公 AI 助理"
 assert_contains "homepage/src/pages/index.astro" 'href="https://app.jiying.chat/"'
 assert_contains "homepage/src/components/SiteFooter.astro" 'href="https://app.jiying.chat/"'
@@ -266,9 +275,9 @@ assert_not_contains "homepage/src/components/SiteHeader.astro" "mobile-nav"
 assert_contains "homepage/package.json" '"astro-icon"'
 assert_contains "homepage/package.json" '"@iconify-json/tabler"'
 assert_not_contains "homepage/package.json" '"@lucide/astro"'
-assert_not_contains "homepage/package.json" "harmonyos-sans-sc-webfont-splitted"
-assert_contains "homepage/package.json" '"fonts:build": "node scripts/build-maple-fonts.mjs"'
-assert_contains "homepage/package.json" '"fonts:check": "node scripts/check-maple-fonts.mjs"'
+assert_contains "homepage/package.json" '"harmonyos-sans-sc-webfont-splitted"'
+assert_not_contains "homepage/package.json" '"fonts:build"'
+assert_not_contains "homepage/package.json" '"fonts:check"'
 assert_contains "homepage/Dockerfile" "FROM caddy:2-alpine"
 assert_contains "homepage/Dockerfile" "npm ci"
 assert_contains "homepage/Dockerfile" "npm run build"

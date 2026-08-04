@@ -29,20 +29,21 @@ type ClientPlatform = {
 const clientPlatforms: ClientPlatform[] = [
   {
     description: "Windows 桌面客户端",
+    downloadUrl: "https://jiying.chat/releases/jiying.exe",
     icon: Monitor,
     name: "Windows",
-    released: false,
+    released: true,
   },
   {
     description: "macOS 桌面客户端",
+    downloadUrl: "https://jiying.chat/releases/jiying.dmg",
     icon: Laptop,
     name: "macOS",
-    released: false,
+    released: true,
   },
   {
     description: "Android 手机和平板",
-    downloadUrl:
-      "https://chat-public-1450770193.cos.ap-guangzhou.myqcloud.com/releases/magic-chat.apk.1",
+    downloadUrl: "https://jiying.chat/releases/jiying.apk",
     icon: Smartphone,
     name: "Android",
     released: true,

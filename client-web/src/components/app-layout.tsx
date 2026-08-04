@@ -1,6 +1,7 @@
 import {
   BriefcaseBusiness,
   CircleUserRound,
+  House,
   Loader2Icon,
   LogOut,
   MessageCircleMore,
@@ -117,6 +118,7 @@ export function AppLayout() {
           ))}
         </nav>
         <div className="flex flex-col items-center gap-2">
+          <HomepageLink />
           <GithubLink />
           <ClientDownloadDialog />
           <ThemeSwitcher />
@@ -368,6 +370,27 @@ function MainNavItem({
           />
         )}
       </NavLink>
+    </Button>
+  )
+}
+
+function HomepageLink() {
+  return (
+    <Button
+      asChild
+      className="rounded-md hover:bg-transparent dark:hover:bg-transparent"
+      size="icon-sm"
+      variant="ghost"
+    >
+      <a
+        aria-label="访问即应官网"
+        href="https://jiying.chat/"
+        rel="noopener noreferrer"
+        target="_blank"
+        title="即应官网"
+      >
+        <House aria-hidden="true" className="size-4" />
+      </a>
     </Button>
   )
 }

@@ -1,11 +1,11 @@
 import { Tabs as RouterTabs, useRouter } from "expo-router"
 import type { Href } from "expo-router"
-import { DrawerActions } from "expo-router/react-navigation"
 import {
   BriefcaseBusiness,
   ContactRound,
   MessageCircleMore,
   Search,
+  UserRound,
   type LucideIcon,
 } from "lucide-react-native"
 import type { ComponentProps } from "react"
@@ -16,6 +16,7 @@ import { AppHeader } from "@/components/navigation/app-header"
 
 const TAB_ITEMS: Record<string, { icon: LucideIcon; label: string }> = {
   contacts: { icon: ContactRound, label: "通讯录" },
+  me: { icon: UserRound, label: "我" },
   messages: { icon: MessageCircleMore, label: "消息" },
   projects: { icon: BriefcaseBusiness, label: "项目" },
 }
@@ -42,7 +43,7 @@ export default function AppTabsLayout() {
       <RouterTabs.Screen
         name="messages"
         options={{
-          header: ({ navigation }) => (
+          header: () => (
             <AppHeader
               actions={[
                 {
@@ -51,11 +52,6 @@ export default function AppTabsLayout() {
                   onPress: () => router.push("/search" as Href),
                 },
               ]}
-              onMenuPress={() =>
-                navigation
-                  .getParent()
-                  ?.dispatch(DrawerActions.openDrawer())
-              }
               title="消息"
             />
           ),
@@ -65,33 +61,22 @@ export default function AppTabsLayout() {
       <RouterTabs.Screen
         name="contacts"
         options={{
-          header: ({ navigation }) => (
-            <AppHeader
-              onMenuPress={() =>
-                navigation
-                  .getParent()
-                  ?.dispatch(DrawerActions.openDrawer())
-              }
-              title="通讯录"
-            />
-          ),
+          header: () => <AppHeader title="通讯录" />,
           title: "通讯录",
         }}
       />
       <RouterTabs.Screen
         name="projects"
         options={{
-          header: ({ navigation }) => (
-            <AppHeader
-              onMenuPress={() =>
-                navigation
-                  .getParent()
-                  ?.dispatch(DrawerActions.openDrawer())
-              }
-              title="项目"
-            />
-          ),
+          header: () => <AppHeader title="项目" />,
           title: "项目",
+        }}
+      />
+      <RouterTabs.Screen
+        name="me"
+        options={{
+          header: () => <AppHeader title="我" />,
+          title: "我",
         }}
       />
     </RouterTabs>

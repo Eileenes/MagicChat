@@ -1,5 +1,6 @@
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -12,11 +13,15 @@ export function ZoomableImage({
   onError,
   onLoad,
   onPress,
+  onSwipeLeft,
+  onSwipeRight,
   uri,
 }: {
   onError: () => void
   onLoad: () => void
   onPress: () => void
+  onSwipeLeft?: () => void
+  onSwipeRight?: () => void
   uri: string
 }) {
   const { height, width } = useWindowDimensions()
@@ -26,6 +31,9 @@ export function ZoomableImage({
   const translationY = useSharedValue(0)
   const savedTranslationX = useSharedValue(0)
   const savedTranslationY = useSharedValue(0)
+  const swipeLeftEnabled = Boolean(onSwipeLeft)
+  const swipeRightEnabled = Boolean(onSwipeRight)
+  const gallerySwipeEnabled = swipeLeftEnabled || swipeRightEnabled
 
   const pinch = Gesture.Pinch()
     .onUpdate((event) => {
@@ -53,7 +61,17 @@ export function ZoomableImage({
 
   const pan = Gesture.Pan()
     .onUpdate((event) => {
-      if (scale.value <= 1) return
+      if (scale.value <= 1) {
+        if (!gallerySwipeEnabled) return
+        if (Math.abs(event.translationX) > Math.abs(event.translationY)) {
+          const directionEnabled =
+            event.translationX < 0 ? swipeLeftEnabled : swipeRightEnabled
+          translationX.value = event.translationX * (directionEnabled ? 0.35 : 0.12)
+        } else {
+          translationX.value = 0
+        }
+        return
+      }
       const maxX = (width * (scale.value - 1)) / 2
       const maxY = (height * (scale.value - 1)) / 2
       translationX.value = clampValue(
@@ -67,7 +85,24 @@ export function ZoomableImage({
         maxY
       )
     })
-    .onEnd(() => {
+    .onEnd((event) => {
+      if (scale.value <= 1) {
+        const horizontal =
+          Math.abs(event.translationX) > Math.abs(event.translationY)
+        const passedThreshold =
+          Math.abs(event.translationX) >= 56 || Math.abs(event.velocityX) >= 650
+        translationX.value = withTiming(0, { duration: 140 })
+
+        if (horizontal && passedThreshold) {
+          if (event.translationX < 0 && onSwipeLeft) {
+            runOnJS(onSwipeLeft)()
+          } else if (event.translationX > 0 && onSwipeRight) {
+            runOnJS(onSwipeRight)()
+          }
+        }
+        return
+      }
+
       savedTranslationX.value = translationX.value
       savedTranslationY.value = translationY.value
     })

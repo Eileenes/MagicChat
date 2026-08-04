@@ -5,6 +5,11 @@ import { defineConfig, type Plugin } from "vite"
 
 const clientApiProxyTarget =
   process.env.TARGET?.trim() || "http://localhost:20080"
+const documentCollaborationProxyTarget =
+  process.env.DOCUMENT_SERVER_TARGET?.trim() || "http://localhost:20100"
+const documentCollaborationProxyOrigin = new URL(
+  documentCollaborationProxyTarget
+).origin
 const clientBuildCommit =
   process.env.VITE_CLIENT_BUILD_COMMIT?.trim() || "development"
 
@@ -36,6 +41,14 @@ export default defineConfig({
     allowedHosts: ["maosite.cc"],
     port: 20070,
     proxy: {
+      "/api/client/document/collaboration": {
+        changeOrigin: true,
+        headers: { Origin: documentCollaborationProxyOrigin },
+        rewriteWsOrigin: true,
+        secure: false,
+        target: documentCollaborationProxyTarget,
+        ws: true,
+      },
       "/api/app/ws": {
         changeOrigin: true,
         rewriteWsOrigin: true,

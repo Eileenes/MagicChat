@@ -1,9 +1,11 @@
 export {
   ensureAttachmentResource,
   ensureAvatarResource,
+  ensureImageUrlResource,
   getCachedAttachmentResource,
   invalidateAttachmentResource,
   invalidateAvatarResource,
+  invalidateImageUrlResource,
   removeServerResourceCache,
   resolveAvatarResourceUrl,
 } from "@/data/resources/resource-repository"

@@ -1,11 +1,12 @@
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query"
 import { UsersRound, X } from "lucide-react-native"
-import type { ComponentProps } from "react"
-import { FlatList, type ScrollViewProps, StyleSheet } from "react-native"
+import { useCallback } from "react"
+import { FlatList, Pressable, StyleSheet } from "react-native"
 import { Avatar, Button, ListItem, Sheet, SizableText, YStack } from "tamagui"
 
 import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
 import { ThemedIcon } from "@/components/icons/themed-icon"
+import { useSheetBackHandler } from "@/components/overlays/use-sheet-back-handler"
 import type { ServerTarget } from "@/core/server-target"
 import type { MentionCandidate } from "@/features/conversation/composer/mention-model"
 
@@ -25,20 +26,37 @@ export function MentionPickerSheet({
   server: ServerTarget
 }) {
   const queryClient = useQueryClient()
+  const requestClose = useCallback(
+    () => onOpenChange(false),
+    [onOpenChange]
+  )
+
+  useSheetBackHandler({
+    onDismiss: requestClose,
+    open,
+  })
 
   return (
     <Sheet
-      dismissOnSnapToBottom
+      disableDrag
+      dismissOnOverlayPress
       modal
       onAnimationComplete={({ open: animationOpen }) =>
         onAnimationComplete(animationOpen)
       }
-      onOpenChange={onOpenChange}
+      onOpenChange={(nextOpen: boolean) => {
+        if (!nextOpen) requestClose()
+      }}
       open={open}
       snapPoints={[50]}
-      unmountChildrenWhenHidden
     >
-      <Sheet.Overlay bg="$shadow6" opacity={0.45} />
+      <Sheet.Overlay bg="$shadow6" opacity={0.45}>
+        <Pressable
+          accessibilityLabel="关闭选择提醒的人"
+          onPress={requestClose}
+          style={StyleSheet.absoluteFill}
+        />
+      </Sheet.Overlay>
       <Sheet.Handle bg="$color6" />
       <Sheet.Frame bg="$background" overflow="hidden">
         <QueryClientProvider client={queryClient}>
@@ -59,7 +77,7 @@ export function MentionPickerSheet({
                 chromeless
                 circular
                 icon={<ThemedIcon icon={X} size={18} />}
-                onPress={() => onOpenChange(false)}
+                onPress={requestClose}
                 position="absolute"
                 r="$3"
                 size="$3"
@@ -70,12 +88,11 @@ export function MentionPickerSheet({
               contentContainerStyle={styles.content}
               data={candidates}
               initialNumToRender={12}
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
               keyExtractor={(candidate) =>
                 `${candidate.targetType}:${candidate.id}`
               }
               maxToRenderPerBatch={12}
-              renderScrollComponent={renderSheetScrollComponent}
               renderItem={({ item: candidate }) => (
                 <ListItem
                   bg="transparent"
@@ -108,14 +125,6 @@ export function MentionPickerSheet({
         </QueryClientProvider>
       </Sheet.Frame>
     </Sheet>
-  )
-}
-
-function renderSheetScrollComponent(props: ScrollViewProps) {
-  return (
-    <Sheet.ScrollView
-      {...(props as ComponentProps<typeof Sheet.ScrollView>)}
-    />
   )
 }
 

@@ -20,6 +20,7 @@ import { EntityDetailAvatar } from "@/features/entity-details/entity-detail-avat
 import { EntityDetailFields } from "@/features/entity-details/entity-detail-fields"
 import { useClientData } from "@/providers/client-data-provider"
 import { buildConversationHref } from "@/navigation/conversations"
+import { buildAvatarImagePreviewHref } from "@/navigation/image-preview"
 
 export function EntityDetailScreen() {
   const params = useLocalSearchParams<{
@@ -68,6 +69,11 @@ export function EntityDetailScreen() {
     }
   }
 
+  function handleAvatarPress() {
+    if (!profile?.avatar.trim()) return
+    router.push(buildAvatarImagePreviewHref(profile.avatar))
+  }
+
   return (
     <YStack bg="$background" flex={1}>
       <PageHeader
@@ -82,6 +88,7 @@ export function EntityDetailScreen() {
           currentUserId={currentUser?.id ?? null}
           isActionPending={openConversationMutation.isPending}
           onActionPress={() => void handlePrimaryAction()}
+          onAvatarPress={profile.avatar.trim() ? handleAvatarPress : undefined}
           profile={profile}
           server={session}
         />
@@ -96,12 +103,14 @@ function EntityProfileContent({
   currentUserId,
   isActionPending,
   onActionPress,
+  onAvatarPress,
   profile,
   server,
 }: {
   currentUserId: string | null
   isActionPending: boolean
   onActionPress: () => void
+  onAvatarPress?: () => void
   profile: EntityProfile
   server: ServerTarget
 }) {
@@ -110,7 +119,11 @@ function EntityProfileContent({
       <YStack gap="$4" maxW={440} p="$4" self="center" width="100%">
         <Card size="$5">
           <XStack gap="$4" items="center">
-            <EntityDetailAvatar profile={profile} server={server} />
+            <EntityDetailAvatar
+              onPress={onAvatarPress}
+              profile={profile}
+              server={server}
+            />
             <YStack flex={1} gap="$1">
               <Paragraph
                 fontSize="$5"

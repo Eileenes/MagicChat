@@ -1,5 +1,4 @@
 import {
-  type Href,
   useIsFocused,
   useLocalSearchParams,
   useRouter,
@@ -61,6 +60,7 @@ import {
   useAuthenticatedSession,
 } from "@/providers/auth-provider"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
+import { buildAttachmentImagePreviewHref } from "@/navigation/image-preview"
 import { useClientData } from "@/providers/client-data-provider"
 import { useRealtime } from "@/realtime/realtime-context"
 
@@ -89,7 +89,6 @@ export function ConversationScreen() {
   const [forwardMessageState, setForwardMessage] =
     useState<ScopedMessageActionTarget | null>(null)
   const [forwardSheetOpen, setForwardSheetOpen] = useState(false)
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false)
   const [replyTargetState, setReplyTarget] =
     useState<ScopedMessageActionTarget | null>(null)
   const forwardMessage =
@@ -265,11 +264,8 @@ export function ConversationScreen() {
     messages: messagesQuery.messages,
   })
 
-  function handleRefresh() {
-    if (isPullRefreshing) return
-
-    setIsPullRefreshing(true)
-    void messagesQuery.refetch().finally(() => setIsPullRefreshing(false))
+  function handleRetryMessages() {
+    void messagesQuery.refetch()
   }
 
   function handleLoadOlder() {
@@ -337,11 +333,10 @@ export function ConversationScreen() {
     }
   }
 
-  function handleImagePress(fileId: string) {
-    router.push({
-      pathname: "/image-preview",
-      params: { fileId },
-    } as unknown as Href)
+  function handleImagePress(fileId: string, messageId: string) {
+    router.push(
+      buildAttachmentImagePreviewHref(fileId, { conversationId, messageId })
+    )
   }
 
   async function handleVoiceResourcePress(fileId: string) {
@@ -404,7 +399,6 @@ export function ConversationScreen() {
               hasOlder={messagesQuery.hasOlder}
               isFetchingOlder={messagesQuery.isFetchingOlder}
               isLoading={messagesQuery.isLoading}
-              isPullRefreshing={isPullRefreshing}
               messages={presentedMessages}
               onAvatarLongPress={
                 conversation.type === "group"
@@ -417,7 +411,7 @@ export function ConversationScreen() {
               }
               onImagePress={handleImagePress}
               onLoadOlder={handleLoadOlder}
-              onRefresh={handleRefresh}
+              onRetry={handleRetryMessages}
               onResourceError={(fileId) =>
                 void resources.reload(fileId).catch(() => undefined)
               }

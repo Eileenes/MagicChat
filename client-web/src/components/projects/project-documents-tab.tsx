@@ -12,93 +12,161 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core"
 import {
-  BrainCircuit,
-  File,
-  FileCode2,
-  FileSpreadsheet,
+  Ellipsis,
   FileText,
   Folder,
   FolderOpen,
+  FolderPlus,
+  GripVertical,
+  Loader2,
+  Pencil,
   Plus,
   Search,
-  type LucideIcon,
+  Trash2,
 } from "lucide-react"
 import { createPortal } from "react-dom"
+import { Link } from "react-router"
+import { toast } from "sonner"
 
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { Input } from "@/components/ui/input"
 import {
-  getPrototypeDocumentPath,
-  initialDocumentTree,
-  type ProjectDocumentNode,
-  type ProjectDocumentType,
-} from "@/lib/document-prototype-data"
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { getDirectorySelectionPath } from "@/components/contacts/contact-directory"
+import { formatActivityTime } from "@/lib/activity-time"
+import {
+  createClientDocument,
+  deleteClientDocument,
+  listClientDocuments,
+  moveClientDocument,
+  updateClientDocument,
+  updateCollaborativeDocumentTitle,
+  type ClientDocument,
+  type ClientDocumentKind,
+} from "@/lib/document-data-api"
 import { cn } from "@/lib/utils"
+
+type DocumentTreeNode = ClientDocument & { children: DocumentTreeNode[] }
 
 type DocumentDropTarget =
   | { folderId: string; kind: "folder" }
   | { index: number; kind: "position"; parentId: string | null }
 
-const documentTypeMetadata = {
-  document: {
-    icon: FileText,
-    iconClassName: "text-sky-600 dark:text-sky-300",
-    label: "文档",
-  },
-  markdown: {
-    icon: FileCode2,
-    iconClassName: "text-violet-600 dark:text-violet-300",
-    label: "Markdown",
-  },
-  file: {
-    icon: File,
-    iconClassName: "text-zinc-600 dark:text-zinc-300",
-    label: "文件",
-  },
-  mindmap: {
-    icon: BrainCircuit,
-    iconClassName: "text-orange-600 dark:text-orange-300",
-    label: "脑图",
-  },
-  spreadsheet: {
-    icon: FileSpreadsheet,
-    iconClassName: "text-emerald-600 dark:text-emerald-300",
-    label: "表格",
-  },
-} satisfies Record<
-  ProjectDocumentType,
-  { icon: LucideIcon; iconClassName: string; label: string }
->
+type EditDialogState =
+  | {
+      kind: ClientDocumentKind
+      mode: "create"
+      parentId: string | null
+    }
+  | { mode: "rename"; node: DocumentTreeNode }
+  | null
 
-export function ProjectDocumentsTab() {
+export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
   const [activeId, setActiveId] = React.useState<string | null>(null)
-  const [documentTree, setDocumentTree] =
-    React.useState<ProjectDocumentNode[]>(initialDocumentTree)
+  const [deleteNode, setDeleteNode] = React.useState<DocumentTreeNode | null>(
+    null
+  )
+  const [documentTree, setDocumentTree] = React.useState<DocumentTreeNode[]>([])
+  const [editDialog, setEditDialog] = React.useState<EditDialogState>(null)
+  const [error, setError] = React.useState("")
   const [expandedFolderIds, setExpandedFolderIds] = React.useState<Set<string>>(
-    () => new Set(["folder-product", "folder-development"])
+    () => new Set()
   )
   const [keyword, setKeyword] = React.useState("")
+  const [loading, setLoading] = React.useState(true)
+  const [mutating, setMutating] = React.useState(false)
+  const requestIdRef = React.useRef(0)
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, {
       activationConstraint: { delay: 250, tolerance: 8 },
     })
   )
+
+  const loadDocuments = React.useCallback(
+    async (expandFolders = false) => {
+      const requestId = ++requestIdRef.current
+      try {
+        const documents = await listClientDocuments(projectId)
+        if (requestId !== requestIdRef.current) return
+        const tree = buildDocumentTree(documents)
+        setDocumentTree(tree)
+        if (expandFolders) setExpandedFolderIds(collectFolderIds(tree))
+        setError("")
+      } catch (loadError) {
+        if (requestId !== requestIdRef.current) return
+        setError(
+          loadError instanceof Error ? loadError.message : "加载文档列表失败"
+        )
+      } finally {
+        if (requestId === requestIdRef.current) setLoading(false)
+      }
+    },
+    [projectId]
+  )
+
+  React.useEffect(() => {
+    const requestId = ++requestIdRef.current
+    void listClientDocuments(projectId)
+      .then((documents) => {
+        if (requestId === requestIdRef.current) {
+          const tree = buildDocumentTree(documents)
+          setDocumentTree(tree)
+          setExpandedFolderIds(collectFolderIds(tree))
+          setError("")
+        }
+      })
+      .catch((loadError) => {
+        if (requestId === requestIdRef.current) {
+          setError(
+            loadError instanceof Error ? loadError.message : "加载文档列表失败"
+          )
+        }
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) setLoading(false)
+      })
+    return () => {
+      requestIdRef.current += 1
+    }
+  }, [projectId])
+
   const normalizedKeyword = keyword.trim().toLocaleLowerCase()
   const searching = normalizedKeyword.length > 0
   const visibleTree = searching
@@ -109,26 +177,109 @@ export function ProjectDocumentsTab() {
     ? collectDocumentNodeIds(activeNode)
     : new Set<string>()
 
+  async function handleEditSubmit(title: string) {
+    if (!editDialog) return
+    setMutating(true)
+    try {
+      if (editDialog.mode === "create") {
+        const created = await createClientDocument(projectId, {
+          kind: editDialog.kind,
+          parentId: editDialog.parentId,
+          title,
+        })
+        if (editDialog.parentId) {
+          setExpandedFolderIds((current) =>
+            new Set(current).add(editDialog.parentId as string)
+          )
+        }
+        toast.success(created.kind === "folder" ? "目录已创建" : "文档已创建")
+      } else {
+        if (editDialog.node.kind === "document") {
+          await updateCollaborativeDocumentTitle(editDialog.node.id, title)
+        } else {
+          await updateClientDocument(editDialog.node.id, { title })
+        }
+        toast.success("名称已更新")
+      }
+      setEditDialog(null)
+      await loadDocuments()
+    } catch (mutationError) {
+      toast.error(
+        mutationError instanceof Error ? mutationError.message : "操作失败"
+      )
+    } finally {
+      setMutating(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteNode) return
+    setMutating(true)
+    try {
+      const result = await deleteClientDocument(deleteNode.id)
+      toast.success(
+        result.deletedCount > 1
+          ? `已删除 ${result.deletedCount} 个节点`
+          : deleteNode.kind === "folder"
+            ? "目录已删除"
+            : "文档已删除"
+      )
+      setDeleteNode(null)
+      await loadDocuments()
+    } catch (mutationError) {
+      toast.error(
+        mutationError instanceof Error ? mutationError.message : "删除失败"
+      )
+    } finally {
+      setMutating(false)
+    }
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const target = parseDocumentDropTarget(event.over?.data.current)
     const draggedId = String(event.active.id)
     setActiveId(null)
-    if (!target) return
+    if (!target || mutating) return
 
-    setDocumentTree((current) => moveDocumentNode(current, draggedId, target))
+    const nextTree = moveDocumentNode(documentTree, draggedId, target)
+    if (nextTree === documentTree) return
+    setDocumentTree(nextTree)
     if (target.kind === "folder") {
-      setExpandedFolderIds((current) => {
-        const next = new Set(current)
-        next.add(target.folderId)
-        return next
-      })
+      setExpandedFolderIds((current) => new Set(current).add(target.folderId))
     }
+    setMutating(true)
+    const location = flattenLocations(nextTree).get(draggedId)
+    if (!location) {
+      setDocumentTree(documentTree)
+      return
+    }
+    void moveClientDocument(draggedId, {
+      index: location.index,
+      parentId: location.parentId,
+    })
+      .then(() => toast.success("文档位置已更新"))
+      .catch(async (mutationError) => {
+        toast.error(
+          mutationError instanceof Error
+            ? mutationError.message
+            : "移动文档失败"
+        )
+        await loadDocuments()
+      })
+      .finally(() => setMutating(false))
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/10">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4">
-        <DocumentToolbar keyword={keyword} onKeywordChange={setKeyword} />
+        <DocumentToolbar
+          disabled={mutating}
+          keyword={keyword}
+          onCreate={(kind) =>
+            setEditDialog({ kind, mode: "create", parentId: null })
+          }
+          onKeywordChange={setKeyword}
+        />
         <DndContext
           collisionDetection={pointerWithin}
           onDragCancel={() => setActiveId(null)}
@@ -136,40 +287,64 @@ export function ProjectDocumentsTab() {
           onDragStart={(event) => setActiveId(String(event.active.id))}
           sensors={sensors}
         >
-          <div className="min-h-0 flex-1 overflow-auto rounded-md border bg-background shadow-xs">
-            <div className="min-w-240">
-              <div className="sticky top-0 z-20 grid h-10 grid-cols-[minmax(20rem,1fr)_20rem] items-center border-b bg-muted/70 text-sm font-medium text-muted-foreground backdrop-blur-sm">
-                <div className="pl-11">名称</div>
-                <div>最近修改</div>
-              </div>
-              {visibleTree.length === 0 ? (
-                <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-                  没有匹配的文档
-                </div>
-              ) : (
-                <div role="tree">
-                  <DocumentTree
-                    activeId={activeId}
-                    blockedParentIds={blockedParentIds}
-                    depth={0}
-                    draggingDisabled={searching}
-                    expandedFolderIds={expandedFolderIds}
-                    items={visibleTree}
-                    onFolderOpenChange={(folderId, open) =>
-                      setExpandedFolderIds((current) => {
-                        const next = new Set(current)
-                        if (open) next.add(folderId)
-                        else next.delete(folderId)
-                        return next
-                      })
-                    }
-                    parentId={null}
-                    searching={searching}
+          {loading ? (
+            <DocumentLoadingState />
+          ) : !error && visibleTree.length === 0 ? (
+            <Empty className="min-h-0 flex-1 border bg-muted p-8 shadow-xs">
+              <EmptyMedia variant="icon">
+                <FileText />
+              </EmptyMedia>
+              <EmptyHeader>
+                <EmptyTitle>
+                  {searching ? "没有匹配的文档" : "还没有文档"}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {searching
+                    ? "尝试使用其他关键词进行搜索"
+                    : "创建一个文档开始使用"}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-auto rounded-md border bg-background py-4 shadow-xs">
+              <div className="min-w-240">
+                {error ? (
+                  <DocumentErrorState
+                    error={error}
+                    onRetry={() => void loadDocuments(true)}
                   />
-                </div>
-              )}
+                ) : (
+                  <div role="tree">
+                    <DocumentTree
+                      activeId={activeId}
+                      blockedParentIds={blockedParentIds}
+                      depth={0}
+                      draggingDisabled={searching || mutating}
+                      expandedFolderIds={expandedFolderIds}
+                      items={visibleTree}
+                      onCreate={(kind, parentId) =>
+                        setEditDialog({ kind, mode: "create", parentId })
+                      }
+                      onDelete={setDeleteNode}
+                      onFolderOpenChange={(folderId, open) =>
+                        setExpandedFolderIds((current) => {
+                          const next = new Set(current)
+                          if (open) next.add(folderId)
+                          else next.delete(folderId)
+                          return next
+                        })
+                      }
+                      onRename={(node) =>
+                        setEditDialog({ mode: "rename", node })
+                      }
+                      parentId={null}
+                      searching={searching}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
           {typeof document !== "undefined" &&
             createPortal(
               <DragOverlay dropAnimation={null}>
@@ -179,15 +354,58 @@ export function ProjectDocumentsTab() {
             )}
         </DndContext>
       </div>
+      {editDialog && (
+        <DocumentEditDialog
+          disabled={mutating}
+          key={
+            editDialog.mode === "rename"
+              ? `rename:${editDialog.node.id}`
+              : `create:${editDialog.kind}:${editDialog.parentId ?? "root"}`
+          }
+          onOpenChange={(open) => !open && setEditDialog(null)}
+          onSubmit={handleEditSubmit}
+          state={editDialog}
+        />
+      )}
+      <AlertDialog
+        onOpenChange={(open) => !open && setDeleteNode(null)}
+        open={deleteNode !== null}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              删除{deleteNode?.kind === "folder" ? "目录" : "文档"}？
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteNode?.kind === "folder"
+                ? "目录中的所有子目录和文档也会一起删除，此操作暂不支持恢复。"
+                : "删除后将无法继续打开该文档，此操作暂不支持恢复。"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutating}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={mutating}
+              onClick={() => void handleDelete()}
+            >
+              {mutating ? "正在删除" : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
 
 function DocumentToolbar({
+  disabled,
   keyword,
+  onCreate,
   onKeywordChange,
 }: {
+  disabled: boolean
   keyword: string
+  onCreate: (kind: ClientDocumentKind) => void
   onKeywordChange: (keyword: string) => void
 }) {
   return (
@@ -203,10 +421,24 @@ function DocumentToolbar({
           value={keyword}
         />
       </div>
-      <Button type="button">
-        <Plus />
-        创建文档
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button disabled={disabled} type="button">
+            <Plus />
+            创建
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => onCreate("document")}>
+            <FileText />
+            新建文档
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onCreate("folder")}>
+            <FolderPlus />
+            新建目录
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -218,7 +450,10 @@ function DocumentTree({
   draggingDisabled,
   expandedFolderIds,
   items,
+  onCreate,
+  onDelete,
   onFolderOpenChange,
+  onRename,
   parentId,
   searching,
 }: {
@@ -227,8 +462,11 @@ function DocumentTree({
   depth: number
   draggingDisabled: boolean
   expandedFolderIds: Set<string>
-  items: ProjectDocumentNode[]
+  items: DocumentTreeNode[]
+  onCreate: (kind: ClientDocumentKind, parentId: string) => void
+  onDelete: (node: DocumentTreeNode) => void
   onFolderOpenChange: (folderId: string, open: boolean) => void
+  onRename: (node: DocumentTreeNode) => void
   parentId: string | null
   searching: boolean
 }) {
@@ -253,7 +491,10 @@ function DocumentTree({
             draggingDisabled={draggingDisabled}
             expandedFolderIds={expandedFolderIds}
             node={node}
+            onCreate={onCreate}
+            onDelete={onDelete}
             onFolderOpenChange={onFolderOpenChange}
+            onRename={onRename}
             rowDropTarget={
               node.kind === "folder"
                 ? { folderId: node.id, kind: "folder" }
@@ -277,71 +518,47 @@ function DocumentTree({
   )
 }
 
-function DocumentTreeItem({
-  activeId,
-  blockedParentIds,
-  depth,
-  draggingDisabled,
-  expandedFolderIds,
-  node,
-  onFolderOpenChange,
-  rowDropTarget,
-  searching,
-}: {
+function DocumentTreeItem(props: {
   activeId: string | null
   blockedParentIds: Set<string>
   depth: number
   draggingDisabled: boolean
   expandedFolderIds: Set<string>
-  node: ProjectDocumentNode
+  node: DocumentTreeNode
+  onCreate: (kind: ClientDocumentKind, parentId: string) => void
+  onDelete: (node: DocumentTreeNode) => void
   onFolderOpenChange: (folderId: string, open: boolean) => void
+  onRename: (node: DocumentTreeNode) => void
   rowDropTarget: DocumentDropTarget
   searching: boolean
 }) {
+  const { node } = props
   const open =
-    node.kind === "folder" && (searching || expandedFolderIds.has(node.id))
-
+    node.kind === "folder" &&
+    (props.searching || props.expandedFolderIds.has(node.id))
   if (node.kind === "document") {
     return (
-      <DocumentTreeRow
-        activeId={activeId}
-        depth={depth}
-        draggingDisabled={draggingDisabled}
-        folderDropDisabled={false}
-        node={node}
-        open={false}
-        rowDropTarget={rowDropTarget}
-      />
+      <DocumentTreeRow {...props} folderDropDisabled={false} open={false} />
     )
   }
-
   return (
     <Collapsible
       onOpenChange={(nextOpen) => {
-        if (!searching) onFolderOpenChange(node.id, nextOpen)
+        if (!props.searching) props.onFolderOpenChange(node.id, nextOpen)
       }}
       open={open}
     >
       <DocumentTreeRow
-        activeId={activeId}
-        depth={depth}
-        draggingDisabled={draggingDisabled}
-        folderDropDisabled={blockedParentIds.has(node.id)}
-        node={node}
+        {...props}
+        folderDropDisabled={props.blockedParentIds.has(node.id)}
         open={open}
-        rowDropTarget={rowDropTarget}
       />
       <CollapsibleContent role="group">
         <DocumentTree
-          activeId={activeId}
-          blockedParentIds={blockedParentIds}
-          depth={depth + 1}
-          draggingDisabled={draggingDisabled}
-          expandedFolderIds={expandedFolderIds}
+          {...props}
+          depth={props.depth + 1}
           items={node.children}
-          onFolderOpenChange={onFolderOpenChange}
           parentId={node.id}
-          searching={searching}
         />
       </CollapsibleContent>
     </Collapsible>
@@ -354,6 +571,9 @@ function DocumentTreeRow({
   draggingDisabled,
   folderDropDisabled,
   node,
+  onCreate,
+  onDelete,
+  onRename,
   open,
   rowDropTarget,
 }: {
@@ -361,141 +581,175 @@ function DocumentTreeRow({
   depth: number
   draggingDisabled: boolean
   folderDropDisabled: boolean
-  node: ProjectDocumentNode
+  node: DocumentTreeNode
+  onCreate: (kind: ClientDocumentKind, parentId: string) => void
+  onDelete: (node: DocumentTreeNode) => void
+  onRename: (node: DocumentTreeNode) => void
   open: boolean
   rowDropTarget: DocumentDropTarget
 }) {
-  const [testDocumentAlertOpen, setTestDocumentAlertOpen] =
-    React.useState(false)
   const {
     attributes,
     isDragging,
     listeners,
-    setNodeRef: setDraggableNodeRef,
+    setActivatorNodeRef,
+    setNodeRef: setDragRef,
   } = useDraggable({ disabled: draggingDisabled, id: node.id })
-  const { isOver: isRowDropTarget, setNodeRef: setDroppableNodeRef } =
-    useDroppable({
-      data: rowDropTarget,
-      disabled:
-        activeId === null ||
-        activeId === node.id ||
-        (node.kind === "folder" && folderDropDisabled) ||
-        draggingDisabled,
-      id: `${node.kind === "folder" ? "folder" : "document"}:${node.id}`,
-    })
+  const { isOver, setNodeRef: setDropRef } = useDroppable({
+    data: rowDropTarget,
+    disabled:
+      activeId === null ||
+      activeId === node.id ||
+      draggingDisabled ||
+      (node.kind === "folder" && folderDropDisabled),
+    id: `${node.kind}:${node.id}`,
+  })
   const setRowRef = React.useCallback(
     (element: HTMLDivElement | null) => {
-      setDraggableNodeRef(element)
-      setDroppableNodeRef(element)
+      setDragRef(element)
+      setDropRef(element)
     },
-    [setDraggableNodeRef, setDroppableNodeRef]
+    [setDragRef, setDropRef]
   )
-  const metadata =
-    node.kind === "document" ? documentTypeMetadata[node.type] : null
-  const documentPath =
-    node.kind === "document" ? getPrototypeDocumentPath(node) : null
   const NodeIcon =
-    node.kind === "folder" ? (open ? FolderOpen : Folder) : metadata!.icon
-  const nameContent = (
+    node.kind === "folder" ? (open ? FolderOpen : Folder) : FileText
+  const name = (
     <>
-      <span
+      <NodeIcon
         className={cn(
-          "flex size-6 shrink-0 items-center justify-center",
+          "size-5 shrink-0",
           node.kind === "folder"
             ? "text-amber-600 dark:text-amber-300"
-            : metadata!.iconClassName
+            : "text-sky-600 dark:text-sky-300"
+        )}
+      />
+      <span
+        className={cn(
+          "min-w-0 truncate font-medium transition-colors",
+          node.kind === "document" &&
+            "group-focus-within/name:text-sky-500 group-hover/name:text-sky-500"
         )}
       >
-        <NodeIcon className="size-5" />
-      </span>
-      <span className="min-w-0 truncate font-medium transition-colors group-hover:text-sky-600">
-        {node.name}
+        {node.title}
       </span>
     </>
   )
-
   return (
-    <>
-      <div
-        ref={setRowRef}
-        {...attributes}
-        {...listeners}
-        aria-expanded={node.kind === "folder" ? open : undefined}
-        aria-level={depth + 1}
-        className={cn(
-          "group grid min-h-14 touch-pan-y grid-cols-[minmax(20rem,1fr)_20rem] items-center border-y border-transparent text-sm transition-colors select-none hover:bg-muted/50",
-          draggingDisabled
-            ? "cursor-default"
-            : "cursor-grab active:cursor-grabbing",
-          isDragging && "opacity-30",
-          isRowDropTarget && "border-teal-500 bg-teal-50 dark:bg-teal-950/40"
-        )}
-        role="treeitem"
-      >
-        <div className="min-w-0 pr-4" style={{ paddingLeft: depth * 24 + 12 }}>
-          {node.kind === "folder" ? (
-            <CollapsibleTrigger asChild>
-              <button
-                aria-label={open ? `收起${node.name}` : `展开${node.name}`}
-                className="flex max-w-full min-w-0 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                type="button"
-              >
-                {nameContent}
-              </button>
-            </CollapsibleTrigger>
-          ) : documentPath ? (
-            <a
-              className="flex max-w-full min-w-0 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              href={documentPath}
-              onClick={(event) => {
-                if (isDragging) event.preventDefault()
-              }}
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              {nameContent}
-            </a>
-          ) : (
+    <div
+      ref={setRowRef}
+      aria-expanded={node.kind === "folder" ? open : undefined}
+      aria-level={depth + 1}
+      className={cn(
+        "group grid min-h-11 touch-pan-y grid-cols-[minmax(20rem,1fr)_20rem] items-center text-sm transition-colors select-none hover:bg-muted/50",
+        "cursor-default",
+        isDragging && "bg-muted/40 opacity-40",
+        isOver &&
+          "bg-sky-50 ring-1 ring-sky-300 ring-inset dark:bg-sky-950/30 dark:ring-sky-700"
+      )}
+      role="treeitem"
+    >
+      <div className="group/name flex min-w-0 cursor-pointer items-center pr-4 pl-2">
+        <button
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label={`拖动${node.title}`}
+          className="mr-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-sm text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-muted-foreground focus-visible:opacity-100 focus-visible:ring-2 active:cursor-grabbing disabled:cursor-default"
+          disabled={draggingDisabled}
+          onClick={(event) => event.preventDefault()}
+          type="button"
+        >
+          <GripVertical className="size-4" />
+        </button>
+        {node.kind === "folder" ? (
+          <CollapsibleTrigger asChild>
             <button
-              className="flex max-w-full min-w-0 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              onClick={() => {
-                if (!isDragging) setTestDocumentAlertOpen(true)
-              }}
+              className="flex max-w-full cursor-pointer items-center gap-2 rounded-sm text-left focus-visible:ring-2"
+              style={{ marginLeft: depth * 24 }}
               type="button"
             >
-              {nameContent}
+              {name}
             </button>
-          )}
-        </div>
-        <div className="flex min-w-0 items-center gap-2 pr-3 text-muted-foreground">
-          <Avatar className="size-6 rounded-sm bg-muted after:rounded-sm">
-            <AvatarFallback className="rounded-sm text-[9px]">
-              {getCreatorInitial(node.updatedBy.name)}
+          </CollapsibleTrigger>
+        ) : (
+          <Link
+            className="flex max-w-full items-center gap-2 rounded-sm text-left focus-visible:ring-2"
+            onClick={(event) => isDragging && event.preventDefault()}
+            style={{ marginLeft: depth * 24 }}
+            target="_blank"
+            to={`/documents/document/${encodeURIComponent(node.id)}`}
+          >
+            {name}
+          </Link>
+        )}
+      </div>
+      <div className="flex min-w-0 items-center gap-2 pr-3 text-muted-foreground">
+        <Link
+          className="group/modifier flex min-w-0 items-center gap-2 rounded-sm focus-visible:ring-2"
+          to={getDirectorySelectionPath({
+            id: node.updatedBy.id,
+            type: "user",
+          })}
+        >
+          <Avatar className="size-5 bg-muted">
+            <AvatarImage
+              alt={node.updatedBy.nickname || node.updatedBy.name}
+              src={node.updatedBy.avatar}
+            />
+            <AvatarFallback className="text-[8px]">
+              {getInitial(node.updatedBy.nickname || node.updatedBy.name)}
             </AvatarFallback>
           </Avatar>
-          <div className="truncate">
-            {node.updatedBy.name} 修改于{" "}
-            <time dateTime={node.updatedAt}>{node.updatedAt}</time>
-          </div>
+          <span className="truncate transition-colors group-hover/modifier:text-sky-500 group-focus-visible/modifier:text-sky-500">
+            {node.updatedBy.nickname || node.updatedBy.name}
+          </span>
+        </Link>
+        <div className="min-w-0 flex-1 truncate">
+          修改于 {formatActivityTime(node.updatedAt)}
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label={`操作${node.title}`}
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100"
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            >
+              <Ellipsis />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {node.kind === "folder" && (
+              <>
+                <DropdownMenuItem
+                  onSelect={() => onCreate("document", node.id)}
+                >
+                  <FileText />
+                  新建子文档
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onCreate("folder", node.id)}>
+                  <FolderPlus />
+                  新建子目录
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+            <DropdownMenuItem onSelect={() => onRename(node)}>
+              <Pencil />
+              重命名
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive"
+              onSelect={() => onDelete(node)}
+            >
+              <Trash2 />
+              删除
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-      <AlertDialog
-        onOpenChange={setTestDocumentAlertOpen}
-        open={testDocumentAlertOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>暂不支持打开</AlertDialogTitle>
-            <AlertDialogDescription>
-              目前是测试文档，暂不支持打开。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction>知道了</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    </div>
   )
 }
 
@@ -515,7 +769,6 @@ function DocumentDropPosition({
     disabled,
     id: `position:${parentId ?? "root"}:${index}`,
   })
-
   return (
     <div className="relative z-10 h-0">
       <div
@@ -528,7 +781,7 @@ function DocumentDropPosition({
       >
         <div
           className={cn(
-            "pointer-events-none absolute top-1/2 right-0 left-0 h-0.5 -translate-y-1/2 rounded-full bg-transparent",
+            "pointer-events-none absolute top-1/2 right-0 left-0 h-0.5 -translate-y-1/2 rounded-full",
             isOver && "bg-teal-500"
           )}
         />
@@ -537,35 +790,145 @@ function DocumentDropPosition({
   )
 }
 
-function DocumentDragOverlay({ node }: { node: ProjectDocumentNode }) {
-  const metadata =
-    node.kind === "document" ? documentTypeMetadata[node.type] : null
-  const NodeIcon = node.kind === "folder" ? Folder : metadata!.icon
-
+function DocumentEditDialog({
+  disabled,
+  onOpenChange,
+  onSubmit,
+  state,
+}: {
+  disabled: boolean
+  onOpenChange: (open: boolean) => void
+  onSubmit: (title: string) => Promise<void>
+  state: Exclude<EditDialogState, null>
+}) {
+  const [title, setTitle] = React.useState(
+    state.mode === "rename" ? state.node.title : ""
+  )
+  const kind = state.mode === "create" ? state.kind : state.node.kind
+  const label = kind === "folder" ? "目录名称" : "文档标题"
   return (
-    <div className="flex w-80 items-center gap-3 rounded-md border bg-background px-3 py-2 shadow-lg">
-      <div
-        className={cn(
-          "flex size-6 shrink-0 items-center justify-center",
-          node.kind === "folder"
-            ? "text-amber-600 dark:text-amber-300"
-            : metadata!.iconClassName
-        )}
-      >
-        <NodeIcon className="size-5" />
-      </div>
-      <div className="min-w-0">
-        <div className="truncate text-sm font-medium">{node.name}</div>
-      </div>
+    <Dialog onOpenChange={onOpenChange} open={state !== null}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {state.mode === "rename"
+              ? "重命名"
+              : kind === "folder"
+                ? "新建目录"
+                : "新建文档"}
+          </DialogTitle>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (title.trim()) void onSubmit(title)
+          }}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="document-node-title">{label}</Label>
+            <Input
+              autoFocus
+              id="document-node-title"
+              maxLength={500}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder={kind === "folder" ? "无标题目录" : "无标题文档"}
+              value={title}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={disabled}
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="outline"
+            >
+              取消
+            </Button>
+            <Button disabled={disabled || !title.trim()} type="submit">
+              {disabled ? "正在保存" : "保存"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DocumentLoadingState() {
+  return (
+    <Empty className="min-h-0 flex-1 border bg-muted p-8 shadow-xs">
+      <EmptyMedia className="text-muted-foreground" variant="icon">
+        <Loader2 className="animate-spin" />
+      </EmptyMedia>
+      <EmptyHeader>
+        <EmptyTitle className="text-muted-foreground">正在加载文档</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
+  )
+}
+
+function DocumentErrorState({
+  error,
+  onRetry,
+}: {
+  error: string
+  onRetry: () => void
+}) {
+  return (
+    <div className="flex h-40 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+      <span>{error}</span>
+      <Button onClick={onRetry} size="sm" variant="outline">
+        重试
+      </Button>
     </div>
   )
 }
 
+function DocumentDragOverlay({ node }: { node: DocumentTreeNode }) {
+  const NodeIcon = node.kind === "folder" ? Folder : FileText
+  return (
+    <div className="flex w-80 cursor-grabbing items-center gap-1 rounded-md border border-border/80 bg-background/95 p-2 shadow-xl ring-1 ring-black/5 backdrop-blur-sm dark:ring-white/10">
+      <GripVertical className="size-4 shrink-0 text-muted-foreground" />
+      <NodeIcon
+        className={cn(
+          "mr-1 size-5 shrink-0",
+          node.kind === "folder"
+            ? "text-amber-600 dark:text-amber-300"
+            : "text-sky-600 dark:text-sky-300"
+        )}
+      />
+      <div className="truncate text-sm font-medium">{node.title}</div>
+    </div>
+  )
+}
+
+function buildDocumentTree(documents: ClientDocument[]): DocumentTreeNode[] {
+  const nodes = new Map<string, DocumentTreeNode>()
+  for (const document of documents)
+    nodes.set(document.id, { ...document, children: [] })
+  const roots: DocumentTreeNode[] = []
+  for (const document of documents) {
+    const node = nodes.get(document.id)!
+    const parent = document.parentId ? nodes.get(document.parentId) : undefined
+    if (parent?.kind === "folder") parent.children.push(node)
+    else roots.push(node)
+  }
+  const sort = (items: DocumentTreeNode[]) => {
+    items.sort(
+      (left, right) =>
+        left.sortOrder - right.sortOrder || left.id.localeCompare(right.id)
+    )
+    for (const item of items) sort(item.children)
+  }
+  sort(roots)
+  return roots
+}
+
 function parseDocumentDropTarget(value: unknown): DocumentDropTarget | null {
   if (!value || typeof value !== "object" || !("kind" in value)) return null
-  if (value.kind === "folder" && "folderId" in value) {
+  if (value.kind === "folder" && "folderId" in value)
     return { folderId: String(value.folderId), kind: "folder" }
-  }
   if (
     value.kind === "position" &&
     "index" in value &&
@@ -582,35 +945,29 @@ function parseDocumentDropTarget(value: unknown): DocumentDropTarget | null {
 }
 
 function moveDocumentNode(
-  tree: ProjectDocumentNode[],
+  tree: DocumentTreeNode[],
   nodeId: string,
   target: DocumentDropTarget
-) {
+): DocumentTreeNode[] {
   const location = findDocumentNodeLocation(tree, nodeId)
   if (!location) return tree
-
   const targetParentId =
     target.kind === "folder" ? target.folderId : target.parentId
   if (
     targetParentId === nodeId ||
-    (targetParentId !== null &&
+    (targetParentId &&
       collectDocumentNodeIds(location.node).has(targetParentId))
-  ) {
+  )
     return tree
-  }
-
   let targetIndex =
     target.kind === "folder"
-      ? getFolderChildren(tree, target.folderId)?.length
+      ? findDocumentNode(tree, target.folderId)?.children.length
       : target.index
   if (targetIndex === undefined) return tree
-  if (location.parentId === targetParentId && location.index < targetIndex) {
+  if (location.parentId === targetParentId && location.index < targetIndex)
     targetIndex -= 1
-  }
-  if (location.parentId === targetParentId && location.index === targetIndex) {
+  if (location.parentId === targetParentId && location.index === targetIndex)
     return tree
-  }
-
   const removal = removeDocumentNode(tree, nodeId)
   if (!removal.node) return tree
   const insertion = insertDocumentNode(
@@ -622,144 +979,134 @@ function moveDocumentNode(
   return insertion.inserted ? insertion.tree : tree
 }
 
+function flattenLocations(
+  tree: DocumentTreeNode[],
+  parentId: string | null = null,
+  result = new Map<string, { index: number; parentId: string | null }>()
+) {
+  tree.forEach((node, index) => {
+    result.set(node.id, { index, parentId })
+    flattenLocations(node.children, node.id, result)
+  })
+  return result
+}
+
 function findDocumentNode(
-  tree: ProjectDocumentNode[],
-  nodeId: string
-): ProjectDocumentNode | null {
+  tree: DocumentTreeNode[],
+  id: string
+): DocumentTreeNode | null {
   for (const node of tree) {
-    if (node.id === nodeId) return node
-    if (node.kind === "folder") {
-      const match = findDocumentNode(node.children, nodeId)
-      if (match) return match
-    }
+    if (node.id === id) return node
+    const child = findDocumentNode(node.children, id)
+    if (child) return child
   }
   return null
 }
 
 function findDocumentNodeLocation(
-  tree: ProjectDocumentNode[],
-  nodeId: string,
+  tree: DocumentTreeNode[],
+  id: string,
   parentId: string | null = null
-): {
-  index: number
-  node: ProjectDocumentNode
-  parentId: string | null
-} | null {
+): { index: number; node: DocumentTreeNode; parentId: string | null } | null {
   for (const [index, node] of tree.entries()) {
-    if (node.id === nodeId) return { index, node, parentId }
-    if (node.kind === "folder") {
-      const match = findDocumentNodeLocation(node.children, nodeId, node.id)
-      if (match) return match
-    }
+    if (node.id === id) return { index, node, parentId }
+    const child = findDocumentNodeLocation(node.children, id, node.id)
+    if (child) return child
   }
   return null
 }
 
-function collectDocumentNodeIds(node: ProjectDocumentNode) {
-  const ids = new Set<string>([node.id])
-  if (node.kind === "folder") {
-    for (const child of node.children) {
-      for (const id of collectDocumentNodeIds(child)) ids.add(id)
-    }
+function collectFolderIds(tree: DocumentTreeNode[]): Set<string> {
+  const ids = new Set<string>()
+  for (const node of tree) {
+    if (node.kind === "folder") ids.add(node.id)
+    for (const id of collectFolderIds(node.children)) ids.add(id)
   }
   return ids
 }
 
-function getFolderChildren(tree: ProjectDocumentNode[], folderId: string) {
-  const folder = findDocumentNode(tree, folderId)
-  return folder?.kind === "folder" ? folder.children : null
+function collectDocumentNodeIds(node: DocumentTreeNode): Set<string> {
+  const ids = new Set([node.id])
+  for (const child of node.children)
+    for (const id of collectDocumentNodeIds(child)) ids.add(id)
+  return ids
 }
 
 function removeDocumentNode(
-  tree: ProjectDocumentNode[],
-  nodeId: string
-): { node: ProjectDocumentNode | null; tree: ProjectDocumentNode[] } {
-  const index = tree.findIndex((node) => node.id === nodeId)
-  if (index >= 0) {
+  tree: DocumentTreeNode[],
+  id: string
+): { node: DocumentTreeNode | null; tree: DocumentTreeNode[] } {
+  const index = tree.findIndex((node) => node.id === id)
+  if (index >= 0)
     return {
-      node: tree[index],
+      node: tree[index] ?? null,
       tree: [...tree.slice(0, index), ...tree.slice(index + 1)],
     }
-  }
-
   for (const [folderIndex, node] of tree.entries()) {
-    if (node.kind !== "folder") continue
-    const removal = removeDocumentNode(node.children, nodeId)
+    const removal = removeDocumentNode(node.children, id)
     if (!removal.node) continue
-    const nextTree = [...tree]
-    nextTree[folderIndex] = { ...node, children: removal.tree }
-    return { node: removal.node, tree: nextTree }
+    const next = [...tree]
+    next[folderIndex] = { ...node, children: removal.tree }
+    return { node: removal.node, tree: next }
   }
   return { node: null, tree }
 }
 
 function insertDocumentNode(
-  tree: ProjectDocumentNode[],
+  tree: DocumentTreeNode[],
   parentId: string | null,
   index: number,
-  nodeToInsert: ProjectDocumentNode
-): { inserted: boolean; tree: ProjectDocumentNode[] } {
+  node: DocumentTreeNode
+): { inserted: boolean; tree: DocumentTreeNode[] } {
   if (parentId === null) {
-    const safeIndex = Math.max(0, Math.min(index, tree.length))
+    const safe = Math.max(0, Math.min(index, tree.length))
     return {
       inserted: true,
-      tree: [
-        ...tree.slice(0, safeIndex),
-        nodeToInsert,
-        ...tree.slice(safeIndex),
-      ],
+      tree: [...tree.slice(0, safe), node, ...tree.slice(safe)],
     }
   }
-
-  for (const [folderIndex, node] of tree.entries()) {
-    if (node.kind !== "folder") continue
-    if (node.id === parentId) {
-      const safeIndex = Math.max(0, Math.min(index, node.children.length))
-      const nextTree = [...tree]
-      nextTree[folderIndex] = {
-        ...node,
-        children: [
-          ...node.children.slice(0, safeIndex),
-          nodeToInsert,
-          ...node.children.slice(safeIndex),
-        ],
+  return {
+    inserted: tree.some(
+      (item) => item.id === parentId || containsNode(item.children, parentId)
+    ),
+    tree: tree.map((item) => {
+      if (item.id === parentId && item.kind === "folder") {
+        const safe = Math.max(0, Math.min(index, item.children.length))
+        return {
+          ...item,
+          children: [
+            ...item.children.slice(0, safe),
+            node,
+            ...item.children.slice(safe),
+          ],
+        }
       }
-      return { inserted: true, tree: nextTree }
-    }
-    const insertion = insertDocumentNode(
-      node.children,
-      parentId,
-      index,
-      nodeToInsert
-    )
-    if (!insertion.inserted) continue
-    const nextTree = [...tree]
-    nextTree[folderIndex] = { ...node, children: insertion.tree }
-    return { inserted: true, tree: nextTree }
+      const nested = insertDocumentNode(item.children, parentId, index, node)
+      return nested.inserted ? { ...item, children: nested.tree } : item
+    }),
   }
-  return { inserted: false, tree }
+}
+
+function containsNode(tree: DocumentTreeNode[], id: string): boolean {
+  return tree.some((node) => node.id === id || containsNode(node.children, id))
 }
 
 function filterDocumentTree(
-  tree: ProjectDocumentNode[],
+  tree: DocumentTreeNode[],
   keyword: string
-): ProjectDocumentNode[] {
-  return tree.flatMap<ProjectDocumentNode>((node) => {
-    const metadataLabel =
-      node.kind === "folder" ? "文件夹" : documentTypeMetadata[node.type].label
+): DocumentTreeNode[] {
+  return tree.flatMap((node) => {
+    const children = filterDocumentTree(node.children, keyword)
     const matches = [
-      node.name,
+      node.title,
       node.creator.name,
       node.updatedBy.name,
-      metadataLabel,
+      node.kind === "folder" ? "目录" : "文档",
     ].some((value) => value.toLocaleLowerCase().includes(keyword))
-    if (node.kind === "document") return matches ? [node] : []
-
-    const children = filterDocumentTree(node.children, keyword)
-    return matches || children.length > 0 ? [{ ...node, children }] : []
+    return matches || children.length ? [{ ...node, children }] : []
   })
 }
 
-function getCreatorInitial(name: string) {
+function getInitial(name: string) {
   return Array.from(name.trim())[0]?.toUpperCase() ?? "?"
 }

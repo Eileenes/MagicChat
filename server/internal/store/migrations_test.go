@@ -42,6 +42,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00027_add_message_choices.sql",
 		"00028_add_message_search_indexes.sql",
 		"00029_add_group_announcements.sql",
+		"00030_add_documents.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -49,6 +50,33 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	for index, match := range matches {
 		if got := filepath.Base(match); got != want[index] {
 			t.Fatalf("migration file %d = %q, want %q", index, got, want[index])
+		}
+	}
+}
+
+func TestDocumentsMigrationDefinesBusinessAndYjsStateTables(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00030_add_documents.sql")
+	if err != nil {
+		t.Fatalf("read documents migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"create table documents",
+		"project_id uuid not null references projects(id) on delete cascade",
+		"parent_id uuid references documents(id) on delete cascade",
+		"kind text not null",
+		"document_type text",
+		"title text not null default '无标题文档'",
+		"created_by_user_id uuid not null references users(id) on delete restrict",
+		"updated_by_user_id uuid not null references users(id) on delete restrict",
+		"create table document_collab_states",
+		"ydoc_state bytea not null",
+		"state_revision bigint not null default 1",
+		"drop table document_collab_states",
+		"drop table documents",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("documents migration missing %q", required)
 		}
 	}
 }

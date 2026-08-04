@@ -1,19 +1,5 @@
-import { Drawer } from "expo-router/drawer"
+import { Slot } from "expo-router"
 
-import { AppDrawerContent } from "@/features/app-shell/app-drawer-content"
-
-export default function AppDrawerLayout() {
-  return (
-    <Drawer
-      drawerContent={({ navigation }) => (
-        <AppDrawerContent closeDrawer={() => navigation.closeDrawer()} />
-      )}
-      screenOptions={{
-        headerShown: false,
-        swipeEdgeWidth: 72,
-      }}
-    >
-      <Drawer.Screen name="(tabs)" options={{ drawerLabel: "工作台" }} />
-    </Drawer>
-  )
+export default function AppWorkspaceLayout() {
+  return <Slot />
 }

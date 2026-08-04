@@ -754,6 +754,22 @@ definitions:
         example: true
         type: boolean
     type: object
+  client.createDocumentRequest:
+    properties:
+      kind:
+        enum:
+        - document
+        - folder
+        type: string
+      parent_id:
+        type: string
+        x-nullable: true
+      title:
+        type: string
+    required:
+    - kind
+    - title
+    type: object
   client.createGroupConversationRequest:
     properties:
       app_ids:
@@ -876,6 +892,13 @@ definitions:
       file:
         $ref: '#/definitions/client.temporaryFileResponse'
     type: object
+  client.deleteDocumentResponse:
+    properties:
+      deleted_count:
+        type: integer
+      document_id:
+        type: string
+    type: object
   client.deleteTaskResponse:
     properties:
       task_id:
@@ -893,6 +916,45 @@ definitions:
       conversation_id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+    type: object
+  client.documentListResponse:
+    properties:
+      documents:
+        items:
+          $ref: '#/definitions/client.documentResponse'
+        type: array
+    type: object
+  client.documentResponse:
+    properties:
+      created_at:
+        type: string
+      creator:
+        $ref: '#/definitions/client.projectUserResponse'
+      document_type:
+        type: string
+        x-nullable: true
+      id:
+        type: string
+      kind:
+        enum:
+        - document
+        - folder
+        type: string
+      parent_id:
+        type: string
+        x-nullable: true
+      project_id:
+        type: string
+      schema_version:
+        type: integer
+      sort_order:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        $ref: '#/definitions/client.projectUserResponse'
     type: object
   client.emailCodeLoginRequest:
     properties:
@@ -1440,6 +1502,18 @@ definitions:
           $ref: '#/definitions/client.messageTopicReplyResponse'
         type: array
     type: object
+  client.moveDocumentRequest:
+    properties:
+      index:
+        format: int64
+        type: integer
+      parent_id:
+        type: string
+        x-nullable: true
+    required:
+    - index
+    - parent_id
+    type: object
   client.projectGroupListResponse:
     properties:
       groups:
@@ -1830,6 +1904,17 @@ definitions:
           type: string
         type: array
       visibility:
+        type: string
+    type: object
+  client.updateDocumentRequest:
+    properties:
+      parent_id:
+        type: string
+        x-nullable: true
+      sort_order:
+        format: int64
+        type: integer
+      title:
         type: string
     type: object
   client.updateGroupConversationAnnouncementRequest:
@@ -5576,6 +5661,187 @@ paths:
       summary: 设置公开群
       tags:
       - 客户端会话
+  /api/client/documents/{document_id}:
+    delete:
+      description: 软删除文档；删除目录时递归软删除全部子节点。
+      parameters:
+      - description: 文档 ID
+        in: path
+        name: document_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.deleteDocumentResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - UserSession: []
+      summary: 删除文档节点
+      tags:
+      - 客户端文档
+    get:
+      parameters:
+      - description: 文档 ID
+        in: path
+        name: document_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.documentResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - UserSession: []
+      summary: 获取文档节点
+      tags:
+      - 客户端文档
+    patch:
+      consumes:
+      - application/json
+      description: 重命名目录或更新节点字段；文档标题必须通过协作服务修改，移动操作推荐使用原子 move 接口。
+      parameters:
+      - description: 文档 ID
+        in: path
+        name: document_id
+        required: true
+        type: string
+      - description: 更新信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.updateDocumentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.documentResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - UserSession: []
+      summary: 更新文档节点
+      tags:
+      - 客户端文档
+  /api/client/documents/{document_id}/move:
+    post:
+      consumes:
+      - application/json
+      description: 在单个事务中移动文档或目录，并重新排列源目录与目标目录的同级节点。
+      parameters:
+      - description: 文档 ID
+        in: path
+        name: document_id
+        required: true
+        type: string
+      - description: 移动信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.moveDocumentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.documentResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - UserSession: []
+      summary: 移动文档节点
+      tags:
+      - 客户端文档
   /api/client/info:
     get:
       description: 返回客户端启动和登录页展示所需的公开信息，不需要登录。
@@ -5986,6 +6252,97 @@ paths:
       summary: 上传项目头像
       tags:
       - 客户端项目
+  /api/client/projects/{project_id}/documents:
+    get:
+      description: 返回项目内未删除的文档和目录节点，前端可根据 parent_id 构建目录树。
+      parameters:
+      - description: 项目 ID
+        in: path
+        name: project_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.documentListResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - UserSession: []
+      summary: 列出项目文档
+      tags:
+      - 客户端文档
+    post:
+      consumes:
+      - application/json
+      description: 在项目根目录或指定父目录下创建富文本文档或目录。
+      parameters:
+      - description: 项目 ID
+        in: path
+        name: project_id
+        required: true
+        type: string
+      - description: 文档信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.createDocumentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.documentResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - UserSession: []
+      summary: 创建文档或目录
+      tags:
+      - 客户端文档
   /api/client/projects/{project_id}/groups:
     get:
       description: 获取项目关联的可用群聊，按关联时间倒序分页。

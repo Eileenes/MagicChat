@@ -30,8 +30,9 @@ const MESSAGE_PAGE_SIZE = 20
 export function useConversationMessages(
   server: AuthenticatedTarget,
   conversationId: string,
-  options: { fallbackPollingEnabled?: boolean } = {}
+  options: { fallbackPollingEnabled?: boolean; live?: boolean } = {}
 ) {
+  const live = options.live ?? true
   const queryClient = useQueryClient()
   const queryKey = useMemo(
     () => queryKeys.conversationMessages(server, conversationId),
@@ -72,31 +73,34 @@ export function useConversationMessages(
   })
 
   useEffect(
-    () =>
-      subscribeConversationMessages(server, conversationId, (event) => {
+    () => {
+      if (!live) return
+      return subscribeConversationMessages(server, conversationId, (event) => {
         applyConversationMessagesChangedEvent(
           queryClient,
           server,
           conversationId,
           event
         )
-      }),
-    [conversationId, queryClient, queryKey, server]
+      })
+    },
+    [conversationId, live, queryClient, queryKey, server]
   )
 
   useEffect(
     () => () => {
+      if (!live) return
       compactConversationMessagesQuery(
         queryClient,
         server,
         conversationId
       )
     },
-    [conversationId, queryClient, server]
+    [conversationId, live, queryClient, server]
   )
 
   useEffect(() => {
-    if (!conversationId) return
+    if (!conversationId || !live) return
 
     let active = true
     const synchronize = () => {
@@ -122,7 +126,7 @@ export function useConversationMessages(
       active = false
       if (interval !== null) clearInterval(interval)
     }
-  }, [conversationId, options.fallbackPollingEnabled, server])
+  }, [conversationId, live, options.fallbackPollingEnabled, server])
 
   const refetch = useCallback(async () => {
     await messageManager.synchronizeLatest(

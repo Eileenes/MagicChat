@@ -4,7 +4,7 @@ import {
   Download,
   ExternalLink,
   FileText,
-  ImageIcon,
+  ImageOff,
   Link as LinkIcon,
   MessagesSquare,
 } from "lucide-react-native"
@@ -149,52 +149,19 @@ export function MessageBody({
 
   if (body.type === "image") {
     const state = resourceStates.get(body.fileId)
-    const resource = state?.resource
     const size = getImageDisplaySize(body.width, body.height)
-    const image = resource ? (
-      <Pressable
-        accessibilityLabel="查看图片"
-        onPress={() => onImagePress(body.fileId)}
-        style={{
-          borderBottomLeftRadius: body.caption ? 0 : 7,
-          borderBottomRightRadius: body.caption ? 0 : 7,
-          borderTopLeftRadius: 7,
-          borderTopRightRadius: 7,
-          height: size.height,
-          overflow: "hidden",
-          width: size.width,
+    const image = (
+      <MessageImageThumbnail
+        captioned={Boolean(body.caption)}
+        onError={() => {
+          if (retriedImageIds.current.has(body.fileId)) return
+          retriedImageIds.current.add(body.fileId)
+          onResourceError(body.fileId)
         }}
-      >
-        <Image
-          height={size.height}
-          objectFit="cover"
-          onError={() => {
-            if (retriedImageIds.current.has(body.fileId)) return
-            retriedImageIds.current.add(body.fileId)
-            onResourceError(body.fileId)
-          }}
-          pointerEvents="none"
-          src={resource.uri}
-          width={size.width}
-        />
-      </Pressable>
-    ) : (
-      <XStack
-        gap="$2"
-        items="center"
-        minW={160}
         onPress={() => onImagePress(body.fileId)}
-        p="$2"
-      >
-        {state?.status === "loading" ? (
-          <Spinner />
-        ) : (
-          <ThemedIcon icon={ImageIcon} />
-        )}
-        <SizableText color="$color10">
-          {state?.status === "error" ? "图片加载失败，点击重试" : "正在加载图片"}
-        </SizableText>
-      </XStack>
+        size={size}
+        state={state}
+      />
     )
 
     if (!body.caption) return image
@@ -265,6 +232,152 @@ export function MessageBody({
     <Paragraph text="center">
       {formatClientMessageBodySummary(body, resolveMentionLabel)}
     </Paragraph>
+  )
+}
+
+function MessageImageThumbnail({
+  captioned,
+  onError,
+  onPress,
+  size,
+  state,
+}: {
+  captioned: boolean
+  onError: () => void
+  onPress: () => void
+  size: { height: number; width: number }
+  state: ResourceLoadState | undefined
+}) {
+  const resource = state?.resource
+
+  if (!resource) {
+    return (
+      <MessageImageStatus
+        captioned={captioned}
+        error={state?.status === "error"}
+        onPress={state?.status === "error" ? onPress : undefined}
+        size={size}
+      />
+    )
+  }
+
+  return (
+    <LoadedMessageImage
+      captioned={captioned}
+      onError={onError}
+      onPress={onPress}
+      size={size}
+      uri={resource.uri}
+    />
+  )
+}
+
+function LoadedMessageImage({
+  captioned,
+  onError,
+  onPress,
+  size,
+  uri,
+}: {
+  captioned: boolean
+  onError: () => void
+  onPress: () => void
+  size: { height: number; width: number }
+  uri: string
+}) {
+  const [status, setStatus] = useState<"error" | "loading" | "ready">(
+    "loading"
+  )
+
+  return (
+    <Pressable
+      accessibilityLabel={status === "ready" ? "查看图片" : undefined}
+      disabled={status !== "ready"}
+      onPress={onPress}
+      style={{
+        borderBottomLeftRadius: captioned ? 0 : 7,
+        borderBottomRightRadius: captioned ? 0 : 7,
+        borderTopLeftRadius: 7,
+        borderTopRightRadius: 7,
+        height: size.height,
+        overflow: "hidden",
+        width: size.width,
+      }}
+    >
+      <Image
+        height={size.height}
+        objectFit="cover"
+        onError={() => {
+          setStatus("error")
+          onError()
+        }}
+        onLoad={() => setStatus("ready")}
+        onLoadStart={() => setStatus("loading")}
+        opacity={status === "ready" ? 1 : 0}
+        pointerEvents="none"
+        src={uri}
+        width={size.width}
+      />
+      {status !== "ready" ? (
+        <MessageImageStatus
+          absolute
+          captioned={captioned}
+          error={status === "error"}
+          size={size}
+        />
+      ) : null}
+    </Pressable>
+  )
+}
+
+function MessageImageStatus({
+  absolute = false,
+  captioned,
+  error,
+  onPress,
+  size,
+}: {
+  absolute?: boolean
+  captioned: boolean
+  error: boolean
+  onPress?: () => void
+  size: { height: number; width: number }
+}) {
+  return (
+    <YStack
+      accessibilityLabel={error ? "图片加载失败" : "图片正在加载"}
+      bg="$backgroundPress"
+      borderBottomLeftRadius={captioned ? 0 : 7}
+      borderBottomRightRadius={captioned ? 0 : 7}
+      borderTopLeftRadius={7}
+      borderTopRightRadius={7}
+      height={size.height}
+      items="center"
+      justify="center"
+      l={absolute ? 0 : undefined}
+      onPress={onPress}
+      overflow="hidden"
+      position={absolute ? "absolute" : "relative"}
+      t={absolute ? 0 : undefined}
+      width={size.width}
+    >
+      <YStack gap="$2" items="center">
+        <YStack
+          bg="$background"
+          height={40}
+          items="center"
+          justify="center"
+          opacity={0.7}
+          rounded="$3"
+          width={40}
+        >
+          {error ? <ThemedIcon icon={ImageOff} size={20} /> : <Spinner />}
+        </YStack>
+        <SizableText color="$color10" fontWeight="500" size="$2">
+          {error ? "图片加载失败" : "图片正在加载"}
+        </SizableText>
+      </YStack>
+    </YStack>
   )
 }
 
