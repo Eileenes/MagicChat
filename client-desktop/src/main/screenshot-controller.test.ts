@@ -29,6 +29,7 @@ const electronMocks = vi.hoisted(() => {
         windowHandlers.set(event, listener),
       ),
       removeMenu: vi.fn(),
+      setBounds: vi.fn(),
       setAlwaysOnTop: vi.fn(),
       setVisibleOnAllWorkspaces: vi.fn(),
       show: vi.fn(),
@@ -115,6 +116,54 @@ describe("ScreenshotController", () => {
     await expect(
       invoke(IPC.screenshotMetadata, electronMocks.windows[0].webContents.id),
     ).resolves.toMatchObject({ defaultOutput: "copy" })
+  })
+
+  it("Windows 截图浮层使用完整屏幕边界覆盖任务栏，避免压缩整屏图像", async () => {
+    const { controller } = createController(capturedDisplay(), undefined, "win32")
+
+    await expect(controller.start({})).resolves.toMatchObject({ status: "started" })
+
+    expect(electronMocks.browserWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fullscreenable: false,
+        height: 900,
+        thickFrame: false,
+        type: undefined,
+        width: 1440,
+        x: 0,
+        y: 0,
+      }),
+    )
+    expect(electronMocks.windows[0].setBounds).toHaveBeenCalledWith(
+      { height: 900, width: 1440, x: 0, y: 0 },
+      false,
+    )
+    expect(electronMocks.windows[0].show.mock.invocationCallOrder[0]).toBeLessThan(
+      electronMocks.windows[0].setBounds.mock.invocationCallOrder[0],
+    )
+    expect(electronMocks.windows[0].setVisibleOnAllWorkspaces).not.toHaveBeenCalled()
+  })
+
+  it("Windows 多显示器浮层显示后保留各自的完整屏幕边界", async () => {
+    const primary = display()
+    const secondary = display(9, { height: 1080, width: 1920, x: -1920, y: -120 })
+    const captures = [capturedDisplay("7", primary.bounds), capturedDisplay("9", secondary.bounds)]
+    electronMocks.getAllDisplays.mockReturnValue([primary, secondary])
+    const backend: CaptureBackend = { capture: vi.fn().mockResolvedValue(captures) }
+    const { controller } = createController(captures[0], backend, "win32")
+
+    await expect(controller.start({})).resolves.toMatchObject({ status: "started" })
+
+    expect(electronMocks.browserWindow).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ height: 900, width: 1440, x: 0, y: 0 }),
+    )
+    expect(electronMocks.browserWindow).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ height: 1080, width: 1920, x: -1920, y: -120 }),
+    )
+    expect(electronMocks.windows[0].setBounds).toHaveBeenCalledWith(primary.bounds, false)
+    expect(electronMocks.windows[1].setBounds).toHaveBeenCalledWith(secondary.bounds, false)
   })
 
   it("所有截图 IPC 都拒绝不可信来源", async () => {
@@ -399,35 +448,37 @@ describe("ScreenshotController", () => {
 
 function createController(
   capture = capturedDisplay(),
-  backend: CaptureBackend = { capture: vi.fn().mockResolvedValue([capture]) },
+  backend: CaptureBackend | undefined = undefined,
+  platform: NodeJS.Platform = "darwin",
 ) {
   const onConversationResult = vi.fn()
   const mainWindow = { webContents: { id: 1 } } as BrowserWindow
   const controller = new ScreenshotController({
-    backend,
+    backend: backend ?? { capture: vi.fn().mockResolvedValue([capture]) },
     capturePreloadPath: "/preload.cjs",
     captureUrl: "magicchat-app://app/capture.html",
     getMainWindow: () => mainWindow,
     onConversationResult,
+    platform,
   })
   return { controller, onConversationResult }
 }
 
-function display(id = 7) {
+function display(id = 7, bounds = { height: 900, width: 1440, x: 0, y: 0 }) {
   return {
-    bounds: { height: 900, width: 1440, x: 0, y: 0 },
+    bounds,
     id,
     scaleFactor: 2,
   }
 }
 
-function capturedDisplay(id = "7"): CapturedDisplay {
+function capturedDisplay(id = "7", bounds = display().bounds): CapturedDisplay {
   return {
     display: {
-      bounds: display().bounds,
+      bounds,
       id,
-      imageHeight: 1800,
-      imageWidth: 2880,
+      imageHeight: bounds.height * 2,
+      imageWidth: bounds.width * 2,
       scaleFactor: 2,
     },
     png: Buffer.from(pngSignature),

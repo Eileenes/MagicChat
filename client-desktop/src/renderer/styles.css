@@ -28,6 +28,7 @@ body,
 .desktop-titlebar-brand {
   align-items: center;
   display: flex;
+  gap: 8px;
   height: 100%;
   padding-left: 12px;
   width: max-content;
@@ -39,10 +40,20 @@ body,
   pointer-events: none;
   width: 22px;
 }
+.desktop-titlebar-brand span {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
 .cn-toast,
 .desktop-toast-close,
 .cn-toast [data-button] {
   -webkit-app-region: no-drag;
+}
+[data-sonner-toaster] {
+  pointer-events: auto !important;
 }
 .dark .desktop-titlebar-drag-region {
   box-shadow: 0 6px 18px oklch(0 0 0 / 22%);
