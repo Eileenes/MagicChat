@@ -29,6 +29,7 @@ export default defineConfig({
           'shield-check',
           'sparkles',
           'users',
+          'x',
         ],
       },
     }),

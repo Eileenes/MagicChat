@@ -88,11 +88,16 @@ const workflow = [
 ];
 
 const comparisonRows = [
-  ['理解团队上下文', '需要手动复制', '保存信息，不主动理解', '按权限直接查询'],
-  ['参与团队沟通', '停留在独立对话框', '主要承载人与人沟通', 'AI 以独立身份参与'],
-  ['推进实际工作', '通常只生成内容', '依赖人工继续操作', '授权后查询、沟通和执行'],
-  ['项目任务闭环', '不支持', '需要人工整理', '从讨论继续推进'],
-  ['部署与模型选择', '通常由服务商决定', '因产品而异', '开源、可私有化、自主模型'],
+  ['企业即时通讯', true, true, true, true, true, true, true],
+  ['Web、桌面与移动端', true, true, true, true, true, true, true],
+  ['私有化部署', true, false, true, false, false, true, true],
+  ['核心产品代码开源', true, false, false, false, false, true, true],
+  ['在线文档', true, true, true, true, true, false, false],
+  ['目标管理', false, true, true, false, false, false, false],
+  ['项目管理', true, true, true, false, false, false, false],
+  ['任务管理', true, true, true, true, true, true, false],
+  ['开放 API 与应用扩展', true, true, true, true, true, true, true],
+  ['内置 AI 助手', true, true, true, true, true, false, false],
 ];
 
 const ctas = [
@@ -271,20 +276,40 @@ const ctas = [
     <section class="bg-stone-50 py-24 sm:py-32" id="comparison">
       <div class="container">
         <div class="mx-auto mb-14 max-w-3xl text-center reveal">
-          <span class="eyebrow">为什么选择即应</span>
-          <h2 class="mb-6 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">不只是会聊天的 AI，<br />而是可控的协作成员</h2>
-          <p class="m-0 text-base leading-8 text-slate-600">即应把通用 AI 的理解能力与企业协作中的身份、权限和执行链路放在一起。</p>
+          <span class="eyebrow">同类产品对比</span>
+          <h2 class="mb-6 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">同样是协作入口，<br />即应选择了不同的路径</h2>
+          <p class="m-0 text-base leading-8 text-slate-600">飞书、钉钉、企业微信和 Slack 提供成熟的商业协作生态，Mattermost 与 Rocket.Chat 代表开源团队通讯；即应更专注于让 AI 以明确身份进入团队并持续推进工作。</p>
         </div>
         <div class="reveal overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <table class="w-full min-w-[760px] border-collapse text-left text-sm">
-            <thead><tr class="border-b border-slate-200"><th class="p-5 font-semibold text-slate-500">比较维度</th><th class="p-5 font-semibold text-slate-500">通用 AI 对话</th><th class="p-5 font-semibold text-slate-500">传统协作工具</th><th class="bg-teal-50 p-5 font-bold text-teal-900">即应</th></tr></thead>
+          <table class="w-full min-w-[1120px] table-fixed border-collapse text-left text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-200">
+                <th scope="col" class="w-44 px-4 py-4 font-semibold text-slate-500">比较维度</th>
+                <th scope="col" class="bg-teal-50 px-3 py-4 text-center font-bold text-teal-900">即应</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold text-slate-700">飞书</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold text-slate-700">钉钉</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold text-slate-700">企业微信</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold text-slate-700">Slack</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold leading-5 text-slate-700">Mattermost</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold leading-5 text-slate-700">Rocket.Chat</th>
+              </tr>
+            </thead>
             <tbody>
-              {comparisonRows.map(([dimension, genericAi, collaboration, jiying]) => (
-                <tr class="border-b border-slate-100 last:border-0"><th class="p-5 font-semibold text-slate-900">{dimension}</th><td class="p-5 text-slate-500">{genericAi}</td><td class="p-5 text-slate-500">{collaboration}</td><td class="bg-teal-50/70 p-5 font-semibold text-teal-900"><span class="inline-flex items-center gap-2"><Icon name="tabler:check" size={16} class="text-teal-600" />{jiying}</span></td></tr>
+              {comparisonRows.map(([dimension, ...support]) => (
+                <tr class="border-b border-slate-100 last:border-0">
+                  <th scope="row" class="px-4 py-3.5 font-semibold text-slate-900">{dimension}</th>
+                  {support.map((supported, index) => (
+                    <td class:list={['px-3 py-3.5 text-center', index === 0 && 'bg-teal-50/70']}>
+                      <span class="sr-only">{supported ? '支持' : '不支持'}</span>
+                      <Icon name={supported ? 'tabler:check' : 'tabler:x'} size={18} stroke-width={2.2} class:list={['mx-auto', supported ? 'text-teal-600' : 'text-slate-300']} aria-hidden="true" />
+                    </td>
+                  ))}
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <p class="mx-auto mt-5 max-w-4xl text-center text-xs leading-6 text-slate-400">对比基于各产品公开定位与常见使用方式整理；“私有化部署”指可部署到企业自有基础设施。具体能力可能随版本、套餐和企业配置变化。</p>
       </div>
     </section>
 
