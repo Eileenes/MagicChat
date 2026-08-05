@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/components/locale-provider"
 
 type BrandLoadingScreenProps = {
   className?: string
@@ -6,11 +7,9 @@ type BrandLoadingScreenProps = {
   message?: string
 }
 
-export function BrandLoadingScreen({
-  className,
-  detail = "正在为你加载数据",
-  message,
-}: BrandLoadingScreenProps) {
+export function BrandLoadingScreen({ className, detail, message }: BrandLoadingScreenProps) {
+  const { t } = useLocale()
+  const detailText = detail ?? t("brandLoading.detail")
   return (
     <main
       className={cn(
@@ -20,11 +19,11 @@ export function BrandLoadingScreen({
     >
       <div className="flex w-56 flex-col items-center gap-3">
         <div className="text-center text-sm text-muted-foreground">
-          {message ? `${message} · ${detail}` : detail}
+          {message ? `${message} · ${detailText}` : detailText}
         </div>
         <div
-          aria-label="加载进度"
-          aria-valuetext="加载中"
+          aria-label={t("brandLoading.progress")}
+          aria-valuetext={t("brandLoading.loading")}
           className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
           role="progressbar"
         >

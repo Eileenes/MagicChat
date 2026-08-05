@@ -1,6 +1,8 @@
 import * as React from "react"
 import { Bot, LoaderCircle, Search, SearchX } from "lucide-react"
 
+import { useLocale } from "@/components/locale-provider"
+
 import { ConversationAvatar } from "@/components/conversation/conversation-avatar"
 import { GroupAvatar } from "@/components/group-avatar"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -18,6 +20,7 @@ import type {
   ContactUser,
 } from "@/lib/client-data-api"
 import { getConversationDisplayName } from "@/lib/conversation-avatar-presentation"
+import { getConversationDefaultDescription } from "@/lib/conversation-search-description"
 import { formatActivityTime } from "@/lib/activity-time"
 import type { ConversationSearchField, ConversationSearchResult } from "@/lib/conversation-search"
 import {
@@ -33,12 +36,12 @@ import {
 import { cn } from "@/lib/utils"
 
 const scopes = [
-  { available: true, label: "综合", value: "all" },
-  { available: true, label: "通讯录", value: "directory" },
-  { available: true, label: "对话", value: "conversation" },
-  { available: true, label: "聊天记录", value: "messages" },
-  { available: false, label: "文档", value: "documents" },
-  { available: false, label: "任务", value: "tasks" },
+  { available: true, label: "search.scope.all", value: "all" },
+  { available: true, label: "search.scope.directory", value: "directory" },
+  { available: true, label: "search.scope.conversation", value: "conversation" },
+  { available: true, label: "search.scope.messages", value: "messages" },
+  { available: false, label: "search.scope.documents", value: "documents" },
+  { available: false, label: "search.scope.tasks", value: "tasks" },
 ] as const
 type Scope = (typeof scopes)[number]["value"]
 
@@ -53,7 +56,7 @@ export function GlobalSearchCommand({
   contacts,
   conversations,
   currentUserId,
-  getConversationDescription = getDefaultConversationDescription,
+  getConversationDescription,
   messageSearch,
   onSelectDirectoryItem,
   onSelectMessageResult,
@@ -72,12 +75,18 @@ export function GlobalSearchCommand({
   onSelectConversation: (conversationId: string) => void
   searchDebounceMs?: number
 }) {
+  const { t } = useLocale()
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const optionRefs = React.useRef(new Map<string, HTMLButtonElement>())
   const [open, setOpen] = React.useState(false)
   const [keyword, setKeyword] = React.useState("")
   const [scope, setScope] = React.useState<Scope>("all")
   const [activeIndex, setActiveIndex] = React.useState(0)
+  const defaultConversationDescription = React.useCallback(
+    (conversation: ClientConversation) => getConversationDefaultDescription(conversation, t),
+    [t],
+  )
+  const conversationDescription = getConversationDescription ?? defaultConversationDescription
   const service = React.useMemo(
     () =>
       createClientSearchService({
@@ -135,7 +144,7 @@ export function GlobalSearchCommand({
           .catch((error: unknown) => {
             if (active && !isAbortError(error)) {
               setSearchState({
-                error: error instanceof Error ? error.message : "搜索内容失败，请稍后重试",
+                error: error instanceof Error ? error.message : t("search.error"),
                 key: searchKey,
                 results: emptySearchResults,
                 searching: false,
@@ -150,7 +159,7 @@ export function GlobalSearchCommand({
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [canSearch, keyword, scope, searchDebounceMs, searchKey, service])
+  }, [canSearch, keyword, scope, searchDebounceMs, searchKey, service, t])
   const currentSearch = searchState.key === searchKey && canSearch
   const results = {
     conversations: scope === "messages" ? [] : localResults.conversations,
@@ -192,21 +201,12 @@ export function GlobalSearchCommand({
   }, [activeOption])
 
   React.useEffect(() => {
-    function handleSearchShortcut(event: KeyboardEvent) {
-      if (
-        event.key.toLowerCase() !== "f" ||
-        (!event.ctrlKey && !event.metaKey) ||
-        event.altKey ||
-        event.shiftKey
-      ) {
-        return
-      }
-      event.preventDefault()
+    const shortcuts = window.desktop?.shortcuts
+    if (!shortcuts?.subscribeSearchOpen) return
+    return shortcuts.subscribeSearchOpen(() => {
       setOpen(true)
       window.requestAnimationFrame(() => inputRef.current?.focus())
-    }
-    window.addEventListener("keydown", handleSearchShortcut)
-    return () => window.removeEventListener("keydown", handleSearchShortcut)
+    })
   }, [])
 
   function close() {
@@ -272,10 +272,10 @@ export function GlobalSearchCommand({
   return (
     <>
       <Button
-        aria-label="全局搜索"
+        aria-label={t("search.button")}
         onClick={() => setOpen(true)}
         size="icon-sm"
-        title="全局搜索"
+        title={t("search.button")}
         type="button"
         variant="ghost"
       >
@@ -283,8 +283,8 @@ export function GlobalSearchCommand({
       </Button>
       <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl" showCloseButton={false}>
-          <DialogTitle className="sr-only">全局搜索</DialogTitle>
-          <DialogDescription className="sr-only">搜索通讯录和会话</DialogDescription>
+          <DialogTitle className="sr-only">{t("search.title")}</DialogTitle>
+          <DialogDescription className="sr-only">{t("search.description")}</DialogDescription>
           <div className="flex h-11 items-center gap-2 border-b px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" />
             <Input
@@ -293,7 +293,7 @@ export function GlobalSearchCommand({
               aria-autocomplete="list"
               aria-controls="global-search-results"
               aria-expanded={open}
-              aria-label="搜索所有内容"
+              aria-label={t("search.input")}
               autoComplete="off"
               autoFocus
               className="h-full w-full rounded-none border-0 bg-transparent px-0 text-sm shadow-none outline-none focus-visible:ring-0"
@@ -302,24 +302,24 @@ export function GlobalSearchCommand({
                 setActiveIndex(0)
               }}
               onKeyDown={handleInputKeyDown}
-              placeholder="搜索"
+              placeholder={t("search.placeholder")}
               role="combobox"
               value={keyword}
             />
           </div>
           <Tabs className="gap-0" onValueChange={handleScopeChange} value={scope}>
             <div className="w-full overflow-x-auto overflow-y-hidden border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <TabsList aria-label="搜索内容" className="justify-start" variant="line">
+              <TabsList aria-label={t("search.content")} className="justify-start" variant="line">
                 {scopes.map((item) => (
                   <TabsTrigger key={item.value} value={item.value}>
-                    {item.label}
+                    {t(item.label)}
                   </TabsTrigger>
                 ))}
               </TabsList>
             </div>
           </Tabs>
           <div
-            aria-label="搜索结果"
+            aria-label={t("search.results")}
             className="max-h-96 min-h-48 overflow-y-auto p-2"
             id="global-search-results"
             role="listbox"
@@ -327,27 +327,31 @@ export function GlobalSearchCommand({
             {!hasKeyword ? (
               <GlobalSearchEmptyState state="idle" />
             ) : messageKeywordTooShort ? (
-              <GlobalSearchEmptyState description="至少输入 2 个字符" />
+              <GlobalSearchEmptyState description={t("search.minLength")} />
             ) : searching && options.length === 0 ? (
               <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
                 <LoaderCircle className="mr-2 size-4 animate-spin" />
-                正在搜索
+                {t("search.searching")}
               </div>
             ) : searchError && options.length === 0 ? (
               <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
                 <span>{searchError}</span>
                 <Button onClick={() => setKeyword((value) => `${value} `)} size="sm" type="button">
-                  重试
+                  {t("search.retry")}
                 </Button>
               </div>
             ) : !scopeDefinition.available ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">待完善</div>
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                {t("search.pending")}
+              </div>
             ) : options.length === 0 ? (
               <GlobalSearchEmptyState state="no-results" />
             ) : (
               <>
                 {results.directory.length > 0 && (
-                  <SearchGroupLabel id="global-search-directory-label">通讯录</SearchGroupLabel>
+                  <SearchGroupLabel id="global-search-directory-label">
+                    {t("search.group.directory")}
+                  </SearchGroupLabel>
                 )}
                 {results.directory.map((item, index) => {
                   const option = options[index]
@@ -355,7 +359,7 @@ export function GlobalSearchCommand({
                     <SearchRow
                       active={index === normalizedActiveIndex}
                       avatar={<DirectorySearchResultAvatar item={item} />}
-                      description={getDirectoryDescription(item)}
+                      description={getDirectoryDescription(item, t)}
                       id={`global-search-option-${index}`}
                       key={option.key}
                       label={getDirectoryName(item)}
@@ -366,7 +370,9 @@ export function GlobalSearchCommand({
                   )
                 })}
                 {results.conversations.length > 0 && (
-                  <SearchGroupLabel id="global-search-conversation-label">对话</SearchGroupLabel>
+                  <SearchGroupLabel id="global-search-conversation-label">
+                    {t("search.group.conversation")}
+                  </SearchGroupLabel>
                 )}
                 {results.conversations.map((result, resultIndex) => {
                   const index = results.directory.length + resultIndex
@@ -384,7 +390,8 @@ export function GlobalSearchCommand({
                       description={getConversationResultDescription(
                         result,
                         keyword,
-                        getConversationDescription,
+                        conversationDescription,
+                        t,
                       )}
                       id={`global-search-option-${index}`}
                       key={option.key}
@@ -396,7 +403,9 @@ export function GlobalSearchCommand({
                   )
                 })}
                 {results.messages.length > 0 && (
-                  <SearchGroupLabel id="global-search-message-label">聊天记录</SearchGroupLabel>
+                  <SearchGroupLabel id="global-search-message-label">
+                    {t("search.group.messages")}
+                  </SearchGroupLabel>
                 )}
                 {results.messages.map((result, resultIndex) => {
                   const index =
@@ -460,13 +469,14 @@ function GlobalSearchEmptyState({
   description?: string
   state?: "idle" | "no-results"
 }) {
+  const { t } = useLocale()
   const idle = state === "idle"
   return (
     <Empty className="min-h-48 rounded-none p-8">
       <EmptyMedia variant="icon">{idle ? <Search /> : <SearchX />}</EmptyMedia>
       <EmptyHeader>
         <EmptyDescription>
-          {description ?? (idle ? "输入关键词开始搜索" : "未找到相关内容")}
+          {description ?? (idle ? t("search.idle") : t("search.noResults"))}
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
@@ -540,7 +550,8 @@ function DirectorySearchResultAvatar({ item }: { item: DirectorySearchItem }) {
 }
 
 function MessageSearchResultAvatar({ result }: { result: ClientMessageSearchResult }) {
-  const name = result.conversation.name || "会话"
+  const { t } = useLocale()
+  const name = result.conversation.name || t("search.conversationFallback")
   return (
     <Avatar className="size-8 rounded-sm bg-muted after:rounded-sm">
       {result.conversation.avatar && (
@@ -557,36 +568,36 @@ function getDirectoryName(item: DirectorySearchItem) {
   return item.type === "user" ? item.nickname.trim() || item.name.trim() : item.name.trim()
 }
 
-function getDirectoryDescription(item: DirectorySearchItem) {
-  if (item.type === "user") return item.email.trim() || item.phone.trim() || "联系人"
-  if (item.type === "app") return item.description.trim() || "应用"
-  return `${item.memberCount} 位成员${item.joined ? " · 已加入" : ""}`
+function getDirectoryDescription(item: DirectorySearchItem, t: ReturnType<typeof useLocale>["t"]) {
+  if (item.type === "user") return item.email.trim() || item.phone.trim() || t("search.contact")
+  if (item.type === "app") return item.description.trim() || t("search.app")
+  return `${t("search.members", { count: item.memberCount })}${item.joined ? ` · ${t("search.joined")}` : ""}`
 }
 
 function getConversationResultDescription(
   result: ConversationSearchResult,
   keyword: string,
   getConversationDescription: (conversation: ClientConversation) => string,
+  t: ReturnType<typeof useLocale>["t"],
 ) {
   if (!keyword.trim()) return getConversationDescription(result.conversation)
   const field = result.matchedField
-  if (!field || field.kind === "conversation_name") return "匹配会话名称"
+  if (!field || field.kind === "conversation_name") return t("search.match.name")
   const displayName = field.memberDisplayName
   const value = field.rawValue
   return displayName && displayName !== value
-    ? `${getConversationMatchLabel(field)}：${displayName} · ${value}`
-    : `${getConversationMatchLabel(field)}：${value}`
+    ? `${getConversationMatchLabel(field, t)}：${displayName} · ${value}`
+    : `${getConversationMatchLabel(field, t)}：${value}`
 }
 
-function getConversationMatchLabel(field: ConversationSearchField) {
-  if (field.kind === "member_email") return "匹配邮箱"
-  if (field.kind === "member_phone") return "匹配手机号"
-  if (field.kind === "app_name") return "匹配应用成员"
-  return "匹配成员"
-}
-
-function getDefaultConversationDescription(conversation: ClientConversation) {
-  return conversation.lastMessageSummary.trim() || "暂无消息"
+function getConversationMatchLabel(
+  field: ConversationSearchField,
+  t: ReturnType<typeof useLocale>["t"],
+) {
+  if (field.kind === "member_email") return t("search.match.email")
+  if (field.kind === "member_phone") return t("search.match.phone")
+  if (field.kind === "app_name") return t("search.match.app")
+  return t("search.match.member")
 }
 
 function setOptionRef(

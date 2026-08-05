@@ -76,9 +76,12 @@ export const IPC = {
   screenshotResultFinish: "desktop:v1:screenshot-result-finish",
   screenshotResultStart: "desktop:v1:screenshot-result-start",
   screenshotStart: "desktop:v1:screenshot-start",
+  searchOpen: "desktop:v1:search-open",
   shortcutRecordingBegin: "desktop:v1:shortcut-recording-begin",
   shortcutRecordingCancel: "desktop:v1:shortcut-recording-cancel",
   shortcutScreenshotSet: "desktop:v1:shortcut-screenshot-set",
+  shortcutSearchSet: "desktop:v1:shortcut-search-set",
+  shortcutSendMessageSet: "desktop:v1:shortcut-send-message-set",
   shortcutsGetState: "desktop:v1:shortcuts-get-state",
   serversAdd: "desktop:v1:servers-add",
   serversList: "desktop:v1:servers-list",
@@ -105,6 +108,10 @@ export const IPC = {
 
 export type DesktopThemeSource = "dark" | "light" | "system"
 
+export type DesktopLanguage = "zh-CN" | "en"
+
+export type DesktopFontScale = "normal" | "medium" | "large"
+
 export type ServerProfile = ServerTarget &
   Readonly<{
     createdAt: string
@@ -115,14 +122,21 @@ export type ServerProfile = ServerTarget &
 export type DesktopSettings = Readonly<{
   autoLaunch: boolean
   closeBehavior: "background" | "quit"
+  fontScale: DesktopFontScale
+  language: DesktopLanguage
   messageSoundEnabled: boolean
   notificationPrivacy: "hidden" | "metadata" | "preview"
   screenshotShortcut: string | null
+  searchShortcut: string | null
+  sendMessageShortcut: string | null
   selectedServerId?: string
 }>
 
 export type DesktopSettingsPatch = Partial<
-  Omit<DesktopSettings, "screenshotShortcut" | "selectedServerId">
+  Omit<
+    DesktopSettings,
+    "screenshotShortcut" | "searchShortcut" | "sendMessageShortcut" | "selectedServerId"
+  >
 >
 
 export type DesktopAppInfo = Readonly<{

@@ -115,8 +115,12 @@ function createSettings(
   return {
     autoLaunch: false,
     closeBehavior: "background",
+    fontScale: "normal",
+    language: "zh-CN",
     messageSoundEnabled,
     notificationPrivacy,
     screenshotShortcut: "CommandOrControl+Shift+A",
+    searchShortcut: "CommandOrControl+Shift+F",
+    sendMessageShortcut: "CommandOrControl+Enter",
   }
 }

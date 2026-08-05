@@ -16,6 +16,8 @@ import {
 } from "@shared/bridge"
 import type { ScreenshotStartFailure } from "@shared/screenshot-contract"
 
+vi.unmock("@/components/locale-provider")
+
 const profile: ServerProfile = {
   createdAt: "2026-07-23T00:00:00.000Z",
   displayName: "测试服务器",
@@ -124,7 +126,10 @@ describe("桌面设置服务器管理", () => {
       mocks.screenshotStartFailureSubscriber?.({ code: "permission_denied" })
     })
 
-    expect(mocks.showScreenshotStartError).toHaveBeenCalledWith("permission_denied")
+    expect(mocks.showScreenshotStartError).toHaveBeenCalledWith(
+      "permission_denied",
+      expect.any(Function),
+    )
     view.unmount()
     expect(mocks.screenshotStartFailureUnsubscribe).toHaveBeenCalledOnce()
   })
@@ -321,11 +326,14 @@ describe("桌面设置服务器管理", () => {
   it("设置读取失败后提供重试并恢复内容", async () => {
     const bridge = createDesktopBridge()
     const initialSettings = await bridge.settings.get()
+    let settingsCalls = 0
     vi.mocked(bridge.settings.get)
       .mockReset()
-      .mockResolvedValueOnce(initialSettings)
-      .mockRejectedValueOnce(new Error("IPC unavailable"))
-      .mockResolvedValueOnce(initialSettings)
+      .mockImplementation(async () => {
+        settingsCalls += 1
+        if (settingsCalls === 3) throw new Error("IPC unavailable")
+        return initialSettings
+      })
     Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
     const user = userEvent.setup()
     render(<DesktopRoot />)
@@ -437,11 +445,49 @@ describe("桌面设置服务器管理", () => {
     expect(source).toMatch(/\.settings-secondary-button\s*\{[^}]*justify-self:\s*end/)
   })
 
+  it("切换语言为 English 后设置界面即时变为英文且不重建工作区宿主", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await waitFor(() => expect(screen.getByText("通用设置")).toBeInTheDocument())
+    const hostInstallCount = mocks.installDesktopFetch.mock.calls.length
+    expect(hostInstallCount).toBeGreaterThan(0)
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "语言" }), "en")
+
+    await waitFor(() => expect(bridge.settings.set).toHaveBeenCalledWith({ language: "en" }))
+    expect(await screen.findByRole("button", { name: "Notifications" })).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "Language" })).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "Font size" })).toBeInTheDocument()
+    expect(mocks.installDesktopFetch).toHaveBeenCalledTimes(hostInstallCount)
+    expect(mocks.restoreFetch).not.toHaveBeenCalled()
+  })
+
+  it("字体大小设置应用到根元素字号", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await user.selectOptions(screen.getByRole("combobox", { name: "字体大小" }), "medium")
+
+    await waitFor(() => expect(bridge.settings.set).toHaveBeenCalledWith({ fontScale: "medium" }))
+    await waitFor(() => expect(document.documentElement.style.fontSize).toBe("19.2px"))
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "字体大小" }), "large")
+    await waitFor(() => expect(document.documentElement.style.fontSize).toBe("20.8px"))
+  })
+
   it("八个分类完整保留全部现有设置能力", async () => {
     const user = userEvent.setup()
     render(<DesktopRoot />)
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await waitFor(() => expect(screen.getByText("v0.1.0")).toBeInTheDocument())
     expect(screen.getByText("开机自动启动")).toBeInTheDocument()
     expect(screen.getByText("关闭窗口")).toBeInTheDocument()
 
@@ -459,7 +505,7 @@ describe("桌面设置服务器管理", () => {
 
     await user.click(screen.getByRole("button", { name: "快捷键" }))
     expect(screen.getByText("截图")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "修改截图快捷键" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "截图快捷键" })).toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "软件更新" }))
     expect(screen.getByRole("button", { name: "检查更新" })).toBeInTheDocument()
@@ -485,7 +531,7 @@ describe("桌面设置服务器管理", () => {
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
     await user.click(screen.getByRole("button", { name: "快捷键" }))
-    const recorder = await screen.findByRole("button", { name: "修改截图快捷键" })
+    const recorder = await screen.findByRole("button", { name: "截图快捷键" })
     await waitFor(() => expect(recorder).toHaveTextContent("⌘⇧A"))
 
     await user.click(recorder)
@@ -493,14 +539,14 @@ describe("桌面设置服务器管理", () => {
     fireEvent.keyDown(recorder, { code: "KeyS", key: "s", metaKey: true, shiftKey: true })
 
     await waitFor(() =>
-      expect(bridge.shortcuts.setScreenshot).toHaveBeenCalledWith("Command+Shift+S"),
+      expect(bridge.shortcuts.set).toHaveBeenCalledWith("screenshot", "Command+Shift+S"),
     )
     expect(recorder).toHaveTextContent("⌘⇧S")
   })
 
   it("快捷键冲突时显示错误并恢复原组合", async () => {
     const bridge = createDesktopBridge()
-    vi.mocked(bridge.shortcuts.setScreenshot).mockResolvedValueOnce({
+    vi.mocked(bridge.shortcuts.set).mockResolvedValueOnce({
       state: {
         accelerator: "CommandOrControl+Shift+A",
         recording: false,
@@ -517,7 +563,7 @@ describe("桌面设置服务器管理", () => {
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
     await user.click(screen.getByRole("button", { name: "快捷键" }))
-    const recorder = await screen.findByRole("button", { name: "修改截图快捷键" })
+    const recorder = await screen.findByRole("button", { name: "截图快捷键" })
     await waitFor(() => expect(recorder).toHaveTextContent("⌘⇧A"))
     await user.click(recorder)
     fireEvent.keyDown(recorder, { code: "KeyS", key: "s", metaKey: true, shiftKey: true })
@@ -528,7 +574,7 @@ describe("桌面设置服务器管理", () => {
 
   it("原快捷键恢复失败时展示准确提示", async () => {
     const bridge = createDesktopBridge()
-    vi.mocked(bridge.shortcuts.setScreenshot).mockResolvedValueOnce({
+    vi.mocked(bridge.shortcuts.set).mockResolvedValueOnce({
       state: {
         accelerator: "CommandOrControl+Shift+A",
         recording: false,
@@ -545,7 +591,7 @@ describe("桌面设置服务器管理", () => {
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
     await user.click(screen.getByRole("button", { name: "快捷键" }))
-    const recorder = await screen.findByRole("button", { name: "修改截图快捷键" })
+    const recorder = await screen.findByRole("button", { name: "截图快捷键" })
     await waitFor(() => expect(recorder).toHaveTextContent("⌘⇧A"))
     await user.click(recorder)
     fireEvent.keyDown(recorder, { code: "KeyS", key: "s", metaKey: true, shiftKey: true })
@@ -568,7 +614,7 @@ describe("桌面设置服务器管理", () => {
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
     await user.click(screen.getByRole("button", { name: "快捷键" }))
-    const recorder = await screen.findByRole("button", { name: "修改截图快捷键" })
+    const recorder = await screen.findByRole("button", { name: "截图快捷键" })
     await waitFor(() => expect(recorder).toHaveTextContent("⌘⇧A"))
     await user.click(recorder)
     await user.click(screen.getByRole("button", { name: "关闭设置" }))
@@ -595,16 +641,16 @@ describe("桌面设置服务器管理", () => {
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
     await user.click(screen.getByRole("button", { name: "快捷键" }))
-    const recorder = await screen.findByRole("button", { name: "修改截图快捷键" })
+    const recorder = await screen.findByRole("button", { name: "截图快捷键" })
     await waitFor(() => expect(recorder).toHaveTextContent("⌘⇧A"))
 
     await user.click(screen.getByRole("button", { name: "禁用截图快捷键" }))
-    await waitFor(() => expect(bridge.shortcuts.setScreenshot).toHaveBeenCalledWith(null))
+    await waitFor(() => expect(bridge.shortcuts.set).toHaveBeenCalledWith("screenshot", null))
     expect(recorder).toHaveTextContent("未设置")
 
     await user.click(screen.getByRole("button", { name: "恢复默认截图快捷键" }))
     await waitFor(() =>
-      expect(bridge.shortcuts.setScreenshot).toHaveBeenCalledWith("CommandOrControl+Shift+A"),
+      expect(bridge.shortcuts.set).toHaveBeenCalledWith("screenshot", "CommandOrControl+Shift+A"),
     )
     expect(recorder).toHaveTextContent("⌘⇧A")
 
@@ -1127,12 +1173,8 @@ describe("桌面设置服务器管理", () => {
 })
 
 describe("发布通道显示", () => {
-  it.each([
-    ["test", "开发版"],
-    ["preview", "预览版"],
-    ["stable", "正式版"],
-  ] as const)("将 %s 显示为 %s", (channel, label) => {
-    expect(releaseChannelLabel(channel)).toBe(label)
+  it.each(["test", "preview", "stable"] as const)("将 %s 映射到翻译键", (channel) => {
+    expect(releaseChannelLabel(channel, (key) => key)).toBe(`settings.release.${channel}`)
   })
 })
 
@@ -1152,9 +1194,13 @@ function createDesktopBridge(
   let settings = {
     autoLaunch: false,
     closeBehavior: "background" as const,
+    fontScale: "normal" as const,
+    language: "zh-CN" as const,
     messageSoundEnabled: true,
     notificationPrivacy: "metadata" as const,
     screenshotShortcut: "CommandOrControl+Shift+A",
+    searchShortcut: "CommandOrControl+Shift+F",
+    sendMessageShortcut: "CommandOrControl+Enter",
     selectedServerId: profile.id,
   }
   return {
@@ -1251,15 +1297,21 @@ function createDesktopBridge(
         recording: false,
         registered: true,
       }),
-      getState: vi.fn().mockResolvedValue({
-        accelerator: "CommandOrControl+Shift+A",
+      getState: vi.fn().mockImplementation(async (kind: string) => ({
+        accelerator:
+          kind === "search"
+            ? "CommandOrControl+Shift+F"
+            : kind === "sendMessage"
+              ? "CommandOrControl+Enter"
+              : "CommandOrControl+Shift+A",
         recording: false,
-        registered: true,
-      }),
-      setScreenshot: vi.fn().mockImplementation(async (accelerator) => ({
+        registered: kind !== "sendMessage",
+      })),
+      set: vi.fn().mockImplementation(async (_kind: string, accelerator: string | null) => ({
         state: { accelerator, recording: false, registered: accelerator !== null },
         status: "updated",
       })),
+      subscribeSearchOpen: vi.fn().mockReturnValue(vi.fn()),
     },
     servers: {
       add: vi.fn(),
