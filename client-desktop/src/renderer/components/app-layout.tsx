@@ -1,7 +1,7 @@
 import {
   BriefcaseBusiness,
   CircleUserRound,
-  Globe2,
+  House,
   Loader2Icon,
   LogOut,
   MessageCircleMore,
@@ -150,7 +150,7 @@ function ProductWebsiteLink() {
         target="_blank"
         title={t("nav.website.short")}
       >
-        <Globe2 aria-hidden="true" className="size-4" />
+        <House aria-hidden="true" className="size-4" />
       </a>
     </Button>
   )
