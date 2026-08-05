@@ -146,9 +146,6 @@ const ctas = [
             <a class="button button-secondary" href="https://github.com/chaitin/MagicChat/releases/latest" target="_blank" rel="noopener noreferrer">
               免费安装 <Icon name="tabler:arrow-down" size={17} aria-hidden="true" />
             </a>
-            <a class="inline-flex min-h-12 items-center gap-2 px-3 text-sm font-semibold text-teal-800 transition hover:text-teal-950" href="https://github.com/chaitin/MagicChat" target="_blank" rel="noopener noreferrer">
-              <Icon name="tabler:brand-github-filled" size={18} aria-hidden="true" /> 查看源码
-            </a>
           </div>
         </div>
 
@@ -161,28 +158,32 @@ const ctas = [
               <span class="rail-icon"><Icon name="tabler:layout-kanban" size={16} /></span>
               <span class="rail-avatar">你</span>
             </aside>
-            <aside class="conversation-list" aria-hidden="true">
+            <aside class="conversation-list" aria-label="产品界面场景">
               <strong>协作空间</strong>
               <div class="mock-search"><Icon name="tabler:search" size={12} /> 搜索会话</div>
               <small>置顶会话</small>
-              <div class="conversation active"><span class="avatar ai">AI</span><div><b>办公助手</b><em>有 2 项任务待确认</em></div></div>
-              <div class="conversation"><span class="avatar violet">产</span><div><b>产品研发群</b><em>林夏：范围已确认</em></div></div>
-              <div class="conversation"><span class="avatar coral">设</span><div><b>设计评审</b><em>2 个新文件</em></div></div>
+              <button type="button" class="conversation active" data-scene="0" aria-pressed="true"><span class="avatar ai">AI</span><span><b>AI 助理</b><em>有 2 项任务待确认</em></span></button>
+              <button type="button" class="conversation" data-scene="1" aria-pressed="false"><span class="avatar violet">产</span><span><b>产品研发群</b><em>林夏：范围已确认</em></span></button>
+              <button type="button" class="conversation" data-scene="2" aria-pressed="false"><span class="avatar coral">设</span><span><b>设计评审</b><em>2 个新文件</em></span></button>
             </aside>
-            <section class="chat-panel" aria-hidden="true">
-              <header><div><b>办公 AI 助理</b><small>为你查找信息并执行工作</small></div><span class="online">在线</span></header>
+            <section class="chat-panel" aria-live="polite">
+              <header><div><b data-scene-title>AI 助理</b><small data-scene-subtitle>为你查找信息并执行工作</small></div><span class="online">在线</span></header>
               <div class="message-flow">
-                <div class="message user-message"><div><small>你 · 09:41</small><p>把本周发布讨论里的待办整理出来。</p></div></div>
-                <div class="message assistant-message"><span class="avatar ai">AI</span><div><small>办公助手 · 09:42</small><p>我找到了 3 项待办，其中后两项尚未创建任务。</p></div></div>
+                <div class="message user-message"><div><small data-user-meta>你 · 09:41</small><p data-user-message>把本周发布讨论里的待办整理出来。</p></div></div>
+                <div class="message assistant-message"><span class="avatar ai" data-scene-avatar>AI</span><div><small data-assistant-meta>AI 助理 · 09:42</small><p data-assistant-message>我找到了 3 项待办，其中后两项尚未创建任务。</p></div></div>
                 <div class="task-summary">
-                  <div class="task-heading"><span><Icon name="tabler:file-text" size={13} /> 发布准备</span><b>3 项</b></div>
-                  <div class="task-row"><Icon name="tabler:check" size={12} /> 确认桌面端发布范围 <span>已完成</span></div>
-                  <div class="task-row"><span class="task-open"></span> 补齐更新说明 <span>待创建</span></div>
-                  <div class="task-row"><span class="task-open"></span> 完成多端回归 <span>待创建</span></div>
+                  <div class="task-heading"><span><Icon name="tabler:file-text" size={13} /><span data-task-title>发布准备</span></span><b data-task-count>3 项</b></div>
+                  <div class="task-row"><Icon name="tabler:check" size={12} /><span data-task-name>确认桌面端发布范围</span><span data-task-state>已完成</span></div>
+                  <div class="task-row"><span class="task-open"></span><span data-task-name>补齐更新说明</span><span data-task-state>待创建</span></div>
+                  <div class="task-row"><span class="task-open"></span><span data-task-name>完成多端回归</span><span data-task-state>待创建</span></div>
                 </div>
               </div>
-              <div class="composer">给办公助手发消息… <span><Icon name="tabler:paperclip" size={13} /><Icon name="tabler:microphone" size={13} /><i><Icon name="tabler:send" size={12} /></i></span></div>
+              <div class="composer"><span data-composer-placeholder>给 AI 助理发消息…</span><span><Icon name="tabler:paperclip" size={13} /><Icon name="tabler:microphone" size={13} /><i><Icon name="tabler:send" size={12} /></i></span></div>
             </section>
+            <span class="demo-cursor" aria-hidden="true">
+              <Icon name="tabler:pointer-2" size={23} />
+              <span class="demo-cursor-ring"></span>
+            </span>
           </div>
         </div>
       </div>
@@ -190,16 +191,15 @@ const ctas = [
 
     <section class="bg-white py-24 sm:py-32" id="why">
       <div class="container">
-        <div class="mx-auto mb-14 max-w-3xl text-center reveal">
-          <span class="eyebrow">为什么需要即应</span>
-          <h2 class="mb-6 text-balance text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">AI 已经会回答问题，<br />工作却仍然由人来搬运</h2>
-          <p class="m-0 text-lg leading-8 text-slate-600">真正的办公协作不只有一轮问答。它需要理解持续变化的上下文，找到正确的人，并把讨论推进到有结果。</p>
+        <div class="mb-14 grid items-end gap-7 lg:grid-cols-[1.2fr_0.8fr] reveal">
+          <div><span class="eyebrow">为什么需要即应</span><h2 class="m-0 text-4xl font-bold text-slate-900 sm:text-5xl">AI 已经会回答问题，<br />工作却仍然由人来搬运</h2></div>
+          <p class="m-0 max-w-xl text-base leading-8 text-slate-600 lg:justify-self-end">真正的办公协作不只有一轮问答。它需要理解持续变化的上下文，找到正确的人，并把讨论推进到有结果。</p>
         </div>
         <div class="grid gap-5 md:grid-cols-3">
           {painPoints.map(({ number, title: itemTitle, body, icon }, index) => (
-            <article class="reveal rounded-3xl bg-stone-50 p-7 sm:p-8" style={`--delay: ${index * 70}ms`}>
+            <article class="reveal rounded-lg bg-stone-50 p-7 sm:p-8" style={`--delay: ${index * 70}ms`}>
               <div class="mb-16 flex items-center justify-between text-sm font-semibold text-slate-400"><span>{number}</span><Icon name={icon} size={23} stroke-width={1.8} aria-hidden="true" /></div>
-              <h3 class="mb-3 text-2xl font-semibold tracking-[-0.03em] text-slate-900">{itemTitle}</h3>
+              <h3 class="mb-3 text-2xl font-semibold text-slate-900">{itemTitle}</h3>
               <p class="m-0 text-sm leading-7 text-slate-600">{body}</p>
             </article>
           ))}
@@ -211,25 +211,25 @@ const ctas = [
       <div class="container grid items-center gap-14 lg:grid-cols-[0.8fr_1.2fr]">
         <div class="reveal">
           <span class="eyebrow">即应如何解决</span>
-          <h2 class="mb-6 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">不是再增加一个<br />孤立的 AI 对话框</h2>
+          <h2 class="mb-6 text-4xl font-bold text-slate-900 sm:text-5xl">不是再增加一个<br />孤立的 AI 对话框</h2>
           <p class="mb-7 max-w-xl text-base leading-8 text-slate-600">即应让 AI 以清晰身份进入工作空间，在权限范围内获得必要上下文，并把查询、沟通和执行连接成同一段工作。</p>
           <div class="flex flex-wrap gap-2 text-sm font-semibold text-teal-800">
-            <span class="rounded-full border border-teal-200 bg-white px-4 py-2">独立身份</span>
-            <span class="rounded-full border border-teal-200 bg-white px-4 py-2">明确权限</span>
-            <span class="rounded-full border border-teal-200 bg-white px-4 py-2">写入前确认</span>
+            <span class="rounded border border-teal-200 bg-white px-4 py-2">独立身份</span>
+            <span class="rounded border border-teal-200 bg-white px-4 py-2">明确权限</span>
+            <span class="rounded border border-teal-200 bg-white px-4 py-2">写入前确认</span>
           </div>
         </div>
-        <div class="reveal rounded-[32px] border border-teal-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,118,110,0.10)] sm:p-9">
+        <div class="reveal rounded-lg border border-teal-200 bg-white p-6 sm:p-9">
           <div class="grid gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
             <div class="grid gap-3">
-              <div class="flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><Icon name="tabler:message-circle" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">团队会话</strong><span class="text-xs text-slate-500">消息、文件与讨论</span></div></div>
-              <div class="flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><Icon name="tabler:list-check" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">项目任务</strong><span class="text-xs text-slate-500">负责人、状态与日期</span></div></div>
-              <div class="flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><Icon name="tabler:layout-kanban" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">业务系统</strong><span class="text-xs text-slate-500">通过应用接口和 MCP</span></div></div>
+              <div class="flex items-center gap-3 rounded bg-slate-50 p-4"><Icon name="tabler:message-circle" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">团队会话</strong><span class="text-xs text-slate-500">消息、文件与讨论</span></div></div>
+              <div class="flex items-center gap-3 rounded bg-slate-50 p-4"><Icon name="tabler:list-check" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">项目任务</strong><span class="text-xs text-slate-500">负责人、状态与日期</span></div></div>
+              <div class="flex items-center gap-3 rounded bg-slate-50 p-4"><Icon name="tabler:layout-kanban" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">业务系统</strong><span class="text-xs text-slate-500">通过应用接口和 MCP</span></div></div>
             </div>
             <Icon name="tabler:arrow-right" size={24} class="mx-auto rotate-90 text-teal-500 sm:rotate-0" aria-hidden="true" />
-            <div class="rounded-3xl bg-teal-950 p-6 text-white">
-              <div class="mb-12 flex size-12 items-center justify-center rounded-2xl bg-teal-500"><Icon name="tabler:robot" size={24} /></div>
-              <strong class="mb-2 block text-xl">办公 AI 助理</strong>
+            <div class="rounded-lg bg-teal-950 p-6 text-white">
+              <div class="mb-12 flex size-12 items-center justify-center rounded bg-teal-500"><Icon name="tabler:robot" size={24} /></div>
+              <strong class="mb-2 block text-xl">AI 助理</strong>
               <p class="mb-5 text-sm leading-7 text-teal-100/70">理解上下文，并把工作继续推进。</p>
               <div class="grid grid-cols-2 gap-2 text-center text-xs font-semibold text-teal-50"><span class="rounded-lg bg-white/10 px-2 py-2">查询</span><span class="rounded-lg bg-white/10 px-2 py-2">沟通</span><span class="rounded-lg bg-white/10 px-2 py-2">执行</span><span class="rounded-lg bg-white/10 px-2 py-2">交付</span></div>
             </div>
@@ -241,14 +241,14 @@ const ctas = [
     <section class="bg-white py-24 sm:py-32" id="capabilities">
       <div class="container">
         <div class="mb-14 grid items-end gap-7 lg:grid-cols-[1.2fr_0.8fr] reveal">
-          <div><span class="eyebrow">核心能力</span><h2 class="m-0 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">从理解工作，<br />到实际推进工作</h2></div>
+          <div><span class="eyebrow">核心能力</span><h2 class="m-0 text-4xl font-bold text-slate-900 sm:text-5xl">从理解工作，<br />到实际推进工作</h2></div>
           <p class="m-0 max-w-xl text-base leading-8 text-slate-600 lg:justify-self-end">能力直接发生在团队正在使用的会话、通讯录、项目和任务中，不需要把信息复制到另一个工具。</p>
         </div>
         <div class="grid gap-5 lg:grid-cols-3">
           {capabilities.map(({ number, label, title: itemTitle, body, icon, tone }, index) => (
-            <article class="reveal flex min-h-[360px] flex-col justify-between rounded-3xl border border-slate-200 bg-white p-7 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-8" style={`--delay: ${index * 70}ms`}>
-              <div class="flex items-start justify-between"><span class="text-sm font-semibold text-slate-400">{number} · {label}</span><span class:list={['grid size-12 place-items-center rounded-2xl', tone]}><Icon name={icon} size={23} stroke-width={1.8} aria-hidden="true" /></span></div>
-              <div><h3 class="mb-4 text-2xl font-semibold leading-snug tracking-[-0.03em] text-slate-900">{itemTitle}</h3><p class="m-0 text-sm leading-7 text-slate-600">{body}</p></div>
+            <article class="reveal flex min-h-[360px] flex-col justify-between rounded-lg border border-slate-200 bg-white p-7 transition duration-300 hover:-translate-y-1 sm:p-8" style={`--delay: ${index * 70}ms`}>
+              <div class="flex items-start justify-between"><span class="text-sm font-semibold text-slate-400">{number} · {label}</span><span class:list={['grid size-12 place-items-center rounded', tone]}><Icon name={icon} size={23} stroke-width={1.8} aria-hidden="true" /></span></div>
+              <div><h3 class="mb-4 text-2xl font-semibold leading-snug text-slate-900">{itemTitle}</h3><p class="m-0 text-sm leading-7 text-slate-600">{body}</p></div>
             </article>
           ))}
         </div>
@@ -258,12 +258,12 @@ const ctas = [
     <section class="bg-slate-950 py-24 text-white sm:py-32" id="workflow">
       <div class="container">
         <div class="mb-14 grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-end reveal">
-          <div><span class="mb-4 inline-block text-sm font-semibold text-teal-300">真实工作流</span><h2 class="m-0 text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">一句“整理发布工作”，<br />如何变成清楚的结果</h2></div>
+          <div><span class="mb-4 inline-block text-sm font-semibold text-teal-300">真实工作流</span><h2 class="m-0 text-4xl font-bold text-white sm:text-5xl">一句“整理发布工作”，<br />如何变成清楚的结果</h2></div>
           <p class="m-0 max-w-xl text-base leading-8 text-slate-300 lg:justify-self-end">AI 可以行动，但不会替你越权决定。对象不明确、任务写入或重要变更，都先让你看清再执行。</p>
         </div>
         <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {workflow.map(([number, stepTitle, body], index) => (
-            <article class="reveal rounded-3xl border border-white/10 bg-white/[0.04] p-6" style={`--delay: ${index * 55}ms`}>
+            <article class="reveal rounded-lg border border-white/10 bg-white/[0.04] p-6" style={`--delay: ${index * 55}ms`}>
               <span class="mb-12 block text-sm font-semibold text-teal-300">{number}</span>
               <h3 class="mb-3 text-xl font-semibold text-white">{stepTitle}</h3>
               <p class="m-0 text-sm leading-7 text-slate-400">{body}</p>
@@ -277,10 +277,10 @@ const ctas = [
       <div class="container">
         <div class="mx-auto mb-14 max-w-3xl text-center reveal">
           <span class="eyebrow">同类产品对比</span>
-          <h2 class="mb-6 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">同样是协作入口，<br />即应选择了不同的路径</h2>
+          <h2 class="mb-6 text-4xl font-bold text-slate-900 sm:text-5xl">同样是协作入口，<br />即应选择了不同的路径</h2>
           <p class="m-0 text-base leading-8 text-slate-600">飞书、钉钉、企业微信和 Slack 提供成熟的商业协作生态，Mattermost 与 Rocket.Chat 代表开源团队通讯；即应更专注于让 AI 以明确身份进入团队并持续推进工作。</p>
         </div>
-        <div class="reveal overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div class="reveal overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           <table class="w-full min-w-[1120px] table-fixed border-collapse text-left text-xs sm:text-sm">
             <thead>
               <tr class="border-b border-slate-200">
@@ -309,7 +309,7 @@ const ctas = [
             </tbody>
           </table>
         </div>
-        <p class="mx-auto mt-5 max-w-4xl text-center text-xs leading-6 text-slate-400">对比基于各产品公开定位与常见使用方式整理；“私有化部署”指可部署到企业自有基础设施。具体能力可能随版本、套餐和企业配置变化。</p>
+        <p class="comparison-note mx-auto max-w-4xl text-center text-xs leading-6 text-slate-400">对比基于各产品公开定位与常见使用方式整理；“私有化部署”指可部署到企业自有基础设施。具体能力可能随版本、套餐和企业配置变化。</p>
       </div>
     </section>
 
@@ -317,13 +317,13 @@ const ctas = [
       <div class="container">
         <div class="mx-auto mb-14 max-w-3xl text-center reveal">
           <span class="eyebrow">开始使用</span>
-          <h2 class="mb-6 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">选择适合你的开始方式</h2>
+          <h2 class="mb-6 text-4xl font-bold text-slate-900 sm:text-5xl">选择适合你的开始方式</h2>
           <p class="m-0 text-base leading-8 text-slate-600">先体验产品、直接免费安装，或者从源码开始了解即应。</p>
         </div>
         <div class="grid gap-5 lg:grid-cols-3">
           {ctas.map(({ label, title: itemTitle, body, href, action, icon, primary }, index) => (
-            <article class:list={['reveal flex min-h-[330px] flex-col justify-between rounded-3xl p-7 sm:p-8', primary ? 'bg-teal-950 text-white' : 'border border-slate-200 bg-white text-slate-900']} style={`--delay: ${index * 70}ms`}>
-              <div><span class:list={['mb-8 block text-sm font-semibold', primary ? 'text-teal-300' : 'text-teal-700']}>{label}</span><h3 class:list={['mb-4 text-3xl font-semibold tracking-[-0.03em]', primary ? 'text-white' : 'text-slate-900']}>{itemTitle}</h3><p class:list={['m-0 text-sm leading-7', primary ? 'text-teal-100/70' : 'text-slate-600']}>{body}</p></div>
+            <article class:list={['reveal flex min-h-[330px] flex-col justify-between rounded-lg p-7 sm:p-8', primary ? 'bg-teal-950 text-white' : 'border border-slate-200 bg-white text-slate-900']} style={`--delay: ${index * 70}ms`}>
+              <div><span class:list={['mb-8 block text-sm font-semibold', primary ? 'text-teal-300' : 'text-teal-700']}>{label}</span><h3 class:list={['mb-4 text-3xl font-semibold', primary ? 'text-white' : 'text-slate-900']}>{itemTitle}</h3><p class:list={['m-0 text-sm leading-7', primary ? 'text-teal-100/70' : 'text-slate-600']}>{body}</p></div>
               <a class:list={['mt-10 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold transition', primary ? 'bg-teal-400 text-teal-950 hover:bg-teal-300' : 'border border-teal-600 text-teal-800 hover:bg-teal-50']} href={href} target="_blank" rel="noopener noreferrer">{action}<Icon name={icon} size={17} aria-hidden="true" /></a>
             </article>
           ))}
@@ -334,6 +334,149 @@ const ctas = [
   <SiteFooter />
 
   <script>
+    const productScene = document.querySelector<HTMLElement>('.product-scene');
+    const productWindow = productScene?.querySelector<HTMLElement>('.product-window');
+    const demoCursor = productScene?.querySelector<HTMLElement>('.demo-cursor');
+    const sceneButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-scene]'));
+    const sceneData = [
+      {
+        title: 'AI 助理', subtitle: '为你查找信息并执行工作', avatar: 'AI', avatarTone: 'ai',
+        userMeta: '你 · 09:41', userMessage: '把本周发布讨论里的待办整理出来。',
+        assistantMeta: 'AI 助理 · 09:42', assistantMessage: '我找到了 3 项待办，其中后两项尚未创建任务。',
+        taskTitle: '发布准备', taskCount: '3 项', composer: '给 AI 助理发消息…',
+        tasks: [['确认桌面端发布范围', '已完成'], ['补齐更新说明', '待创建'], ['完成多端回归', '待创建']],
+      },
+      {
+        title: '产品研发群', subtitle: '8 位成员 · 项目发布', avatar: '林', avatarTone: 'violet',
+        userMeta: '你 · 10:16', userMessage: '本周发布范围确认了吗？',
+        assistantMeta: '林夏 · 10:17', assistantMessage: '范围已经确认，桌面端和 Web 端按计划发布。',
+        taskTitle: '发布范围', taskCount: '3 端', composer: '给产品研发群发消息…',
+        tasks: [['桌面端', '已确认'], ['Web 端', '已确认'], ['移动端', '下个版本']],
+      },
+      {
+        title: '设计评审', subtitle: '5 位成员 · 设计协作', avatar: '周', avatarTone: 'coral',
+        userMeta: '你 · 14:28', userMessage: '新版首页还有哪些修改项？',
+        assistantMeta: '周澄 · 14:30', assistantMessage: '评审已完成，我整理了 3 项需要继续跟进的调整。',
+        taskTitle: '设计反馈', taskCount: '3 项', composer: '给设计评审发消息…',
+        tasks: [['统一主色', '已完成'], ['调整标题层级', '进行中'], ['补齐移动端', '待处理']],
+      },
+    ];
+    let activeScene = 0;
+    let sceneTimer: number | undefined;
+    let cursorSettleTimer: number | undefined;
+    let cursorClickTimer: number | undefined;
+
+    const setText = (selector: string, value: string) => {
+      const element = productScene?.querySelector<HTMLElement>(selector);
+      if (element) element.textContent = value;
+    };
+
+    const showScene = (index: number) => {
+      if (!productScene) return;
+      activeScene = index;
+      const scene = sceneData[index];
+      sceneButtons.forEach((button, buttonIndex) => {
+        const selected = buttonIndex === index;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+      productScene.classList.add('scene-changing');
+      window.setTimeout(() => {
+        setText('[data-scene-title]', scene.title);
+        setText('[data-scene-subtitle]', scene.subtitle);
+        setText('[data-user-meta]', scene.userMeta);
+        setText('[data-user-message]', scene.userMessage);
+        setText('[data-assistant-meta]', scene.assistantMeta);
+        setText('[data-assistant-message]', scene.assistantMessage);
+        setText('[data-task-title]', scene.taskTitle);
+        setText('[data-task-count]', scene.taskCount);
+        setText('[data-composer-placeholder]', scene.composer);
+        const avatar = productScene.querySelector<HTMLElement>('[data-scene-avatar]');
+        if (avatar) {
+          avatar.textContent = scene.avatar;
+          avatar.className = `avatar ${scene.avatarTone}`;
+          avatar.dataset.sceneAvatar = '';
+        }
+        const taskNames = productScene.querySelectorAll<HTMLElement>('[data-task-name]');
+        const taskStates = productScene.querySelectorAll<HTMLElement>('[data-task-state]');
+        scene.tasks.forEach(([name, state], taskIndex) => {
+          if (taskNames[taskIndex]) taskNames[taskIndex].textContent = name;
+          if (taskStates[taskIndex]) taskStates[taskIndex].textContent = state;
+        });
+        productScene.classList.remove('scene-changing');
+      }, 70);
+    };
+
+    const clearCursorAnimation = () => {
+      if (cursorSettleTimer !== undefined) window.clearTimeout(cursorSettleTimer);
+      if (cursorClickTimer !== undefined) window.clearTimeout(cursorClickTimer);
+      cursorSettleTimer = undefined;
+      cursorClickTimer = undefined;
+      demoCursor?.classList.remove('clicking');
+      sceneButtons.forEach((button) => button.classList.remove('demo-click'));
+    };
+
+    const positionDemoCursor = (index: number, animate: boolean) => {
+      if (!demoCursor || !productWindow || !sceneButtons[index]) return;
+      const windowRect = productWindow.getBoundingClientRect();
+      const buttonRect = sceneButtons[index].getBoundingClientRect();
+      demoCursor.classList.toggle('cursor-instant', !animate);
+      demoCursor.style.left = `${buttonRect.right - windowRect.left - 19}px`;
+      demoCursor.style.top = `${buttonRect.top - windowRect.top + buttonRect.height / 2 - 6}px`;
+      demoCursor.classList.add('ready');
+      if (!animate) requestAnimationFrame(() => demoCursor.classList.remove('cursor-instant'));
+    };
+
+    const animateSceneChange = (index: number) => {
+      clearCursorAnimation();
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!demoCursor || window.innerWidth <= 680 || reducedMotion) {
+        showScene(index);
+        return;
+      }
+      positionDemoCursor(index, true);
+      cursorSettleTimer = window.setTimeout(() => {
+        demoCursor.classList.add('clicking');
+        sceneButtons[index]?.classList.add('demo-click');
+        showScene(index);
+        cursorClickTimer = window.setTimeout(() => {
+          demoCursor.classList.remove('clicking');
+          sceneButtons[index]?.classList.remove('demo-click');
+        }, 180);
+      }, 380);
+    };
+
+    const stopSceneRotation = () => {
+      if (sceneTimer !== undefined) window.clearInterval(sceneTimer);
+      sceneTimer = undefined;
+      clearCursorAnimation();
+    };
+
+    const startSceneRotation = () => {
+      if (sceneTimer !== undefined) window.clearInterval(sceneTimer);
+      sceneTimer = undefined;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      sceneTimer = window.setInterval(() => animateSceneChange((activeScene + 1) % sceneData.length), 3200);
+    };
+
+    sceneButtons.forEach((button, index) => button.addEventListener('click', () => {
+      clearCursorAnimation();
+      positionDemoCursor(index, false);
+      demoCursor?.classList.add('clicking');
+      button.classList.add('demo-click');
+      showScene(index);
+      cursorClickTimer = window.setTimeout(() => {
+        demoCursor?.classList.remove('clicking');
+        button.classList.remove('demo-click');
+      }, 180);
+      startSceneRotation();
+    }));
+    productScene?.addEventListener('focusin', stopSceneRotation);
+    productScene?.addEventListener('focusout', startSceneRotation);
+    window.addEventListener('resize', () => positionDemoCursor(activeScene, false));
+    requestAnimationFrame(() => positionDemoCursor(activeScene, false));
+    startSceneRotation();
+
     const revealItems = document.querySelectorAll<HTMLElement>('.reveal');
     if (!('IntersectionObserver' in window)) {
       revealItems.forEach((item) => item.classList.add('visible'));
