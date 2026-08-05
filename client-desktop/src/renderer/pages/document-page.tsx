@@ -1,6 +1,6 @@
 import * as React from "react"
 import { HocuspocusProvider, WebSocketStatus } from "@hocuspocus/provider"
-import { FileText, Loader2, Menu, RefreshCw } from "lucide-react"
+import { FileText, Loader2, Menu, RefreshCw, Users } from "lucide-react"
 import { Link, useBlocker, useParams } from "react-router"
 import { toast } from "sonner"
 import * as Y from "yjs"
@@ -29,6 +29,13 @@ import {
 } from "@/lib/document-title-controller"
 import { getClientProject, type ClientProjectDetail } from "@/lib/project-data-api"
 import { useClientData } from "@/lib/client-data-context"
+import {
+  documentPresenceColor,
+  normalizeDocumentPresenceUsers,
+  type DocumentPresenceUser,
+} from "@/lib/document-presence"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 type Loaded = Readonly<{ document: ClientDocument; project: ClientProjectDetail }>
 export function DocumentPage() {
@@ -85,12 +92,43 @@ function DocumentWorkspace({
   project: ClientProjectDetail
 }) {
   const target = useDesktopTarget()
-  const { refreshMe, refreshProjects } = useClientData()
+  const { me, refreshMe, refreshProjects } = useClientData()
+  const collaborationAvatar = me?.avatar ?? document.updatedBy.avatar
+  const collaborationId = me?.id ?? document.updatedBy.id
+  const collaborationName =
+    me?.nickname.trim() ||
+    me?.name.trim() ||
+    document.updatedBy.nickname.trim() ||
+    document.updatedBy.name.trim() ||
+    "当前用户"
+  const collaborationUser = React.useMemo(() => {
+    return {
+      avatar: collaborationAvatar,
+      color: documentPresenceColor(collaborationId),
+      id: collaborationId,
+      name: collaborationName,
+    }
+  }, [collaborationAvatar, collaborationId, collaborationName])
   const [ydoc] = React.useState(() => new Y.Doc())
+  const ydocDestroyTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [bodyController] = React.useState(() => new DocumentBodySyncController())
   const [body, setBody] = React.useState<DocumentBodySyncSnapshot>(bodyController.value)
   const [permissionDenied, setPermissionDenied] = React.useState(false)
+  const [collaborationProvider, setCollaborationProvider] = React.useState<HocuspocusProvider>()
+  const [onlineUsers, setOnlineUsers] = React.useState<DocumentPresenceUser[]>([])
   const [sheetOpen, setSheetOpen] = React.useState(false)
+  const collaborationUserRef = React.useRef(collaborationUser)
+  const collaborationProviderRef = React.useRef<HocuspocusProvider | undefined>(undefined)
+  const publishedCollaborationUserRef = React.useRef<DocumentPresenceUser | undefined>(undefined)
+  const refreshAccountDataRef = React.useRef({ refreshMe, refreshProjects })
+  const publishCollaborationUser = React.useCallback(
+    (provider: HocuspocusProvider, user: DocumentPresenceUser) => {
+      if (publishedCollaborationUserRef.current === user) return
+      provider.setAwarenessField("user", user)
+      publishedCollaborationUserRef.current = user
+    },
+    [],
+  )
   const titleController = React.useMemo(
     () =>
       new DocumentTitleController(document.title, (title) =>
@@ -114,6 +152,19 @@ function DocumentWorkspace({
 
   React.useEffect(() => titleController.subscribe(setTitle), [titleController])
   React.useEffect(() => () => titleController.destroy(), [titleController])
+  React.useEffect(() => {
+    refreshAccountDataRef.current = { refreshMe, refreshProjects }
+  }, [refreshMe, refreshProjects])
+  React.useEffect(() => {
+    collaborationUserRef.current = collaborationUser
+  }, [collaborationUser])
+  React.useEffect(() => {
+    if (ydocDestroyTimer.current) clearTimeout(ydocDestroyTimer.current)
+    return () => {
+      // 延迟到下一任务，避免 React StrictMode 的 Effect 重放提前销毁仍将复用的 Y.Doc。
+      ydocDestroyTimer.current = setTimeout(() => ydoc.destroy(), 0)
+    }
+  }, [ydoc])
 
   React.useEffect(() => {
     let active = true
@@ -135,7 +186,11 @@ function DocumentWorkspace({
       stopCollaboration()
       setPermissionDenied(true)
       setBody(bodyController.failed())
-      void Promise.allSettled([refreshProjects(), refreshMe()])
+      const refreshAccountData = refreshAccountDataRef.current
+      void Promise.allSettled([
+        refreshAccountData.refreshProjects(),
+        refreshAccountData.refreshMe(),
+      ])
     }
     const websocketProvider = new DocumentCollaborationProviderWebsocket({
       WebSocketPolyfill: createDocumentWebSocketPolyfill(target, document.id),
@@ -145,6 +200,9 @@ function DocumentWorkspace({
     const provider = new HocuspocusProvider({
       document: ydoc,
       name: document.id,
+      onAwarenessChange: ({ states }) => {
+        if (active) setOnlineUsers(normalizeDocumentPresenceUsers(states, collaborationId))
+      },
       onAuthenticationFailed: handlePermissionDenied,
       onClose: ({ event }) => {
         if (event.code === 4403) handlePermissionDenied()
@@ -173,6 +231,10 @@ function DocumentWorkspace({
       websocketProvider,
     })
     collaboration.provider = provider
+    collaborationProviderRef.current = provider
+    publishedCollaborationUserRef.current = undefined
+    publishCollaborationUser(provider, collaborationUserRef.current)
+    setCollaborationProvider(provider)
     // 注入共享 WebSocket 后 Provider 不会自动绑定事件，必须显式 attach 才会开始认证和同步。
     provider.attach()
     const sharedTitle = ydoc.getText("title")
@@ -183,11 +245,29 @@ function DocumentWorkspace({
     sharedTitle.observe(observeTitle)
     return () => {
       active = false
+      if (collaborationProviderRef.current === provider) {
+        collaborationProviderRef.current = undefined
+        publishedCollaborationUserRef.current = undefined
+      }
+      setCollaborationProvider((current) => (current === provider ? undefined : current))
+      setOnlineUsers([])
       sharedTitle.unobserve(observeTitle)
       stopCollaboration()
-      ydoc.destroy()
     }
-  }, [bodyController, document.id, refreshMe, refreshProjects, target, titleController, ydoc])
+  }, [
+    bodyController,
+    collaborationId,
+    document.id,
+    publishCollaborationUser,
+    target,
+    titleController,
+    ydoc,
+  ])
+
+  React.useEffect(() => {
+    const provider = collaborationProviderRef.current
+    if (provider) publishCollaborationUser(provider, collaborationUser)
+  }, [collaborationUser, publishCollaborationUser])
 
   React.useEffect(() => {
     if (blocker.state !== "blocked") return
@@ -297,18 +377,83 @@ function DocumentWorkspace({
               <RefreshCw />
             </Button>
           )}
+          <DocumentOnlineUsers users={onlineUsers} />
         </header>
-        <DocumentEditor
-          collaborationDocument={ydoc}
-          onTitleBlur={saveTitle}
-          onTitleChange={(value) => {
-            editVersion.current += 1
-            titleController.change(value)
-          }}
-          title={title.input}
-        />
+        {collaborationProvider ? (
+          <DocumentEditor
+            collaborationDocument={ydoc}
+            collaborationProvider={collaborationProvider}
+            collaborationUser={collaborationUser}
+            onTitleBlur={saveTitle}
+            onTitleChange={(value) => {
+              editVersion.current += 1
+              titleController.change(value)
+            }}
+            title={title.input}
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            正在连接协作文档
+          </div>
+        )}
       </section>
     </main>
+  )
+}
+
+function DocumentOnlineUsers({ users }: { users: readonly DocumentPresenceUser[] }) {
+  if (users.length === 0) return null
+  const visible = users.slice(0, 5)
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label={`查看 ${users.length} 位在线成员`}
+          className="shrink-0"
+          size="sm"
+          variant="ghost"
+        >
+          <div className="flex -space-x-2">
+            {visible.map((user) => (
+              <PresenceAvatar key={user.id} user={user} />
+            ))}
+          </div>
+          {users.length > visible.length && <span>+{users.length - visible.length}</span>}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="max-h-[min(24rem,calc(100vh-2rem))] w-72 overflow-y-auto"
+      >
+        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+          <Users className="size-4" />
+          在线成员（{users.length}）
+        </div>
+        <div className="grid gap-1">
+          {users.map((user) => (
+            <div className="flex min-w-0 items-center gap-2 rounded-sm px-1 py-1.5" key={user.id}>
+              <PresenceAvatar user={user} />
+              <span className="overflow-wrap-anywhere min-w-0 text-sm">{user.name}</span>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function PresenceAvatar({ user }: { user: DocumentPresenceUser }) {
+  return (
+    <Avatar
+      aria-label={user.name}
+      className="size-7 border-2 border-background"
+      role="img"
+      style={{ outline: `2px solid ${user.color}`, outlineOffset: "-1px" }}
+    >
+      {user.avatar && <AvatarImage alt={user.name} src={user.avatar} />}
+      <AvatarFallback>{Array.from(user.name)[0] ?? "?"}</AvatarFallback>
+    </Avatar>
   )
 }
 
@@ -340,7 +485,7 @@ function DocumentUnavailable({
         <div className="flex justify-center gap-2">
           {projectId && (
             <Button asChild variant="outline">
-              <Link to={`/projects/${encodeURIComponent(projectId)}`}>返回项目</Link>
+              <Link to={`/projects/${encodeURIComponent(projectId)}/documents`}>返回项目</Link>
             </Button>
           )}
           {onRetry && <Button onClick={onRetry}>重试</Button>}
