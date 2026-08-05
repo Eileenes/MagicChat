@@ -36,8 +36,11 @@ func TestHTTPDocumentCRUDLifecycle(t *testing.T) {
 		t.Fatalf("create document status = %d, body = %#v", response.StatusCode, body)
 	}
 	document := requireDocumentResponseData(t, body)
-	if document["document_type"] != "document" || document["parent_id"] != folder["id"] {
+	if document["document_type"] != "document" || document["parent_id"] != folder["id"] || document["contributor_count"] != float64(1) {
 		t.Fatalf("document = %#v", document)
+	}
+	if contributors, ok := document["contributors"].([]any); !ok || len(contributors) != 1 {
+		t.Fatalf("contributors = %#v", document["contributors"])
 	}
 
 	response, body = getJSON(t, server, collectionPath, cookie)

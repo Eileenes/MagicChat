@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
-import { Alert } from "react-native"
+import { useToastController } from "tamagui"
 
+import type { AppToastTone } from "@/components/feedback/app-toast"
 import {
   hasNewAppVersion,
   type AppRelease,
@@ -16,6 +17,7 @@ import {
 } from "@/features/updates/app-update-service"
 
 export function useAppUpdate() {
+  const toast = useToastController()
   const installedVersion = getInstalledAppVersion()
   const platform = getMobileUpdatePlatform()
   const activeDownloadRef = useRef<AndroidUpdateDownload | null>(null)
@@ -48,19 +50,19 @@ export function useAppUpdate() {
 
       if (!hasNewAppVersion(installedVersion.build, latestRelease)) {
         setStatus("idle")
-        Alert.alert(
-          "检查更新",
-          `当前版本 ${installedVersion.version} 已是最新版本。`
-        )
+        toast.show("已是最新版本", {
+          customData: { tone: "success" satisfies AppToastTone },
+          message: `当前版本 ${installedVersion.version}`,
+        })
         return
       }
 
       if (platform === "ios") {
         setStatus("idle")
-        Alert.alert(
-          "发现新版本",
-          `当前版本 ${installedVersion.version}，最新版本 ${latestRelease.version}。`
-        )
+        toast.show("发现新版本", {
+          customData: { tone: "success" satisfies AppToastTone },
+          message: `当前版本 ${installedVersion.version}，最新版本 ${latestRelease.version}`,
+        })
         return
       }
 
@@ -69,7 +71,11 @@ export function useAppUpdate() {
     } catch (error: unknown) {
       if (operation !== operationRef.current) return
       setStatus("idle")
-      Alert.alert("检查更新失败", getUpdateErrorMessage(error))
+      toast.show("检查更新失败", {
+        customData: { tone: "error" satisfies AppToastTone },
+        duration: 4000,
+        message: getUpdateErrorMessage(error),
+      })
     }
   }
 
@@ -101,7 +107,11 @@ export function useAppUpdate() {
       activeDownloadRef.current = null
       setRelease(null)
       setStatus("idle")
-      Alert.alert("更新失败", getUpdateErrorMessage(error))
+      toast.show("更新失败", {
+        customData: { tone: "error" satisfies AppToastTone },
+        duration: 4000,
+        message: getUpdateErrorMessage(error),
+      })
     }
   }
 

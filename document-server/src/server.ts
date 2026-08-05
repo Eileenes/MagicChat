@@ -11,10 +11,12 @@ import {
   type DocumentConnectionContext,
 } from "./auth.js";
 import type { DocumentServerConfig } from "./config.js";
+import { ContributorTracker } from "./contributor-tracker.js";
 import { assertDocumentName } from "./document-name.js";
 import { DocumentStore, normalizeTitle } from "./document-store.js";
 import { assertAllowedOrigin } from "./http-security.js";
 import { PersistenceRetry, withTimeout } from "./persistence-retry.js";
+import { rewriteAuthenticatedPresence } from "./presence.js";
 
 export type RunningDocumentServer = {
   close: () => Promise<void>;
@@ -31,6 +33,7 @@ export function createDocumentServer(
     query_timeout: config.databaseConnectionTimeoutMs,
   });
   const store = new DocumentStore(pool);
+  const contributorTracker = new ContributorTracker();
   const authorizer = new DocumentAuthorizer(pool);
   const persistenceRetry = new PersistenceRetry({
     initialDelayMs: config.persistenceRetryInitialMs,
@@ -56,17 +59,33 @@ export function createDocumentServer(
     extensions: [
       new Database({
         fetch: ({ documentName }) => store.fetch(documentName),
-        store: ({ document, documentName, lastContext, state }) =>
-          persistenceRetry.run(() =>
+        store: ({ document, documentName, lastContext, state }) => {
+          const contributorUserIds = contributorTracker.take(
+            documentName,
+            lastContext?.userId,
+          );
+          return persistenceRetry.run(() =>
             store.store(
               documentName,
               state,
               document.getText("title").toString(),
               lastContext?.userId,
+              contributorUserIds,
             ),
-          ),
+          );
+        },
       }),
     ],
+    onChange: async ({ context, documentName }) => {
+      contributorTracker.record(documentName, context?.userId);
+    },
+    beforeHandleAwareness: async ({ context, states }) => {
+      if (!context) {
+        states.clear();
+        return;
+      }
+      rewriteAuthenticatedPresence(states, context);
+    },
     onUpgrade: async ({ request, socket }) => {
       try {
         assertAllowedOrigin(request.headers, config.allowedOrigins);

@@ -4,7 +4,7 @@ import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 
 const title = '隐私说明｜即应';
-const description = '了解即应官网收集哪些匿名访问数据，以及如何管理分析授权。';
+const description = '了解即应官网通过 Google Analytics 4 收集和处理哪些匿名访问数据。';
 ---
 
 <BaseLayout title={title} description={description} pathname="/privacy/" type="article">
@@ -16,13 +16,10 @@ const description = '了解即应官网收集哪些匿名访问数据，以及�
       <p class="legal-lead">本说明仅适用于即应官网的访问分析，不涵盖即应产品内的账号、消息或企业数据处理。</p>
 
       <h2>我们收集什么</h2>
-      <p>在你主动允许后，官网会通过 Google Analytics 4 收集匿名化的页面访问、设备类型、来源渠道和基础交互数据，用于了解页面表现并改进内容。官网不会通过这项分析收集你在即应产品中的消息、任务或文件。</p>
-
-      <h2>你的选择</h2>
-      <p>首次访问时，你可以选择“允许分析”或“暂不启用”。选择会保存在当前浏览器的本地存储中。清除站点数据后，官网会再次询问。</p>
+      <p>官网通过 Google Analytics 4 收集页面访问、设备类型、来源渠道和基础交互数据，用于了解页面表现并改进内容。官网不会通过这项分析收集你在即应产品中的消息、任务或文件。</p>
 
       <h2>第三方服务</h2>
-      <p>当分析功能启用时，相关数据由 Google Analytics 处理。Google 可能根据其服务条款处理技术信息。我们已启用匿名化配置，并在获得授权前将分析存储设为拒绝。</p>
+      <p>相关访问数据由 Google Analytics 处理，Google 可能根据其服务条款处理设备与网络等技术信息。你可以通过浏览器的隐私设置或内容拦截工具限制这类分析请求。</p>
 
       <p class="legal-updated">更新日期：2026 年 7 月 30 日</p>
     </article>

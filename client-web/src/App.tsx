@@ -14,7 +14,15 @@ import { ChatPage } from "@/pages/chat-page"
 import { ContactsPage } from "@/pages/contacts-page"
 import { DocumentPage } from "@/pages/document-page"
 import { LoginPage } from "@/pages/login-page"
-import { ProjectsPage } from "@/pages/projects-page"
+import { ProjectDefaultRedirect } from "@/pages/projects/project-default-redirect"
+import { ProjectDetailLayout } from "@/pages/projects/project-detail-layout"
+import { ProjectDiscussionsPage } from "@/pages/projects/project-discussions-page"
+import { ProjectDocumentsPage } from "@/pages/projects/project-documents-page"
+import { ProjectEmptyPage } from "@/pages/projects/project-empty-page"
+import { ProjectGoalsPage } from "@/pages/projects/project-goals-page"
+import { ProjectsLayout } from "@/pages/projects/projects-layout"
+import { ProjectMembersPage } from "@/pages/projects/project-members-page"
+import { ProjectTasksPage } from "@/pages/projects/project-tasks-page"
 
 export function App() {
   return (
@@ -78,14 +86,25 @@ export function App() {
             }
           />
           <Route
-            path="/projects/:projectId?"
+            path="/projects"
             element={
               <>
                 <ClientDocumentTitle title="项目" />
-                <ProjectsPage />
+                <ProjectsLayout />
               </>
             }
-          />
+          >
+            <Route index element={<ProjectEmptyPage />} />
+            <Route path=":projectId" element={<ProjectDetailLayout />}>
+              <Route index element={<ProjectDefaultRedirect />} />
+              <Route path="tasks" element={<ProjectTasksPage />} />
+              <Route path="goals" element={<ProjectGoalsPage />} />
+              <Route path="discussions" element={<ProjectDiscussionsPage />} />
+              <Route path="documents" element={<ProjectDocumentsPage />} />
+              <Route path="members" element={<ProjectMembersPage />} />
+              <Route path="*" element={<ProjectDefaultRedirect />} />
+            </Route>
+          </Route>
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

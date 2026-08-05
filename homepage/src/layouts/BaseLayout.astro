@@ -23,8 +23,8 @@ const siteOrigin = Astro.site ?? Astro.url.origin;
 const baseUrl = new URL(import.meta.env.BASE_URL, siteOrigin);
 const canonical = new URL(pathname.replace(/^\//, ''), baseUrl);
 const socialImage = new URL(image.replace(/^\//, ''), baseUrl);
-const gaId = import.meta.env.PUBLIC_GA_ID?.trim();
-const hasValidGaId = Boolean(gaId && /^G-[A-Z0-9]+$/.test(gaId));
+const gaId = import.meta.env.PUBLIC_GA_ID?.trim() || 'G-BW65KYSTXM';
+const hasValidGaId = /^G-[A-Z0-9]+$/.test(gaId);
 ---
 
 <!doctype html>
@@ -64,51 +64,15 @@ const hasValidGaId = Boolean(gaId && /^G-[A-Z0-9]+$/.test(gaId));
         <script is:inline define:vars={{ gaId }}>
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
-          window.gtag = gtag;
-          gtag('consent', 'default', { analytics_storage: 'denied' });
-          if (localStorage.getItem('jiying-analytics-consent') === 'granted') {
-            gtag('consent', 'update', { analytics_storage: 'granted' });
-          }
           gtag('js', new Date());
-          gtag('config', gaId, { anonymize_ip: true });
+          gtag('config', gaId);
         </script>
         <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} />
       </>
     )}
   </head>
-  <body data-ga-enabled={hasValidGaId ? 'true' : 'false'}>
+  <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <slot />
-
-    {hasValidGaId && (
-      <aside class="consent" data-consent hidden aria-label="网站分析设置">
-        <p>我们使用匿名访问数据改进即应官网。你可以接受或暂不启用。</p>
-        <div>
-          <button type="button" class="button button-secondary button-compact" data-consent-reject>暂不启用</button>
-          <button type="button" class="button button-primary button-compact" data-consent-accept>允许分析</button>
-        </div>
-      </aside>
-    )}
-
-    {hasValidGaId && (
-      <script is:inline>
-        (() => {
-          const consent = document.querySelector('[data-consent]');
-          if (!consent || localStorage.getItem('jiying-analytics-consent')) return;
-          consent.hidden = false;
-
-          const save = (value) => {
-            localStorage.setItem('jiying-analytics-consent', value);
-            if (value === 'granted' && window.gtag) {
-              window.gtag('consent', 'update', { analytics_storage: 'granted' });
-            }
-            consent.hidden = true;
-          };
-
-          consent.querySelector('[data-consent-accept]')?.addEventListener('click', () => save('granted'));
-          consent.querySelector('[data-consent-reject]')?.addEventListener('click', () => save('denied'));
-        })();
-      </script>
-    )}
   </body>
 </html>

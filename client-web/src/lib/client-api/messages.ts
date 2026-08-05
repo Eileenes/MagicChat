@@ -816,6 +816,10 @@ export async function revokeConversationMessage(
   }
 }
 
+export function invalidateTemporaryFileReadURLCache(fileIds: string[]) {
+  for (const fileId of fileIds) temporaryFileReadURLCache.delete(fileId)
+}
+
 export async function readTemporaryFileURLs(
   fileIds: string[],
   fetcher: ClientDataFetch = fetch

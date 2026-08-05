@@ -8,6 +8,14 @@ import * as Y from "yjs"
 import { ClientDocumentTitle } from "@/components/client-document-title"
 import { DocumentEditor } from "@/components/documents/document-editor"
 import { DocumentWorkspaceSidebar } from "@/components/documents/document-workspace-sidebar"
+import {
+  Avatar,
+  AvatarBadge,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+  AvatarImage,
+} from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -16,10 +24,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { getCurrentClientUser, type ClientUser } from "@/lib/client-data-api"
+import {
   getClientDocument,
   updateCollaborativeDocumentTitle,
   type ClientDocument,
 } from "@/lib/document-data-api"
+import {
+  documentPresenceColor,
+  normalizeDocumentPresenceUsers,
+  type DocumentPresenceUser,
+} from "@/lib/document-presence"
 import {
   getClientProject,
   type ClientProjectDetail,
@@ -28,6 +47,7 @@ import {
 type BodySyncState = "connecting" | "failed" | "saved" | "saving"
 
 type LoadedDocumentState = {
+  currentUser: ClientUser
   document: ClientDocument
   documentId: string
   project: ClientProjectDetail
@@ -53,9 +73,13 @@ export function DocumentPage() {
         ) {
           throw new Error("该节点不是可编辑文档")
         }
-        const nextProject = await getClientProject(nextDocument.projectId)
+        const [nextProject, currentUser] = await Promise.all([
+          getClientProject(nextDocument.projectId),
+          getCurrentClientUser(),
+        ])
         if (!cancelled) {
           setLoaded({
+            currentUser,
             document: nextDocument,
             documentId: requestedDocumentId,
             project: nextProject,
@@ -87,6 +111,7 @@ export function DocumentPage() {
 
   return (
     <DocumentWorkspace
+      currentUser={loaded.currentUser}
       documentId={loaded.document.id}
       initialTitle={loaded.document.title}
       key={loaded.document.id}
@@ -97,17 +122,33 @@ export function DocumentPage() {
 }
 
 function DocumentWorkspace({
+  currentUser,
   documentId,
   initialTitle,
   projectId,
   projectName,
 }: {
+  currentUser: ClientUser
   documentId: string
   initialTitle: string
   projectId: string
   projectName: string
 }) {
   const [collaborationDocument] = React.useState(() => new Y.Doc())
+  const [collaborationProvider, setCollaborationProvider] =
+    React.useState<HocuspocusProvider | null>(null)
+  const [onlineUsers, setOnlineUsers] = React.useState<DocumentPresenceUser[]>(
+    []
+  )
+  const collaborationUser = React.useMemo<DocumentPresenceUser>(
+    () => ({
+      avatar: currentUser.avatar,
+      color: documentPresenceColor(currentUser.id),
+      id: currentUser.id,
+      name: currentUser.nickname || currentUser.name,
+    }),
+    [currentUser.avatar, currentUser.id, currentUser.name, currentUser.nickname]
+  )
   const [bodySyncState, setBodySyncState] =
     React.useState<BodySyncState>("connecting")
   const [title, setTitle] = React.useState(initialTitle)
@@ -191,6 +232,10 @@ function DocumentWorkspace({
     const provider = new HocuspocusProvider({
       document: collaborationDocument,
       name: documentId,
+      onAwarenessChange: ({ states }) => {
+        if (!active) return
+        setOnlineUsers(normalizeDocumentPresenceUsers(states, currentUser.id))
+      },
       onAuthenticationFailed: () => {
         if (!active) return
         setBodySyncState("failed")
@@ -225,12 +270,18 @@ function DocumentWorkspace({
       token: "session-cookie",
       url: collaborationWebSocketURL(),
     })
+    provider.setAwarenessField("user", collaborationUser)
+    setCollaborationProvider(provider)
 
     return () => {
       active = false
+      setCollaborationProvider((current) =>
+        current === provider ? null : current
+      )
+      setOnlineUsers([])
       provider.destroy()
     }
-  }, [collaborationDocument, documentId])
+  }, [collaborationDocument, collaborationUser, currentUser.id, documentId])
 
   React.useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
@@ -288,6 +339,7 @@ function DocumentWorkspace({
             placeholder="无标题文档"
             value={title}
           />
+          <DocumentPresence users={onlineUsers} />
           <span className="hidden shrink-0 text-xs text-muted-foreground xl:inline">
             {titleSaveState === "saving"
               ? "正在保存标题"
@@ -327,15 +379,90 @@ function DocumentWorkspace({
             </DropdownMenuContent>
           </DropdownMenu>
         </header>
-        <DocumentEditor
-          collaborationDocument={collaborationDocument}
-          onTitleBlur={() => void saveTitle()}
-          onTitleChange={handleTitleChange}
-          title={title}
-        />
+        {collaborationProvider ? (
+          <DocumentEditor
+            collaborationDocument={collaborationDocument}
+            collaborationProvider={collaborationProvider}
+            collaborationUser={collaborationUser}
+            onTitleBlur={() => void saveTitle()}
+            onTitleChange={handleTitleChange}
+            title={title}
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            正在连接协作文档
+          </div>
+        )}
       </section>
     </main>
   )
+}
+
+function DocumentPresence({ users }: { users: DocumentPresenceUser[] }) {
+  if (users.length === 0) return null
+  const maximumVisibleUsers = 5
+  const visibleUsers = users.slice(0, maximumVisibleUsers)
+  const hiddenCount = Math.max(users.length - visibleUsers.length, 0)
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          aria-label={`${users.length} 人正在查看文档`}
+          className="flex shrink-0 items-center gap-2 rounded-md focus-visible:ring-2 focus-visible:outline-none"
+          type="button"
+        >
+          <AvatarGroup>
+            {visibleUsers.map((user) => (
+              <Avatar key={user.id} size="sm" title={`${user.name} 正在查看`}>
+                <AvatarImage alt={user.name} src={user.avatar} />
+                <AvatarFallback>{getPresenceInitial(user.name)}</AvatarFallback>
+                <AvatarBadge className="bg-emerald-500" />
+              </Avatar>
+            ))}
+            {hiddenCount > 0 && (
+              <AvatarGroupCount className="text-[10px]">
+                +{hiddenCount}
+              </AvatarGroupCount>
+            )}
+          </AvatarGroup>
+          <span className="hidden text-xs whitespace-nowrap text-muted-foreground 2xl:inline">
+            {users.length} 人正在查看
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-2">
+        <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+          正在查看 · {users.length} 人
+        </p>
+        <div className="max-h-72 overflow-y-auto">
+          {users.map((user) => (
+            <div
+              className="flex items-center gap-2 rounded-md px-2 py-1.5"
+              key={user.id}
+            >
+              <Avatar size="sm">
+                <AvatarImage alt={user.name} src={user.avatar} />
+                <AvatarFallback>{getPresenceInitial(user.name)}</AvatarFallback>
+                <AvatarBadge className="bg-emerald-500" />
+              </Avatar>
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {user.name}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                在线
+              </span>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function getPresenceInitial(name: string) {
+  return Array.from(name.trim())[0]?.toUpperCase() ?? "?"
 }
 
 function collaborationWebSocketURL() {

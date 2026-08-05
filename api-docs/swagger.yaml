@@ -926,6 +926,12 @@ definitions:
     type: object
   client.documentResponse:
     properties:
+      contributor_count:
+        type: integer
+      contributors:
+        items:
+          $ref: '#/definitions/client.projectUserResponse'
+        type: array
       created_at:
         type: string
       creator:

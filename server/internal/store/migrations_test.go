@@ -43,6 +43,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00028_add_message_search_indexes.sql",
 		"00029_add_group_announcements.sql",
 		"00030_add_documents.sql",
+		"00031_add_document_contributors.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -77,6 +78,27 @@ func TestDocumentsMigrationDefinesBusinessAndYjsStateTables(t *testing.T) {
 	} {
 		if !strings.Contains(sql, required) {
 			t.Fatalf("documents migration missing %q", required)
+		}
+	}
+}
+
+func TestDocumentContributorsMigration(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00031_add_document_contributors.sql")
+	if err != nil {
+		t.Fatalf("read document contributors migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"create table document_contributors",
+		"document_id uuid not null references documents(id) on delete cascade",
+		"user_id uuid not null references users(id) on delete restrict",
+		"primary key (document_id, user_id)",
+		"insert into document_contributors",
+		"select id, updated_by_user_id, updated_at, updated_at from documents",
+		"drop table document_contributors",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("document contributors migration missing %q", required)
 		}
 	}
 }

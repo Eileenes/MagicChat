@@ -308,23 +308,32 @@ type ProjectGroup struct {
 }
 
 type Document struct {
-	ID              string    `gorm:"type:uuid;primaryKey"`
-	ProjectID       string    `gorm:"type:uuid;not null;index"`
-	Project         Project   `gorm:"constraint:OnDelete:CASCADE;"`
-	ParentID        *string   `gorm:"type:uuid;index"`
-	Parent          *Document `gorm:"foreignKey:ParentID;constraint:OnDelete:CASCADE;"`
-	Kind            string    `gorm:"size:32;not null"`
-	DocumentType    *string   `gorm:"size:32"`
-	Title           string    `gorm:"size:500;not null;default:无标题文档"`
-	SortOrder       int64     `gorm:"not null;default:0"`
-	SchemaVersion   int       `gorm:"not null;default:1"`
-	CreatedByUserID string    `gorm:"type:uuid;not null"`
-	CreatedByUser   User      `gorm:"foreignKey:CreatedByUserID;constraint:OnDelete:RESTRICT;"`
-	UpdatedByUserID string    `gorm:"type:uuid;not null"`
-	UpdatedByUser   User      `gorm:"foreignKey:UpdatedByUserID;constraint:OnDelete:RESTRICT;"`
-	CreatedAt       time.Time `gorm:"not null"`
-	UpdatedAt       time.Time `gorm:"not null"`
+	ID              string                `gorm:"type:uuid;primaryKey"`
+	ProjectID       string                `gorm:"type:uuid;not null;index"`
+	Project         Project               `gorm:"constraint:OnDelete:CASCADE;"`
+	ParentID        *string               `gorm:"type:uuid;index"`
+	Parent          *Document             `gorm:"foreignKey:ParentID;constraint:OnDelete:CASCADE;"`
+	Kind            string                `gorm:"size:32;not null"`
+	DocumentType    *string               `gorm:"size:32"`
+	Title           string                `gorm:"size:500;not null;default:无标题文档"`
+	SortOrder       int64                 `gorm:"not null;default:0"`
+	SchemaVersion   int                   `gorm:"not null;default:1"`
+	CreatedByUserID string                `gorm:"type:uuid;not null"`
+	CreatedByUser   User                  `gorm:"foreignKey:CreatedByUserID;constraint:OnDelete:RESTRICT;"`
+	UpdatedByUserID string                `gorm:"type:uuid;not null"`
+	UpdatedByUser   User                  `gorm:"foreignKey:UpdatedByUserID;constraint:OnDelete:RESTRICT;"`
+	Contributors    []DocumentContributor `gorm:"foreignKey:DocumentID"`
+	CreatedAt       time.Time             `gorm:"not null"`
+	UpdatedAt       time.Time             `gorm:"not null"`
 	DeletedAt       gorm.DeletedAt
+}
+
+type DocumentContributor struct {
+	DocumentID    string    `gorm:"type:uuid;primaryKey"`
+	UserID        string    `gorm:"type:uuid;primaryKey"`
+	User          User      `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT;"`
+	FirstEditedAt time.Time `gorm:"not null"`
+	LastEditedAt  time.Time `gorm:"not null;index"`
 }
 
 type DocumentCollabState struct {

@@ -17,7 +17,6 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  GripVertical,
   Loader2,
   Pencil,
   Plus,
@@ -69,7 +68,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { getDirectorySelectionPath } from "@/components/contacts/contact-directory"
-import { formatActivityTime } from "@/lib/activity-time"
+import { formatDocumentModifiedTime } from "@/lib/activity-time"
 import {
   createClientDocument,
   deleteClientDocument,
@@ -430,11 +429,15 @@ function DocumentToolbar({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => onCreate("document")}>
-            <FileText />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300">
+              <FileText className="size-4 text-sky-600 dark:text-sky-300" />
+            </span>
             新建文档
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => onCreate("folder")}>
-            <FolderPlus />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300">
+              <FolderPlus className="size-4 text-amber-600 dark:text-amber-300" />
+            </span>
             新建目录
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -592,7 +595,6 @@ function DocumentTreeRow({
     attributes,
     isDragging,
     listeners,
-    setActivatorNodeRef,
     setNodeRef: setDragRef,
   } = useDraggable({ disabled: draggingDisabled, id: node.id })
   const { isOver, setNodeRef: setDropRef } = useDroppable({
@@ -615,14 +617,16 @@ function DocumentTreeRow({
     node.kind === "folder" ? (open ? FolderOpen : Folder) : FileText
   const name = (
     <>
-      <NodeIcon
+      <span
         className={cn(
-          "size-5 shrink-0",
+          "flex size-8 shrink-0 items-center justify-center rounded-md",
           node.kind === "folder"
-            ? "text-amber-600 dark:text-amber-300"
-            : "text-sky-600 dark:text-sky-300"
+            ? "bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300"
+            : "bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300"
         )}
-      />
+      >
+        <NodeIcon className="size-5" />
+      </span>
       <span
         className={cn(
           "min-w-0 truncate font-medium transition-colors",
@@ -637,34 +641,29 @@ function DocumentTreeRow({
   return (
     <div
       ref={setRowRef}
+      {...attributes}
+      {...listeners}
       aria-expanded={node.kind === "folder" ? open : undefined}
       aria-level={depth + 1}
       className={cn(
-        "group grid min-h-11 touch-pan-y grid-cols-[minmax(20rem,1fr)_20rem] items-center text-sm transition-colors select-none hover:bg-muted/50",
-        "cursor-default",
+        "group flex min-h-11 w-full touch-pan-y items-center text-sm transition-colors select-none hover:bg-muted/50",
+        draggingDisabled
+          ? "cursor-default"
+          : "cursor-grab active:cursor-grabbing",
         isDragging && "bg-muted/40 opacity-40",
         isOver &&
           "bg-sky-50 ring-1 ring-sky-300 ring-inset dark:bg-sky-950/30 dark:ring-sky-700"
       )}
       role="treeitem"
     >
-      <div className="group/name flex min-w-0 cursor-pointer items-center pr-4 pl-2">
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          aria-label={`拖动${node.title}`}
-          className="mr-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-sm text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-muted-foreground focus-visible:opacity-100 focus-visible:ring-2 active:cursor-grabbing disabled:cursor-default"
-          disabled={draggingDisabled}
-          onClick={(event) => event.preventDefault()}
-          type="button"
-        >
-          <GripVertical className="size-4" />
-        </button>
+      <div className="group/name flex min-w-80 flex-[2] items-center self-stretch">
         {node.kind === "folder" ? (
           <CollapsibleTrigger asChild>
             <button
-              className="flex max-w-full cursor-pointer items-center gap-2 rounded-sm text-left focus-visible:ring-2"
+              className="flex h-full max-w-full cursor-pointer items-center gap-2 rounded-sm px-4 text-left focus-visible:ring-2"
+              onMouseDown={stopDocumentDragActivation}
+              onPointerDown={stopDocumentDragActivation}
+              onTouchStart={stopDocumentDragActivation}
               style={{ marginLeft: depth * 24 }}
               type="button"
             >
@@ -673,8 +672,11 @@ function DocumentTreeRow({
           </CollapsibleTrigger>
         ) : (
           <Link
-            className="flex max-w-full items-center gap-2 rounded-sm text-left focus-visible:ring-2"
+            className="flex h-full max-w-full cursor-pointer items-center gap-2 rounded-sm px-4 text-left focus-visible:ring-2"
             onClick={(event) => isDragging && event.preventDefault()}
+            onMouseDown={stopDocumentDragActivation}
+            onPointerDown={stopDocumentDragActivation}
+            onTouchStart={stopDocumentDragActivation}
             style={{ marginLeft: depth * 24 }}
             target="_blank"
             to={`/documents/document/${encodeURIComponent(node.id)}`}
@@ -683,35 +685,34 @@ function DocumentTreeRow({
           </Link>
         )}
       </div>
-      <div className="flex min-w-0 items-center gap-2 pr-3 text-muted-foreground">
-        <Link
-          className="group/modifier flex min-w-0 items-center gap-2 rounded-sm focus-visible:ring-2"
-          to={getDirectorySelectionPath({
-            id: node.updatedBy.id,
-            type: "user",
-          })}
-        >
-          <Avatar className="size-5 bg-muted">
-            <AvatarImage
-              alt={node.updatedBy.nickname || node.updatedBy.name}
-              src={node.updatedBy.avatar}
-            />
-            <AvatarFallback className="text-[8px]">
-              {getInitial(node.updatedBy.nickname || node.updatedBy.name)}
-            </AvatarFallback>
-          </Avatar>
-          <span className="truncate transition-colors group-hover/modifier:text-sky-500 group-focus-visible/modifier:text-sky-500">
-            {node.updatedBy.nickname || node.updatedBy.name}
-          </span>
-        </Link>
-        <div className="min-w-0 flex-1 truncate">
-          修改于 {formatActivityTime(node.updatedAt)}
-        </div>
+      <div
+        className="flex min-w-36 flex-1 cursor-default items-center self-stretch px-4 text-muted-foreground"
+        onMouseDown={stopDocumentDragActivation}
+        onPointerDown={stopDocumentDragActivation}
+        onTouchStart={stopDocumentDragActivation}
+      >
+        <DocumentContributors node={node} />
+      </div>
+      <div
+        className="flex w-52 shrink-0 cursor-default items-center self-stretch px-4 text-muted-foreground"
+        onMouseDown={stopDocumentDragActivation}
+        onPointerDown={stopDocumentDragActivation}
+        onTouchStart={stopDocumentDragActivation}
+      >
+        <span className="min-w-0 flex-1 truncate text-right">
+          {formatDocumentModifiedTime(node.updatedAt)}
+        </span>
+      </div>
+      <div
+        className="flex w-12 shrink-0 cursor-default items-center justify-center self-stretch"
+        onMouseDown={stopDocumentDragActivation}
+        onPointerDown={stopDocumentDragActivation}
+        onTouchStart={stopDocumentDragActivation}
+      >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               aria-label={`操作${node.title}`}
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100"
               size="icon-xs"
               type="button"
               variant="ghost"
@@ -749,6 +750,60 @@ function DocumentTreeRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+    </div>
+  )
+}
+
+function stopDocumentDragActivation(event: React.SyntheticEvent) {
+  event.stopPropagation()
+}
+
+function DocumentContributors({ node }: { node: DocumentTreeNode }) {
+  const maximumVisibleContributors = 5
+  const visibleContributors = node.contributors.slice(
+    0,
+    maximumVisibleContributors
+  )
+  const hiddenCount = Math.max(
+    node.contributorCount - visibleContributors.length,
+    0
+  )
+
+  return (
+    <div className="flex min-w-0 items-center -space-x-1.5">
+      {visibleContributors.map((contributor) => {
+        const displayName = contributor.nickname || contributor.name
+        return (
+          <Link
+            aria-label={`查看协作人${displayName}`}
+            className="group/contributor relative flex w-6 items-center overflow-hidden rounded-full bg-muted transition-[width] duration-150 after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:border after:border-border hover:z-10 hover:w-18 focus-visible:z-10 focus-visible:w-18 focus-visible:ring-2"
+            key={contributor.id}
+            title={displayName}
+            to={getDirectorySelectionPath({
+              id: contributor.id,
+              type: "user",
+            })}
+          >
+            <Avatar className="size-6 bg-muted ring-1 ring-background">
+              <AvatarImage alt={displayName} src={contributor.avatar} />
+              <AvatarFallback className="text-[8px]">
+                {getInitial(displayName)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="max-w-12 min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground opacity-0 transition-opacity group-hover/contributor:opacity-100 group-focus-visible/contributor:opacity-100">
+              {displayName}
+            </span>
+          </Link>
+        )
+      })}
+      {hiddenCount > 0 && (
+        <span
+          className="relative flex size-6 items-center justify-center rounded-full bg-muted text-[8px] text-muted-foreground ring-1 ring-background"
+          title={`另有 ${hiddenCount} 位协作人`}
+        >
+          +{hiddenCount}
+        </span>
+      )}
     </div>
   )
 }
@@ -888,8 +943,7 @@ function DocumentErrorState({
 function DocumentDragOverlay({ node }: { node: DocumentTreeNode }) {
   const NodeIcon = node.kind === "folder" ? Folder : FileText
   return (
-    <div className="flex w-80 cursor-grabbing items-center gap-1 rounded-md border border-border/80 bg-background/95 p-2 shadow-xl ring-1 ring-black/5 backdrop-blur-sm dark:ring-white/10">
-      <GripVertical className="size-4 shrink-0 text-muted-foreground" />
+    <div className="flex w-80 cursor-grabbing items-center gap-2 rounded-md border border-border/80 bg-background/95 p-2 shadow-xl ring-1 ring-black/5 backdrop-blur-sm dark:ring-white/10">
       <NodeIcon
         className={cn(
           "mr-1 size-5 shrink-0",

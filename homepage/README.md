@@ -23,19 +23,21 @@ npm run preview
 SITE_URL=https://example.com PUBLIC_BASE_PATH=/ npm run build
 ```
 
-## 字体
+## 样式与字体
 
-官网与 Client Web 统一使用 [HarmonyOS Sans SC Webfont Splitted](https://github.com/SunsetMkt/HarmonyOS_Sans_SC_Webfont_Splitted)。字体文件由 Astro 构建进静态资源并由本站自托管，不依赖外部字体 CDN；浏览器根据 `unicode-range` 只请求当前页面实际使用的字体切片。
+官网使用 Tailwind CSS v4 管理主题、布局、间距、颜色和响应式样式。常规组件通过语义类组合 Tailwind utilities，产品界面示意图、伪元素和交互动效保留少量原生 CSS。
+
+字体使用 [Noto Sans SC Variable](https://fontsource.org/fonts/noto-sans-sc)，通过 Fontsource 自托管，不依赖外部字体 CDN；浏览器根据 `unicode-range` 只请求当前页面实际使用的字体切片。
 
 ## Google Analytics
 
-在构建或部署环境中设置 GA4 Measurement ID：
+官网默认使用 GA4 Measurement ID `G-BW65KYSTXM`，页面加载后直接启用统计。需要切换到其他 GA4 属性时，可在构建或部署环境中覆盖：
 
 ```bash
 PUBLIC_GA_ID=G-XXXXXXXXXX npm run build
 ```
 
-未设置或格式无效时不会加载 Google Analytics。启用后，页面会先以拒绝分析存储的 Consent Mode 初始化，访客允许后再更新授权状态。
+格式无效的 Measurement ID 不会加载 Google Analytics。
 
 ## SEO
 

@@ -45,6 +45,7 @@ import {
   MessageReactionAddButton,
   MessageReactionChips,
 } from "@/components/conversation/message-reactions"
+import { CollapsibleMessageContent } from "@/components/conversation/collapsible-message-content"
 import { messageReactionChipToneClassName } from "@/components/conversation/message-reaction-styles"
 import { UserProfilePopover } from "@/components/user-profile-popover"
 import type {
@@ -268,6 +269,7 @@ export const MessageBubble = React.memo(function MessageBubble({
       ) : (
         <MessageBodyRenderer
           body={message.body}
+          collapseLongContent={!selectionMode}
           currentUserId={currentUserId}
           flushImage={flushImageBubble}
           mentionLabelResolver={mentionLabelResolver}
@@ -1009,6 +1011,7 @@ function MessageAvatarProfile({
 
 type MessageBodyRendererProps = {
   body: ConversationPanelMessage["body"]
+  collapseLongContent?: boolean
   currentUserId: string
   flushImage?: boolean
   mentionLabelResolver: MentionLabelResolver
@@ -1017,6 +1020,7 @@ type MessageBodyRendererProps = {
 
 export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
   body,
+  collapseLongContent = false,
   currentUserId,
   flushImage = false,
   mentionLabelResolver,
@@ -1059,11 +1063,16 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
       )
     case "markdown":
       return (
-        <MessageMarkdown
-          content={body.content}
-          currentUserId={currentUserId}
-          mentionLabelResolver={mentionLabelResolver}
-        />
+        <CollapsibleMessageContent
+          enabled={collapseLongContent}
+          variant="markdown"
+        >
+          <MessageMarkdown
+            content={body.content}
+            currentUserId={currentUserId}
+            mentionLabelResolver={mentionLabelResolver}
+          />
+        </CollapsibleMessageContent>
       )
     case "choice":
       return body.contentType === "markdown" ? (
@@ -1081,11 +1090,13 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
       )
     case "text":
       return (
-        <TextMessageBody
-          content={body.content}
-          currentUserId={currentUserId}
-          mentionLabelResolver={mentionLabelResolver}
-        />
+        <CollapsibleMessageContent enabled={collapseLongContent} variant="text">
+          <TextMessageBody
+            content={body.content}
+            currentUserId={currentUserId}
+            mentionLabelResolver={mentionLabelResolver}
+          />
+        </CollapsibleMessageContent>
       )
     case "forward_bundle":
       return (
@@ -1123,6 +1134,7 @@ function areMessageBodyRendererPropsEqual(
 ) {
   return (
     previous.body === next.body &&
+    previous.collapseLongContent === next.collapseLongContent &&
     previous.currentUserId === next.currentUserId &&
     previous.flushImage === next.flushImage &&
     previous.onReeditRevoked === next.onReeditRevoked &&

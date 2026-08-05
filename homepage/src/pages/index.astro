@@ -4,8 +4,8 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 
-const title = '即应｜开源的企业 AI 工作空间';
-const description = '即应把团队沟通、办公 AI 助理、项目和任务放进同一个工作空间。项目开源，支持免费私有化部署，可连接自己的模型和业务系统。';
+const title = '即应｜AI 时代的办公协作入口';
+const description = '即应让办公 AI 助理进入团队协作，在授权范围内理解工作上下文、联系成员并推进项目与任务。项目开源，支持免费安装和私有化部署。';
 const siteOrigin = Astro.site ?? Astro.url.origin;
 const pageUrl = new URL(import.meta.env.BASE_URL, siteOrigin).href;
 const logoUrl = new URL(`${import.meta.env.BASE_URL}favicon.webp`, siteOrigin).href;
@@ -30,65 +30,102 @@ const schema = [
   },
 ];
 
+const painPoints = [
+  {
+    number: '01',
+    title: '上下文散落在不同工具里',
+    body: '消息、文件、成员和项目各自分散。每次使用 AI，都要先由人重新寻找、复制和解释背景。',
+    icon: 'tabler:search',
+  },
+  {
+    number: '02',
+    title: 'AI 在团队协作之外',
+    body: '普通 AI 对话框可以生成答案，却不知道真实的联系人、会话和任务，也无法继续等待事情的结果。',
+    icon: 'tabler:robot',
+  },
+  {
+    number: '03',
+    title: '讨论结束，工作仍靠人搬运',
+    body: '共识还要人工整理成任务、通知负责人并追踪进展，沟通与执行之间始终存在断点。',
+    icon: 'tabler:message-circle',
+  },
+];
+
 const capabilities = [
   {
     number: '01',
-    label: '查找信息',
-    title: '从会话和工作数据中找到答案',
-    body: '在用户授权范围内读取聊天记录和附件，查询联系人、群聊、项目与任务，不必手动翻找散落的信息。',
+    label: '理解工作上下文',
+    title: '从团队真实信息中找到答案',
+    body: '在用户授权范围内查询聊天记录、附件、联系人、群聊、项目与任务，不必手动搬运背景。',
     icon: 'tabler:search',
-    tone: 'teal',
+    tone: 'bg-teal-50 text-teal-700',
   },
   {
     number: '02',
-    label: '完成沟通',
+    label: '参与团队协作',
     title: '联系成员，并等待事情有结果',
-    body: '办公 AI 助理可以按明确授权发送消息、创建群聊、添加成员，并在收到回复后继续完成当前工作。',
-    icon: 'tabler:message-circle',
-    tone: 'violet',
-  },
-  {
-    number: '03',
-    label: '管理工作',
-    title: '把讨论整理成项目和任务',
-    body: '查询、创建和修改项目与任务，补充负责人、日期、标签和提醒；写入前会先查重并请你确认。',
-    icon: 'tabler:list-check',
-    tone: 'coral',
-  },
-];
-
-const platformCapabilities = [
-  {
-    number: '01',
-    label: '独立身份',
-    title: 'AI 和应用也是协作成员',
-    body: '应用可以进入单聊、群聊和话题，接收消息并发送选择、图表、文件和卡片，不需要伪装成用户。',
-    icon: 'tabler:robot',
-    tone: 'teal',
-  },
-  {
-    number: '02',
-    label: '权限边界',
-    title: '能做什么，由企业和用户决定',
-    body: '用户、办公 AI 助理和第三方应用拥有各自的身份与权限。敏感写操作需要授权，重要变更需要确认。',
-    icon: 'tabler:shield-check',
-    tone: 'violet',
-  },
-  {
-    number: '03',
-    label: '开放扩展',
-    title: '连接自己的模型和业务系统',
-    body: '通过应用接口和 MCP 扩展能力，不被单一模型或固定工具绑定，让现有系统进入同一个协作空间。',
+    body: '办公 AI 助理可以按明确授权发送消息、创建群聊、添加成员，并在收到回复后继续当前工作。',
     icon: 'tabler:users',
-    tone: 'coral',
+    tone: 'bg-violet-50 text-violet-700',
+  },
+  {
+    number: '03',
+    label: '推进实际工作',
+    title: '把讨论落实为项目和任务',
+    body: '查询、创建和修改项目与任务，补充负责人、日期、标签和提醒；重要写入会先展示并确认。',
+    icon: 'tabler:list-check',
+    tone: 'bg-amber-50 text-amber-700',
   },
 ];
 
-const steps = [
-  ['01', '提出请求', '直接在会话里说明目标。相关消息、文件和关联项目成为本次工作的参考。'],
-  ['02', '确认对象', '办公 AI 助理查询真实的联系人、会话、项目或任务，遇到重名和多种选择时先向你确认。'],
-  ['03', '检查变更', '创建或修改任务前展示完整参数，通过选择消息完成二次确认，不把最初的指令当作授权。'],
-  ['04', '执行并交付', '操作完成后把消息、图表、文件或项目与任务卡片直接发回会话，结果清楚可查。'],
+const workflow = [
+  ['01', '提出目标', '在会话里提出请求，相关消息、文件和项目成为本次工作的参考。'],
+  ['02', '查询背景', '办公 AI 助理读取有权限的信息，找到相关讨论、成员和已有任务。'],
+  ['03', '整理待办', '识别待办、负责人和截止时间，并检查是否已经存在重复任务。'],
+  ['04', '确认变更', '创建或修改任务前展示完整参数，让你看清对象和影响范围。'],
+  ['05', '执行协作', '创建任务、联系相关成员，并在需要时等待对方回复。'],
+  ['06', '交付结果', '把最终状态、任务卡片、文件或图表直接发回原来的会话。'],
+];
+
+const comparisonRows = [
+  ['企业即时通讯', true, true, true, true, true, true, true],
+  ['Web、桌面与移动端', true, true, true, true, true, true, true],
+  ['私有化部署', true, false, true, false, false, true, true],
+  ['核心产品代码开源', true, false, false, false, false, true, true],
+  ['在线文档', true, true, true, true, true, false, false],
+  ['目标管理', false, true, true, false, false, false, false],
+  ['项目管理', true, true, true, false, false, false, false],
+  ['任务管理', true, true, true, true, true, true, false],
+  ['开放 API 与应用扩展', true, true, true, true, true, true, true],
+  ['内置 AI 助手', true, true, true, true, true, false, false],
+];
+
+const ctas = [
+  {
+    label: '最快了解即应',
+    title: '在线体验',
+    body: '无需安装，直接进入在线 Demo，看看 AI 如何在工作空间中参与协作。',
+    href: 'https://app.jiying.chat/',
+    action: '打开在线 Demo',
+    icon: 'tabler:arrow-right',
+    primary: true,
+  },
+  {
+    label: '开始使用',
+    title: '免费安装',
+    body: '下载发布版本，把即应安装到自己的设备或环境中，开始建立团队工作空间。',
+    href: 'https://github.com/chaitin/MagicChat/releases/latest',
+    action: '获取安装版本',
+    icon: 'tabler:arrow-down',
+  },
+  {
+    label: '开发与审查',
+    title: '查看源码',
+    body: '在 GitHub 查看代码、许可证和开发进度，也可以参与即应的持续建设。',
+    href: 'https://github.com/chaitin/MagicChat',
+    action: '前往 GitHub',
+    icon: 'tabler:brand-github-filled',
+  },
 ];
 ---
 
@@ -98,16 +135,19 @@ const steps = [
     <section class="hero" aria-labelledby="hero-title">
       <div class="container hero-grid">
         <div class="hero-copy">
-          <span class="hero-badge">免费私有化部署方案</span>
-          <h1 id="hero-title">即应 Chat</h1>
-          <p class="hero-tagline">AI 时代的协作入口</p>
-          <p class="hero-description">把团队沟通、办公 AI 助理、项目和任务放在同一个工作空间。开源，支持免费私有化部署，也可以接入自己的模型和业务系统。</p>
+          <span class="hero-badge">开源 · 支持免费私有化部署</span>
+          <h1 id="hero-title">AI 时代的<br /><mark>办公协作入口</mark></h1>
+          <p class="hero-tagline">让 AI 进入团队，把工作继续推进下去</p>
+          <p class="hero-description">即应把团队沟通、办公 AI 助理、项目和任务放进同一个工作空间。AI 不只回答问题，也能在明确授权下查询信息、联系成员并执行工作。</p>
           <div class="hero-actions">
             <a class="button button-primary" href="https://app.jiying.chat/" target="_blank" rel="noreferrer">
-              开始使用 <Icon name="tabler:arrow-right" size={17} aria-hidden="true" />
+              在线体验 <Icon name="tabler:arrow-right" size={17} aria-hidden="true" />
             </a>
-            <a class="button button-secondary" href="https://github.com/chaitin/MagicChat" target="_blank" rel="noopener noreferrer">
-              查看源码 <Icon name="tabler:brand-github-filled" size={17} aria-hidden="true" />
+            <a class="button button-secondary" href="https://github.com/chaitin/MagicChat/releases/latest" target="_blank" rel="noopener noreferrer">
+              免费安装 <Icon name="tabler:arrow-down" size={17} aria-hidden="true" />
+            </a>
+            <a class="inline-flex min-h-12 items-center gap-2 px-3 text-sm font-semibold text-teal-800 transition hover:text-teal-950" href="https://github.com/chaitin/MagicChat" target="_blank" rel="noopener noreferrer">
+              <Icon name="tabler:brand-github-filled" size={18} aria-hidden="true" /> 查看源码
             </a>
           </div>
         </div>
@@ -133,10 +173,7 @@ const steps = [
               <header><div><b>办公 AI 助理</b><small>为你查找信息并执行工作</small></div><span class="online">在线</span></header>
               <div class="message-flow">
                 <div class="message user-message"><div><small>你 · 09:41</small><p>把本周发布讨论里的待办整理出来。</p></div></div>
-                <div class="message assistant-message">
-                  <span class="avatar ai">AI</span>
-                  <div><small>办公助手 · 09:42</small><p>我找到了 3 项待办，其中后两项尚未创建任务。</p></div>
-                </div>
+                <div class="message assistant-message"><span class="avatar ai">AI</span><div><small>办公助手 · 09:42</small><p>我找到了 3 项待办，其中后两项尚未创建任务。</p></div></div>
                 <div class="task-summary">
                   <div class="task-heading"><span><Icon name="tabler:file-text" size={13} /> 发布准备</span><b>3 项</b></div>
                   <div class="task-row"><Icon name="tabler:check" size={12} /> 确认桌面端发布范围 <span>已完成</span></div>
@@ -151,103 +188,143 @@ const steps = [
       </div>
     </section>
 
-    <div class="overview-bar" aria-label="即应产品特点">
-      <div class="container overview-grid">
-        <div><strong>开源</strong><span>AGPL v3</span></div>
-        <div><strong>免费部署</strong><span>运行在自己的服务器</span></div>
-        <div><strong>自主模型</strong><span>连接企业选择的 AI</span></div>
-        <div><strong>全平台</strong><span>Web、桌面与移动端</span></div>
-      </div>
-    </div>
-
-    <section class="section product-section" id="product">
+    <section class="bg-white py-24 sm:py-32" id="why">
       <div class="container">
-        <div class="section-heading reveal">
-          <div><span class="eyebrow">一个工作空间</span><h2>沟通、AI 和执行，<br />不必来回切换</h2></div>
-          <p>从日常聊天开始，在同一个地方找到信息、联系成员，并把结果继续放进项目和任务。</p>
+        <div class="mx-auto mb-14 max-w-3xl text-center reveal">
+          <span class="eyebrow">为什么需要即应</span>
+          <h2 class="mb-6 text-balance text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">AI 已经会回答问题，<br />工作却仍然由人来搬运</h2>
+          <p class="m-0 text-lg leading-8 text-slate-600">真正的办公协作不只有一轮问答。它需要理解持续变化的上下文，找到正确的人，并把讨论推进到有结果。</p>
         </div>
-
-        <div class="product-demo reveal">
-          <div class="demo-tabs" role="tablist" aria-label="即应产品能力">
-            <button class="demo-tab active" type="button" role="tab" aria-selected="true" aria-controls="demo-chat" data-demo="chat">团队沟通</button>
-            <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-agent" data-demo="agent">办公 AI 助理</button>
-            <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-project" data-demo="project">项目与任务</button>
-          </div>
-          <div class="demo-panels">
-            <article class="demo-panel active" id="demo-chat" role="tabpanel" data-panel="chat">
-              <div class="demo-copy"><span>01 · 团队沟通</span><h3>人与 AI，在同一个会话里协作</h3><p>私聊、群聊和话题统一承载文字、Markdown、图片、文件与语音；引用、转发、提及和回应让讨论保持清楚。</p><ul><li>私聊、群聊与话题</li><li>多类型消息</li><li>记录与通讯录搜索</li></ul></div>
-              <div class="demo-visual"><div class="topic-ui"><b># 产品上线准备</b><div><span class="avatar violet">林</span><p><strong>林夏</strong>桌面端发布范围已经确认，更新说明还差最后一版。</p></div><div><span class="avatar ai">AI</span><p><strong>办公助手</strong>我可以读取本次讨论，整理待办并在确认后创建任务。</p></div><label>回复当前话题…</label></div></div>
-            </article>
-            <article class="demo-panel" id="demo-agent" role="tabpanel" data-panel="agent" hidden>
-              <div class="demo-copy"><span>02 · 办公 AI 助理</span><h3>不只给出答案，也能把事情办下去</h3><p>在明确授权下查询工作信息、完成沟通、管理项目与任务，并用选择、图表、文件和卡片交付结果。</p><ul><li>读取会话和附件</li><li>联系成员并等待回复</li><li>创建项目和任务</li></ul></div>
-              <div class="demo-visual"><div class="agent-list"><div><span class="agent-face teal"><Icon name="tabler:search" size={18} /></span><p><b>查找信息</b><small>会话、联系人、项目和任务</small></p><em>按权限读取</em></div><div><span class="agent-face violet"><Icon name="tabler:message-circle" size={18} /></span><p><b>完成沟通</b><small>发送消息、建群并等待回复</small></p><em>明确授权</em></div><div><span class="agent-face coral"><Icon name="tabler:list-check" size={18} /></span><p><b>管理工作</b><small>查询、创建和修改任务</small></p><em>写入前确认</em></div></div></div>
-            </article>
-            <article class="demo-panel" id="demo-project" role="tabpanel" data-panel="project" hidden>
-              <div class="demo-copy"><span>03 · 项目与任务</span><h3>让讨论有归属，让工作有负责人</h3><p>个人工作区和协作项目承接后续工作，任务记录状态、优先级、负责人、日期、标签和提醒。</p><ul><li>项目关联群聊</li><li>任务提醒与卡片</li><li>看板、列表、日历和甘特图</li></ul></div>
-              <div class="demo-visual"><div class="mini-board"><section><b>待处理 <em>2</em></b><p>补齐上线说明<small>今天 · 林夏</small></p><p>检查下载页<small>周四 · 陈屿</small></p></section><section><b>进行中 <em>1</em></b><p>发布前回归测试<small>周五 · QA</small></p></section><section><b>已完成 <em>1</em></b><p>确认版本范围<small>今天 · 完成</small></p></section></div></div>
-            </article>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section capability-section" id="capabilities">
-      <div class="container">
-        <div class="section-heading reveal">
-          <div><span class="eyebrow">办公 AI 助理</span><h2>从回答问题，<br />到实际完成工作</h2></div>
-          <p>能力直接发生在团队使用的会话、通讯录、项目和任务中，不需要把信息复制到另一个 AI 对话框。</p>
-        </div>
-        <div class="capability-grid">
-          {capabilities.map(({ number, label, title: itemTitle, body, icon, tone }, index) => (
-            <article class:list={['capability-card', tone, 'reveal']} style={`--delay: ${index * 70}ms`}>
-              <div class="card-top"><span>{number} · {label}</span><Icon name={icon} size={24} stroke-width={1.8} aria-hidden="true" /></div>
-              <div><h3>{itemTitle}</h3><p>{body}</p></div>
+        <div class="grid gap-5 md:grid-cols-3">
+          {painPoints.map(({ number, title: itemTitle, body, icon }, index) => (
+            <article class="reveal rounded-3xl bg-stone-50 p-7 sm:p-8" style={`--delay: ${index * 70}ms`}>
+              <div class="mb-16 flex items-center justify-between text-sm font-semibold text-slate-400"><span>{number}</span><Icon name={icon} size={23} stroke-width={1.8} aria-hidden="true" /></div>
+              <h3 class="mb-3 text-2xl font-semibold tracking-[-0.03em] text-slate-900">{itemTitle}</h3>
+              <p class="m-0 text-sm leading-7 text-slate-600">{body}</p>
             </article>
           ))}
         </div>
       </div>
     </section>
 
-    <section class="section workflow-section" id="workflow">
-      <div class="container">
-        <div class="section-heading reveal">
-          <div><span class="eyebrow">清楚可控</span><h2>AI 可以行动，<br />但不会替你越权决定</h2></div>
-          <p>每一次读取和操作都在真实权限范围内完成。遇到多个对象、任务写入或重要变更时，先让你看清再执行。</p>
+    <section class="border-y border-teal-100 bg-teal-50 py-24 sm:py-32" id="solution">
+      <div class="container grid items-center gap-14 lg:grid-cols-[0.8fr_1.2fr]">
+        <div class="reveal">
+          <span class="eyebrow">即应如何解决</span>
+          <h2 class="mb-6 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">不是再增加一个<br />孤立的 AI 对话框</h2>
+          <p class="mb-7 max-w-xl text-base leading-8 text-slate-600">即应让 AI 以清晰身份进入工作空间，在权限范围内获得必要上下文，并把查询、沟通和执行连接成同一段工作。</p>
+          <div class="flex flex-wrap gap-2 text-sm font-semibold text-teal-800">
+            <span class="rounded-full border border-teal-200 bg-white px-4 py-2">独立身份</span>
+            <span class="rounded-full border border-teal-200 bg-white px-4 py-2">明确权限</span>
+            <span class="rounded-full border border-teal-200 bg-white px-4 py-2">写入前确认</span>
+          </div>
         </div>
-        <div class="workflow-layout">
-          <aside class="workflow-note reveal"><span class="note-icon"><Icon name="tabler:shield-check" size={22} /></span><h3>重要操作，由你确认</h3><p>办公 AI 助理使用独立身份，通过当前用户的明确授权执行工作。第三方应用不会自动继承创建者权限。</p><div><span>请求</span><Icon name="tabler:arrow-right" size={13} /><span>查询</span><Icon name="tabler:arrow-right" size={13} /><span>确认</span><Icon name="tabler:arrow-right" size={13} /><span>执行</span></div></aside>
-          <div class="workflow-steps">
-            {steps.map(([number, stepTitle, body], index) => (
-              <article class="workflow-step reveal" style={`--delay: ${index * 70}ms`}><span>{number}</span><div><h3>{stepTitle}</h3><p>{body}</p></div></article>
-            ))}
+        <div class="reveal rounded-[32px] border border-teal-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,118,110,0.10)] sm:p-9">
+          <div class="grid gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+            <div class="grid gap-3">
+              <div class="flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><Icon name="tabler:message-circle" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">团队会话</strong><span class="text-xs text-slate-500">消息、文件与讨论</span></div></div>
+              <div class="flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><Icon name="tabler:list-check" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">项目任务</strong><span class="text-xs text-slate-500">负责人、状态与日期</span></div></div>
+              <div class="flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><Icon name="tabler:layout-kanban" size={20} class="text-teal-600" /><div><strong class="block text-sm text-slate-900">业务系统</strong><span class="text-xs text-slate-500">通过应用接口和 MCP</span></div></div>
+            </div>
+            <Icon name="tabler:arrow-right" size={24} class="mx-auto rotate-90 text-teal-500 sm:rotate-0" aria-hidden="true" />
+            <div class="rounded-3xl bg-teal-950 p-6 text-white">
+              <div class="mb-12 flex size-12 items-center justify-center rounded-2xl bg-teal-500"><Icon name="tabler:robot" size={24} /></div>
+              <strong class="mb-2 block text-xl">办公 AI 助理</strong>
+              <p class="mb-5 text-sm leading-7 text-teal-100/70">理解上下文，并把工作继续推进。</p>
+              <div class="grid grid-cols-2 gap-2 text-center text-xs font-semibold text-teal-50"><span class="rounded-lg bg-white/10 px-2 py-2">查询</span><span class="rounded-lg bg-white/10 px-2 py-2">沟通</span><span class="rounded-lg bg-white/10 px-2 py-2">执行</span><span class="rounded-lg bg-white/10 px-2 py-2">交付</span></div>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="section assistant-section" id="open-source">
-      <div class="container assistant-band reveal">
-        <div class="assistant-copy"><span class="eyebrow eyebrow-light">开源与私有化</span><h2>部署在自己的环境，<br />连接自己的模型</h2><p>即应基于 AGPL v3 开源，软件本身可以免费私有化部署。企业自行管理服务、数据、模型和集成方式，不被固定 SaaS 平台绑定。</p><div class="trust-points"><span><Icon name="tabler:brand-github-filled" size={17} /> 源码公开可审查</span><span><Icon name="tabler:shield-check" size={17} /> 数据由部署方掌控</span></div></div>
-        <aside class="decision-panel" aria-label="即应私有化部署特点">
-          <header><span><span class="assistant-avatar"><Icon name="tabler:layout-kanban" size={17} /></span>自己的 AI 工作空间</span><em>开源免费</em></header>
-          <h3>从源码到企业自己的服务</h3>
-          <dl><div><dt>部署</dt><dd>使用 Docker 部署到自己的服务器。</dd></div><div><dt>模型</dt><dd>配置企业选择的大模型服务。</dd></div><div><dt>扩展</dt><dd>通过 MCP 和应用接口连接已有业务系统。</dd></div></dl>
-          <div class="decision-actions"><a href="https://github.com/chaitin/MagicChat" target="_blank" rel="noopener noreferrer">查看源码</a><a href="https://github.com/chaitin/MagicChat" target="_blank" rel="noopener noreferrer">开始部署</a></div>
-        </aside>
+    <section class="bg-white py-24 sm:py-32" id="capabilities">
+      <div class="container">
+        <div class="mb-14 grid items-end gap-7 lg:grid-cols-[1.2fr_0.8fr] reveal">
+          <div><span class="eyebrow">核心能力</span><h2 class="m-0 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">从理解工作，<br />到实际推进工作</h2></div>
+          <p class="m-0 max-w-xl text-base leading-8 text-slate-600 lg:justify-self-end">能力直接发生在团队正在使用的会话、通讯录、项目和任务中，不需要把信息复制到另一个工具。</p>
+        </div>
+        <div class="grid gap-5 lg:grid-cols-3">
+          {capabilities.map(({ number, label, title: itemTitle, body, icon, tone }, index) => (
+            <article class="reveal flex min-h-[360px] flex-col justify-between rounded-3xl border border-slate-200 bg-white p-7 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-8" style={`--delay: ${index * 70}ms`}>
+              <div class="flex items-start justify-between"><span class="text-sm font-semibold text-slate-400">{number} · {label}</span><span class:list={['grid size-12 place-items-center rounded-2xl', tone]}><Icon name={icon} size={23} stroke-width={1.8} aria-hidden="true" /></span></div>
+              <div><h3 class="mb-4 text-2xl font-semibold leading-snug tracking-[-0.03em] text-slate-900">{itemTitle}</h3><p class="m-0 text-sm leading-7 text-slate-600">{body}</p></div>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
 
-    <section class="section capability-section platform-section" id="platform">
+    <section class="bg-slate-950 py-24 text-white sm:py-32" id="workflow">
       <div class="container">
-        <div class="section-heading reveal">
-          <div><span class="eyebrow">开放协作平台</span><h2>让团队成员、AI 和应用，<br />在同一个空间工作</h2></div>
-          <p>即应提供的不只是一个内置助手，也是一套可扩展的协作基础，让企业现有应用以清晰身份参与工作。</p>
+        <div class="mb-14 grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-end reveal">
+          <div><span class="mb-4 inline-block text-sm font-semibold text-teal-300">真实工作流</span><h2 class="m-0 text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">一句“整理发布工作”，<br />如何变成清楚的结果</h2></div>
+          <p class="m-0 max-w-xl text-base leading-8 text-slate-300 lg:justify-self-end">AI 可以行动，但不会替你越权决定。对象不明确、任务写入或重要变更，都先让你看清再执行。</p>
         </div>
-        <div class="capability-grid">
-          {platformCapabilities.map(({ number, label, title: itemTitle, body, icon, tone }, index) => (
-            <article class:list={['capability-card', tone, 'reveal']} style={`--delay: ${index * 70}ms`}>
-              <div class="card-top"><span>{number} · {label}</span><Icon name={icon} size={24} stroke-width={1.8} aria-hidden="true" /></div>
-              <div><h3>{itemTitle}</h3><p>{body}</p></div>
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {workflow.map(([number, stepTitle, body], index) => (
+            <article class="reveal rounded-3xl border border-white/10 bg-white/[0.04] p-6" style={`--delay: ${index * 55}ms`}>
+              <span class="mb-12 block text-sm font-semibold text-teal-300">{number}</span>
+              <h3 class="mb-3 text-xl font-semibold text-white">{stepTitle}</h3>
+              <p class="m-0 text-sm leading-7 text-slate-400">{body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-stone-50 py-24 sm:py-32" id="comparison">
+      <div class="container">
+        <div class="mx-auto mb-14 max-w-3xl text-center reveal">
+          <span class="eyebrow">同类产品对比</span>
+          <h2 class="mb-6 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">同样是协作入口，<br />即应选择了不同的路径</h2>
+          <p class="m-0 text-base leading-8 text-slate-600">飞书、钉钉、企业微信和 Slack 提供成熟的商业协作生态，Mattermost 与 Rocket.Chat 代表开源团队通讯；即应更专注于让 AI 以明确身份进入团队并持续推进工作。</p>
+        </div>
+        <div class="reveal overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <table class="w-full min-w-[1120px] table-fixed border-collapse text-left text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-200">
+                <th scope="col" class="w-44 px-4 py-4 font-semibold text-slate-500">比较维度</th>
+                <th scope="col" class="bg-teal-50 px-3 py-4 text-center font-bold text-teal-900">即应</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold text-slate-700">飞书</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold text-slate-700">钉钉</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold text-slate-700">企业微信</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold text-slate-700">Slack</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold leading-5 text-slate-700">Mattermost</th>
+                <th scope="col" class="px-3 py-4 text-center font-semibold leading-5 text-slate-700">Rocket.Chat</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparisonRows.map(([dimension, ...support]) => (
+                <tr class="border-b border-slate-100 last:border-0">
+                  <th scope="row" class="px-4 py-3.5 font-semibold text-slate-900">{dimension}</th>
+                  {support.map((supported, index) => (
+                    <td class:list={['px-3 py-3.5 text-center', index === 0 && 'bg-teal-50/70']}>
+                      <span class="sr-only">{supported ? '支持' : '不支持'}</span>
+                      <Icon name={supported ? 'tabler:check' : 'tabler:x'} size={18} stroke-width={2.2} class:list={['mx-auto', supported ? 'text-teal-600' : 'text-slate-300']} aria-hidden="true" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p class="mx-auto mt-5 max-w-4xl text-center text-xs leading-6 text-slate-400">对比基于各产品公开定位与常见使用方式整理；“私有化部署”指可部署到企业自有基础设施。具体能力可能随版本、套餐和企业配置变化。</p>
+      </div>
+    </section>
+
+    <section class="bg-white py-24 sm:py-32" id="start">
+      <div class="container">
+        <div class="mx-auto mb-14 max-w-3xl text-center reveal">
+          <span class="eyebrow">开始使用</span>
+          <h2 class="mb-6 text-4xl font-bold tracking-[-0.04em] text-slate-900 sm:text-5xl">选择适合你的开始方式</h2>
+          <p class="m-0 text-base leading-8 text-slate-600">先体验产品、直接免费安装，或者从源码开始了解即应。</p>
+        </div>
+        <div class="grid gap-5 lg:grid-cols-3">
+          {ctas.map(({ label, title: itemTitle, body, href, action, icon, primary }, index) => (
+            <article class:list={['reveal flex min-h-[330px] flex-col justify-between rounded-3xl p-7 sm:p-8', primary ? 'bg-teal-950 text-white' : 'border border-slate-200 bg-white text-slate-900']} style={`--delay: ${index * 70}ms`}>
+              <div><span class:list={['mb-8 block text-sm font-semibold', primary ? 'text-teal-300' : 'text-teal-700']}>{label}</span><h3 class:list={['mb-4 text-3xl font-semibold tracking-[-0.03em]', primary ? 'text-white' : 'text-slate-900']}>{itemTitle}</h3><p class:list={['m-0 text-sm leading-7', primary ? 'text-teal-100/70' : 'text-slate-600']}>{body}</p></div>
+              <a class:list={['mt-10 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold transition', primary ? 'bg-teal-400 text-teal-950 hover:bg-teal-300' : 'border border-teal-600 text-teal-800 hover:bg-teal-50']} href={href} target="_blank" rel="noopener noreferrer">{action}<Icon name={icon} size={17} aria-hidden="true" /></a>
             </article>
           ))}
         </div>
@@ -257,24 +334,6 @@ const steps = [
   <SiteFooter />
 
   <script>
-    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-demo]'));
-    const panels = Array.from(document.querySelectorAll<HTMLElement>('[data-panel]'));
-    tabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        const target = tab.dataset.demo;
-        tabs.forEach((item) => {
-          const active = item === tab;
-          item.classList.toggle('active', active);
-          item.setAttribute('aria-selected', String(active));
-        });
-        panels.forEach((panel) => {
-          const active = panel.dataset.panel === target;
-          panel.classList.toggle('active', active);
-          panel.hidden = !active;
-        });
-      });
-    });
-
     const revealItems = document.querySelectorAll<HTMLElement>('.reveal');
     if (!('IntersectionObserver' in window)) {
       revealItems.forEach((item) => item.classList.add('visible'));

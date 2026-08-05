@@ -245,6 +245,8 @@ export function MessageBubble({
             ) : (
               <MessageBody
                 body={message.body}
+                bubblePressed={bubblePressed}
+                bubbleTone={fromMe ? "mine" : "other"}
                 currentUserId={currentUserId}
                 flushImage={flushImageBubble}
                 onImagePress={(fileId) => onImagePress(fileId, message.id)}

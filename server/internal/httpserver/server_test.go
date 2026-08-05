@@ -103,6 +103,7 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.Project{},
 		&store.ProjectGroup{},
 		&store.Document{},
+		&store.DocumentContributor{},
 		&store.DocumentCollabState{},
 		&store.Task{},
 		&store.TaskReminder{},

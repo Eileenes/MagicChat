@@ -103,7 +103,7 @@ export function DocumentWorkspaceSidebar({
         onClick={(event) => {
           if (!onBeforeNavigate()) event.preventDefault()
         }}
-        to={`/projects/${encodeURIComponent(projectId)}`}
+        to={`/projects/${encodeURIComponent(projectId)}/documents`}
       >
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300">
           <Building2 className="size-4" />

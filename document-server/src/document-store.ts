@@ -54,7 +54,8 @@ export class DocumentStore {
     documentName: string,
     state: Uint8Array,
     title: string,
-    updatedByUserId?: string
+    updatedByUserId?: string,
+    contributorUserIds: string[] = []
   ): Promise<void> {
     assertDocumentName(documentName)
     const client = await this.pool.connect()
@@ -86,6 +87,20 @@ export class DocumentStore {
         `,
         [documentName, normalizeTitle(title), updatedByUserId ?? null]
       )
+      if (contributorUserIds.length > 0) {
+        await client.query(
+          `
+            INSERT INTO document_contributors (
+              document_id, user_id, first_edited_at, last_edited_at
+            )
+            SELECT $1, contributor.user_id, now(), now()
+            FROM unnest($2::uuid[]) AS contributor(user_id)
+            ON CONFLICT (document_id, user_id) DO UPDATE SET
+              last_edited_at = EXCLUDED.last_edited_at
+          `,
+          [documentName, contributorUserIds]
+        )
+      }
       await client.query("COMMIT")
     } catch (error) {
       await rollback(client)

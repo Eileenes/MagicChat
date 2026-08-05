@@ -33,11 +33,14 @@ import {
 } from "@/domain/messages/message-presenter"
 import { MarkdownMessage } from "@/features/conversation/messages/markdown-message"
 import { MessageChart } from "@/features/conversation/messages/message-chart"
+import { CollapsibleMessageContent } from "@/features/conversation/messages/collapsible-message-content"
 import { MessageMentionText } from "@/features/conversation/messages/message-mention-text"
 import { VoiceMessagePlayer } from "@/features/conversation/voice/voice-message-player"
 
 export function MessageBody({
   body,
+  bubblePressed,
+  bubbleTone,
   currentUserId,
   flushImage,
   onImagePress,
@@ -50,6 +53,8 @@ export function MessageBody({
   serverUrl,
 }: {
   body: ClientMessageBody
+  bubblePressed: boolean
+  bubbleTone: "mine" | "other"
   currentUserId: string
   flushImage: boolean
   onImagePress: (fileId: string) => void
@@ -65,26 +70,38 @@ export function MessageBody({
 
   if (body.type === "text") {
     return (
-      <Paragraph selectable>
-        <MessageMentionText
-          content={body.content}
-          currentUserId={currentUserId}
-          onMentionPress={onMentionPress}
-          resolveMentionLabel={resolveMentionLabel}
-        />
-      </Paragraph>
+      <CollapsibleMessageContent
+        bubblePressed={bubblePressed}
+        tone={bubbleTone}
+        variant="text"
+      >
+        <Paragraph selectable>
+          <MessageMentionText
+            content={body.content}
+            currentUserId={currentUserId}
+            onMentionPress={onMentionPress}
+            resolveMentionLabel={resolveMentionLabel}
+          />
+        </Paragraph>
+      </CollapsibleMessageContent>
     )
   }
 
   if (body.type === "markdown") {
     return (
-      <MarkdownMessage
-        content={body.content}
-        currentUserId={currentUserId}
-        onMentionPress={onMentionPress}
-        resolveMentionLabel={resolveMentionLabel}
-        serverUrl={serverUrl}
-      />
+      <CollapsibleMessageContent
+        bubblePressed={bubblePressed}
+        tone={bubbleTone}
+        variant="markdown"
+      >
+        <MarkdownMessage
+          content={body.content}
+          currentUserId={currentUserId}
+          onMentionPress={onMentionPress}
+          resolveMentionLabel={resolveMentionLabel}
+          serverUrl={serverUrl}
+        />
+      </CollapsibleMessageContent>
     )
   }
 

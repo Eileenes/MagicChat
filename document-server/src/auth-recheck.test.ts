@@ -7,7 +7,9 @@ import type { DocumentConnectionContext } from "./auth.js"
 const context: DocumentConnectionContext = {
   documentId: "550e8400-e29b-41d4-a716-446655440000",
   sessionId: "session-id",
+  userAvatar: "/avatar.png",
   userId: "user-id",
+  userName: "林晓",
 }
 
 test("authorization recheck closes a connection after access is revoked", async () => {

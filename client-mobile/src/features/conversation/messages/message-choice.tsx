@@ -274,10 +274,21 @@ function ChoiceOptionRow({
           width="100%"
         >
           {control}
-          <SizableText flex={1}>{label}</SizableText>
+          <SizableText color="$color" flex={1} minW={0}>
+            {label}
+          </SizableText>
           {showResponseCount ? (
-            <XStack bg="$backgroundPress" minW={24} px="$2" py={2} rounded="$10">
-              <SizableText color="$color10" size="$1" text="center" width="100%">
+            <XStack
+              bg="$backgroundPress"
+              height={20}
+              items="center"
+              justify="center"
+              minW={20}
+              px={6}
+              rounded="$10"
+              shrink={0}
+            >
+              <SizableText color="$color10" lineHeight={14} size="$1" text="center">
                 {count}
               </SizableText>
             </XStack>

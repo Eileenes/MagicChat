@@ -48,9 +48,7 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) ([]Document, error)
 		return nil, mapLookupError(err)
 	}
 	var values []store.Document
-	err = s.db.WithContext(ctx).
-		Preload("CreatedByUser").
-		Preload("UpdatedByUser").
+	err = preloadDocumentRelations(s.db.WithContext(ctx)).
 		Where("project_id = ?", projectID).
 		Order("parent_id NULLS FIRST").
 		Order("sort_order ASC").
@@ -105,12 +103,15 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (Document, erro
 		if err := tx.Create(&value).Error; err != nil {
 			return err
 		}
+		if err := upsertDocumentContributor(tx, value.ID, accountID, now); err != nil {
+			return err
+		}
 		return updateProjectTimestamp(tx, projectID, now)
 	})
 	if err != nil {
 		return Document{}, mapMutationError(err)
 	}
-	if err := s.loadUsers(ctx, &value); err != nil {
+	if err := s.loadRelations(ctx, &value); err != nil {
 		return Document{}, err
 	}
 	return newDocument(value), nil
@@ -122,7 +123,7 @@ func (s *Service) Get(ctx context.Context, cmd GetCommand) (Document, error) {
 		return Document{}, err
 	}
 	var value store.Document
-	err = s.db.WithContext(ctx).Preload("CreatedByUser").Preload("UpdatedByUser").First(&value, "id = ?", documentID).Error
+	err = preloadDocumentRelations(s.db.WithContext(ctx)).First(&value, "id = ?", documentID).Error
 	if err != nil {
 		return Document{}, mapLookupError(err)
 	}
@@ -214,12 +215,15 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (Document, erro
 		}
 		value.UpdatedByUserID = accountID
 		value.UpdatedAt = now
+		if err := upsertDocumentContributor(tx, value.ID, accountID, now); err != nil {
+			return err
+		}
 		return updateProjectTimestamp(tx, value.ProjectID, now)
 	})
 	if err != nil {
 		return Document{}, mapMutationError(err)
 	}
-	if err := s.loadUsers(ctx, &value); err != nil {
+	if err := s.loadRelations(ctx, &value); err != nil {
 		return Document{}, err
 	}
 	return newDocument(value), nil
@@ -298,7 +302,7 @@ func (s *Service) Move(ctx context.Context, cmd MoveCommand) (Document, error) {
 	if err != nil {
 		return Document{}, mapMutationError(err)
 	}
-	if err := s.loadUsers(ctx, &value); err != nil {
+	if err := s.loadRelations(ctx, &value); err != nil {
 		return Document{}, err
 	}
 	return newDocument(value), nil
@@ -342,14 +346,32 @@ func (s *Service) Delete(ctx context.Context, cmd GetCommand) (DeleteResult, err
 	return DeleteResult{DocumentID: documentID, DeletedCount: deletedCount}, nil
 }
 
-func (s *Service) loadUsers(ctx context.Context, value *store.Document) error {
-	if err := s.db.WithContext(ctx).First(&value.CreatedByUser, "id = ?", value.CreatedByUserID).Error; err != nil {
-		return internalError(err)
-	}
-	if err := s.db.WithContext(ctx).First(&value.UpdatedByUser, "id = ?", value.UpdatedByUserID).Error; err != nil {
+func (s *Service) loadRelations(ctx context.Context, value *store.Document) error {
+	if err := preloadDocumentRelations(s.db.WithContext(ctx)).First(value, "id = ?", value.ID).Error; err != nil {
 		return internalError(err)
 	}
 	return nil
+}
+
+func preloadDocumentRelations(db *gorm.DB) *gorm.DB {
+	return db.
+		Preload("CreatedByUser").
+		Preload("UpdatedByUser").
+		Preload("Contributors", func(query *gorm.DB) *gorm.DB {
+			return query.Order("last_edited_at DESC").Order("user_id ASC")
+		}).
+		Preload("Contributors.User")
+}
+
+func upsertDocumentContributor(tx *gorm.DB, documentID, userID string, editedAt time.Time) error {
+	value := store.DocumentContributor{
+		DocumentID: documentID, UserID: userID,
+		FirstEditedAt: editedAt, LastEditedAt: editedAt,
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "document_id"}, {Name: "user_id"}},
+		DoUpdates: clause.Assignments(map[string]any{"last_edited_at": editedAt}),
+	}).Create(&value).Error
 }
 
 func normalizeKind(field Field[string]) (string, *string, error) {
@@ -558,10 +580,14 @@ func mapMutationError(err error) error {
 }
 
 func newDocument(value store.Document) Document {
+	contributors := make([]UserSummary, 0, len(value.Contributors))
+	for _, contributor := range value.Contributors {
+		contributors = append(contributors, userSummary(contributor.User))
+	}
 	return Document{
 		ID: value.ID, ProjectID: value.ProjectID, ParentID: value.ParentID, Kind: value.Kind,
 		DocumentType: value.DocumentType, Title: value.Title, SortOrder: value.SortOrder, SchemaVersion: value.SchemaVersion,
-		Creator: userSummary(value.CreatedByUser), UpdatedBy: userSummary(value.UpdatedByUser),
+		Creator: userSummary(value.CreatedByUser), UpdatedBy: userSummary(value.UpdatedByUser), Contributors: contributors,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
 }

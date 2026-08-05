@@ -8,6 +8,11 @@ import {
 } from "./document-data-api"
 
 const documentResponse = {
+  contributor_count: 2,
+  contributors: [
+    { avatar: "", id: "user-1", name: "林晓", nickname: "" },
+    { avatar: "", id: "user-2", name: "周宁", nickname: "" },
+  ],
   created_at: "2026-08-05T09:00:00Z",
   creator: { avatar: "", id: "user-1", name: "林晓", nickname: "" },
   document_type: "document",
@@ -43,6 +48,8 @@ describe("document data API", () => {
       expect.objectContaining({ credentials: "include", method: "GET" })
     )
     expect(documents[0]).toMatchObject({
+      contributorCount: 2,
+      contributors: [{ id: "user-1" }, { id: "user-2" }],
       documentType: "document",
       kind: "document",
       title: "产品需求文档",
@@ -95,14 +102,12 @@ describe("document data API", () => {
   })
 
   it("returns the recursive delete count", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse({
-          success: true,
-          data: { deleted_count: 3, document_id: "folder-1" },
-        })
-      )
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: { deleted_count: 3, document_id: "folder-1" },
+      })
+    )
     await expect(deleteClientDocument("folder-1", fetcher)).resolves.toEqual({
       deletedCount: 3,
       documentId: "folder-1",
