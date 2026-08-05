@@ -167,11 +167,14 @@ describe("AppLayout", () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByRole("link", { name: "打开即应官网" })).toMatchObject({
+    const websiteLink = screen.getByRole("link", { name: "打开即应官网" })
+
+    expect(websiteLink).toMatchObject({
       href: "https://jiying.chat/",
       rel: "noopener noreferrer",
       target: "_blank",
     })
+    expect(websiteLink.querySelector("svg.lucide-house")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "下载客户端" })).not.toBeInTheDocument()
   })
 
