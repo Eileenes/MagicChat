@@ -401,77 +401,17 @@ function DocumentToolbar({ editor }: { editor: Editor }) {
         <DocumentControlSeparator />
         <LinkMenu editor={editor} />
         <DocumentControlSeparator />
-        <HorizontalRuleMenu editor={editor} />
+        <ToolbarButton
+          disabled={!editor.isEditable || !editor.can().chain().focus().setHorizontalRule().run()}
+          label="插入分割线"
+          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+        >
+          <Minus />
+        </ToolbarButton>
         <TableInsertMenu editor={editor} />
         <ImageInsertButton editor={editor} />
       </div>
     </div>
-  )
-}
-
-function HorizontalRuleMenu({ editor }: { editor: Editor }) {
-  const [lineStyle, setLineStyle] = React.useState<"dashed" | "dotted" | "double" | "solid">(
-    "solid",
-  )
-  const [thickness, setThickness] = React.useState(1)
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button aria-label="插入分割线" size="icon-sm" title="插入分割线" variant="ghost">
-          <Minus />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 space-y-3">
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">线条样式</legend>
-          <div className="grid grid-cols-2 gap-1">
-            {(["solid", "dashed", "dotted", "double"] as const).map((value) => (
-              <Button
-                aria-pressed={lineStyle === value}
-                key={value}
-                onClick={() => setLineStyle(value)}
-                size="sm"
-                type="button"
-                variant={lineStyle === value ? "secondary" : "ghost"}
-              >
-                {value === "solid"
-                  ? "实线"
-                  : value === "dashed"
-                    ? "虚线"
-                    : value === "dotted"
-                      ? "点线"
-                      : "双线"}
-              </Button>
-            ))}
-          </div>
-        </fieldset>
-        <label className="grid gap-2 text-sm">
-          粗细：{thickness} 像素
-          <input
-            aria-label="分割线粗细"
-            className="w-full"
-            max={6}
-            min={1}
-            onChange={(event) => setThickness(Number(event.target.value))}
-            type="range"
-            value={thickness}
-          />
-        </label>
-        <Button
-          className="w-full"
-          onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .insertContent({ type: "horizontalRule", attrs: { lineStyle, thickness } })
-              .run()
-          }
-          size="sm"
-        >
-          插入分割线
-        </Button>
-      </PopoverContent>
-    </Popover>
   )
 }
 
