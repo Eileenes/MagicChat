@@ -25,6 +25,11 @@ const profile: ServerProfile = {
   normalizedUrl: "https://chat.example.com",
 }
 
+const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
+  Element.prototype,
+  "scrollIntoView",
+)
+
 const mocks = vi.hoisted(() => ({
   externalLinkHandler: undefined as ((url: string) => void) | undefined,
   hostOpenExternal: undefined as ((url: string) => Promise<void>) | undefined,
@@ -115,6 +120,11 @@ describe("桌面设置服务器管理", () => {
   })
 
   afterEach(() => {
+    if (scrollIntoViewDescriptor) {
+      Object.defineProperty(Element.prototype, "scrollIntoView", scrollIntoViewDescriptor)
+    } else {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
     vi.restoreAllMocks()
   })
 
@@ -423,7 +433,7 @@ describe("桌面设置服务器管理", () => {
     for (const label of [
       "通用",
       "新消息通知",
-      "外观与布局",
+      "外观",
       "存储空间",
       "快捷键",
       "软件更新",
@@ -433,7 +443,7 @@ describe("桌面设置服务器管理", () => {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument()
     }
     await user.click(screen.getByRole("button", { name: "存储空间" }))
-    expect(screen.getByRole("heading", { name: "本地消息缓存" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "存储空间" })).toBeInTheDocument()
 
     const cacheButton = screen.getByRole("button", { name: "清理本地消息缓存" })
     expect(cacheButton).toHaveClass("settings-secondary-button")
@@ -452,7 +462,7 @@ describe("桌面设置服务器管理", () => {
     render(<DesktopRoot />)
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
-    await waitFor(() => expect(screen.getByText("通用设置")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole("heading", { name: "通用" })).toBeInTheDocument())
     const hostInstallCount = mocks.installDesktopFetch.mock.calls.length
     expect(hostInstallCount).toBeGreaterThan(0)
 
@@ -465,6 +475,24 @@ describe("桌面设置服务器管理", () => {
     expect(mocks.installDesktopFetch).toHaveBeenCalledTimes(hostInstallCount)
     expect(mocks.restoreFetch).not.toHaveBeenCalled()
   })
+
+  it.each(["win32", "linux"] as const)(
+    "%s 英文界面下完整显示发送消息快捷键文案",
+    async (platform) => {
+      const bridge = createDesktopBridge(undefined, undefined, platform)
+      Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+      const user = userEvent.setup()
+      render(<DesktopRoot />)
+
+      await user.click(await screen.findByRole("button", { name: "打开设置" }))
+      await user.selectOptions(screen.getByRole("combobox", { name: "语言" }), "en")
+      await waitFor(() => expect(screen.getByRole("button", { name: "Shortcuts" })).toBeVisible())
+      await user.click(screen.getByRole("button", { name: "Shortcuts" }))
+
+      const picker = await screen.findByRole("combobox", { name: "Send message shortcut" })
+      expect(picker).toHaveTextContent("↵ send / Ctrl + ↵ new line")
+    },
+  )
 
   it("字体大小设置应用到根元素字号", async () => {
     const bridge = createDesktopBridge()
@@ -495,10 +523,15 @@ describe("桌面设置服务器管理", () => {
     expect(screen.getByText("新消息提示音")).toBeInTheDocument()
     expect(screen.getByText("通知内容")).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "外观与布局" }))
-    expect(screen.getByRole("radio", { name: "跟随系统" })).toBeInTheDocument()
-    expect(screen.getByRole("radio", { name: "浅色" })).toBeInTheDocument()
-    expect(screen.getByRole("radio", { name: "深色" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "外观" }))
+    const appearanceSelect = screen.getByRole("combobox", { name: "外观" })
+    expect(screen.getByText("配色")).toBeInTheDocument()
+    expect(appearanceSelect).toHaveValue("system")
+    expect(screen.getByRole("option", { name: "跟随系统" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "浅色" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "深色" })).toBeInTheDocument()
+    await user.selectOptions(appearanceSelect, "dark")
+    await waitFor(() => expect(document.documentElement).toHaveClass("dark"))
 
     await user.click(screen.getByRole("button", { name: "存储空间" }))
     expect(screen.getByRole("button", { name: "清理本地消息缓存" })).toBeInTheDocument()
@@ -517,6 +550,7 @@ describe("桌面设置服务器管理", () => {
 
     await user.click(screen.getByRole("button", { name: "关于即应" }))
     expect(screen.getByText(/0\.1\.0 · darwin arm64/)).toBeInTheDocument()
+    expect(screen.queryByText(/构建/)).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "导出脱敏诊断" })).toBeInTheDocument()
   })
 
@@ -542,6 +576,60 @@ describe("桌面设置服务器管理", () => {
       expect(bridge.shortcuts.set).toHaveBeenCalledWith("screenshot", "Command+Shift+S"),
     )
     expect(recorder).toHaveTextContent("⌘⇧S")
+  })
+
+  it("发送消息快捷键修复旧值并且只提供两个等宽预设", async () => {
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+      writable: true,
+    })
+    const bridge = createDesktopBridge()
+    vi.mocked(bridge.shortcuts.getState).mockImplementation(async (kind) => ({
+      accelerator:
+        kind === "search"
+          ? "CommandOrControl+Shift+F"
+          : kind === "sendMessage"
+            ? null
+            : "CommandOrControl+Shift+A",
+      recording: false,
+      registered: kind !== "sendMessage",
+    }))
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: bridge,
+    })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await user.click(screen.getByRole("button", { name: "快捷键" }))
+
+    const picker = await screen.findByRole("combobox", { name: "发送消息快捷键" })
+    await waitFor(() => expect(bridge.shortcuts.set).toHaveBeenCalledWith("sendMessage", "Enter"))
+    expect(picker).toHaveTextContent("↵ 发送 / ⌘↵ 换行")
+    expect(screen.queryByRole("button", { name: "恢复默认发送消息" })).toBeNull()
+    expect(picker).toHaveClass("send-message-shortcut-select")
+    expect(screen.getByRole("button", { name: "截图快捷键" })).toHaveClass(
+      "shortcut-recorder-input",
+    )
+
+    picker.focus()
+    await user.keyboard("{Enter}")
+    const options = await screen.findAllByRole("option")
+    expect(options).toHaveLength(2)
+    expect(options[0]).toHaveTextContent("↵ 发送 / ⌘↵ 换行")
+    expect(options[1]).toHaveTextContent("⌘↵ 发送 / ↵ 换行")
+    await user.keyboard("{ArrowDown}{Enter}")
+
+    await waitFor(() =>
+      expect(bridge.shortcuts.set).toHaveBeenCalledWith("sendMessage", "CommandOrControl+Enter"),
+    )
+
+    await user.keyboard("{Enter}{ArrowUp}{Enter}")
+    await waitFor(() =>
+      expect(bridge.shortcuts.set).toHaveBeenLastCalledWith("sendMessage", "Enter"),
+    )
   })
 
   it("快捷键冲突时显示错误并恢复原组合", async () => {
@@ -1200,7 +1288,7 @@ function createDesktopBridge(
     notificationPrivacy: "metadata" as const,
     screenshotShortcut: "CommandOrControl+Shift+A",
     searchShortcut: "CommandOrControl+Shift+F",
-    sendMessageShortcut: "CommandOrControl+Enter",
+    sendMessageShortcut: "Enter",
     selectedServerId: profile.id,
   }
   return {
@@ -1302,7 +1390,7 @@ function createDesktopBridge(
           kind === "search"
             ? "CommandOrControl+Shift+F"
             : kind === "sendMessage"
-              ? "CommandOrControl+Enter"
+              ? settings.sendMessageShortcut
               : "CommandOrControl+Shift+A",
         recording: false,
         registered: kind !== "sendMessage",

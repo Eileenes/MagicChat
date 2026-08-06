@@ -1,4 +1,7 @@
-import { normalizeShortcutAccelerator } from "@shared/shortcut-contract"
+import {
+  normalizeSendMessageShortcutAccelerator,
+  normalizeShortcutAccelerator,
+} from "@shared/shortcut-contract"
 
 export function acceleratorFromKeyboardEvent(
   event: Pick<KeyboardEvent, "altKey" | "code" | "ctrlKey" | "metaKey" | "shiftKey">,
@@ -29,13 +32,17 @@ export function acceleratorMatchesKeyboardEvent(
 ): boolean {
   let tokens: string[]
   try {
-    tokens = normalizeShortcutAccelerator(accelerator).split("+")
+    tokens = normalizeSendMessageShortcutAccelerator(accelerator).split("+")
   } catch {
     return false
   }
   const keyToken = tokens.at(-1)
   const modifiers = tokens.slice(0, -1)
   if (!keyToken || shortcutKeyFromCode(event.code) !== keyToken) return false
+
+  if (modifiers.length === 0) {
+    return !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+  }
 
   const commandOrControl = modifiers.includes("CommandOrControl")
   const command = modifiers.includes("Command")
@@ -74,6 +81,7 @@ function shortcutKeyFromCode(code: string): string | undefined {
     Enter: "Enter",
     Home: "Home",
     Insert: "Insert",
+    NumpadEnter: "Enter",
     PageDown: "PageDown",
     PageUp: "PageUp",
     Space: "Space",

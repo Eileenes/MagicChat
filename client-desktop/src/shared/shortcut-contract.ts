@@ -2,7 +2,9 @@ export const DEFAULT_SCREENSHOT_SHORTCUT = "CommandOrControl+Shift+A"
 
 export const DEFAULT_SEARCH_SHORTCUT = "CommandOrControl+Shift+F"
 
-export const DEFAULT_SEND_MESSAGE_SHORTCUT = "CommandOrControl+Enter"
+export const DEFAULT_SEND_MESSAGE_SHORTCUT = "Enter"
+
+export const ALTERNATE_SEND_MESSAGE_SHORTCUT = "CommandOrControl+Enter"
 
 export type ShortcutKind = "screenshot" | "search" | "sendMessage"
 
@@ -78,9 +80,24 @@ export function normalizeShortcutAccelerator(value: unknown): string {
   return [...orderedModifiers, normalizeShortcutKey(key)].join("+")
 }
 
+export function normalizeSendMessageShortcutAccelerator(value: unknown): string {
+  if (value === "Enter") return value
+  const normalized = normalizeShortcutAccelerator(value)
+  if (
+    normalized === ALTERNATE_SEND_MESSAGE_SHORTCUT ||
+    normalized === "Control+Enter" ||
+    normalized === "Command+Enter"
+  ) {
+    return normalized
+  }
+  throw new Error("发送消息快捷键不受支持")
+}
+
 export function formatShortcutAccelerator(accelerator: string | null, platform: string): string {
   if (!accelerator) return "未设置"
-  const tokens = normalizeShortcutAccelerator(accelerator).split("+")
+  const tokens = (
+    accelerator === "Enter" ? accelerator : normalizeShortcutAccelerator(accelerator)
+  ).split("+")
   const isMac = platform === "darwin"
   return tokens
     .map((token) => {
@@ -90,7 +107,7 @@ export function formatShortcutAccelerator(accelerator: string | null, platform: 
       if (token === "Super") return isMac ? "⌘" : "Super"
       if (token === "Alt") return isMac ? "⌥" : "Alt"
       if (token === "Shift") return isMac ? "⇧" : "Shift"
-      return displayShortcutKey(token)
+      return token === "Enter" ? "↵" : displayShortcutKey(token)
     })
     .join(isMac ? "" : " + ")
 }

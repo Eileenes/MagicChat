@@ -25,6 +25,7 @@ describe("桌面配置存储", () => {
           closeBehavior: "background",
           messageSoundEnabled: true,
           notificationPrivacy: "metadata",
+          sendMessageShortcut: "Control+K",
         },
       }),
     )
@@ -34,7 +35,7 @@ describe("桌面配置存储", () => {
 
     expect(store.getSettings().screenshotShortcut).toBe("CommandOrControl+Shift+A")
     expect(store.getSettings().searchShortcut).toBe("CommandOrControl+Shift+F")
-    expect(store.getSettings().sendMessageShortcut).toBe("CommandOrControl+Enter")
+    expect(store.getSettings().sendMessageShortcut).toBe("Enter")
   })
 
   it("持久化修改和禁用的截图快捷键", async () => {
@@ -62,12 +63,19 @@ describe("桌面配置存储", () => {
     await store.load()
 
     await store.setSettings({ searchShortcut: "Control+Alt+F" })
-    await store.setSettings({ sendMessageShortcut: null })
+    await store.setSettings({ sendMessageShortcut: "Enter" })
 
     const reopened = new ConfigStore(directory)
     await reopened.load()
     expect(reopened.getSettings().searchShortcut).toBe("Control+Alt+F")
+    expect(reopened.getSettings().sendMessageShortcut).toBe("Enter")
+
+    await reopened.setSettings({ sendMessageShortcut: null })
     expect(reopened.getSettings().sendMessageShortcut).toBeNull()
+
+    await expect(reopened.setSettings({ sendMessageShortcut: "Control+K" })).rejects.toThrow(
+      "发送消息快捷键不受支持",
+    )
   })
 
   it("持久化语言和字体大小设置", async () => {

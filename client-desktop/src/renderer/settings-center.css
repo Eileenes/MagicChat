@@ -239,14 +239,6 @@
   min-width: 0;
 }
 
-.settings-group > h3 {
-  color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 550;
-  letter-spacing: 0;
-  margin: 0 0 10px;
-}
-
 .settings-row {
   align-items: center;
   border-bottom: 1px solid color-mix(in oklch, var(--border) 76%, transparent);
@@ -371,8 +363,8 @@
     .settings-center-close,
     .settings-center-icon-button,
     .settings-release-link,
-    .shortcut-recorder-input,
-    .settings-theme-option
+    .send-message-shortcut-select,
+    .shortcut-recorder-input
   ) {
   align-items: center;
   background: var(--background);
@@ -422,32 +414,71 @@
   padding: 8px 0;
 }
 
-.settings-theme-options {
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  overflow: hidden;
+.settings-appearance-row > strong {
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.settings-theme-option {
+.settings-appearance-row {
+  align-items: center;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 76%, transparent);
+  border-top: 1px solid color-mix(in oklch, var(--border) 76%, transparent);
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 76px;
+  min-width: 0;
+  padding: 13px 0;
+}
+
+.settings-appearance-select {
+  grid-column: 2;
+  justify-self: end;
+  position: relative;
+  width: 180px;
+}
+
+.settings-appearance-select select {
+  appearance: none;
   background: var(--background);
-  border: 0;
-  border-right: 1px solid var(--border);
-  color: var(--muted-foreground);
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  color: var(--foreground);
   cursor: pointer;
   font: inherit;
-  height: 42px;
-}
-
-.settings-theme-option:last-child {
-  border-right: 0;
-}
-
-.settings-theme-option[aria-checked="true"] {
-  background: color-mix(in oklch, var(--primary) 12%, var(--background));
-  color: color-mix(in oklch, var(--primary) 85%, var(--foreground));
+  font-size: 13px;
   font-weight: 600;
+  height: 42px;
+  padding: 0 46px 0 14px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+  width: 100%;
+}
+
+.settings-appearance-select select:hover {
+  border-color: color-mix(in oklch, var(--primary) 48%, var(--input));
+}
+
+.settings-center .settings-appearance-select select:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 22%, transparent);
+  outline: none;
+}
+
+.settings-appearance-select-icon {
+  align-items: center;
+  background: var(--primary);
+  border-radius: 6px;
+  color: var(--primary-foreground);
+  display: flex;
+  height: 34px;
+  justify-content: center;
+  pointer-events: none;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 34px;
 }
 
 .settings-about-brand {
@@ -485,15 +516,30 @@
 .settings-update-actions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  justify-content: flex-end;
+  justify-content: flex-start;
+}
+
+.settings-update-status {
+  align-items: start;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.settings-update-actions .settings-release-link,
+.settings-update-actions .settings-primary-button,
+.settings-update-actions .settings-secondary-button {
+  justify-self: auto;
 }
 
 .shortcut-recorder {
   display: grid;
   gap: 6px;
   justify-items: end;
+  max-width: 100%;
   min-width: 0;
+  width: 260px;
 }
 
 .shortcut-recorder-controls {
@@ -502,6 +548,7 @@
   gap: 4px;
   justify-content: flex-end;
   min-width: 0;
+  width: 100%;
 }
 
 .shortcut-recorder-input {
@@ -513,13 +560,51 @@
   font-family: var(--font-mono);
   font-size: 12px;
   height: 36px;
-  min-width: 154px;
   padding: 0 12px;
+  width: 180px;
 }
 
 .shortcut-recorder-input[aria-pressed="true"] {
   border-color: var(--ring);
   color: var(--primary);
+}
+
+.send-message-shortcut-select {
+  background: var(--background);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  height: 36px;
+  max-width: 100%;
+  min-width: 180px;
+  justify-content: center;
+  padding-right: 36px;
+  position: relative;
+  width: fit-content;
+}
+
+.send-message-shortcut-select > [data-slot="select-value"] {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.send-message-shortcut-select > svg {
+  position: absolute;
+  right: 10px;
+}
+
+.send-message-shortcut-menu {
+  min-width: max(180px, var(--radix-select-trigger-width, 180px));
+}
+
+.send-message-shortcut-menu [data-slot="select-item"] {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.send-message-shortcut-picker {
+  justify-items: start;
 }
 
 .shortcut-recorder-error {
@@ -599,6 +684,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .settings-center-nav-item,
+  .settings-appearance-select select,
   .settings-row input[type="checkbox"],
   .settings-row input[type="checkbox"]::after {
     transition: none;
