@@ -51,6 +51,7 @@ describe("DocumentEditor", () => {
 
     expect(screen.getByRole("textbox", { name: "文档页面标题" })).toBeDisabled()
     expect(await screen.findByLabelText("文档正文")).toHaveAttribute("contenteditable", "false")
+    expect(screen.getByRole("button", { name: "插入分割线" })).toBeDisabled()
   })
 
   it("待办项使用与 Web 一致的同行布局并把勾选状态同步到 Yjs", async () => {
@@ -227,6 +228,38 @@ describe("DocumentEditor", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "粗体" })).toHaveAttribute("aria-pressed", "true"),
+    )
+  })
+
+  it("工具栏直接插入默认分割线，并通过节点浮层调整样式", async () => {
+    const user = userEvent.setup()
+    const document = new Y.Doc()
+    renderEditor(
+      <DocumentEditor
+        collaborationDocument={document}
+        onTitleBlur={() => undefined}
+        onTitleChange={() => undefined}
+        title="默认分割线"
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "插入分割线" }))
+    await waitFor(() =>
+      expect(readHorizontalRuleAttributes(document)).toEqual({
+        lineStyle: "solid",
+        thickness: 1,
+      }),
+    )
+
+    const ruleButton = await screen.findByRole("button", { name: "设置分割线" })
+    await user.click(ruleButton)
+    await user.click(screen.getByRole("button", { name: "分割线样式" }))
+    await user.click(await screen.findByRole("menuitem", { name: "双线分割线" }))
+    await waitFor(() =>
+      expect(readHorizontalRuleAttributes(document)).toEqual({
+        lineStyle: "double",
+        thickness: 3,
+      }),
     )
   })
 
