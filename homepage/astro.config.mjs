@@ -23,6 +23,7 @@ export default defineConfig({
           'message-circle',
           'microphone',
           'paperclip',
+          'pointer-2',
           'robot',
           'search',
           'send',
