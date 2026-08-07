@@ -1,7 +1,7 @@
 import * as React from "react"
 import { HocuspocusProvider, WebSocketStatus } from "@hocuspocus/provider"
-import { FileText, Loader2, Menu, RefreshCw, Users } from "lucide-react"
-import { Link, useBlocker, useParams } from "react-router"
+import { AppWindow, FileText, Loader2, Menu, RefreshCw, Users } from "lucide-react"
+import { Link, useBlocker, useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
 import * as Y from "yjs"
 
@@ -28,7 +28,14 @@ import {
   type DocumentTitleSnapshot,
 } from "@/lib/document-title-controller"
 import { getClientProject, type ClientProjectDetail } from "@/lib/project-data-api"
-import { useClientData } from "@/lib/client-data-context"
+import { useDocumentData } from "@/lib/document-data-context"
+import {
+  documentWindowFeedbackMessage,
+  getDocumentReturnPath,
+  parseDocumentWindowLocation,
+  DocumentWindowOpenError,
+  requestDocumentWindow,
+} from "@/lib/document-window-route"
 import {
   documentPresenceColor,
   normalizeDocumentPresenceUsers,
@@ -92,7 +99,8 @@ function DocumentWorkspace({
   project: ClientProjectDetail
 }) {
   const target = useDesktopTarget()
-  const { me, refreshMe, refreshProjects } = useClientData()
+  const navigate = useNavigate()
+  const { me, refreshMe, refreshProjects } = useDocumentData()
   const collaborationAvatar = me?.avatar ?? document.updatedBy.avatar
   const collaborationId = me?.id ?? document.updatedBy.id
   const collaborationName =
@@ -111,12 +119,17 @@ function DocumentWorkspace({
   }, [collaborationAvatar, collaborationId, collaborationName])
   const [ydoc] = React.useState(() => new Y.Doc())
   const ydocDestroyTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const titleControllerDestroyTimers = React.useRef(
+    new Map<DocumentTitleController, ReturnType<typeof setTimeout>>(),
+  )
   const [bodyController] = React.useState(() => new DocumentBodySyncController())
   const [body, setBody] = React.useState<DocumentBodySyncSnapshot>(bodyController.value)
   const [permissionDenied, setPermissionDenied] = React.useState(false)
   const [collaborationProvider, setCollaborationProvider] = React.useState<HocuspocusProvider>()
   const [onlineUsers, setOnlineUsers] = React.useState<DocumentPresenceUser[]>([])
   const [sheetOpen, setSheetOpen] = React.useState(false)
+  const [openingWindow, setOpeningWindow] = React.useState(false)
+  const isDocumentWindow = parseDocumentWindowLocation().kind === "document"
   const collaborationUserRef = React.useRef(collaborationUser)
   const collaborationProviderRef = React.useRef<HocuspocusProvider | undefined>(undefined)
   const publishedCollaborationUserRef = React.useRef<DocumentPresenceUser | undefined>(undefined)
@@ -151,7 +164,21 @@ function DocumentWorkspace({
   })
 
   React.useEffect(() => titleController.subscribe(setTitle), [titleController])
-  React.useEffect(() => () => titleController.destroy(), [titleController])
+  React.useEffect(() => {
+    const destroyTimers = titleControllerDestroyTimers.current
+    const pendingDestroy = destroyTimers.get(titleController)
+    if (pendingDestroy) {
+      clearTimeout(pendingDestroy)
+      destroyTimers.delete(titleController)
+    }
+    return () => {
+      const timer = setTimeout(() => {
+        destroyTimers.delete(titleController)
+        titleController.destroy()
+      }, 0)
+      destroyTimers.set(titleController, timer)
+    }
+  }, [titleController])
   React.useEffect(() => {
     refreshAccountDataRef.current = { refreshMe, refreshProjects }
   }, [refreshMe, refreshProjects])
@@ -298,6 +325,28 @@ function DocumentWorkspace({
     allowNextNavigation.current = true
   }, [])
   const saveTitle = () => void titleController.flush().catch(() => toast.error("保存文档标题失败"))
+  const openInWindow = async () => {
+    if (openingWindow) return
+    const returnPath = isDocumentWindow
+      ? undefined
+      : getDocumentReturnPath(`/projects/${encodeURIComponent(project.id)}/documents`)
+    setOpeningWindow(true)
+    try {
+      const result = await requestDocumentWindow(document.id, target.id)
+      toast.success(result.status === "focused" ? "已聚焦已有文档窗口" : "文档窗口已打开")
+      if (returnPath) navigate(returnPath, { replace: true, viewTransition: true })
+    } catch (reason) {
+      const code = reason instanceof DocumentWindowOpenError ? reason.code : "bridge_unavailable"
+      toast.error(
+        documentWindowFeedbackMessage(
+          code,
+          reason instanceof Error ? reason.message : "文档窗口暂时不可用",
+        ),
+      )
+    } finally {
+      setOpeningWindow(false)
+    }
+  }
 
   if (permissionDenied)
     return (
@@ -319,7 +368,7 @@ function DocumentWorkspace({
     />
   )
   return (
-    <main className="no-drag flex h-svh min-h-0 min-w-0 overflow-hidden bg-muted/40 pt-10">
+    <main className="flex h-svh min-h-0 min-w-0 overflow-hidden bg-muted/40 pt-10">
       <ClientDocumentTitle disableMessageAlert title={titleText} />
       <aside className="hidden w-72 shrink-0 border-r md:block">{sidebar}</aside>
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background/40">
@@ -377,6 +426,16 @@ function DocumentWorkspace({
               <RefreshCw />
             </Button>
           )}
+          <Button
+            aria-label={isDocumentWindow ? "在新窗口打开文档" : "打开新窗口并返回"}
+            disabled={openingWindow}
+            onClick={() => void openInWindow()}
+            size="icon-sm"
+            title={isDocumentWindow ? "在新窗口打开文档" : "打开新窗口并返回"}
+            variant="ghost"
+          >
+            {openingWindow ? <Loader2 className="animate-spin" /> : <AppWindow />}
+          </Button>
           <DocumentOnlineUsers users={onlineUsers} />
         </header>
         {collaborationProvider ? (

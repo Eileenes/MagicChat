@@ -32,6 +32,14 @@ const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
 
 const mocks = vi.hoisted(() => ({
   externalLinkHandler: undefined as ((url: string) => void) | undefined,
+  desktopHostOptions: undefined as
+    | {
+        createRealtimeClient?: unknown
+        setBadge?: unknown
+        setTrayMessages?: unknown
+        showMessageNotification?: unknown
+      }
+    | undefined,
   hostOpenExternal: undefined as ((url: string) => Promise<void>) | undefined,
   openManual: vi.fn(),
   openRelease: vi.fn(),
@@ -59,14 +67,20 @@ vi.mock("@/app/App", () => ({
 
 vi.mock("@/lib/desktop-host", () => ({
   configureDesktopHost: (options: {
+    createRealtimeClient?: unknown
     messageNotificationSoundEnabled?(): boolean
     openExternal?(url: string): Promise<void>
     openSettings(): void
+    setBadge?: unknown
+    setTrayMessages?: unknown
+    showMessageNotification?: unknown
   }) => {
+    mocks.desktopHostOptions = options
     mocks.hostOpenExternal = options.openExternal
     mocks.openSettings = options.openSettings
     mocks.messageNotificationSoundEnabled = options.messageNotificationSoundEnabled
     return () => {
+      mocks.desktopHostOptions = undefined
       mocks.hostOpenExternal = undefined
       mocks.openSettings = undefined
       mocks.messageNotificationSoundEnabled = undefined
@@ -100,6 +114,7 @@ vi.mock("./desktop-transport", () => ({
 describe("桌面设置服务器管理", () => {
   beforeEach(() => {
     mocks.externalLinkHandler = undefined
+    mocks.desktopHostOptions = undefined
     mocks.hostOpenExternal = undefined
     mocks.openSettings = undefined
     mocks.messageNotificationSoundEnabled = undefined
@@ -109,7 +124,7 @@ describe("桌面设置服务器管理", () => {
     mocks.installDesktopFetch.mockReset().mockReturnValue(mocks.restoreFetch)
     mocks.openManual.mockReset().mockResolvedValue(undefined)
     mocks.openRelease.mockReset().mockResolvedValue(undefined)
-    mocks.remove.mockResolvedValue(undefined)
+    mocks.remove.mockResolvedValue(true)
     mocks.restoreFetch.mockReset()
     mocks.shellOpenExternal.mockReset().mockResolvedValue(undefined)
     vi.spyOn(window, "confirm").mockReturnValue(true)
@@ -179,6 +194,43 @@ describe("桌面设置服务器管理", () => {
 
     await waitFor(() => expect(bridge.app.info).toHaveBeenCalled())
     expect(screen.queryByRole("img", { name: "即应" })).not.toBeInTheDocument()
+  })
+
+  it("文档子窗口优先使用 URL 中的 serverId，不受全局服务器选择影响", async () => {
+    const originalRoute = `${window.location.pathname}${window.location.search}`
+    window.history.pushState(
+      {},
+      "",
+      "/documents/document/550e8400-e29b-41d4-a716-446655440000?serverId=server-1&window=document",
+    )
+    const bridge = createDesktopBridge()
+    const otherProfile: ServerProfile = {
+      ...profile,
+      displayName: "其他服务器",
+      id: "server-2",
+      normalizedUrl: "https://other.example.com",
+    }
+    vi.mocked(bridge.servers.list).mockResolvedValue([profile, otherProfile])
+    vi.mocked(bridge.settings.get).mockResolvedValue({
+      ...(await bridge.settings.get()),
+      selectedServerId: otherProfile.id,
+    })
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+
+    try {
+      render(<DesktopRoot />)
+      await waitFor(() =>
+        expect(mocks.installDesktopFetch).toHaveBeenCalledWith(
+          expect.objectContaining({ id: profile.id }),
+        ),
+      )
+      expect(mocks.desktopHostOptions?.createRealtimeClient).toBeUndefined()
+      expect(mocks.desktopHostOptions?.setBadge).toBeUndefined()
+      expect(mocks.desktopHostOptions?.setTrayMessages).toBeUndefined()
+      expect(mocks.desktopHostOptions?.showMessageNotification).toBeUndefined()
+    } finally {
+      window.history.replaceState({}, "", originalRoute || "/")
+    }
   })
 
   it("平台信息返回前不把设置中心误判为 Windows 或 Linux 布局", async () => {
@@ -279,6 +331,20 @@ describe("桌面设置服务器管理", () => {
     expect(screen.getByRole("heading", { name: /从沟通到行动/ })).toBeInTheDocument()
     expect(mocks.remove).toHaveBeenCalledWith(profile.id)
     expect(screen.getByLabelText("服务器地址")).toHaveValue("")
+  })
+
+  it("未同步文档取消关闭后保留当前服务器和设置窗口", async () => {
+    mocks.remove.mockResolvedValueOnce(false)
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await user.click(screen.getByRole("button", { name: "工作空间" }))
+    await user.click(await screen.findByRole("button", { name: "移除服务器" }))
+
+    expect(mocks.remove).toHaveBeenCalledWith(profile.id)
+    expect(screen.getByRole("dialog", { name: "设置" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "开始使用即应" })).not.toBeInTheDocument()
   })
 
   it("StrictMode 下忽略已失效的启动结果，避免提前挂载工作区", async () => {
@@ -1354,6 +1420,10 @@ function createDesktopBridge(
       upsert: vi.fn(),
     },
     navigation: {
+      openDocumentWindow: vi.fn().mockResolvedValue({
+        ok: true,
+        result: { status: "created" },
+      }),
       subscribe: vi.fn().mockReturnValue(unsubscribe),
       subscribeUnknownServer: vi.fn().mockReturnValue(unsubscribe),
     },

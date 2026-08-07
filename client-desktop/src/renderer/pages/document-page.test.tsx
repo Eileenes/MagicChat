@@ -89,6 +89,13 @@ vi.mock("@/lib/client-data-context", () => ({
     refreshProjects: mocks.currentRefreshProjects,
   }),
 }))
+vi.mock("@/lib/document-data-context", () => ({
+  useDocumentData: () => ({
+    me: mocks.currentMe,
+    refreshMe: mocks.currentRefreshMe,
+    refreshProjects: mocks.currentRefreshProjects,
+  }),
+}))
 vi.mock("@/lib/document-data-api", () => ({
   createClientDocument: mocks.createClientDocument,
   getClientDocument: mocks.getClientDocument,
@@ -148,7 +155,10 @@ describe("DocumentPage", () => {
     mocks.updateCollaborativeDocumentTitle.mockReset().mockResolvedValue(document.title)
   })
 
-  afterEach(() => vi.clearAllMocks())
+  afterEach(() => {
+    vi.clearAllMocks()
+    vi.unstubAllGlobals()
+  })
 
   it("避开 Desktop 标题栏并同时展示返回入口、文档标题和同步状态", async () => {
     renderPage()
@@ -157,6 +167,7 @@ describe("DocumentPage", () => {
     expect(title).toHaveValue("陈富东测试")
     expect(title).not.toHaveAttribute("maxlength")
     expect(title.closest("main")).toHaveClass("h-svh", "pt-10")
+    expect(title.closest("main")).not.toHaveClass("no-drag")
     expect(screen.getByRole("link", { name: "返回项目：即应产品迭代" })).toHaveAttribute(
       "href",
       "/projects/project-1/documents",
@@ -222,6 +233,52 @@ describe("DocumentPage", () => {
     mocks.providerOptions?.onClose?.({ event: { code: 4403 } })
     expect(mocks.destroyProvider).toHaveBeenCalledOnce()
     expect(mocks.destroyWebsocketProvider).toHaveBeenCalledOnce()
+  })
+
+  it("标题区的新窗口入口等待 Bridge 成功后返回项目文档列表", async () => {
+    const openDocumentWindow = vi.fn().mockResolvedValue({
+      ok: true,
+      result: { status: "created" },
+    })
+    vi.stubGlobal("desktop", { navigation: { openDocumentWindow } })
+    const router = renderPage()
+    await screen.findByRole("textbox", { name: "顶部文档标题" })
+
+    expect(
+      screen
+        .getByRole("button", { name: "打开新窗口并返回" })
+        .querySelector("svg.lucide-app-window"),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "打开当前文档并返回" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "打开新窗口并返回" }))
+    await waitFor(() => expect(openDocumentWindow).toHaveBeenCalledWith(document.id, "server-1"))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/projects/project-1/documents"),
+    )
+  })
+
+  it("子窗口中的新窗口入口只聚焦文档，不改变当前路由", async () => {
+    const initialUrl = window.location.href
+    window.history.pushState(
+      {},
+      "",
+      `/documents/document/${document.id}?serverId=server-1&window=document`,
+    )
+    const openDocumentWindow = vi.fn().mockResolvedValue({
+      ok: true,
+      result: { status: "focused" },
+    })
+    vi.stubGlobal("desktop", { navigation: { openDocumentWindow } })
+    try {
+      const router = renderPage()
+      await screen.findByRole("textbox", { name: "顶部文档标题" })
+
+      fireEvent.click(screen.getByRole("button", { name: "在新窗口打开文档" }))
+      await waitFor(() => expect(openDocumentWindow).toHaveBeenCalledWith(document.id, "server-1"))
+      expect(router.state.location.pathname).toBe(`/documents/document/${document.id}`)
+    } finally {
+      window.history.pushState({}, "", initialUrl)
+    }
   })
 
   it("发布并消费 awareness，在正常卸载时清空在线状态并销毁 Provider", async () => {
@@ -314,6 +371,24 @@ describe("DocumentPage", () => {
     expect(destroyDocument.mock.contexts).not.toContain(mocks.providerOptions?.document)
     expect(mocks.passedCollaborationProvider).toBeDefined()
   })
+
+  it("StrictMode 重放 Effect 后仍会自动保存标题", async () => {
+    mocks.updateCollaborativeDocumentTitle.mockResolvedValue("StrictMode 标题")
+    renderPage(true)
+    fireEvent.change(await screen.findByRole("textbox", { name: "顶部文档标题" }), {
+      target: { value: "StrictMode 标题" },
+    })
+
+    await waitFor(
+      () =>
+        expect(mocks.updateCollaborativeDocumentTitle).toHaveBeenCalledWith(
+          document.id,
+          "StrictMode 标题",
+        ),
+      { timeout: 1_500 },
+    )
+    expect(await screen.findByText(/标题已自动保存.*正文已同步/)).toBeInTheDocument()
+  })
 })
 
 function renderPage(strictMode = false) {
@@ -323,6 +398,7 @@ function renderPage(strictMode = false) {
         path: "/documents/document/:documentId",
         element: <DocumentPage />,
       },
+      { path: "/projects/:projectId/documents", element: <div>项目页面</div> },
       { path: "/projects/:projectId", element: <div>项目页面</div> },
     ],
     { initialEntries: [`/documents/document/${document.id}`] },

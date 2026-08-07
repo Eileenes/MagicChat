@@ -26,6 +26,9 @@ export class HttpTransport {
   constructor(
     private readonly profiles: ServerProfiles,
     private readonly sessions: SessionController,
+    private readonly lifecycle: Readonly<{
+      onUserChanged?: (serverId: string) => void
+    }> = {},
   ) {}
 
   cancel(requestId: string, ownerId: number): void {
@@ -56,7 +59,11 @@ export class HttpTransport {
   ): Promise<ClientResponse<T>> {
     validateRequest(request)
     const profile = this.profiles.require(target.id)
-    if (profile.normalizedUrl !== target.normalizedUrl)
+    if (
+      profile.normalizedUrl !== target.normalizedUrl ||
+      (!isUnauthenticatedRequest(request) &&
+        (!target.userId || target.userId === "anonymous" || profile.lastUserId !== target.userId))
+    )
       throw new ClientTransportError("invalid_request", "认证目标已失效")
     const key = pendingKey(ownerId, request.requestId)
     if (this.pending.has(key)) throw new ClientTransportError("invalid_request", "请求标识重复")
@@ -93,8 +100,11 @@ export class HttpTransport {
         : contentType.startsWith("text/")
           ? new TextDecoder().decode(bytes)
           : bytes
-      if (response.ok && isAuthenticationResponse(request.path, body)) {
+      if (response.ok && isAuthenticationResponse(request, body)) {
+        const previousUserId = profile.lastUserId
         await this.profiles.recordUser(profile.id, body.data.user.id)
+        if (previousUserId && previousUserId !== body.data.user.id)
+          this.lifecycle.onUserChanged?.(profile.id)
       }
       return {
         body: body as T,
@@ -135,6 +145,18 @@ export class HttpTransport {
   }
 }
 
+function isUnauthenticatedRequest(request: ClientRequest): boolean {
+  const pathname = clientPathname(request.path)
+  if (request.method === "GET")
+    return pathname === "/api/client/info" || pathname === "/api/client/me"
+  if (request.method !== "POST") return false
+  return [
+    "/api/client/auth/login",
+    "/api/client/auth/email-code/request",
+    "/api/client/auth/email-code/login",
+  ].includes(pathname)
+}
+
 type PendingHttpRequest = {
   controller: AbortController
   ownerId: number
@@ -149,19 +171,24 @@ function pendingKey(ownerId: number, requestId: string): string {
 }
 
 function isAuthenticationResponse(
-  path: string,
+  request: ClientRequest,
   body: unknown,
 ): body is { data: { user: { id: string } } } {
+  const pathname = clientPathname(request.path)
   if (
     !(
-      path.includes("/auth/login") ||
-      path.includes("/auth/email-code/login") ||
-      path.startsWith("/api/client/me")
+      (request.method === "GET" && pathname === "/api/client/me") ||
+      (request.method === "POST" &&
+        ["/api/client/auth/login", "/api/client/auth/email-code/login"].includes(pathname))
     )
   )
     return false
   const value = body as { data?: { user?: { id?: unknown } } }
   return typeof value?.data?.user?.id === "string"
+}
+
+function clientPathname(path: string): string {
+  return path.split("?", 1)[0]
 }
 
 function validateRequest(request: ClientRequest): void {

@@ -39,7 +39,7 @@ export class WindowController {
     })
     window.removeMenu()
     this.mainWindow = window
-    this.installSecurity(window)
+    installTrustedWindowSecurity(window)
     window.on("ready-to-show", () => {
       if (!startHidden) window.show()
     })
@@ -77,14 +77,7 @@ export class WindowController {
 
   setThemeBackground(dark: boolean): void {
     const window = this.current()
-    window?.setBackgroundColor(dark ? "#09090b" : "#ffffff")
-    if (window && process.platform !== "darwin") {
-      window.setTitleBarOverlay({
-        color: "#00000000",
-        height: DESKTOP_TITLEBAR_HEIGHT,
-        symbolColor: dark ? "#fafafa" : "#18181b",
-      })
-    }
+    if (window) setTrustedWindowTheme(window, dark, process.platform)
   }
 
   send(channel: string, payload?: unknown): void {
@@ -105,14 +98,6 @@ export class WindowController {
     this.send("desktop:v1:navigate", route)
   }
 
-  private installSecurity(window: BrowserWindow): void {
-    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
-    window.webContents.on("will-navigate", (event, url) => {
-      if (isTrustedRenderer(url)) return
-      event.preventDefault()
-    })
-  }
-
   private handleClose(event: Event): void {
     const action = resolveWindowCloseAction({
       appReady: app.isReady(),
@@ -125,6 +110,39 @@ export class WindowController {
     if (action === "hide") this.mainWindow?.hide()
     else app.quit()
   }
+}
+
+export function setTrustedWindowTheme(
+  window: Pick<BrowserWindow, "setBackgroundColor" | "setTitleBarOverlay">,
+  dark: boolean,
+  platform: NodeJS.Platform,
+): void {
+  window.setBackgroundColor(dark ? "#09090b" : "#ffffff")
+  if (platform === "darwin") return
+  window.setTitleBarOverlay({
+    color: "#00000000",
+    height: DESKTOP_TITLEBAR_HEIGHT,
+    symbolColor: dark ? "#fafafa" : "#18181b",
+  })
+}
+
+export type TrustedWindowSecurityOptions = Readonly<{
+  navigationGuard?: (url: string) => boolean
+}>
+
+export function installTrustedWindowSecurity(
+  window: BrowserWindow,
+  options: TrustedWindowSecurityOptions = {},
+): void {
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
+  window.webContents.on("will-navigate", (event, url) => {
+    if (isAllowedWindowNavigation(url, options.navigationGuard)) return
+    event.preventDefault()
+  })
+  window.webContents.on("will-redirect", (event, url) => {
+    if (isAllowedWindowNavigation(url, options.navigationGuard)) return
+    event.preventDefault()
+  })
 }
 
 export function getMainWindowTitleBarOptions(
@@ -161,4 +179,11 @@ function isTrustedRenderer(rawUrl: string): boolean {
     }
   }
   return false
+}
+
+function isAllowedWindowNavigation(
+  rawUrl: string,
+  navigationGuard?: (url: string) => boolean,
+): boolean {
+  return isTrustedRenderer(rawUrl) && (navigationGuard?.(rawUrl) ?? true)
 }
