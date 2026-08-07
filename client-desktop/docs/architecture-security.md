@@ -17,10 +17,27 @@ GitHub Token、完整更新 URL、Header 或本地缓存路径；手动下载地
       Preload
         │ 白名单 IPC
         ▼
- Electron Main ── HTTP/WebSocket ── MagicChat Server
+Electron Main ── HTTP/WebSocket ── MagicChat Server
         │
         └── 文件、通知、权限、剪贴板、更新和系统窗口
 ```
+
+文档协作使用独立的 `desktop:v1:document-collaboration-*` Bridge，不复用普通 JSON
+realtime 通道。Renderer 只能提交不可变认证目标、文档 UUID、不透明 sessionId 和二进制帧；
+不能提交 URL、Origin、Cookie、Header、代理或通用 WebSocket 参数。Main 从已保存 Server
+构造固定 `/api/client/document/collaboration` WSS 地址，持有目标 Electron Session Cookie、
+HTTPS Origin、系统代理和 TLS 信任链，并校验 Hocuspocus 帧中的文档路由名与 session 绑定
+UUID 一致。
+
+单个文档协作帧上限为 16 MiB，单会话待发送队列上限为 32 MiB，每个 WebContents 最多
+8 个文档会话。IPC 两侧复制 `Uint8Array`，会话按 owner、不可变 targetKey、文档 ID 和
+sessionId 隔离；页面卸载、WebContents 销毁、注销、认证失效、Server 删除、Target 切换、
+休眠和应用退出都会幂等关闭对应 socket 并释放队列、监听器和定时器。Main 不建立自动重连，
+退避重连只由 Hocuspocus Provider 负责。
+
+文档协作日志不得包含 Cookie、认证 Header、标题、正文、Yjs 帧、完整 URL 或本地路径；
+错误只向 Renderer 返回稳定作用域。document-server 4403 只表示当前文档权限失败，Desktop
+不会据此注销整个账户；只有统一 HTTP 401 认证控制器确认 Target 失效时才清理全局会话。
 
 - `src/main` 持有 Server Profile、Electron Session、Cookie、HTTP、WebSocket、
   文件、通知、更新、深链接和安全存储。
@@ -31,8 +48,53 @@ GitHub Token、完整更新 URL、Header 或本地缓存路径；手动下载地
 - `src/shared` 只存放进程间契约，不承载页面或平台业务实现。
 
 生产 Renderer 从 `magicchat-app://app/` 加载。主窗口拒绝远程导航和任意新窗口，
-外部 HTTPS 链接必须通过 Bridge 交给系统浏览器。CSP 禁止远程脚本、对象、Frame
-和 Renderer 直接发起任意网络连接。
+工作区中的外部 HTTPS 链接通过 Bridge 直接交给系统浏览器；HTTP 链接必须先由 Renderer
+展示目标地址和未加密风险，用户确认后再打开。Main 仍会校验协议，主窗口拒绝绕过统一
+外链流程的远程导航和任意新窗口。CSP 禁止远程脚本、对象、Frame 和 Renderer 直接发起
+任意网络连接。外部 HTTP 图片仍不得自动加载。
+
+## 文档独立窗口
+
+Desktop 文档窗口是由 Main 创建的独立顶层 `BrowserWindow`，主窗口仍负责聊天、通知、托盘和
+角标。Renderer 只能通过 `DesktopBridge.navigation.openDocumentWindow(documentId, serverId)`
+请求打开窗口；Preload 不暴露通用 URL、BrowserWindow、窗口选项或任意 IPC channel。
+
+窗口请求必须经过可信 IPC sender 校验，并绑定已保存的 Server Profile、当前 `lastUserId` 和
+文档 UUID。Main 使用 `serverId + userId + documentId` 建立幂等索引，同一认证 Target 最多
+打开 8 个文档窗口；重复请求等待同一首屏加载结果，成功后才聚焦已有窗口。子窗口使用与主窗口一致的 preload、context
+isolation、sandbox、webSecurity 和 CSP，并且只加载带有 `serverId`、`window=document` 的
+本地 `magicchat-app://app/` 路由。远程导航、任意新窗口和伪造 Origin、Header、Cookie、脚本
+均在 Main/Preload 边界拒绝。
+
+文档窗口身份在创建后固定绑定单个 `serverId + userId + documentId`，不允许在原窗口内切换
+到其他文档。子窗口侧边栏选择或新建其他文档时，只能通过同一窄 Bridge 创建或聚焦目标文档
+窗口，当前窗口路由保持不变，确保 Main 索引、导航白名单、协作 owner 和状态键始终一致。
+
+开发模式的文档窗口复用受控的 Vite Renderer 地址；生产模式的本地协议在 SPA 路由回退时将
+Renderer 入口资源规范化到协议根路径，确保带文档路由的 URL 不会把 JS/CSS 解析到
+`documents/document/assets` 等不存在的目录。
+
+文档子窗口使用专用的文档认证/数据宿主，只加载当前用户、项目和文档数据，并复用文档 REST、
+Yjs/Hocuspocus、标题保存和离开保护；它不挂载聊天 `ClientDataProvider`、普通 realtime、
+聊天事件同步、消息通知同步、聊天轮询、托盘消息或角标更新。文档协作仍通过现有
+`document-collaboration-controller`，每个子窗口使用独立 WebContents owner；关闭、崩溃、加载
+失败、WebContents 销毁、401、注销、账号切换、Server Profile 删除和应用退出都会幂等清理对应
+owner 的协作 session、队列和监听器，不影响其他 Server 的窗口。普通应用退出会先请求所有文档
+窗口执行现有未同步关闭确认；用户取消时终止退出并保留窗口，确认后才进入不可逆资源清理。
+OTA 安装也在调用平台安装退出前完成同一确认，避免更新流程绕过未同步保护。
+移除 Server Profile 前只协商关闭该 Server 的文档窗口；用户取消时终止移除且不清理 Session、
+凭据或缓存，确认后等待最终窗口状态写入，再删除该 Server 下所有账号和文档的窗口状态。
+
+窗口状态仅持久化按认证 Target/文档隔离的 bounds 和显示器元数据，使用最小 `760x560`。移动
+和缩放事件采用防抖写入并在关闭时刷新最终状态；恢复时优先使用仍存在的已保存显示器，并按其
+workArea 夹紧，显示器拔除或完全离屏才回退到主窗口所在显示器的默认位置。状态文件不保存正文、
+标题、消息、凭据、Cookie、Token 或完整 URL。该方案不新增 Server API、数据库、文档协作协议
+或迁移，也不提供同一窗口内的聊天/文档分屏；普通文档链接仍在当前窗口导航，需要并行聊天时
+通过受控入口再次打开独立文档窗口。
+
+普通退出和 OTA 安装会在关闭文档窗口后等待最终 bounds 写入队列完成，再进入不可逆资源清理。
+文档窗口创建时使用当前原生深浅色主题，并与主窗口一起响应后续主题切换，避免深色模式下出现
+白色背景闪烁或系统窗口控制键对比度不足。
 
 ## Renderer 独立策略
 
@@ -56,6 +118,10 @@ Session 仍使用 Server ID 隔离，以保证移除服务器时可以定向清�
 每个 Server ID 使用独立的 `persist:magicchat-server-<id>` Session partition。
 Main 只接受已保存的 Server 以及相对 `/api/client/` 路径，并限制请求方法、Header、
 超时和响应大小。Cookie 和认证材料不返回 Renderer。
+
+匿名 Target 仅能调用精确的只读启动接口和登录接口：`GET /api/client/info`、
+`GET /api/client/me` 以及固定的账号/邮箱验证码登录 POST。资料修改、头像上传、注销和其他
+业务接口必须匹配 Profile 当前不可变用户 Target，不能用匿名或旧用户 Target 借用 Session Cookie。
 
 受认证头像、消息图片和音频通过 `magicchat-media://` 读取。Main 使用对应 Server
 Session 请求资源并过滤响应 Header；Renderer 不拼接认证 Header，也不能读取 Cookie。

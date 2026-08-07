@@ -49,6 +49,21 @@ vi.mock("@/components/theme-provider", () => ({
   }),
 }))
 
+vi.mock("@/components/locale-provider", async () => {
+  const { createElement, Fragment } = await import("react")
+  const { translate } = await import("@/lib/i18n")
+  return {
+    LocaleProvider: ({ children }: { children: React.ReactNode }) =>
+      createElement(Fragment, null, children),
+    useLocale: () => ({
+      fontScale: "normal",
+      locale: "zh-CN",
+      t: (key: string, params?: Record<string, string | number>) =>
+        translate("zh-CN", key as never, params),
+    }),
+  }
+})
+
 vi.mock("@/lib/client-auth", () => ({
   clientLogout: mocks.clientLogout,
 }))
@@ -143,6 +158,24 @@ describe("AppLayout", () => {
       rel: "noopener noreferrer",
       target: "_blank",
     })
+  })
+
+  it("通过统一外链入口打开固定官网", () => {
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>,
+    )
+
+    const websiteLink = screen.getByRole("link", { name: "打开即应官网" })
+
+    expect(websiteLink).toMatchObject({
+      href: "https://jiying.chat/",
+      rel: "noopener noreferrer",
+      target: "_blank",
+    })
+    expect(websiteLink.querySelector("svg.lucide-house")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "下载客户端" })).not.toBeInTheDocument()
   })
 
   it("stays on the login page after logout", async () => {

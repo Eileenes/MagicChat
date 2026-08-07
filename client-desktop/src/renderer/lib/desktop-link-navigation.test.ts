@@ -38,37 +38,23 @@ describe("Desktop 链接导航", () => {
     }
   })
 
-  it("通过系统浏览器打开外部 HTTPS 链接", () => {
-    const openExternal = vi.fn()
-    const restore = installDesktopLinkNavigation(openExternal)
-    const anchor = document.createElement("a")
-    anchor.href = "https://example.com/docs"
-    document.body.append(anchor)
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true })
+  it.each(["https://example.com/docs", "http://intranet.example.test:8080/docs"])(
+    "将 HTTP 和 HTTPS 外链交给统一宿主策略：%s",
+    (url) => {
+      const openExternal = vi.fn()
+      const restore = installDesktopLinkNavigation(openExternal)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      document.body.append(anchor)
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true })
 
-    try {
-      anchor.dispatchEvent(event)
-      expect(event.defaultPrevented).toBe(true)
-      expect(openExternal).toHaveBeenCalledWith("https://example.com/docs")
-    } finally {
-      restore()
-    }
-  })
-
-  it("继续阻止不安全的外部 HTTP 链接", () => {
-    const openExternal = vi.fn()
-    const restore = installDesktopLinkNavigation(openExternal)
-    const anchor = document.createElement("a")
-    anchor.href = "http://example.com/docs"
-    document.body.append(anchor)
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true })
-
-    try {
-      anchor.dispatchEvent(event)
-      expect(event.defaultPrevented).toBe(true)
-      expect(openExternal).not.toHaveBeenCalled()
-    } finally {
-      restore()
-    }
-  })
+      try {
+        anchor.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+        expect(openExternal).toHaveBeenCalledWith(url)
+      } finally {
+        restore()
+      }
+    },
+  )
 })

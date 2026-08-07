@@ -6,8 +6,19 @@ import {
   type DesktopBridge,
   type UpdaterState,
 } from "@shared/bridge"
+import { normalizeDocumentWindowOpenResponse } from "@shared/document-window-contract"
 import type { ASREvent } from "@shared/asr-contract"
+import type { DocumentCollaborationEvent } from "@shared/document-collaboration-contract"
 import type { RealtimeEnvelope } from "@shared/client-contract"
+import {
+  CAPTURE_BRIDGE_VERSION,
+  type CaptureBridge,
+  type CaptureResultFinish,
+  type CaptureSessionMetadata,
+  type ScreenshotConversationResult,
+  type ScreenshotStartFailure,
+  type ScreenshotStartResult,
+} from "@shared/screenshot-contract"
 
 const bridge: DesktopBridge = {
   version: BRIDGE_VERSION,
@@ -37,6 +48,22 @@ const bridge: DesktopBridge = {
     export: () => ipcRenderer.invoke(IPC.diagnosticsExport),
     reportRuntime: (snapshot) => ipcRenderer.send(IPC.diagnosticsRuntime, snapshot),
   },
+  documentCollaboration: {
+    cancel: (connectionId) => ipcRenderer.invoke(IPC.documentCollaborationCancel, connectionId),
+    close: (sessionId) => ipcRenderer.invoke(IPC.documentCollaborationClose, sessionId),
+    connect: (target, documentId, connectionId) =>
+      ipcRenderer.invoke(IPC.documentCollaborationConnect, target, documentId, connectionId),
+    send: (sessionId, frame) =>
+      ipcRenderer.invoke(IPC.documentCollaborationSend, sessionId, Uint8Array.from(frame)),
+    subscribe: (listener) =>
+      subscribe<DocumentCollaborationEvent>(IPC.documentCollaborationEvent, (event) => {
+        listener(
+          event.type === "message"
+            ? Object.freeze({ ...event, data: Uint8Array.from(event.data) })
+            : Object.freeze({ ...event }),
+        )
+      }),
+  },
   files: {
     download: (target, path, name) => ipcRenderer.invoke(IPC.filesDownload, target, path, name),
     openLocation: (path) => ipcRenderer.invoke(IPC.filesOpenLocation, path),
@@ -65,11 +92,18 @@ const bridge: DesktopBridge = {
   },
   notifications: { show: (input) => ipcRenderer.invoke(IPC.notificationShow, input) },
   navigation: {
+    openDocumentWindow: async (documentId, serverId) =>
+      normalizeDocumentWindowOpenResponse(
+        await ipcRenderer.invoke(IPC.documentWindowOpen, { documentId, serverId }),
+      ),
     subscribe: (listener) => subscribe<string>(IPC.navigate, listener),
     subscribeUnknownServer: (listener) =>
       subscribe<{ serverId: string }>(IPC.unknownServer, listener),
   },
-  permissions: { request: (kind) => ipcRenderer.invoke(IPC.permissionsRequest, kind) },
+  permissions: {
+    openSettings: (kind) => ipcRenderer.invoke(IPC.permissionsOpenSettings, kind),
+    request: (kind) => ipcRenderer.invoke(IPC.permissionsRequest, kind),
+  },
   realtime: {
     close: (target) => ipcRenderer.invoke(IPC.realtimeClose, target),
     connect: (target) => ipcRenderer.invoke(IPC.realtimeConnect, target),
@@ -77,6 +111,29 @@ const bridge: DesktopBridge = {
       ipcRenderer.invoke(IPC.realtimeSend, target, method, payload),
     subscribe: (listener) => subscribe<RealtimeEnvelope>(IPC.realtimeEvent, listener),
     subscribeUnauthorized: (listener) => subscribe(IPC.realtimeUnauthorized, listener),
+  },
+  screenshot: {
+    start: (input): Promise<ScreenshotStartResult> =>
+      ipcRenderer.invoke(IPC.screenshotStart, input),
+    subscribeCompleted: (listener) =>
+      subscribe<ScreenshotConversationResult>(IPC.screenshotCompleted, listener),
+    subscribeStartFailed: (listener) =>
+      subscribe<ScreenshotStartFailure>(IPC.screenshotStartFailed, listener),
+  },
+  shortcuts: {
+    beginRecording: (kind) => ipcRenderer.invoke(IPC.shortcutRecordingBegin, kind),
+    cancelRecording: () => ipcRenderer.invoke(IPC.shortcutRecordingCancel),
+    getState: (kind) => ipcRenderer.invoke(IPC.shortcutsGetState, kind),
+    set: (kind, accelerator) =>
+      ipcRenderer.invoke(
+        kind === "screenshot"
+          ? IPC.shortcutScreenshotSet
+          : kind === "search"
+            ? IPC.shortcutSearchSet
+            : IPC.shortcutSendMessageSet,
+        accelerator,
+      ),
+    subscribeSearchOpen: (listener) => subscribe(IPC.searchOpen, listener),
   },
   servers: {
     add: (url, name) => ipcRenderer.invoke(IPC.serversAdd, url, name),
@@ -109,7 +166,18 @@ const bridge: DesktopBridge = {
   },
 }
 
-if (process.argv.includes("--magicchat-proxy-auth")) {
+if (process.argv.includes("--magicchat-capture")) {
+  const captureBridge: CaptureBridge = {
+    version: CAPTURE_BRIDGE_VERSION,
+    cancel: () => ipcRenderer.invoke(IPC.screenshotCancel),
+    getMetadata: (): Promise<CaptureSessionMetadata> => ipcRenderer.invoke(IPC.screenshotMetadata),
+    resultChunk: (index, bytes) => ipcRenderer.invoke(IPC.screenshotResultChunk, index, bytes),
+    resultFinish: (): Promise<CaptureResultFinish> =>
+      ipcRenderer.invoke(IPC.screenshotResultFinish),
+    resultStart: (input) => ipcRenderer.invoke(IPC.screenshotResultStart, input),
+  }
+  contextBridge.exposeInMainWorld("capture", Object.freeze(captureBridge))
+} else if (process.argv.includes("--magicchat-proxy-auth")) {
   contextBridge.exposeInMainWorld(
     "proxyAuth",
     Object.freeze({

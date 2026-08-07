@@ -1,6 +1,7 @@
 import {
   BriefcaseBusiness,
   CircleUserRound,
+  House,
   Loader2Icon,
   LogOut,
   MessageCircleMore,
@@ -17,6 +18,7 @@ import { toast } from "sonner"
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
 import type { CroppedAvatar } from "@/components/custom-avatar-picker"
 import { useTheme } from "@/components/theme-provider"
+import { useLocale } from "@/components/locale-provider"
 import { UserSettingsDialog } from "@/components/user-settings-dialog"
 import {
   AlertDialog,
@@ -51,20 +53,21 @@ import { useAppInfo } from "@/lib/app-info-context"
 import { cn } from "@/lib/utils"
 
 const navItems = [
-  { label: "聊天", to: "/chat", icon: MessageCircleMore },
-  { label: "通讯录", to: "/contacts", icon: CircleUserRound },
-  { label: "项目", to: "/projects", icon: BriefcaseBusiness },
-]
+  { label: "nav.chat", to: "/chat", icon: MessageCircleMore },
+  { label: "nav.contacts", to: "/contacts", icon: CircleUserRound },
+  { label: "nav.projects", to: "/projects", icon: BriefcaseBusiness },
+] as const
 
 const themeItems = [
-  { value: "system", label: "跟随系统", icon: SunMoon },
-  { value: "light", label: "明亮模式", icon: Sun },
-  { value: "dark", label: "黑暗模式", icon: Moon },
+  { value: "system", label: "nav.theme.system", icon: SunMoon },
+  { value: "light", label: "nav.theme.light", icon: Sun },
+  { value: "dark", label: "nav.theme.dark", icon: Moon },
 ] as const
 
 type ThemeValue = (typeof themeItems)[number]["value"]
 
 export function AppLayout({ footerAction }: { footerAction?: ReactNode }) {
+  const { t } = useLocale()
   const { clearMessageScope, conversations, me, refreshMe } = useClientData()
   const totalUnreadCount = getTotalUnreadCount(conversations)
   const notifiableUnreadCount = getNotifiableUnreadCount(conversations)
@@ -106,7 +109,7 @@ export function AppLayout({ footerAction }: { footerAction?: ReactNode }) {
     <div className="flex h-svh min-h-0 bg-background pt-10 text-foreground">
       <aside className="flex w-12 shrink-0 flex-col items-center border-r bg-sidebar py-3">
         <UserAvatarMenu clearMessageScope={clearMessageScope} user={me} refreshMe={refreshMe} />
-        <nav aria-label="主导航" className="flex flex-1 flex-col gap-2">
+        <nav aria-label={t("nav.main")} className="flex flex-1 flex-col gap-2">
           {navItems.map((item) => (
             <MainNavItem
               key={item.to}
@@ -120,6 +123,7 @@ export function AppLayout({ footerAction }: { footerAction?: ReactNode }) {
         </nav>
         <div className="flex flex-col items-center gap-2">
           {footerAction}
+          <ProductWebsiteLink />
           <GithubLink />
           <ThemeSwitcher />
           <SidebarSettingsButton />
@@ -127,6 +131,28 @@ export function AppLayout({ footerAction }: { footerAction?: ReactNode }) {
       </aside>
       <Outlet />
     </div>
+  )
+}
+
+function ProductWebsiteLink() {
+  const { t } = useLocale()
+  return (
+    <Button
+      asChild
+      className="rounded-md hover:bg-transparent hover:text-teal-500 dark:hover:bg-transparent"
+      size="icon-sm"
+      variant="ghost"
+    >
+      <a
+        aria-label={t("nav.website")}
+        href="https://jiying.chat/"
+        rel="noopener noreferrer"
+        target="_blank"
+        title={t("nav.website.short")}
+      >
+        <House aria-hidden="true" className="size-4" />
+      </a>
+    </Button>
   )
 }
 
@@ -139,6 +165,7 @@ function UserAvatarMenu({
   refreshMe: () => Promise<void>
   user: ClientUser
 }) {
+  const { t } = useLocale()
   const navigate = useNavigate()
   const { setAuthenticated } = useAppInfo()
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
@@ -156,7 +183,7 @@ function UserAvatarMenu({
       navigate("/login", { replace: true })
     } catch (error) {
       setLogoutConfirmOpen(false)
-      toast.error(getLogoutErrorMessage(error))
+      toast.error(getLogoutErrorMessage(error, t))
     } finally {
       setLogoutPending(false)
     }
@@ -166,9 +193,9 @@ function UserAvatarMenu({
     try {
       await updateCurrentClientUser({ avatar })
       await refreshMe()
-      toast.success("头像已保存")
+      toast.success(t("user.avatarSaved"))
     } catch (error) {
-      toast.error(getProfileUpdateErrorMessage(error))
+      toast.error(getProfileUpdateErrorMessage(error, t))
       throw error
     }
   }
@@ -177,10 +204,10 @@ function UserAvatarMenu({
     try {
       const updatedUser = await uploadCurrentClientAvatar(avatar.file)
       await refreshMe()
-      toast.success("头像已保存")
+      toast.success(t("user.avatarSaved"))
       return updatedUser.avatar
     } catch (error) {
-      toast.error(getProfileUpdateErrorMessage(error))
+      toast.error(getProfileUpdateErrorMessage(error, t))
       throw error
     }
   }
@@ -189,9 +216,9 @@ function UserAvatarMenu({
     try {
       await updateCurrentClientUser({ nickname })
       await refreshMe()
-      toast.success("昵称已保存")
+      toast.success(t("user.nicknameSaved"))
     } catch (error) {
-      toast.error(getProfileUpdateErrorMessage(error))
+      toast.error(getProfileUpdateErrorMessage(error, t))
       throw error
     }
   }
@@ -201,7 +228,7 @@ function UserAvatarMenu({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            aria-label="用户菜单"
+            aria-label={t("user.menu")}
             className="group/avatar-trigger mb-6 rounded-sm bg-muted transition-colors outline-none hover:bg-background focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-background"
             size="icon-sm"
             title={displayName}
@@ -222,7 +249,7 @@ function UserAvatarMenu({
           <UserMenuProfileSummary user={user} />
           <DropdownMenuItem onSelect={() => setProfileOpen(true)}>
             <UserRound className="size-4" />
-            个人资料
+            {t("user.profile")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -231,7 +258,7 @@ function UserAvatarMenu({
             variant="destructive"
           >
             <LogOut className="size-4" />
-            退出登录
+            {t("user.logout")}
           </DropdownMenuItem>
         </DropdownMenuContent>
         <ProfileSettingsDialog
@@ -247,11 +274,11 @@ function UserAvatarMenu({
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认退出登录</AlertDialogTitle>
-            <AlertDialogDescription>当前会话将结束，你可以稍后重新登录。</AlertDialogDescription>
+            <AlertDialogTitle>{t("user.logout.confirm")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("user.logout.desc")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={logoutPending}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={logoutPending}>{t("user.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={logoutPending}
               onClick={(event) => {
@@ -261,7 +288,7 @@ function UserAvatarMenu({
               variant="destructive"
             >
               {logoutPending && <Loader2Icon aria-hidden="true" className="animate-spin" />}
-              退出登录
+              {t("user.logout")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -271,6 +298,7 @@ function UserAvatarMenu({
 }
 
 function SidebarSettingsButton() {
+  const { t } = useLocale()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   function handleSettingsOpen() {
@@ -280,11 +308,11 @@ function SidebarSettingsButton() {
   return (
     <>
       <Button
-        aria-label="设置"
+        aria-label={t("user.settings")}
         className="rounded-md hover:bg-transparent hover:text-teal-500 aria-expanded:bg-transparent aria-expanded:text-teal-500 dark:hover:bg-transparent"
         onClick={handleSettingsOpen}
         size="icon-sm"
-        title="设置"
+        title={t("user.settings")}
         type="button"
         variant="ghost"
       >
@@ -296,12 +324,13 @@ function SidebarSettingsButton() {
 }
 
 function UserMenuProfileSummary({ user }: { user: ClientUser }) {
+  const { t } = useLocale()
   const displayName = getUserDisplayName(user)
-  const contactText = user.email || user.phone || "未设置"
+  const contactText = user.email || user.phone || t("user.contactNotSet")
 
   return (
     <div
-      aria-label="用户信息"
+      aria-label={t("user.info")}
       className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-3 px-2 py-3"
       role="group"
     >
@@ -315,7 +344,7 @@ function UserMenuProfileSummary({ user }: { user: ClientUser }) {
       </Avatar>
 
       <div
-        aria-label="姓名信息"
+        aria-label={t("user.nameInfo")}
         className="flex min-w-0 items-center gap-1.5 text-sm font-semibold"
         role="group"
       >
@@ -323,7 +352,7 @@ function UserMenuProfileSummary({ user }: { user: ClientUser }) {
       </div>
 
       <div
-        aria-label="联系方式"
+        aria-label={t("user.contactInfo")}
         className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
         role="group"
       >
@@ -346,9 +375,12 @@ function MainNavItem({
   onNotificationAnimationEnd: () => void
   showNotification: boolean
 }) {
+  const { t } = useLocale()
   const active = Boolean(useMatch({ path: item.to, end: false }))
   const Icon = item.icon
-  const accessibleLabel = showNotification ? `${item.label}，有未读消息` : item.label
+  const accessibleLabel = showNotification
+    ? t("nav.unread", { label: t(item.label) })
+    : t(item.label)
 
   return (
     <Button
@@ -382,6 +414,7 @@ function MainNavItem({
 }
 
 function GithubLink() {
+  const { t } = useLocale()
   return (
     <Button
       asChild
@@ -390,7 +423,7 @@ function GithubLink() {
       variant="ghost"
     >
       <a
-        aria-label="在 GitHub 查看 MagicChat"
+        aria-label={t("nav.github")}
         href="https://github.com/chaitin/MagicChat"
         rel="noopener noreferrer"
         target="_blank"
@@ -411,6 +444,7 @@ function GithubIcon({ className }: { className?: string }) {
 }
 
 function ThemeSwitcher() {
+  const { t } = useLocale()
   const { theme, setTheme } = useTheme()
   const currentTheme = themeItems.find((item) => item.value === theme) ?? themeItems[0]
   const CurrentIcon = currentTheme.icon
@@ -429,8 +463,8 @@ function ThemeSwitcher() {
           variant="ghost"
           size="icon-sm"
           className="rounded-md hover:bg-transparent hover:text-teal-500 aria-expanded:bg-transparent aria-expanded:text-teal-500 data-[state=open]:bg-transparent data-[state=open]:text-teal-500 dark:hover:bg-transparent"
-          aria-label={`配色：${currentTheme.label}`}
-          title={`配色：${currentTheme.label}`}
+          aria-label={t("nav.theme", { label: t(currentTheme.label) })}
+          title={t("nav.theme", { label: t(currentTheme.label) })}
         >
           <CurrentIcon className="size-4" />
         </Button>
@@ -443,7 +477,7 @@ function ThemeSwitcher() {
             return (
               <DropdownMenuRadioItem key={item.value} value={item.value}>
                 <Icon className="size-4" />
-                {item.label}
+                {t(item.label)}
               </DropdownMenuRadioItem>
             )
           })}
@@ -465,18 +499,18 @@ function getAvatarInitial(name: string) {
   return Array.from(name.trim())[0]?.toUpperCase() ?? "?"
 }
 
-function getLogoutErrorMessage(error: unknown) {
+function getLogoutErrorMessage(error: unknown, t: ReturnType<typeof useLocale>["t"]) {
   if (error instanceof Error) {
     return error.message
   }
 
-  return "退出登录失败，请稍后重试"
+  return t("user.logoutError")
 }
 
-function getProfileUpdateErrorMessage(error: unknown) {
+function getProfileUpdateErrorMessage(error: unknown, t: ReturnType<typeof useLocale>["t"]) {
   if (error instanceof Error) {
     return error.message
   }
 
-  return "更新个人信息失败，请稍后重试"
+  return t("user.profileUpdateError")
 }

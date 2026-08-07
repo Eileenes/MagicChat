@@ -2,6 +2,13 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { DesktopSettings, ServerProfile } from "@shared/bridge"
+import {
+  DEFAULT_SCREENSHOT_SHORTCUT,
+  DEFAULT_SEARCH_SHORTCUT,
+  DEFAULT_SEND_MESSAGE_SHORTCUT,
+  normalizeSendMessageShortcutAccelerator,
+  normalizeShortcutAccelerator,
+} from "@shared/shortcut-contract"
 
 const CURRENT_SCHEMA = 1
 
@@ -20,8 +27,13 @@ type StoredConfig = {
 const defaultSettings: DesktopSettings = {
   autoLaunch: false,
   closeBehavior: "background",
+  fontScale: "normal",
+  language: "zh-CN",
   messageSoundEnabled: true,
   notificationPrivacy: "metadata",
+  screenshotShortcut: DEFAULT_SCREENSHOT_SHORTCUT,
+  searchShortcut: DEFAULT_SEARCH_SHORTCUT,
+  sendMessageShortcut: DEFAULT_SEND_MESSAGE_SHORTCUT,
 }
 
 export class ConfigStore {
@@ -72,8 +84,20 @@ export class ConfigStore {
       if (!(["background", "quit"] as const).includes(next.closeBehavior))
         throw new Error("关闭行为无效")
       if (typeof next.messageSoundEnabled !== "boolean") throw new Error("新消息提示音设置无效")
+      if (next.language !== "zh-CN" && next.language !== "en") throw new Error("语言设置无效")
+      if (!(["normal", "medium", "large"] as const).includes(next.fontScale))
+        throw new Error("字体大小设置无效")
       if (!(["hidden", "metadata", "preview"] as const).includes(next.notificationPrivacy))
         throw new Error("通知隐私无效")
+      if (next.screenshotShortcut !== null) {
+        next.screenshotShortcut = normalizeShortcutAccelerator(next.screenshotShortcut)
+      }
+      if (next.searchShortcut !== null) {
+        next.searchShortcut = normalizeShortcutAccelerator(next.searchShortcut)
+      }
+      if (next.sendMessageShortcut !== null) {
+        next.sendMessageShortcut = normalizeSendMessageShortcutAccelerator(next.sendMessageShortcut)
+      }
       const nextConfig = { ...this.config, settings: next }
       await this.persist(nextConfig)
       this.config = nextConfig
@@ -198,6 +222,14 @@ function normalizeSettings(value: unknown, servers: ServerProfile[]): DesktopSet
       input.closeBehavior === "background" || input.closeBehavior === "quit"
         ? input.closeBehavior
         : defaultSettings.closeBehavior,
+    fontScale:
+      input.fontScale === "normal" || input.fontScale === "medium" || input.fontScale === "large"
+        ? input.fontScale
+        : defaultSettings.fontScale,
+    language:
+      input.language === "zh-CN" || input.language === "en"
+        ? input.language
+        : defaultSettings.language,
     messageSoundEnabled:
       typeof input.messageSoundEnabled === "boolean"
         ? input.messageSoundEnabled
@@ -208,7 +240,35 @@ function normalizeSettings(value: unknown, servers: ServerProfile[]): DesktopSet
       input.notificationPrivacy === "preview"
         ? input.notificationPrivacy
         : defaultSettings.notificationPrivacy,
+    screenshotShortcut:
+      input.screenshotShortcut === null
+        ? null
+        : normalizeStoredShortcut(input.screenshotShortcut, DEFAULT_SCREENSHOT_SHORTCUT),
+    searchShortcut:
+      input.searchShortcut === null
+        ? null
+        : normalizeStoredShortcut(input.searchShortcut, DEFAULT_SEARCH_SHORTCUT),
+    sendMessageShortcut:
+      input.sendMessageShortcut === null
+        ? null
+        : normalizeStoredSendMessageShortcut(input.sendMessageShortcut),
     ...(selectedServerId ? { selectedServerId } : {}),
+  }
+}
+
+function normalizeStoredShortcut(value: unknown, fallback: string): string {
+  try {
+    return normalizeShortcutAccelerator(value)
+  } catch {
+    return fallback
+  }
+}
+
+function normalizeStoredSendMessageShortcut(value: unknown): string {
+  try {
+    return normalizeSendMessageShortcutAccelerator(value)
+  } catch {
+    return DEFAULT_SEND_MESSAGE_SHORTCUT
   }
 }
 

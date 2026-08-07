@@ -10,34 +10,47 @@ import {
 } from "electron"
 import type { AuthenticatedTarget, ClientRequest } from "@shared/client-contract"
 import { IPC, type DesktopThemeSource, type NotificationInput } from "@shared/bridge"
-import { AuthController } from "@main/auth-controller"
-import { ConfigStore } from "@main/config-store"
-import { CredentialStore } from "@main/credential-store"
-import { Diagnostics, releaseChannel } from "@main/diagnostics"
-import { FileService } from "@main/file-service"
-import { HttpTransport } from "@main/http-transport"
-import { NotificationService } from "@main/notification-service"
-import { MessageCacheService } from "@main/message-cache"
-import { RealtimeController } from "@main/realtime-controller"
-import { ServerProfiles } from "@main/server-profiles"
-import { SessionController } from "@main/session-controller"
-import { SystemIntegration } from "@main/system-integration"
-import { StreamingUploadController } from "@main/streaming-upload"
-import { UpdaterService } from "@main/updater-service"
+import type { AuthController } from "@main/auth-controller"
+import type { ConfigStore } from "@main/config-store"
+import type { CredentialStore } from "@main/credential-store"
+import { releaseChannel, type Diagnostics } from "@main/diagnostics"
+import type { FileService } from "@main/file-service"
+import type { HttpTransport } from "@main/http-transport"
+import type { NotificationService } from "@main/notification-service"
+import type { MessageCacheService } from "@main/message-cache"
+import type { RealtimeController } from "@main/realtime-controller"
+import type { ServerProfiles } from "@main/server-profiles"
+import type { SessionController } from "@main/session-controller"
+import type { SystemIntegration } from "@main/system-integration"
+import type { StreamingUploadController } from "@main/streaming-upload"
+import type { UpdaterService } from "@main/updater-service"
 import { assertTrustedIpcSender } from "@main/ipc-security"
 import { parseDesktopSettingsPatch } from "@main/settings-validation"
 import { registerRuntimeDiagnosticsIpc } from "@main/runtime-diagnostics-ipc"
 import { parseTrayMessages } from "@main/tray-message-validation"
 import { removeServerResources } from "@main/server-removal"
 import { handleUnauthorizedCacheLifecycle } from "@main/authentication-cache-lifecycle"
-import { ASRController } from "@main/asr-controller"
+import type { ASRController } from "@main/asr-controller"
 import type { ASREvent } from "@shared/asr-contract"
+import type { DocumentCollaborationEvent } from "@shared/document-collaboration-contract"
+import {
+  parseDocumentConnectionId,
+  parseDocumentSessionId,
+  parseDocumentUuid,
+} from "@shared/document-collaboration-contract"
+import type { DocumentCollaborationController } from "@main/document-collaboration-controller"
+import type { DocumentWindowManager } from "@main/document-window-manager"
+import { parseExternalWebLink } from "@shared/external-link"
+import type { ShortcutManager } from "@main/shortcut-manager"
+import type { ShortcutKind } from "@shared/shortcut-contract"
 
 export type IpcDependencies = {
   auth: AuthController
   asr: ASRController
   credentials: CredentialStore
   diagnostics: Diagnostics
+  documentCollaboration: DocumentCollaborationController
+  documentWindows?: DocumentWindowManager
   files: FileService
   http: HttpTransport
   messageCache: MessageCacheService
@@ -45,6 +58,7 @@ export type IpcDependencies = {
   profiles: ServerProfiles
   realtime: RealtimeController
   sessions: SessionController
+  shortcuts: ShortcutManager
   store: ConfigStore
   system: SystemIntegration
   uploads: StreamingUploadController
@@ -58,6 +72,8 @@ export function registerIpc(deps: IpcDependencies): () => void {
   }
   const markUnauthorized = (authTarget: AuthenticatedTarget) => {
     deps.asr.closeTarget(authTarget)
+    deps.documentCollaboration.closeTarget(authTarget)
+    deps.documentWindows?.closeTarget(authTarget)
     handleUnauthorizedCacheLifecycle(authTarget, {
       broadcastUnauthorized: (target) => broadcast(IPC.realtimeUnauthorized, target),
       clearUserBestEffort: (target) => deps.messageCache.clearUserBestEffort(target),
@@ -95,6 +111,27 @@ export function registerIpc(deps: IpcDependencies): () => void {
   register(IPC.asrClose, (event, sessionId) =>
     deps.asr.close(event.sender.id, asString(sessionId, 128)),
   )
+  register(IPC.documentCollaborationConnect, (event, rawTarget, documentId, connectionId) =>
+    deps.documentCollaboration.connect(
+      event.sender.id,
+      target(rawTarget),
+      parseDocumentUuid(documentId),
+      parseDocumentConnectionId(connectionId),
+    ),
+  )
+  register(IPC.documentCollaborationCancel, (event, connectionId) =>
+    deps.documentCollaboration.cancel(event.sender.id, parseDocumentConnectionId(connectionId)),
+  )
+  register(IPC.documentCollaborationSend, (event, sessionId, frame) =>
+    deps.documentCollaboration.send(event.sender.id, parseDocumentSessionId(sessionId), frame),
+  )
+  register(IPC.documentCollaborationClose, (event, sessionId) =>
+    deps.documentCollaboration.close(event.sender.id, parseDocumentSessionId(sessionId)),
+  )
+  if (deps.documentWindows)
+    register(IPC.documentWindowOpen, (event, rawRequest) =>
+      deps.documentWindows?.open(event.sender.id, rawRequest),
+    )
   register(IPC.appearanceThemeSet, (_event, source) =>
     deps.system.setThemeSource(themeSource(source)),
   )
@@ -136,6 +173,22 @@ export function registerIpc(deps: IpcDependencies): () => void {
     if (remaining.notificationPrivacy !== undefined) deps.system.refreshTray()
     return settings
   })
+  register(IPC.shortcutsGetState, (_event, kind) =>
+    deps.shortcuts.getState(parseShortcutKind(kind)),
+  )
+  register(IPC.shortcutRecordingBegin, (event, kind) =>
+    deps.shortcuts.beginRecording(event.sender.id, parseShortcutKind(kind)),
+  )
+  register(IPC.shortcutRecordingCancel, (event) => deps.shortcuts.cancelRecording(event.sender.id))
+  register(IPC.shortcutScreenshotSet, (event, accelerator) =>
+    deps.shortcuts.set("screenshot", event.sender.id, accelerator),
+  )
+  register(IPC.shortcutSearchSet, (event, accelerator) =>
+    deps.shortcuts.set("search", event.sender.id, accelerator),
+  )
+  register(IPC.shortcutSendMessageSet, (event, accelerator) =>
+    deps.shortcuts.set("sendMessage", event.sender.id, accelerator),
+  )
   register(IPC.transportRequest, async (event, rawTarget, rawRequest) => {
     const authTarget = target(rawTarget)
     const clientRequest = request(rawRequest)
@@ -151,6 +204,10 @@ export function registerIpc(deps: IpcDependencies): () => void {
       response.body.success === false
     if (isLogout && response.status >= 200 && response.status < 300 && !failedEnvelope) {
       deps.http.cancelTarget(authTarget)
+      deps.asr.closeTarget(authTarget)
+      deps.documentCollaboration.closeTarget(authTarget)
+      deps.documentWindows?.closeTarget(authTarget)
+      deps.realtime.close(authTarget)
       deps.messageCache.clearUserBestEffort(authTarget)
     }
     return response
@@ -197,9 +254,9 @@ export function registerIpc(deps: IpcDependencies): () => void {
     deps.files.openLocation(asString(filePath, 4096)),
   )
   register(IPC.openExternal, async (_event, rawUrl) => {
-    const url = new URL(asString(rawUrl, 4096))
-    if (url.protocol !== "https:") throw new Error("只允许打开 HTTPS 外部链接")
-    await shell.openExternal(url.toString())
+    const link = parseExternalWebLink(asString(rawUrl, 4096))
+    if (!link) throw new Error("只允许打开 HTTP 或 HTTPS 外部链接")
+    await shell.openExternal(link.url)
   })
   register(IPC.notificationShow, (_event, input) =>
     deps.notifications.show(notificationInput(input)),
@@ -207,6 +264,10 @@ export function registerIpc(deps: IpcDependencies): () => void {
   register(IPC.permissionsRequest, async (_event, kind) => {
     if (kind !== "microphone" && kind !== "notifications") throw new Error("权限类型无效")
     return deps.system.requestPermission(kind)
+  })
+  register(IPC.permissionsOpenSettings, async (_event, kind) => {
+    if (kind !== "screen") throw new Error("权限设置类型无效")
+    return deps.system.openPermissionSettings(kind)
   })
   register(IPC.updaterCheck, () => deps.updater.check())
   register(IPC.updaterDownload, () => deps.updater.download())
@@ -218,9 +279,12 @@ export function registerIpc(deps: IpcDependencies): () => void {
   register(IPC.messageCacheClearConversation, (_event, scope) =>
     deps.messageCache.clearConversation(scope),
   )
-  register(IPC.messageCacheClearUser, (_event, cacheTarget) =>
-    deps.messageCache.clearUser(cacheTarget),
-  )
+  register(IPC.messageCacheClearUser, (_event, cacheTarget) => {
+    const authTarget = target(cacheTarget)
+    const result = deps.messageCache.clearUser(authTarget)
+    deps.documentWindows?.closeTarget(authTarget)
+    return result
+  })
   register(IPC.messageCacheCommitAfter, (_event, scope, commit) =>
     deps.messageCache.commitAfter(scope, commit),
   )
@@ -263,17 +327,29 @@ export function registerIpc(deps: IpcDependencies): () => void {
     const owner = webContents.fromId(ownerId)
     if (owner && !owner.isDestroyed()) owner.send(IPC.asrEvent, event)
   }
+  const documentCollaborationListener = (ownerId: number, event: DocumentCollaborationEvent) => {
+    const owner = webContents.fromId(ownerId)
+    if (!owner || owner.isDestroyed()) return
+    owner.send(
+      IPC.documentCollaborationEvent,
+      event.type === "message" ? { ...event, data: Uint8Array.from(event.data) } : event,
+    )
+  }
   const unauthorizedListener = (authTarget: AuthenticatedTarget) => markUnauthorized(authTarget)
   const updaterUnsubscribe = deps.updater.subscribe((state) => broadcast(IPC.updaterState, state))
   deps.realtime.on("envelope", envelopeListener)
   deps.realtime.on("unauthorized", unauthorizedListener)
   deps.asr.on("event", asrListener)
+  deps.documentCollaboration.on("event", documentCollaborationListener)
 
   app.on("web-contents-created", (_event, contents) =>
     contents.once("destroyed", () => {
       deps.http.cancelOwner(contents.id)
       deps.asr.closeOwner(contents.id)
+      deps.documentCollaboration.closeOwner(contents.id)
+      deps.documentWindows?.closeOwner(contents.id)
       deps.files.releaseOwner(contents.id)
+      deps.shortcuts.releaseOwner(contents.id)
       deps.uploads.releaseOwner(contents.id)
     }),
   )
@@ -283,6 +359,7 @@ export function registerIpc(deps: IpcDependencies): () => void {
     deps.realtime.off("envelope", envelopeListener)
     deps.realtime.off("unauthorized", unauthorizedListener)
     deps.asr.off("event", asrListener)
+    deps.documentCollaboration.off("event", documentCollaborationListener)
     updaterUnsubscribe()
     unregisterRuntimeDiagnostics()
   }
@@ -313,6 +390,11 @@ function asId(value: unknown): string {
 }
 function asRequestId(value: unknown): string {
   return asId(value)
+}
+
+function parseShortcutKind(value: unknown): ShortcutKind {
+  if (value === "screenshot" || value === "search" || value === "sendMessage") return value
+  throw new Error("快捷键类型无效")
 }
 
 function target(value: unknown): AuthenticatedTarget {

@@ -1,8 +1,25 @@
 import * as React from "react"
-import { ImageIcon, LoaderCircle, Mic, Paperclip, Send, Smile, UsersRound, X } from "lucide-react"
+import {
+  ImageIcon,
+  LoaderCircle,
+  Mic,
+  Paperclip,
+  ScanLine,
+  Send,
+  Smile,
+  UsersRound,
+  X,
+} from "lucide-react"
 import { toast } from "sonner"
+
+import { useLocale } from "@/components/locale-provider"
+import type { ScreenshotConversationResult } from "@shared/screenshot-contract"
 import { getAvatarInitial } from "@/lib/avatar"
 import { cn } from "@/lib/utils"
+import {
+  dismissScreenshotPermissionToast,
+  showScreenshotStartError,
+} from "@/lib/screenshot-start-error"
 import {
   type ClientConversation,
   type ClientMessage,
@@ -15,6 +32,9 @@ import {
 } from "@/lib/image-message"
 import type { ConversationDraftMention } from "@/lib/conversation-drafts"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
+import { useDesktopSettings } from "@/hooks/use-desktop-settings"
+import { acceleratorMatchesKeyboardEvent } from "@/lib/shortcut-recorder"
+import { DEFAULT_SEND_MESSAGE_SHORTCUT } from "@shared/shortcut-contract"
 import {
   createDraftMentionTemplate,
   createMentionCandidates,
@@ -44,6 +64,11 @@ import type {
   ConversationPanelReplyTarget,
 } from "@/lib/conversation-panel-types"
 import { getFileMessageUploadError } from "@/lib/file-message"
+
+type ScreenshotImportState = Readonly<{
+  controller: AbortController
+  id: number
+}>
 
 export const ConversationPanelComposer = React.forwardRef<
   ConversationPanelComposerHandle,
@@ -99,9 +124,17 @@ export const ConversationPanelComposer = React.forwardRef<
   const [voiceDialogOpen, setVoiceDialogOpen] = React.useState(false)
   const [mentionTrigger, setMentionTrigger] = React.useState<MentionTrigger | null>(null)
   const [selectedMentionIndex, setSelectedMentionIndex] = React.useState(0)
+  const settings = useDesktopSettings()
+  const sendMessageShortcut = settings?.sendMessageShortcut ?? DEFAULT_SEND_MESSAGE_SHORTCUT
+  const { t } = useLocale()
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const [selectedImage, setSelectedImage] = React.useState<File | null>(null)
   const [imageCaption, setImageCaption] = React.useState("")
+  const screenshotImportRef = React.useRef<ScreenshotImportState | undefined>(undefined)
+  const screenshotImportIdRef = React.useRef(0)
+  const screenshotStartingRef = React.useRef(false)
+  const imagePreparationIdRef = React.useRef(0)
+  const currentConversationIdRef = React.useRef(conversation.id)
   const mentionCandidates = React.useMemo(
     () =>
       conversation.type === "group" || conversation.topic?.parentConversationType === "group"
@@ -113,6 +146,66 @@ export const ConversationPanelComposer = React.forwardRef<
     () => filterMentionCandidates(mentionCandidates, mentionTrigger?.query ?? ""),
     [mentionCandidates, mentionTrigger?.query],
   )
+
+  const handleScreenshotCompleted = React.useEffectEvent((result: ScreenshotConversationResult) => {
+    if (result.conversationId !== conversation.id) return
+    screenshotImportRef.current?.controller.abort()
+    const importState = {
+      controller: new AbortController(),
+      id: ++screenshotImportIdRef.current,
+    }
+    screenshotImportRef.current = importState
+    void fetch(result.resourceUrl, { signal: importState.controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(t("composer.screenshotExpired"))
+        const blob = await response.blob()
+        if (blob.type !== "image/png" || blob.size === 0)
+          throw new Error(t("composer.screenshotInvalid"))
+        if (!isCurrentScreenshotImport(importState, result.conversationId)) return
+        await prepareSelectedImage(
+          new File([blob], result.fileName, { lastModified: Date.now(), type: "image/png" }),
+          { conversationId: result.conversationId, importState },
+        )
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return
+        if (!isCurrentScreenshotImport(importState, result.conversationId)) return
+        toast.error(error instanceof Error ? error.message : t("composer.addScreenshotError"))
+      })
+      .finally(() => {
+        if (screenshotImportRef.current?.id === importState.id)
+          screenshotImportRef.current = undefined
+      })
+  })
+
+  React.useEffect(() => {
+    currentConversationIdRef.current = conversation.id
+    screenshotImportRef.current?.controller.abort()
+    screenshotImportRef.current = undefined
+    imagePreparationIdRef.current += 1
+    setImagePreparing(false)
+    const screenshot = window.desktop?.screenshot
+    return screenshot ? screenshot.subscribeCompleted(handleScreenshotCompleted) : undefined
+  }, [conversation.id])
+
+  React.useEffect(
+    () => () => {
+      screenshotImportRef.current?.controller.abort()
+      imagePreparationIdRef.current += 1
+    },
+    [],
+  )
+
+  function isCurrentScreenshotImport(
+    importState: ScreenshotImportState,
+    conversationId: string,
+  ): boolean {
+    return (
+      !importState.controller.signal.aborted &&
+      screenshotImportRef.current?.id === importState.id &&
+      currentConversationIdRef.current === conversationId
+    )
+  }
 
   React.useImperativeHandle(ref, () => ({
     focus() {
@@ -267,23 +360,24 @@ export const ConversationPanelComposer = React.forwardRef<
       }
     }
 
+    if (
+      sendMessageShortcut &&
+      acceleratorMatchesKeyboardEvent(sendMessageShortcut, event.nativeEvent)
+    ) {
+      // 命中当前发送预设时发送，其余 Enter 组合统一用于换行。
+      event.preventDefault()
+      if (!sending) handleSendMessage()
+      return
+    }
+
     if (event.key !== "Enter") {
       return
     }
 
-    if (sending) {
-      event.preventDefault()
-      return
-    }
-
-    if (event.shiftKey || event.ctrlKey) {
-      event.preventDefault()
-      insertTextareaText(event.currentTarget, "\n", handleTextareaValueChange)
-      return
-    }
-
     event.preventDefault()
-    handleSendMessage()
+    if (!sending) {
+      insertTextareaText(event.currentTarget, "\n", handleTextareaValueChange)
+    }
   }
 
   function handleTextareaValueChange(value: string, cursor?: number) {
@@ -382,6 +476,29 @@ export const ConversationPanelComposer = React.forwardRef<
     imageInputRef.current?.click()
   }
 
+  async function handleScreenshotButtonClick() {
+    if (sending || imagePreparing || screenshotStartingRef.current) return
+    const screenshot = window.desktop?.screenshot
+    if (!screenshot) {
+      toast.error(t("composer.screenshotUnsupported"))
+      return
+    }
+    screenshotStartingRef.current = true
+    try {
+      const result = await screenshot.start({ conversationId: conversation.id })
+      if (result.status === "error") {
+        showScreenshotStartError(result.code, t)
+      } else {
+        dismissScreenshotPermissionToast()
+      }
+    } catch {
+      dismissScreenshotPermissionToast()
+      toast.error(t("composer.screenshotStartError"))
+    } finally {
+      screenshotStartingRef.current = false
+    }
+  }
+
   function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null
 
@@ -430,10 +547,18 @@ export const ConversationPanelComposer = React.forwardRef<
     void prepareSelectedImage(image)
   }
 
-  async function prepareSelectedImage(image: File) {
-    if (sending || imagePreparing) {
+  async function prepareSelectedImage(
+    image: File,
+    screenshotImport?: Readonly<{
+      conversationId: string
+      importState: ScreenshotImportState
+    }>,
+  ) {
+    if (sending || (imagePreparing && !screenshotImport)) {
       return
     }
+
+    const preparationId = ++imagePreparationIdRef.current
 
     setImagePreparing(true)
     setSelectedImage(null)
@@ -443,17 +568,30 @@ export const ConversationPanelComposer = React.forwardRef<
     try {
       const compressedImage = await compressImageForMessage(image)
 
+      if (preparationId !== imagePreparationIdRef.current) return
+      if (
+        screenshotImport &&
+        !isCurrentScreenshotImport(screenshotImport.importState, screenshotImport.conversationId)
+      )
+        return
+
       if (compressedImage.size > imageMessageMaxBytes) {
-        toast.error("图片大于 2MB，无法上传")
+        toast.error(t("composer.imageTooLarge"))
         return
       }
 
       setSelectedImage(compressedImage)
       setImageDialogOpen(true)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "读取图片失败")
+      if (preparationId !== imagePreparationIdRef.current) return
+      if (
+        screenshotImport &&
+        !isCurrentScreenshotImport(screenshotImport.importState, screenshotImport.conversationId)
+      )
+        return
+      toast.error(error instanceof Error ? error.message : t("composer.readImageError"))
     } finally {
-      setImagePreparing(false)
+      if (preparationId === imagePreparationIdRef.current) setImagePreparing(false)
     }
   }
 
@@ -529,15 +667,17 @@ export const ConversationPanelComposer = React.forwardRef<
             data-testid="conversation-reply-preview"
           >
             <div className="min-w-0">
-              <div className="truncate text-xs font-medium">回复 {replyTarget.author}</div>
+              <div className="truncate text-xs font-medium">
+                {t("composer.replyTo", { author: replyTarget.author })}
+              </div>
               <div className="truncate text-xs text-muted-foreground">{replyTarget.summary}</div>
             </div>
             <Button
-              aria-label="取消回复"
+              aria-label={t("composer.cancelReply")}
               disabled={sending}
               onClick={onCancelReply}
               size="icon-sm"
-              title="取消回复"
+              title={t("composer.cancelReply")}
               type="button"
               variant="ghost"
             >
@@ -557,7 +697,9 @@ export const ConversationPanelComposer = React.forwardRef<
               updateMentionTrigger(event.currentTarget.value, event.currentTarget.selectionStart)
             }
             onPaste={handleComposerPaste}
-            placeholder={richTextMode ? "输入 Markdown 消息" : "输入消息"}
+            placeholder={
+              richTextMode ? t("composer.placeholderMarkdown") : t("composer.placeholder")
+            }
             readOnly={sending}
             className="max-h-48 min-h-24 resize-none"
           />
@@ -630,10 +772,10 @@ export const ConversationPanelComposer = React.forwardRef<
               onOpenChange={setExpressionPickerOpen}
             >
               <Button
-                aria-label="选择表情"
+                aria-label={t("composer.emoji")}
                 disabled={sending}
                 size="icon-sm"
-                title="选择表情"
+                title={t("composer.emoji")}
                 type="button"
                 variant="ghost"
               >
@@ -641,22 +783,22 @@ export const ConversationPanelComposer = React.forwardRef<
               </Button>
             </ExpressionPickerPopover>
             <Button
-              aria-label="上传文件"
+              aria-label={t("composer.upload")}
               disabled={sending}
               onClick={handleFileButtonClick}
               size="icon-sm"
-              title="上传文件"
+              title={t("composer.upload")}
               type="button"
               variant="ghost"
             >
               <Paperclip className="size-4" />
             </Button>
             <Button
-              aria-label="插入图片"
+              aria-label={t("composer.image")}
               disabled={sending || imagePreparing}
               onClick={handleImageButtonClick}
               size="icon-sm"
-              title="插入图片"
+              title={t("composer.image")}
               type="button"
               variant="ghost"
             >
@@ -666,14 +808,25 @@ export const ConversationPanelComposer = React.forwardRef<
                 <ImageIcon className="size-4" />
               )}
             </Button>
+            <Button
+              aria-label={t("composer.screenshot")}
+              disabled={sending || imagePreparing}
+              onClick={() => void handleScreenshotButtonClick()}
+              size="icon-sm"
+              title={t("composer.screenshot")}
+              type="button"
+              variant="ghost"
+            >
+              <ScanLine className="size-4" />
+            </Button>
             <Toggle
-              aria-label="支持 markdown"
+              aria-label={t("composer.markdown")}
               className="size-8 p-0"
               disabled={sending}
               onPressedChange={onRichTextModeChange}
               pressed={richTextMode}
               size="sm"
-              title="支持 markdown"
+              title={t("composer.markdown")}
               type="button"
             >
               <MarkdownIcon className="size-4" />
@@ -681,11 +834,11 @@ export const ConversationPanelComposer = React.forwardRef<
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button
-              aria-label="语音输入"
+              aria-label={t("composer.voice")}
               disabled={sending}
               onClick={() => setVoiceDialogOpen(true)}
               size="icon"
-              title="语音输入"
+              title={t("composer.voice")}
               type="button"
               variant="outline"
             >
@@ -693,7 +846,7 @@ export const ConversationPanelComposer = React.forwardRef<
             </Button>
             <Button
               type="button"
-              aria-label="发送消息"
+              aria-label={t("composer.send")}
               disabled={sending}
               onClick={handleSendMessage}
             >
@@ -702,7 +855,7 @@ export const ConversationPanelComposer = React.forwardRef<
               ) : (
                 <Send className="size-4" />
               )}
-              <span aria-hidden="true">发送</span>
+              <span aria-hidden="true">{t("composer.sendLabel")}</span>
             </Button>
           </div>
         </div>

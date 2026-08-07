@@ -8,8 +8,14 @@ import type {
 } from "@shared/client-contract"
 import type { MessageCacheBridge } from "@shared/message-cache-contract"
 import type { ASRBridge } from "@shared/asr-contract"
+import type { ScreenshotBridge } from "@shared/screenshot-contract"
+import type { ShortcutBridge } from "@shared/shortcut-contract"
+import type { DocumentCollaborationBridge } from "@shared/document-collaboration-contract"
+import type { DocumentWindowOpenResponse } from "@shared/document-window-contract"
 
 export const BRIDGE_VERSION = 1 as const
+
+export const DESKTOP_TITLEBAR_HEIGHT = 40
 
 export const MAX_TRAY_MESSAGES = 20
 
@@ -30,6 +36,12 @@ export const IPC = {
   clipboardWriteText: "desktop:v1:clipboard-write-text",
   diagnosticsExport: "desktop:v1:diagnostics-export",
   diagnosticsRuntime: "desktop:v1:diagnostics-runtime",
+  documentCollaborationCancel: "desktop:v1:document-collaboration-cancel",
+  documentCollaborationClose: "desktop:v1:document-collaboration-close",
+  documentCollaborationConnect: "desktop:v1:document-collaboration-connect",
+  documentCollaborationEvent: "desktop:v1:document-collaboration-event",
+  documentCollaborationSend: "desktop:v1:document-collaboration-send",
+  documentWindowOpen: "desktop:v1:document-window-open",
   filesDownload: "desktop:v1:files-download",
   filesOpenLocation: "desktop:v1:files-open-location",
   filesPick: "desktop:v1:files-pick",
@@ -51,12 +63,28 @@ export const IPC = {
   notificationShow: "desktop:v1:notification-show",
   navigate: "desktop:v1:navigate",
   openExternal: "desktop:v1:open-external",
+  permissionsOpenSettings: "desktop:v1:permissions-open-settings",
   permissionsRequest: "desktop:v1:permissions-request",
   realtimeClose: "desktop:v1:realtime-close",
   realtimeConnect: "desktop:v1:realtime-connect",
   realtimeEvent: "desktop:v1:realtime-event",
   realtimeSend: "desktop:v1:realtime-send",
   realtimeUnauthorized: "desktop:v1:realtime-unauthorized",
+  screenshotCancel: "desktop:v1:screenshot-cancel",
+  screenshotCompleted: "desktop:v1:screenshot-completed",
+  screenshotStartFailed: "desktop:v1:screenshot-start-failed",
+  screenshotMetadata: "desktop:v1:screenshot-metadata",
+  screenshotResultChunk: "desktop:v1:screenshot-result-chunk",
+  screenshotResultFinish: "desktop:v1:screenshot-result-finish",
+  screenshotResultStart: "desktop:v1:screenshot-result-start",
+  screenshotStart: "desktop:v1:screenshot-start",
+  searchOpen: "desktop:v1:search-open",
+  shortcutRecordingBegin: "desktop:v1:shortcut-recording-begin",
+  shortcutRecordingCancel: "desktop:v1:shortcut-recording-cancel",
+  shortcutScreenshotSet: "desktop:v1:shortcut-screenshot-set",
+  shortcutSearchSet: "desktop:v1:shortcut-search-set",
+  shortcutSendMessageSet: "desktop:v1:shortcut-send-message-set",
+  shortcutsGetState: "desktop:v1:shortcuts-get-state",
   serversAdd: "desktop:v1:servers-add",
   serversList: "desktop:v1:servers-list",
   serversRemove: "desktop:v1:servers-remove",
@@ -82,6 +110,10 @@ export const IPC = {
 
 export type DesktopThemeSource = "dark" | "light" | "system"
 
+export type DesktopLanguage = "zh-CN" | "en"
+
+export type DesktopFontScale = "normal" | "medium" | "large"
+
 export type ServerProfile = ServerTarget &
   Readonly<{
     createdAt: string
@@ -92,12 +124,22 @@ export type ServerProfile = ServerTarget &
 export type DesktopSettings = Readonly<{
   autoLaunch: boolean
   closeBehavior: "background" | "quit"
+  fontScale: DesktopFontScale
+  language: DesktopLanguage
   messageSoundEnabled: boolean
   notificationPrivacy: "hidden" | "metadata" | "preview"
+  screenshotShortcut: string | null
+  searchShortcut: string | null
+  sendMessageShortcut: string | null
   selectedServerId?: string
 }>
 
-export type DesktopSettingsPatch = Partial<Omit<DesktopSettings, "selectedServerId">>
+export type DesktopSettingsPatch = Partial<
+  Omit<
+    DesktopSettings,
+    "screenshotShortcut" | "searchShortcut" | "sendMessageShortcut" | "selectedServerId"
+  >
+>
 
 export type DesktopAppInfo = Readonly<{
   arch: string
@@ -206,6 +248,7 @@ export interface DesktopBridge {
     export(): Promise<{ path?: string }>
     reportRuntime(snapshot: RendererRuntimeSnapshot): void
   }
+  documentCollaboration: DocumentCollaborationBridge
   files: {
     download(
       target: AuthenticatedTarget,
@@ -221,10 +264,14 @@ export interface DesktopBridge {
   messageCache: MessageCacheBridge
   notifications: { show(input: NotificationInput): Promise<void> }
   navigation: {
+    openDocumentWindow(documentId: string, serverId: string): Promise<DocumentWindowOpenResponse>
     subscribe(listener: (route: string) => void): () => void
     subscribeUnknownServer(listener: (input: { serverId: string }) => void): () => void
   }
-  permissions: { request(kind: "microphone" | "notifications"): Promise<boolean> }
+  permissions: {
+    openSettings(kind: "screen"): Promise<boolean>
+    request(kind: "microphone" | "notifications"): Promise<boolean>
+  }
   realtime: {
     close(target: AuthenticatedTarget): Promise<void>
     connect(target: AuthenticatedTarget): Promise<RealtimeSnapshot>
@@ -232,10 +279,12 @@ export interface DesktopBridge {
     subscribe(listener: (envelope: RealtimeEnvelope) => void): () => void
     subscribeUnauthorized(listener: (target: AuthenticatedTarget) => void): () => void
   }
+  screenshot: ScreenshotBridge
+  shortcuts: ShortcutBridge
   servers: {
     add(url: string, displayName?: string): Promise<ServerProfile>
     list(): Promise<ReadonlyArray<ServerProfile>>
-    remove(id: string): Promise<void>
+    remove(id: string): Promise<boolean>
     rename(id: string, displayName: string): Promise<ServerProfile>
     select(id: string): Promise<void>
   }

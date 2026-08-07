@@ -22,10 +22,16 @@ vi.mock("@/components/user-profile-popover", () => ({
   UserProfilePopover: ({
     children,
     triggerAriaLabel,
+    triggerClassName,
   }: {
     children: ReactNode
     triggerAriaLabel?: string
-  }) => <button aria-label={triggerAriaLabel}>{children}</button>,
+    triggerClassName?: string
+  }) => (
+    <button aria-label={triggerAriaLabel} className={triggerClassName}>
+      {children}
+    </button>
+  ),
 }))
 vi.mock("@/components/app-profile-popover", () => ({
   AppProfilePopover: ({ children }: { children: ReactNode }) => children,
@@ -46,14 +52,30 @@ describe("MessageBubble reactions", () => {
     const reactionChip = reactionToggle.closest<HTMLDivElement>(
       '[data-slot="message-reaction-chip"]',
     )
+    const reactions = reactionChip?.parentElement
+    expect(reactions).toHaveClass("min-w-0", "[contain:inline-size]")
+    expect(reactionChip).toHaveClass(
+      "min-w-0",
+      "flex-wrap",
+      "gap-x-1",
+      "gap-y-0.5",
+      "whitespace-normal",
+    )
     expect(reactionChip).toHaveTextContent(
       "自定义文本李昌志, 朱文磊, 王彪, 赵一, 钱二, 孙三, 周四, 吴五, 郑六, 王七等 16 人",
     )
-    expect(screen.getByRole("button", { name: "李昌志资料" })).toBeInTheDocument()
+    const firstParticipant = screen.getByRole("button", { name: "李昌志资料" })
+    expect(firstParticipant).toHaveClass("min-w-0", "max-w-full", "break-all", "whitespace-normal")
+    const participant = firstParticipant.parentElement
+    expect(participant).toHaveClass("inline-flex", "min-w-0", "items-center")
+    const summary = participant?.parentElement
+    expect(summary).toHaveClass("inline-flex", "min-w-0", "flex-1", "flex-wrap")
+    expect(summary).toHaveAttribute("data-slot", "message-reaction-participants")
     const participantCount = screen.getByRole("button", {
       name: "查看表情 自定义文本 的 16 位参与者",
     })
     expect(participantCount).toHaveTextContent("16")
+    expect(participantCount.parentElement).toHaveClass("shrink-0", "whitespace-nowrap")
 
     fireEvent.click(participantCount)
     await waitFor(() =>

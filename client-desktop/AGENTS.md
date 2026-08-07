@@ -55,8 +55,9 @@ public/         Desktop 自有静态资源
   ID 格式、大小和资源归属；不能只依赖 TypeScript 类型断言或 Renderer 校验。
 - IPC handler 必须验证发送方来自受信任 Renderer。订阅型 API 必须返回取消订阅函数；
   WebContents 销毁时要释放请求、上传、文件句柄和监听器。
-- 外部链接只能通过 Bridge 交给系统浏览器，且保持 HTTPS 限制。主窗口拒绝任意导航、
-  新窗口、下载和权限请求；确需例外时必须在 Main 中精确白名单并增加安全测试。
+- 外部 HTTPS 链接通过 Bridge 直接交给系统浏览器；HTTP 链接必须先在 Renderer 展示目标
+  地址和未加密风险，并由用户确认后再打开。Main 必须再次校验协议，主窗口拒绝绕过统一
+  外链流程的任意导航、新窗口、下载和权限请求；其他协议例外必须精确白名单并增加安全测试。
 - 打包应用只接受 HTTPS/WSS 和系统信任链；仅开发构建可连接 localhost HTTP。禁止加入
   “忽略证书错误”、私有 CA 导入或 mTLS 的伪支持。
 - Cookie、Token、代理密码、认证回调 code、消息正文、完整 URL、Header、文件路径和

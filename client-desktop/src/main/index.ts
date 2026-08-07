@@ -1,8 +1,11 @@
 import path from "node:path"
-import { app, dialog, powerMonitor } from "electron"
+import { app, dialog, nativeTheme, powerMonitor, screen } from "electron"
 import { IPC } from "@shared/bridge"
 import { AuthController } from "@main/auth-controller"
 import { ASRController } from "@main/asr-controller"
+import { DocumentCollaborationController } from "@main/document-collaboration-controller"
+import { DocumentWindowManager } from "@main/document-window-manager"
+import { FileDocumentWindowStateStore } from "@main/document-window-state"
 import { ConfigStore } from "@main/config-store"
 import { CredentialStore } from "@main/credential-store"
 import { Diagnostics } from "@main/diagnostics"
@@ -23,6 +26,8 @@ import { StreamingUploadController } from "@main/streaming-upload"
 import { prepareUpdateInstall } from "@main/update-install-lifecycle"
 import { StartupHealth } from "@main/startup-health"
 import { WindowController } from "@main/window-controller"
+import { ScreenshotController } from "@main/screenshot-controller"
+import { ShortcutManager } from "@main/shortcut-manager"
 import messageCacheWorkerPath from "@main/message-cache/message-cache-worker?modulePath"
 
 registerPrivilegedSchemes()
@@ -71,10 +76,39 @@ async function start(): Promise<void> {
     path.resolve(__dirname, "../preload/index.cjs"),
     iconPath,
   )
-  const system = new SystemIntegration(store, windows)
+  const captureRendererUrl =
+    !app.isPackaged && process.env.ELECTRON_RENDERER_URL
+      ? new URL("capture.html", process.env.ELECTRON_RENDERER_URL).toString()
+      : "magicchat-app://app/capture.html"
+  const screenshots = new ScreenshotController({
+    capturePreloadPath: path.resolve(__dirname, "../preload/index.cjs"),
+    captureUrl: captureRendererUrl,
+    getMainWindow: () => windows.current(),
+    onConversationResult: (result) => windows.send(IPC.screenshotCompleted, result),
+  })
+  screenshots.installProtocol()
+  const unregisterScreenshotIpc = screenshots.registerIpc()
   const proxyAuth = new ProxyAuthPrompt(windows, iconPath)
   const realtime = new RealtimeController(profiles, sessions, proxyAuth)
   const asr = new ASRController(profiles, sessions, proxyAuth)
+  const documentCollaboration = new DocumentCollaborationController(profiles, sessions, proxyAuth)
+  const documentWindowState = new FileDocumentWindowStateStore(app.getPath("userData"))
+  await documentWindowState.load().catch(() => {
+    void diagnostics.record("main", "document-window-state-load-failed")
+  })
+  const documentWindows = new DocumentWindowManager({
+    collaboration: documentCollaboration,
+    diagnostics,
+    developmentUrl: process.env.ELECTRON_RENDERER_URL,
+    getMainWindow: () => windows.current(),
+    iconPath,
+    initialDarkTheme: nativeTheme.shouldUseDarkColors,
+    preloadPath: path.resolve(__dirname, "../preload/index.cjs"),
+    profiles,
+    state: documentWindowState,
+    store,
+  })
+  const system = new SystemIntegration(store, windows, process.platform, [documentWindows])
   const trayAvailable = system.createTray(trayIconPath)
   if (
     !trayAvailable &&
@@ -89,6 +123,7 @@ async function start(): Promise<void> {
     (result) => windows.send(IPC.authFinished, result),
     () => windows.current(),
     iconPath,
+    { onUserChanged: (serverId) => documentWindows.closeServer(serverId) },
   )
   const notifications = new NotificationService(
     () => store.getSettings(),
@@ -103,18 +138,29 @@ async function start(): Promise<void> {
         `/chat/${encodeURIComponent(input.conversationId)}${input.messageId ? `?message=${encodeURIComponent(input.messageId)}` : ""}`,
       )
     },
+    { iconPath, platform: process.platform },
   )
-  const http = new HttpTransport(profiles, sessions)
+  const http = new HttpTransport(profiles, sessions, {
+    onUserChanged: (serverId) => documentWindows.closeServer(serverId),
+  })
   const uploads = new StreamingUploadController(profiles, sessions)
   const updater = new UpdaterService({
     hasActiveTransfers: () => files.hasActiveTransfers() || uploads.hasActiveTransfers(),
-    prepareInstall: () => prepareUpdateInstall({ messageCache, windows }),
+    prepareInstall: () => prepareUpdateInstall({ documentWindows, messageCache, windows }),
+  })
+  const shortcuts = new ShortcutManager({
+    diagnostics,
+    screenshots,
+    store,
+    windows,
   })
   const unregisterIpc = registerIpc({
     auth,
     asr,
     credentials,
     diagnostics,
+    documentCollaboration,
+    documentWindows,
     files,
     http,
     messageCache,
@@ -122,6 +168,7 @@ async function start(): Promise<void> {
     profiles,
     realtime,
     sessions,
+    shortcuts,
     store,
     system,
     updater,
@@ -130,8 +177,16 @@ async function start(): Promise<void> {
 
   const hidden = process.argv.includes("--hidden") && store.getSettings().autoLaunch
   const mainWindow = windows.create(hidden)
+  shortcuts.start()
+  const cancelScreenshotForDisplayChange = () => screenshots.cancelActive()
+  screen.on("display-added", cancelScreenshotForDisplayChange)
+  screen.on("display-removed", cancelScreenshotForDisplayChange)
+  screen.on("display-metrics-changed", cancelScreenshotForDisplayChange)
   mainWindow.webContents.once("did-finish-load", () => void startupHealth.markHealthy())
-  powerMonitor.on("suspend", () => asr.closeAll())
+  powerMonitor.on("suspend", () => {
+    asr.closeAll()
+    documentCollaboration.closeAll()
+  })
   powerMonitor.on("resume", () => realtime.reconnectAll())
   powerMonitor.on("unlock-screen", () => realtime.reconnectAll())
   app.on("activate", () => windows.show())
@@ -153,20 +208,25 @@ async function start(): Promise<void> {
     event.preventDefault()
     proxyAuth.show(callback, authInfo.host)
   })
-  let cleanupStarted = false
+  let quitState: "idle" | "preparing" | "ready" = "idle"
   let transferExitConfirmed = false
   app.on("before-quit", (event) => {
     if (updater.isInstallIntent()) {
+      screenshots.dispose()
+      windows.prepareToQuit()
       http.cancelAll()
       asr.closeAll()
+      documentWindows.dispose()
+      documentCollaboration.shutdown()
       auth.dispose()
       realtime.closeAll()
       void files.cleanup()
       return
     }
-    if (cleanupStarted) return
+    if (quitState === "ready") return
+    event.preventDefault()
+    if (quitState === "preparing") return
     if (!transferExitConfirmed && (files.hasActiveTransfers() || uploads.hasActiveTransfers())) {
-      event.preventDefault()
       const choice = dialog.showMessageBoxSync({
         type: "warning",
         buttons: ["继续传输", "取消传输并退出"],
@@ -177,20 +237,39 @@ async function start(): Promise<void> {
       if (choice === 0) return
       transferExitConfirmed = true
     }
-    cleanupStarted = true
-    windows.prepareToQuit()
-    http.cancelAll()
-    asr.closeAll()
-    auth.dispose()
-    realtime.closeAll()
-    event.preventDefault()
-    void Promise.all([files.cleanup(), messageCache.close()]).finally(() => {
-      updater.dispose()
-      app.quit()
+    quitState = "preparing"
+    void documentWindows.requestCloseAll().then((confirmed) => {
+      if (!confirmed) {
+        quitState = "idle"
+        transferExitConfirmed = false
+        windows.cancelPrepareToQuit()
+        return
+      }
+      screenshots.dispose()
+      windows.prepareToQuit()
+      http.cancelAll()
+      asr.closeAll()
+      documentWindows.dispose()
+      documentCollaboration.shutdown()
+      auth.dispose()
+      realtime.closeAll()
+      void Promise.all([files.cleanup(), messageCache.close()]).finally(() => {
+        updater.dispose()
+        quitState = "ready"
+        app.quit()
+      })
     })
   })
   app.once("will-quit", () => {
     unregisterIpc()
+    unregisterScreenshotIpc()
+    shortcuts.dispose()
+    screen.removeListener("display-added", cancelScreenshotForDisplayChange)
+    screen.removeListener("display-removed", cancelScreenshotForDisplayChange)
+    screen.removeListener("display-metrics-changed", cancelScreenshotForDisplayChange)
+    screenshots.dispose()
+    documentWindows.dispose()
+    system.dispose()
     updater.dispose()
   })
   process.on("uncaughtException", (error) => void diagnostics.record("main", error.name))

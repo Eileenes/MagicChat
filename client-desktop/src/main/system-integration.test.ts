@@ -1,15 +1,45 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConfigStore } from "@main/config-store"
 import type { WindowController } from "@main/window-controller"
 import type { TrayMessage } from "@shared/bridge"
 
+const electronMocks = vi.hoisted(() => ({
+  createImage: vi.fn(),
+  menuTemplates: [] as Array<ReadonlyArray<{ enabled?: boolean; label?: string; type?: string }>>,
+  openExternal: vi.fn(),
+  nativeTheme: {
+    off: vi.fn(),
+    on: vi.fn(),
+    shouldUseDarkColors: false,
+    themeSource: "system",
+  },
+  tray: {
+    on: vi.fn(),
+    popUpContextMenu: vi.fn(),
+    setContextMenu: vi.fn(),
+    setTitle: vi.fn(),
+    setToolTip: vi.fn(),
+  },
+}))
+
 vi.mock("electron", () => ({
   app: {},
-  Menu: {},
-  nativeImage: {},
+  Menu: {
+    buildFromTemplate: vi.fn(
+      (template: ReadonlyArray<{ enabled?: boolean; label?: string; type?: string }>) => {
+        electronMocks.menuTemplates.push(template)
+        return template
+      },
+    ),
+  },
+  nativeImage: { createFromPath: electronMocks.createImage },
+  nativeTheme: electronMocks.nativeTheme,
   session: {},
+  shell: { openExternal: electronMocks.openExternal },
   systemPreferences: {},
-  Tray: vi.fn(),
+  Tray: vi.fn(function MockTray() {
+    return electronMocks.tray
+  }),
 }))
 
 import { SystemIntegration, prepareTrayImage, runtimeTrayIconPath } from "@main/system-integration"
@@ -42,6 +72,85 @@ describe("prepareTrayImage", () => {
 })
 
 describe("SystemIntegration", () => {
+  beforeEach(() => {
+    electronMocks.createImage.mockReset()
+    electronMocks.menuTemplates.length = 0
+    electronMocks.openExternal.mockReset().mockResolvedValue(undefined)
+    electronMocks.nativeTheme.shouldUseDarkColors = false
+    electronMocks.nativeTheme.off.mockReset()
+    electronMocks.nativeTheme.on.mockReset()
+  })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it("创建托盘时使用注入的平台处理图标", () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("darwin")
+    const resizedImage = { setTemplateImage: vi.fn() }
+    electronMocks.createImage.mockReturnValue({
+      isEmpty: () => false,
+      resize: () => resizedImage,
+    })
+    const system = new SystemIntegration(
+      { getSettings: vi.fn(() => ({ notificationPrivacy: "metadata" })) } as unknown as ConfigStore,
+      { show: vi.fn() } as unknown as WindowController,
+      "win32",
+    )
+
+    expect(system.createTray("tray.png")).toBe(true)
+    expect(resizedImage.setTemplateImage).not.toHaveBeenCalled()
+  })
+
+  it("macOS 菜单栏菜单不展示未读消息区", () => {
+    const store = {
+      getSettings: vi.fn(() => ({ notificationPrivacy: "metadata" })),
+    }
+    const windows = { show: vi.fn() }
+    const setContextMenu = vi.fn()
+    const system = new SystemIntegration(
+      store as unknown as ConfigStore,
+      windows as unknown as WindowController,
+      "darwin",
+    )
+    ;(
+      system as unknown as {
+        tray: { setContextMenu: (menu: unknown) => void }
+      }
+    ).tray = { setContextMenu }
+
+    system.setTrayMessages([
+      {
+        conversationId: "conversation-1",
+        name: "会话",
+        serverId: "server-1",
+        summary: "消息正文",
+        unreadCount: 1,
+      },
+    ])
+
+    expect(electronMocks.menuTemplates.at(-1)?.map((item) => item.label)).toEqual([
+      "打开即应",
+      "关闭即应",
+    ])
+    expect(store.getSettings).not.toHaveBeenCalled()
+    expect(setContextMenu).toHaveBeenCalledOnce()
+  })
+
+  it("macOS 屏幕录制权限提示只打开固定的系统设置页面", async () => {
+    const system = new SystemIntegration({} as ConfigStore, {} as WindowController, "darwin")
+
+    await expect(system.openPermissionSettings("screen")).resolves.toBe(true)
+    expect(electronMocks.openExternal).toHaveBeenCalledWith(
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+    )
+  })
+
+  it("非 macOS 平台不尝试打开屏幕录制设置页面", async () => {
+    const system = new SystemIntegration({} as ConfigStore, {} as WindowController, "win32")
+
+    await expect(system.openPermissionSettings("screen")).resolves.toBe(false)
+    expect(electronMocks.openExternal).not.toHaveBeenCalled()
+  })
+
   it("不会从托盘消息切换到未配置的服务器", async () => {
     const store = {
       getSettings: vi.fn(() => ({ notificationPrivacy: "metadata" })),
@@ -69,5 +178,31 @@ describe("SystemIntegration", () => {
       }),
     ).rejects.toThrow("目标服务器不存在")
     expect(store.setSettings).not.toHaveBeenCalled()
+  })
+
+  it("切换主题时同步文档窗口", () => {
+    const documentWindows = { setThemeBackground: vi.fn() }
+    const windows = { setThemeBackground: vi.fn() }
+    const system = new SystemIntegration(
+      {} as ConfigStore,
+      windows as unknown as WindowController,
+      "win32",
+      [documentWindows],
+    )
+
+    electronMocks.nativeTheme.shouldUseDarkColors = true
+    system.setThemeSource("dark")
+
+    expect(windows.setThemeBackground).toHaveBeenCalledWith(true)
+    expect(documentWindows.setThemeBackground).toHaveBeenCalledWith(true)
+
+    electronMocks.nativeTheme.shouldUseDarkColors = false
+    const updated = electronMocks.nativeTheme.on.mock.calls.at(-1)?.[1] as (() => void) | undefined
+    updated?.()
+    expect(windows.setThemeBackground).toHaveBeenLastCalledWith(false)
+    expect(documentWindows.setThemeBackground).toHaveBeenLastCalledWith(false)
+
+    system.dispose()
+    expect(electronMocks.nativeTheme.off).toHaveBeenCalledWith("updated", updated)
   })
 })

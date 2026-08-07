@@ -1,8 +1,8 @@
 import * as React from "react"
+import { useLocale } from "@/components/locale-provider"
 import { Bot, MessagesSquare } from "lucide-react"
 import { toast } from "sonner"
 import { getAvatarInitial } from "@/lib/avatar"
-import { copyTemporaryImageToClipboard } from "@/lib/image-clipboard"
 import { writeHostClipboardText } from "@/lib/desktop-host"
 import { cn } from "@/lib/utils"
 import { formatClientMessageBodySummary, type ClientConversation } from "@/lib/client-data-api"
@@ -41,6 +41,7 @@ import {
   MessageReactionChips,
 } from "@/components/conversation/message-reactions"
 import { UserProfilePopover } from "@/components/user-profile-popover"
+import { CollapsibleMessageContent } from "@/components/conversation/collapsible-message-content"
 import type {
   ConversationPanelMentionTarget,
   ConversationPanelMessage,
@@ -85,6 +86,7 @@ type MessageBubbleProps = {
   onInsertMention: (target: ConversationPanelMentionTarget) => void
   onForward?: (message: ConversationPanelMessage) => void
   onCreateTopic?: (message: ConversationPanelMessage) => void
+  onContentSizeChange?: (messageId: string) => void
   onMultiSelect?: (message: ConversationPanelMessage) => void
   onReeditRevoked?: (message: ConversationPanelMessage) => void
   onReply?: (message: ConversationPanelMessage) => void
@@ -111,6 +113,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   onInsertMention,
   onForward,
   onCreateTopic,
+  onContentSizeChange,
   onMultiSelect,
   onReeditRevoked,
   onReply,
@@ -124,11 +127,12 @@ export const MessageBubble = React.memo(function MessageBubble({
   selected = false,
   selectionMode = false,
 }: MessageBubbleProps) {
+  const { t } = useLocale()
   const fromMe = message.role === "me"
   const fallback = message.senderAppId ? (
     <Bot className="size-4" />
   ) : fromMe ? (
-    "我"
+    t("message.me")
   ) : (
     getAvatarInitial(conversation.name)
   )
@@ -144,6 +148,10 @@ export const MessageBubble = React.memo(function MessageBubble({
   const copyText = getMessageCopyText(message, mentionLabelResolver)
   const bubbleRef = React.useRef<HTMLDivElement | null>(null)
   const selectedCopyTextRef = React.useRef("")
+  const handleContentSizeChange = React.useCallback(
+    () => onContentSizeChange?.(message.id),
+    [message.id, onContentSizeChange],
+  )
   function handleMessageContextMenu() {
     selectedCopyTextRef.current = getSelectedTextWithinElement(bubbleRef.current)
   }
@@ -152,7 +160,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     const selectedText = selectedCopyTextRef.current
     selectedCopyTextRef.current = ""
 
-    void copyMessageToClipboard(message, selectedText, bubbleRef.current, mentionLabelResolver)
+    void copyMessageToClipboard(message, selectedText, bubbleRef.current, mentionLabelResolver, t)
   }
 
   function handleMoreActionsOpenChange(open: boolean) {
@@ -182,13 +190,14 @@ export const MessageBubble = React.memo(function MessageBubble({
   const flushImageBubble = message.body.type === "image" && !message.replyTo && !message.topic
   const messageActionOptions: MessageActionOptions = {
     canRevoke: Boolean(onRevoke) && message.canRevoke,
-    copyDisabled: message.body.type !== "image" && !copyText,
+    copyDisabled: !copyText,
     onCopy: handleCopyMessage,
     onCreateTopic: onCreateTopic && !message.topic ? () => onCreateTopic(message) : undefined,
     onForward: onForward && !choiceMessage ? () => onForward(message) : undefined,
     onMultiSelect: onMultiSelect && !choiceMessage ? () => onMultiSelect(message) : undefined,
     onReply: canReply && onReply ? () => onReply(message) : undefined,
     onRevoke: onRevoke ? () => onRevoke(message) : undefined,
+    showCopy: message.body.type !== "image",
   }
 
   const messageBody = (
@@ -210,21 +219,40 @@ export const MessageBubble = React.memo(function MessageBubble({
       ref={bubbleRef}
     >
       {message.replyTo && <MessageReplyReference replyTo={message.replyTo} />}
-      <MessageBodyRenderer
-        body={message.body}
-        choice={message.choice}
-        currentUserId={currentUserId}
-        flushImage={flushImageBubble}
-        mentionLabelResolver={mentionLabelResolver}
-        messageId={message.id}
-        onReeditRevoked={
-          fromMe && !selectionMode && onReeditRevoked ? () => onReeditRevoked(message) : undefined
-        }
-        showChoiceResponseCounts={showChoiceResponseCounts}
-        onRespondToChoice={
-          onRespondToChoice ? (optionIds) => onRespondToChoice(message, optionIds) : undefined
-        }
-      />
+      {message.body.type === "text" || message.body.type === "markdown" ? (
+        <CollapsibleMessageContent
+          enabled={!selectionMode}
+          key={message.id}
+          onSizeChange={handleContentSizeChange}
+          variant={message.body.type}
+        >
+          <MessageBodyRenderer
+            body={message.body}
+            choice={message.choice}
+            currentUserId={currentUserId}
+            flushImage={flushImageBubble}
+            mentionLabelResolver={mentionLabelResolver}
+            messageId={message.id}
+            showChoiceResponseCounts={showChoiceResponseCounts}
+          />
+        </CollapsibleMessageContent>
+      ) : (
+        <MessageBodyRenderer
+          body={message.body}
+          choice={message.choice}
+          currentUserId={currentUserId}
+          flushImage={flushImageBubble}
+          mentionLabelResolver={mentionLabelResolver}
+          messageId={message.id}
+          onReeditRevoked={
+            fromMe && !selectionMode && onReeditRevoked ? () => onReeditRevoked(message) : undefined
+          }
+          showChoiceResponseCounts={showChoiceResponseCounts}
+          onRespondToChoice={
+            onRespondToChoice ? (optionIds) => onRespondToChoice(message, optionIds) : undefined
+          }
+        />
+      )}
       {!selectionMode && message.reactions.length > 0 && (
         <div className={cn("mt-2", flushImageBubble && "mx-2 mb-2")}>
           <MessageReactionChips
@@ -268,7 +296,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     >
       {selectionMode && (
         <Checkbox
-          aria-label={`${selected ? "取消选择" : "选择"}${message.author}的消息`}
+          aria-label={t(selected ? "message.deselect" : "message.select", { name: message.author })}
           checked={selected}
           className="absolute top-4 left-3"
           disabled={!selectable || choiceMessage}
@@ -323,12 +351,14 @@ export const MessageBubble = React.memo(function MessageBubble({
             )}
           </div>
           {message.delegatedByName && (
-            <div className="text-xs text-muted-foreground">由 {message.delegatedByName} 代发</div>
+            <div className="text-xs text-muted-foreground">
+              {t("message.delegatedBy", { name: message.delegatedByName })}
+            </div>
           )}
         </div>
         {fromMe && (
           <MessageAvatar
-            fallback="我"
+            fallback={t("message.me")}
             fallbackClassName="bg-primary text-primary-foreground"
             message={message}
           />
@@ -481,30 +511,21 @@ async function copyMessageToClipboard(
   selectedText: string,
   messageElement: HTMLElement | null,
   mentionLabelResolver: MentionLabelResolver,
+  t: ReturnType<typeof useLocale>["t"],
 ) {
-  if (message.body.type === "image") {
-    try {
-      await copyTemporaryImageToClipboard(message.body.fileId)
-      toast.success("图片已复制")
-    } catch {
-      toast.error("图片复制失败")
-    }
-    return
-  }
-
   const text =
     (selectedText.trim() ? selectedText : getSelectedTextWithinElement(messageElement)) ||
     getMessageCopyText(message, mentionLabelResolver)
   if (!text) {
-    toast.error("没有可复制内容")
+    toast.error(t("message.nothingToCopy"))
     return
   }
 
   try {
     await writeClipboardText(text)
-    toast.success("已复制")
+    toast.success(t("message.copied"))
   } catch {
-    toast.error("复制失败")
+    toast.error(t("message.copyFailed"))
   }
 }
 
@@ -587,6 +608,7 @@ function TopicReplyPreview({
   onOpen?: () => void
   topic: NonNullable<ConversationPanelMessage["topic"]>
 }) {
+  const { t } = useLocale()
   const latestReplyTime = topic.recentReplies.at(-1)?.time ?? ""
 
   return (
@@ -597,7 +619,7 @@ function TopicReplyPreview({
       {topic.recentReplies.length > 0 && (
         <>
           <button
-            aria-label="查看话题最近回复"
+            aria-label={t("message.topicReplies")}
             className="block w-full space-y-1.5 rounded-sm text-left transition-opacity outline-none hover:opacity-80 disabled:pointer-events-none"
             disabled={!onOpen}
             onClick={onOpen}
@@ -631,7 +653,7 @@ function TopicReplyPreview({
           type="button"
         >
           <MessagesSquare className="size-4" />
-          查看话题
+          {t("message.viewTopic")}
         </button>
         {latestReplyTime && (
           <span className="shrink-0 text-xs text-muted-foreground">{latestReplyTime}</span>
@@ -669,12 +691,13 @@ function MessageAvatarProfile({
   children: React.ReactNode
   message: ConversationPanelMessage
 }) {
+  const { t } = useLocale()
   if (message.senderAppId) {
     return (
       <AppProfilePopover
         appId={message.senderAppId}
         fallbackProfile={message.senderAppProfile}
-        triggerAriaLabel={`${message.author}资料`}
+        triggerAriaLabel={t("message.profile", { name: message.author })}
       >
         {children}
       </AppProfilePopover>
@@ -707,6 +730,7 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
   onRespondToChoice,
   showChoiceResponseCounts = true,
 }: MessageBodyRendererProps) {
+  const { t } = useLocale()
   switch (body.type) {
     case "file":
       return <MessageAttachment file={body} />
@@ -754,7 +778,7 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
     case "chart":
       return (
         <MessageRenderErrorBoundary
-          fallback={<span className="text-muted-foreground">暂不支持查看该消息</span>}
+          fallback={<span className="text-muted-foreground">{t("message.unsupported")}</span>}
           resetKey={body}
         >
           <React.Suspense
@@ -798,15 +822,15 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
             onClick={onReeditRevoked}
             type="button"
           >
-            重新编辑
+            {t("message.reedit")}
           </button>
-          已撤回的消息
+          {t("message.revokedTitle")}
         </span>
       ) : (
-        <span className="text-muted-foreground">该消息已被撤回</span>
+        <span className="text-muted-foreground">{t("message.revoked")}</span>
       )
     case "unsupported":
-      return <span className="text-muted-foreground">暂不支持查看该消息</span>
+      return <span className="text-muted-foreground">{t("message.unsupported")}</span>
     case "system_event":
       return <span>{formatClientMessageBodySummary(body)}</span>
   }
@@ -859,6 +883,7 @@ function ForwardBundleMessage({
   currentUserId: string
   mentionLabelResolver: MentionLabelResolver
 }) {
+  const { t } = useLocale()
   const summary = formatClientMessageBodySummary(body)
 
   return (
@@ -872,7 +897,7 @@ function ForwardBundleMessage({
             <MessagesSquare aria-hidden="true" className="size-5" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block font-medium">聊天记录</span>
+            <span className="block font-medium">{t("message.historyTitle")}</span>
             <span className="block max-w-80 truncate text-xs text-muted-foreground">{summary}</span>
           </span>
         </button>
@@ -882,7 +907,7 @@ function ForwardBundleMessage({
         className="max-h-[80vh] grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden sm:max-w-2xl"
       >
         <DialogHeader>
-          <DialogTitle>聊天记录</DialogTitle>
+          <DialogTitle>{t("message.historyTitle")}</DialogTitle>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto overscroll-contain rounded-md border px-4">
           {body.items.map((item, index) => (
