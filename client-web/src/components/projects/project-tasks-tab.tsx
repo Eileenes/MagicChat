@@ -299,13 +299,11 @@ export function ProjectTasksTab({
   }
 
   function handleOpenTask(task: ProjectTask) {
-    closingTaskIdRef.current = ""
-    setFallbackActiveTask(task)
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current)
-      next.set(projectTaskIdSearchParam, task.id)
-      return next
-    })
+    window.open(
+      `/tasks/${encodeURIComponent(projectId)}/${encodeURIComponent(task.id)}`,
+      "_blank",
+      "noopener,noreferrer"
+    )
   }
 
   function handleCloseTask() {
@@ -402,7 +400,7 @@ export function ProjectTasksTab({
       </div>
       {activeTask && activeTask.id === activeTaskId && (
         <ProjectTaskDetailsDialog
-          key={`${activeTask.id}-${activeTask.updatedAt}`}
+          key={activeTask.id}
           onDeleted={handleTaskDeleted}
           onOpenChange={(open) => {
             if (!open) {

@@ -107,6 +107,7 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.DocumentCollabState{},
 		&store.Task{},
 		&store.TaskReminder{},
+		&store.TaskActivity{},
 		&store.TemporaryFile{},
 		&store.App{},
 		&store.AppConversation{},

@@ -29,14 +29,20 @@ vi.mock("@/components/projects/project-task-details-dialog", () => ({
   ProjectTaskDetailsDialog: ({
     onDeleted,
     onOpenChange,
+    onUpdated,
     task,
   }: {
     onDeleted?: (taskId: string) => void
     onOpenChange: (open: boolean) => void
+    onUpdated?: () => Promise<void>
     task: ProjectTask
   }) => (
     <div aria-label="任务详情" role="dialog">
       <span>{task.title}</span>
+      <input aria-label="评论草稿" defaultValue="" />
+      <button onClick={() => void onUpdated?.()} type="button">
+        模拟保存
+      </button>
       <button onClick={() => onOpenChange(false)} type="button">
         关闭详情
       </button>
@@ -107,8 +113,9 @@ describe("ProjectTasksTab", () => {
     ).not.toBeInTheDocument()
   })
 
-  it("adds taskId to the URL when a task is opened", async () => {
+  it("opens a task workspace in a new tab", async () => {
     const user = userEvent.setup()
+    const open = vi.spyOn(window, "open").mockImplementation(() => null)
     const task = createProjectTask()
     projectTaskApiMocks.listClientProjectTasks.mockResolvedValue({
       nextCursor: null,
@@ -123,11 +130,44 @@ describe("ProjectTasksTab", () => {
       })
     )
 
+    expect(open).toHaveBeenCalledWith(
+      "/tasks/project-1/task-1",
+      "_blank",
+      "noopener,noreferrer"
+    )
     expect(
-      await screen.findByRole("dialog", { name: "任务详情" })
-    ).toBeInTheDocument()
+      screen.queryByRole("dialog", { name: "任务详情" })
+    ).not.toBeInTheDocument()
     expect(screen.getByTestId("location-search")).toHaveTextContent(
-      "source=list&taskId=task-1"
+      "?source=list"
+    )
+    open.mockRestore()
+  })
+
+  it("preserves detail state when the task updatedAt changes", async () => {
+    const user = userEvent.setup()
+    const task = createProjectTask()
+    const updatedTask = {
+      ...task,
+      updatedAt: "2026-07-14T09:00:00Z",
+    }
+    projectTaskApiMocks.listClientProjectTasks
+      .mockResolvedValueOnce({ nextCursor: null, tasks: [task] })
+      .mockResolvedValue({ nextCursor: null, tasks: [updatedTask] })
+
+    renderProjectTasksTab("/projects/project-1?taskId=task-1")
+
+    const draft = await screen.findByRole("textbox", { name: "评论草稿" })
+    await user.type(draft, "不要丢失")
+    await user.click(screen.getByRole("button", { name: "模拟保存" }))
+
+    await waitFor(() => {
+      expect(projectTaskApiMocks.listClientProjectTasks).toHaveBeenCalledTimes(
+        2
+      )
+    })
+    expect(screen.getByRole("textbox", { name: "评论草稿" })).toHaveValue(
+      "不要丢失"
     )
   })
 

@@ -436,6 +436,12 @@ definitions:
       message:
         $ref: '#/definitions/client.messageResponse'
     type: object
+  client.addTaskCommentRequest:
+    properties:
+      content:
+        example: 这个任务明天下午可以完成。
+        type: string
+    type: object
   client.choiceResponseResponse:
     properties:
       created_at:
@@ -1779,6 +1785,50 @@ definitions:
       success:
         example: true
         type: boolean
+    type: object
+  client.taskActivityChangeResponse:
+    properties:
+      field:
+        type: string
+      from:
+        type: object
+      to:
+        type: object
+    type: object
+  client.taskActivityListResponse:
+    properties:
+      activities:
+        items:
+          $ref: '#/definitions/client.taskActivityResponse'
+        type: array
+      next_cursor:
+        type: string
+        x-nullable: true
+    type: object
+  client.taskActivityResponse:
+    properties:
+      actor:
+        $ref: '#/definitions/client.projectUserResponse'
+      changes:
+        items:
+          $ref: '#/definitions/client.taskActivityChangeResponse'
+        type: array
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      project_id:
+        type: string
+      task_id:
+        type: string
+      type:
+        enum:
+        - created
+        - updated
+        - commented
+        type: string
     type: object
   client.taskListResponse:
     properties:
@@ -6834,6 +6884,104 @@ paths:
       security:
       - UserSession: []
       summary: 更新项目任务
+      tags:
+      - 客户端任务
+  /api/client/projects/{project_id}/tasks/{task_id}/activities:
+    get:
+      description: 按时间顺序获取任务创建、修改和评论动态。
+      parameters:
+      - description: 项目 ID
+        in: path
+        name: project_id
+        required: true
+        type: string
+      - description: 任务 ID
+        in: path
+        name: task_id
+        required: true
+        type: string
+      - description: 每页数量，默认 50，最大 100
+        in: query
+        name: limit
+        type: integer
+      - description: 动态分页游标
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.taskActivityListResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - UserSession: []
+      summary: 列出任务动态
+      tags:
+      - 客户端任务
+  /api/client/projects/{project_id}/tasks/{task_id}/comments:
+    post:
+      consumes:
+      - application/json
+      description: 为当前用户可访问的任务添加评论动态。
+      parameters:
+      - description: 项目 ID
+        in: path
+        name: project_id
+        required: true
+        type: string
+      - description: 任务 ID
+        in: path
+        name: task_id
+        required: true
+        type: string
+      - description: 评论内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.addTaskCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.taskActivityResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - UserSession: []
+      summary: 添加任务评论
       tags:
       - 客户端任务
   /api/client/search/messages:

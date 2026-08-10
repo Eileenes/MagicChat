@@ -369,7 +369,22 @@ type Task struct {
 	CreatedAt       time.Time `gorm:"not null"`
 	UpdatedAt       time.Time `gorm:"not null;index"`
 	DeletedAt       gorm.DeletedAt
-	Reminder        *TaskReminder `gorm:"foreignKey:TaskID"`
+	Reminder        *TaskReminder  `gorm:"foreignKey:TaskID"`
+	Activities      []TaskActivity `gorm:"foreignKey:TaskID"`
+}
+
+type TaskActivity struct {
+	ID          string          `gorm:"type:uuid;primaryKey"`
+	ProjectID   string          `gorm:"type:uuid;not null;index"`
+	Project     Project         `gorm:"constraint:OnDelete:CASCADE;"`
+	TaskID      string          `gorm:"type:uuid;not null;index"`
+	Task        Task            `gorm:"constraint:OnDelete:CASCADE;"`
+	Type        string          `gorm:"size:32;not null"`
+	ActorUserID string          `gorm:"type:uuid;not null;index"`
+	ActorUser   User            `gorm:"foreignKey:ActorUserID;constraint:OnDelete:RESTRICT;"`
+	Content     string          `gorm:"not null;default:''"`
+	Changes     json.RawMessage `gorm:"type:jsonb;not null;default:'[]';serializer:json"`
+	CreatedAt   time.Time       `gorm:"not null;index"`
 }
 
 type TaskReminder struct {

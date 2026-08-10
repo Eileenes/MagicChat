@@ -29,6 +29,10 @@ const (
 	ReminderWeekly        = "weekly"
 	ReminderMonthly       = "monthly"
 	ReminderTimezone      = "Asia/Shanghai"
+
+	ActivityTypeCreated   = "created"
+	ActivityTypeUpdated   = "updated"
+	ActivityTypeCommented = "commented"
 )
 
 type Field[T any] struct {
@@ -107,6 +111,43 @@ type ListResult struct {
 	NextCursor *string
 }
 
+type ActivityChange struct {
+	Field string `json:"field"`
+	From  any    `json:"from"`
+	To    any    `json:"to"`
+}
+
+type Activity struct {
+	ID        string
+	ProjectID string
+	TaskID    string
+	Type      string
+	Actor     UserSummary
+	Content   string
+	Changes   []ActivityChange
+	CreatedAt time.Time
+}
+
+type ListActivitiesCommand struct {
+	AccountID string
+	ProjectID string
+	TaskID    string
+	Limit     int
+	Cursor    Field[string]
+}
+
+type ActivityListResult struct {
+	Activities []Activity
+	NextCursor *string
+}
+
+type AddCommentCommand struct {
+	AccountID string
+	ProjectID string
+	TaskID    string
+	Content   string
+}
+
 type CreateCommand struct {
 	AccountID      string
 	ProjectID      string
@@ -149,6 +190,8 @@ type ClientService interface {
 	Get(context.Context, GetCommand) (Task, error)
 	Update(context.Context, UpdateCommand) (Task, error)
 	Delete(context.Context, GetCommand) (string, error)
+	ListActivities(context.Context, ListActivitiesCommand) (ActivityListResult, error)
+	AddComment(context.Context, AddCommentCommand) (Activity, error)
 }
 
 type NotificationPort interface {

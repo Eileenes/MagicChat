@@ -44,6 +44,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00029_add_group_announcements.sql",
 		"00030_add_documents.sql",
 		"00031_add_document_contributors.sql",
+		"00032_add_task_activities.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)

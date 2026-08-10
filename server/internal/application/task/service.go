@@ -44,6 +44,11 @@ type listCursor struct {
 	ID        string `json:"id"`
 }
 
+type activityCursor struct {
+	CreatedAt string `json:"created_at"`
+	ID        string `json:"id"`
+}
+
 type listFilters struct {
 	Keyword         string
 	Statuses        []string
@@ -166,6 +171,12 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (Task, error) {
 			}
 			value.Reminder = reminder
 		}
+		if err := createTaskActivity(tx, store.TaskActivity{
+			ID: uuid.NewString(), ProjectID: projectID, TaskID: value.ID,
+			Type: ActivityTypeCreated, ActorUserID: accountID, Changes: json.RawMessage("[]"), CreatedAt: now,
+		}); err != nil {
+			return err
+		}
 		if err := updateProjectTimestamp(tx, projectID, now); err != nil {
 			return err
 		}
@@ -235,6 +246,7 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (Task, error) {
 		if err := validatePatchDates(value, patch); err != nil {
 			return err
 		}
+		before := cloneTaskForActivity(value)
 		if patch.AssigneePresent && patch.AssigneeUserID != nil && (value.AssigneeUserID == nil || *value.AssigneeUserID != *patch.AssigneeUserID) {
 			validated, err := validateAssignee(tx, projectID, *patch.AssigneeUserID)
 			if err != nil {
@@ -266,6 +278,17 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (Task, error) {
 			return err
 		}
 		value.UpdatedAt = now
+		changes := buildTaskActivityChanges(before, value, reminderChanged)
+		encodedChanges, err := json.Marshal(changes)
+		if err != nil {
+			return err
+		}
+		if err := createTaskActivity(tx, store.TaskActivity{
+			ID: uuid.NewString(), ProjectID: projectID, TaskID: taskID,
+			Type: ActivityTypeUpdated, ActorUserID: accountID, Changes: json.RawMessage(encodedChanges), CreatedAt: now,
+		}); err != nil {
+			return err
+		}
 		if taskChanged && s.notifications != nil {
 			prepared, err := s.notifications.PrepareTaskNotification(ctx, tx, value)
 			if err != nil {
@@ -282,6 +305,113 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (Task, error) {
 		s.notifications.PublishTaskNotification(ctx, notification)
 	}
 	return newTask(value), nil
+}
+
+func (s *Service) ListActivities(ctx context.Context, cmd ListActivitiesCommand) (ActivityListResult, error) {
+	projectID, taskID, err := parseIDs(cmd.ProjectID, cmd.TaskID)
+	if err != nil {
+		return ActivityListResult{}, err
+	}
+	limit := cmd.Limit
+	if limit == 0 {
+		limit = DefaultPageLimit
+	}
+	if limit < 1 || limit > MaxPageLimit {
+		return ActivityListResult{}, invalid("limit 必须为 1 到 100 的整数", nil)
+	}
+	var cursor *struct {
+		CreatedAt time.Time
+		ID        string
+	}
+	if cmd.Cursor.Present {
+		cursor, err = decodeActivityCursor(cmd.Cursor.Value)
+		if err != nil {
+			return ActivityListResult{}, invalid("动态分页游标无效", err)
+		}
+	}
+	if err := s.requireProjectAccess(ctx, projectID, strings.TrimSpace(cmd.AccountID)); err != nil {
+		return ActivityListResult{}, mapNotFound(err)
+	}
+	var taskCount int64
+	if err := s.db.WithContext(ctx).Model(&store.Task{}).Where("id = ? AND project_id = ? AND deleted_at IS NULL", taskID, projectID).Count(&taskCount).Error; err != nil {
+		return ActivityListResult{}, internalError(err)
+	}
+	if taskCount == 0 {
+		return ActivityListResult{}, mapNotFound(gorm.ErrRecordNotFound)
+	}
+	query := s.db.WithContext(ctx).Preload("ActorUser").Where("project_id = ? AND task_id = ?", projectID, taskID)
+	if cursor != nil {
+		query = query.Where("(created_at < ?) OR (created_at = ? AND id < ?)", cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
+	}
+	var values []store.TaskActivity
+	if err := query.Order("created_at DESC").Order("id DESC").Limit(limit + 1).Find(&values).Error; err != nil {
+		return ActivityListResult{}, internalError(err)
+	}
+	var nextCursor *string
+	if len(values) > limit {
+		values = values[:limit]
+		encoded, err := encodeActivityCursor(values[len(values)-1])
+		if err != nil {
+			return ActivityListResult{}, internalError(err)
+		}
+		nextCursor = &encoded
+	}
+	result := make([]Activity, 0, len(values))
+	for _, value := range values {
+		activity, err := newActivity(value)
+		if err != nil {
+			return ActivityListResult{}, internalError(err)
+		}
+		result = append(result, activity)
+	}
+	if err := hydrateActivityAssignees(s.db.WithContext(ctx), result); err != nil {
+		return ActivityListResult{}, internalError(err)
+	}
+	slices.Reverse(result)
+	return ActivityListResult{Activities: result, NextCursor: nextCursor}, nil
+}
+
+func (s *Service) AddComment(ctx context.Context, cmd AddCommentCommand) (Activity, error) {
+	projectID, taskID, err := parseIDs(cmd.ProjectID, cmd.TaskID)
+	if err != nil {
+		return Activity{}, err
+	}
+	accountID := strings.TrimSpace(cmd.AccountID)
+	content := strings.TrimSpace(cmd.Content)
+	if err := validateText(content, "评论"); err != nil {
+		return Activity{}, err
+	}
+	if count := utf8.RuneCountInString(content); count < 1 || count > 10000 {
+		return Activity{}, invalid("评论长度必须为 1 到 10000 个字符", nil)
+	}
+	now := s.now().UTC()
+	value := store.TaskActivity{
+		ID: uuid.NewString(), ProjectID: projectID, TaskID: taskID,
+		Type: ActivityTypeCommented, ActorUserID: accountID, Content: content,
+		Changes: json.RawMessage("[]"), CreatedAt: now,
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := requireProjectAccessForUpdate(tx, projectID, accountID); err != nil {
+			return err
+		}
+		if _, err := findForUpdate(tx, projectID, taskID); err != nil {
+			return err
+		}
+		if err := createTaskActivity(tx, value); err != nil {
+			return err
+		}
+		if err := tx.Model(&store.Task{}).Where("id = ? AND project_id = ? AND deleted_at IS NULL", taskID, projectID).Update("updated_at", now).Error; err != nil {
+			return err
+		}
+		return updateProjectTimestamp(tx, projectID, now)
+	})
+	if err != nil {
+		return Activity{}, mapMutationError(err)
+	}
+	if err := s.db.WithContext(ctx).Preload("ActorUser").First(&value, "id = ?", value.ID).Error; err != nil {
+		return Activity{}, internalError(err)
+	}
+	return newActivity(value)
 }
 
 func (s *Service) Delete(ctx context.Context, cmd GetCommand) (string, error) {
@@ -648,6 +778,169 @@ func validatePatchDates(value store.Task, patch normalizedPatch) error {
 	return nil
 }
 
+func cloneTaskForActivity(value store.Task) store.Task {
+	value.Labels = append(pq.StringArray{}, value.Labels...)
+	if value.Reminder != nil {
+		reminder := *value.Reminder
+		reminder.Weekdays = append(pq.Int64Array{}, value.Reminder.Weekdays...)
+		value.Reminder = &reminder
+	}
+	return value
+}
+
+func buildTaskActivityChanges(before, after store.Task, reminderChanged bool) []ActivityChange {
+	changes := make([]ActivityChange, 0, 9)
+	appendChange := func(field string, from, to any) {
+		changes = append(changes, ActivityChange{Field: field, From: from, To: to})
+	}
+	if before.Title != after.Title {
+		appendChange("title", before.Title, after.Title)
+	}
+	if before.Description != after.Description {
+		appendChange("description", nil, nil)
+	}
+	if before.Status != after.Status {
+		appendChange("status", before.Status, after.Status)
+	}
+	if before.Priority != after.Priority {
+		appendChange("priority", before.Priority, after.Priority)
+	}
+	if !equalStrings(before.AssigneeUserID, after.AssigneeUserID) {
+		appendChange(
+			"assignee",
+			taskAssigneeActivityValue(before.AssigneeUser, before.AssigneeUserID),
+			taskAssigneeActivityValue(after.AssigneeUser, after.AssigneeUserID),
+		)
+	}
+	if !equalDates(before.StartDate, after.StartDate) {
+		appendChange("start_date", optionalDateValue(before.StartDate), optionalDateValue(after.StartDate))
+	}
+	if !equalDates(before.DueDate, after.DueDate) {
+		appendChange("due_date", optionalDateValue(before.DueDate), optionalDateValue(after.DueDate))
+	}
+	if !slices.Equal(before.Labels, after.Labels) {
+		appendChange("labels", []string(before.Labels), []string(after.Labels))
+	}
+	if reminderChanged {
+		appendChange("reminder", reminderActivityValue(before.Reminder), reminderActivityValue(after.Reminder))
+	}
+	return changes
+}
+
+func hydrateActivityAssignees(db *gorm.DB, activities []Activity) error {
+	ids := make(map[string]struct{})
+	for _, activity := range activities {
+		for _, change := range activity.Changes {
+			if change.Field != "assignee" {
+				continue
+			}
+			if id, ok := change.From.(string); ok {
+				ids[id] = struct{}{}
+			}
+			if id, ok := change.To.(string); ok {
+				ids[id] = struct{}{}
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	userIDs := make([]string, 0, len(ids))
+	for id := range ids {
+		userIDs = append(userIDs, id)
+	}
+	var users []store.User
+	if err := db.Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+		return err
+	}
+	usersByID := make(map[string]*store.User, len(users))
+	for index := range users {
+		usersByID[users[index].ID] = &users[index]
+	}
+	for activityIndex := range activities {
+		for changeIndex := range activities[activityIndex].Changes {
+			change := &activities[activityIndex].Changes[changeIndex]
+			if change.Field != "assignee" {
+				continue
+			}
+			change.From = hydrateActivityAssigneeValue(change.From, usersByID)
+			change.To = hydrateActivityAssigneeValue(change.To, usersByID)
+		}
+	}
+	return nil
+}
+
+func hydrateActivityAssigneeValue(value any, usersByID map[string]*store.User) any {
+	id, ok := value.(string)
+	if !ok {
+		return value
+	}
+	return taskAssigneeActivityValue(usersByID[id], &id)
+}
+
+func taskAssigneeActivityValue(user *store.User, userID *string) any {
+	if userID == nil {
+		return nil
+	}
+	result := map[string]any{"id": *userID}
+	if user != nil {
+		result["name"] = user.Name
+		result["nickname"] = user.Nickname
+	}
+	return result
+}
+
+func optionalDateValue(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return value.Format(DateLayout)
+}
+
+func reminderActivityValue(value *store.TaskReminder) any {
+	if value == nil {
+		return nil
+	}
+	result := map[string]any{"mode": value.Mode, "timezone": value.Timezone}
+	if value.Frequency != nil {
+		result["frequency"] = *value.Frequency
+	}
+	if value.OnceAt != nil {
+		result["at"] = value.OnceAt.UTC().Format(time.RFC3339)
+	}
+	if value.TimeOfDay != nil {
+		result["time"] = *value.TimeOfDay
+	}
+	if len(value.Weekdays) > 0 {
+		result["weekdays"] = value.Weekdays
+	}
+	if value.DayOfMonth != nil {
+		result["day_of_month"] = *value.DayOfMonth
+	}
+	return result
+}
+
+func createTaskActivity(tx *gorm.DB, value store.TaskActivity) error {
+	if len(value.Changes) == 0 {
+		value.Changes = json.RawMessage("[]")
+	}
+	return tx.Create(&value).Error
+}
+
+func newActivity(value store.TaskActivity) (Activity, error) {
+	changes := make([]ActivityChange, 0)
+	if len(value.Changes) > 0 {
+		if err := json.Unmarshal(value.Changes, &changes); err != nil {
+			return Activity{}, err
+		}
+	}
+	return Activity{
+		ID: value.ID, ProjectID: value.ProjectID, TaskID: value.TaskID,
+		Type: value.Type, Actor: newUser(value.ActorUser), Content: value.Content,
+		Changes: changes, CreatedAt: value.CreatedAt,
+	}, nil
+}
+
 func patchUpdates(value *store.Task, patch normalizedPatch, now time.Time) map[string]any {
 	updates := map[string]any{}
 	if patch.Title != nil && value.Title != *patch.Title {
@@ -919,6 +1212,54 @@ func decodeCursor(raw string) (*struct {
 }
 func encodeCursor(value store.Task) (string, error) {
 	content, err := json.Marshal(listCursor{value.UpdatedAt.Format(time.RFC3339Nano), value.ID})
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(content), nil
+}
+
+func decodeActivityCursor(raw string) (*struct {
+	CreatedAt time.Time
+	ID        string
+}, error) {
+	if raw == "" {
+		return nil, errors.New("empty cursor")
+	}
+	content, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	var cursor activityCursor
+	if err := decoder.Decode(&cursor); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New("trailing data")
+		}
+		return nil, err
+	}
+	at, err := time.Parse(time.RFC3339Nano, cursor.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(cursor.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &struct {
+		CreatedAt time.Time
+		ID        string
+	}{at, id.String()}, nil
+}
+
+func encodeActivityCursor(value store.TaskActivity) (string, error) {
+	content, err := json.Marshal(activityCursor{
+		CreatedAt: value.CreatedAt.Format(time.RFC3339Nano),
+		ID:        value.ID,
+	})
 	if err != nil {
 		return "", err
 	}

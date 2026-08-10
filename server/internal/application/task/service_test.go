@@ -66,6 +66,39 @@ func TestServiceTaskLifecycleAndNotificationPort(t *testing.T) {
 		t.Fatalf("list = %#v, err = %v", listed, err)
 	}
 
+	activityPage, err := service.ListActivities(context.Background(), ListActivitiesCommand{
+		AccountID: owner.ID, ProjectID: project.ID, TaskID: created.ID,
+	})
+	activities := activityPage.Activities
+	if err != nil || len(activities) != 2 || activities[0].Type != ActivityTypeCreated || activities[1].Type != ActivityTypeUpdated {
+		t.Fatalf("activities = %#v, err = %v", activityPage, err)
+	}
+	if len(activities[1].Changes) != 1 || activities[1].Changes[0].Field != "status" || activities[1].Changes[0].From != StatusTodo || activities[1].Changes[0].To != StatusDone {
+		t.Fatalf("update changes = %#v", activities[1].Changes)
+	}
+
+	now = now.Add(time.Minute)
+	comment, err := service.AddComment(context.Background(), AddCommentCommand{
+		AccountID: owner.ID, ProjectID: project.ID, TaskID: created.ID, Content: "  Ready for review  ",
+	})
+	if err != nil || comment.Type != ActivityTypeCommented || comment.Content != "Ready for review" || comment.Actor.ID != owner.ID {
+		t.Fatalf("comment = %#v, err = %v", comment, err)
+	}
+	activityPage, err = service.ListActivities(context.Background(), ListActivitiesCommand{
+		AccountID: owner.ID, ProjectID: project.ID, TaskID: created.ID,
+		Limit: 2,
+	})
+	if err != nil || len(activityPage.Activities) != 2 || activityPage.Activities[1].Content != "Ready for review" || activityPage.NextCursor == nil {
+		t.Fatalf("latest activities = %#v, err = %v", activityPage, err)
+	}
+	olderPage, err := service.ListActivities(context.Background(), ListActivitiesCommand{
+		AccountID: owner.ID, ProjectID: project.ID, TaskID: created.ID,
+		Limit: 2, Cursor: Field[string]{Present: true, Value: *activityPage.NextCursor},
+	})
+	if err != nil || len(olderPage.Activities) != 1 || olderPage.Activities[0].Type != ActivityTypeCreated || olderPage.NextCursor != nil {
+		t.Fatalf("older activities = %#v, err = %v", olderPage, err)
+	}
+
 	now = now.Add(time.Minute)
 	deletedID, err := service.Delete(context.Background(), GetCommand{AccountID: owner.ID, ProjectID: project.ID, TaskID: created.ID})
 	if err != nil || deletedID != created.ID {
@@ -73,6 +106,33 @@ func TestServiceTaskLifecycleAndNotificationPort(t *testing.T) {
 	}
 	if _, err := service.Get(context.Background(), GetCommand{AccountID: owner.ID, ProjectID: project.ID, TaskID: created.ID}); ErrorCodeOf(err) != CodeNotFound {
 		t.Fatalf("get deleted error = %v, code = %q", err, ErrorCodeOf(err))
+	}
+}
+
+func TestBuildTaskActivityChangesUsesAssigneeDisplayNames(t *testing.T) {
+	beforeID := uuid.NewString()
+	afterID := uuid.NewString()
+	changes := buildTaskActivityChanges(
+		store.Task{
+			AssigneeUserID: &beforeID,
+			AssigneeUser:   &store.User{ID: beforeID, Name: "Alice", Nickname: "小艾"},
+		},
+		store.Task{
+			AssigneeUserID: &afterID,
+			AssigneeUser:   &store.User{ID: afterID, Name: "Bob"},
+		},
+		false,
+	)
+	if len(changes) != 1 || changes[0].Field != "assignee" {
+		t.Fatalf("changes = %#v", changes)
+	}
+	from, ok := changes[0].From.(map[string]any)
+	if !ok || from["nickname"] != "小艾" {
+		t.Fatalf("from = %#v", changes[0].From)
+	}
+	to, ok := changes[0].To.(map[string]any)
+	if !ok || to["name"] != "Bob" {
+		t.Fatalf("to = %#v", changes[0].To)
 	}
 }
 
@@ -251,6 +311,7 @@ func openTaskTestDB(t *testing.T) *gorm.DB {
 		&store.ConversationMember{},
 		&store.Task{},
 		&store.TaskReminder{},
+		&store.TaskActivity{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}

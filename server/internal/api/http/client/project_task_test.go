@@ -97,3 +97,9 @@ func (s *fakeTaskService) Update(context.Context, task.UpdateCommand) (task.Task
 func (s *fakeTaskService) Delete(context.Context, task.GetCommand) (string, error) {
 	return "task-1", nil
 }
+func (s *fakeTaskService) ListActivities(context.Context, task.ListActivitiesCommand) (task.ActivityListResult, error) {
+	return task.ActivityListResult{}, nil
+}
+func (s *fakeTaskService) AddComment(context.Context, task.AddCommentCommand) (task.Activity, error) {
+	return task.Activity{}, nil
+}

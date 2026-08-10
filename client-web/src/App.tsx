@@ -23,6 +23,7 @@ import { ProjectGoalsPage } from "@/pages/projects/project-goals-page"
 import { ProjectsLayout } from "@/pages/projects/projects-layout"
 import { ProjectMembersPage } from "@/pages/projects/project-members-page"
 import { ProjectTasksPage } from "@/pages/projects/project-tasks-page"
+import { TaskWorkspacePage } from "@/pages/tasks/task-workspace-page"
 
 export function App() {
   return (
@@ -43,6 +44,10 @@ export function App() {
         <Route
           path="/documents/document/:documentId"
           element={<DocumentPage />}
+        />
+        <Route
+          path="/tasks/:projectId/:taskId?"
+          element={<TaskWorkspaceRoute />}
         />
         <Route
           element={
@@ -113,6 +118,15 @@ export function App() {
 }
 
 export default App
+
+function TaskWorkspaceRoute() {
+  return (
+    <>
+      <ClientDocumentTitle title="任务" />
+      <TaskWorkspacePage />
+    </>
+  )
+}
 
 function InitPage() {
   return <Navigate to="/chat" replace />
