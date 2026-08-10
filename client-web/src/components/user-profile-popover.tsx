@@ -320,7 +320,7 @@ function UserProfileRow({
       <span className="w-12 shrink-0 text-muted-foreground">{label}</span>
       <span
         className={cn(
-          "min-w-0 flex-1 truncate",
+          "min-w-0 flex-1 [overflow-wrap:anywhere]",
           !hasValue && "text-muted-foreground"
         )}
         title={displayValue}

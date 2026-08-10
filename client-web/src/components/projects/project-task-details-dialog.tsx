@@ -512,7 +512,9 @@ export function ProjectTaskDetailsDialog({
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem
                   disabled={descriptionDirty || Boolean(error)}
-                  onSelect={() => setSendDialogOpen(true)}
+                  onSelect={() => {
+                    requestAnimationFrame(() => setSendDialogOpen(true))
+                  }}
                 >
                   <Send />
                   发送到对话

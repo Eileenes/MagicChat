@@ -223,7 +223,7 @@ describe("ProjectTaskDetailsDialog card message", () => {
     await user.click(moreButton)
     await user.click(screen.getByRole("menuitem", { name: "发送到对话" }))
 
-    await user.click(screen.getByRole("radio", { name: "设计群" }))
+    await user.click(await screen.findByRole("radio", { name: "设计群" }))
     await user.click(screen.getByRole("button", { name: "发送" }))
 
     await waitFor(() => {
@@ -467,7 +467,7 @@ describe("ProjectTaskDetailsDialog card message", () => {
       changes: [],
       content: "已经处理好了",
       createdAt: "2026-07-14T09:00:00Z",
-      id: "activity-2",
+      id: "activity-comment",
       projectId: "project-1",
       taskId: "task-1",
       type: "commented",
