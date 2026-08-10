@@ -8,6 +8,7 @@ import * as Y from "yjs"
 import { ClientDocumentTitle } from "@/components/client-document-title"
 import { DocumentEditor } from "@/components/documents/document-editor"
 import { DocumentWorkspaceSidebar } from "@/components/documents/document-workspace-sidebar"
+import { useLocale } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import {
@@ -30,7 +31,7 @@ import {
 import { getClientProject, type ClientProjectDetail } from "@/lib/project-data-api"
 import { useDocumentData } from "@/lib/document-data-context"
 import {
-  documentWindowFeedbackMessage,
+  documentWindowFeedbackKey,
   getDocumentReturnPath,
   parseDocumentWindowLocation,
   DocumentWindowOpenError,
@@ -98,6 +99,7 @@ function DocumentWorkspace({
   document: ClientDocument
   project: ClientProjectDetail
 }) {
+  const { t } = useLocale()
   const target = useDesktopTarget()
   const navigate = useNavigate()
   const { me, refreshMe, refreshProjects } = useDocumentData()
@@ -333,16 +335,13 @@ function DocumentWorkspace({
     setOpeningWindow(true)
     try {
       const result = await requestDocumentWindow(document.id, target.id)
-      toast.success(result.status === "focused" ? "已聚焦已有文档窗口" : "文档窗口已打开")
+      toast.success(
+        t(result.status === "focused" ? "documentWindow.focused" : "documentWindow.opened"),
+      )
       if (returnPath) navigate(returnPath, { replace: true, viewTransition: true })
     } catch (reason) {
       const code = reason instanceof DocumentWindowOpenError ? reason.code : "bridge_unavailable"
-      toast.error(
-        documentWindowFeedbackMessage(
-          code,
-          reason instanceof Error ? reason.message : "文档窗口暂时不可用",
-        ),
-      )
+      toast.error(t(documentWindowFeedbackKey(code)))
     } finally {
       setOpeningWindow(false)
     }

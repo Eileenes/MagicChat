@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   documentNavigationPath,
-  documentWindowFeedbackMessage,
+  documentWindowFeedbackKey,
   getDocumentReturnPath,
   parseDocumentWindowLocation,
   rememberLastNonDocumentRoute,
@@ -73,7 +73,8 @@ describe("文档窗口渲染路由", () => {
       "550e8400-e29b-41d4-a716-446655440000",
       "server-a",
     )
-    expect(documentWindowFeedbackMessage("window_limit", "fallback")).toContain("8")
+    expect(documentWindowFeedbackKey("window_limit")).toBe("documentWindow.error.windowLimit")
+    expect(documentWindowFeedbackKey("bridge_unavailable")).toBe("documentWindow.error.unavailable")
   })
 
   it("子窗口内切换文档时保留显式 Server 和窗口模式", () => {

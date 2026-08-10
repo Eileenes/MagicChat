@@ -16,6 +16,8 @@ describe("i18n 翻译", () => {
     expect(translate("en", "settings.update.target", { version: "1.2.0" })).toBe(
       "Target version: 1.2.0",
     )
+    expect(translate("zh-CN", "documentWindow.error.windowLimit")).toContain("8 个文档窗口")
+    expect(translate("en", "documentWindow.error.windowLimit")).toContain("8 document windows")
   })
 
   it("未知键回退为键本身", () => {

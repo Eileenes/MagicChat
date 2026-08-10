@@ -86,7 +86,7 @@ import { cn } from "@/lib/utils"
 import { limitDocumentTitle } from "@/lib/document-title-controller"
 import { DesktopTargetContext } from "@/lib/desktop-target-context"
 import {
-  documentWindowFeedbackMessage,
+  documentWindowFeedbackKey,
   DocumentWindowOpenError,
   requestDocumentWindow,
 } from "@/lib/document-window-route"
@@ -239,21 +239,18 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
   async function openDocumentInWindow(node: DocumentTreeNode) {
     if (node.kind !== "document" || openingWindowId) return
     if (!target) {
-      toast.error("当前窗口缺少服务器认证目标")
+      toast.error(t("documentWindow.error.missingTarget"))
       return
     }
     setOpeningWindowId(node.id)
     try {
       const result = await requestDocumentWindow(node.id, target.id)
-      toast.success(result.status === "focused" ? "已聚焦已有文档窗口" : "文档窗口已打开")
+      toast.success(
+        t(result.status === "focused" ? "documentWindow.focused" : "documentWindow.opened"),
+      )
     } catch (reason) {
       const code = reason instanceof DocumentWindowOpenError ? reason.code : "bridge_unavailable"
-      toast.error(
-        documentWindowFeedbackMessage(
-          code,
-          reason instanceof Error ? reason.message : "文档窗口暂时不可用",
-        ),
-      )
+      toast.error(t(documentWindowFeedbackKey(code)))
     } finally {
       setOpeningWindowId(null)
     }
