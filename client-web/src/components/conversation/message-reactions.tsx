@@ -22,6 +22,7 @@ type MessageReactionChipsProps = {
   canAdd: boolean
   conversationId: string
   enabled?: boolean
+  expandBubble?: boolean
   messageId: string
   onSetReaction?: (text: string, reacted: boolean) => Promise<unknown>
   reactions: ClientMessageReaction[]
@@ -32,6 +33,7 @@ export function MessageReactionChips({
   canAdd,
   conversationId,
   enabled = true,
+  expandBubble = false,
   messageId,
   onSetReaction,
   reactions,
@@ -62,7 +64,10 @@ export function MessageReactionChips({
 
   return (
     <div
-      className="flex max-w-full min-w-0 flex-wrap items-center justify-start gap-1 [contain:inline-size]"
+      className={cn(
+        "flex max-w-full min-w-0 flex-wrap items-center justify-start gap-1",
+        !expandBubble && "[contain:inline-size]"
+      )}
       data-slot="message-reactions"
     >
       {reactions.map((reaction) => {
