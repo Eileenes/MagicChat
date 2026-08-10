@@ -18,6 +18,12 @@ func (f topicRouterFunc) NeedsTopic(ctx context.Context, request agent.Request) 
 	return f(ctx, request)
 }
 
+func topicRouterDecision(needsTopic bool) topicRouter {
+	return topicRouterFunc(func(context.Context, agent.Request) (bool, error) {
+		return needsTopic, nil
+	})
+}
+
 func TestModelTopicRouterReturnsBooleanDecision(t *testing.T) {
 	for _, needsTopic := range []bool{false, true} {
 		t.Run(fmt.Sprintf("needs_topic=%t", needsTopic), func(t *testing.T) {
@@ -185,50 +191,24 @@ func TestHandleParsedServerMessageRepliesInCurrentConversationWhenTopicIsNotNeed
 	}
 }
 
-func TestHandleParsedServerMessageDefaultsToTopicWhenRoutingFails(t *testing.T) {
+func TestHandleParsedServerMessageDefaultsToCurrentConversationWhenRoutingFails(t *testing.T) {
 	appID := "00000000-0000-0000-0000-000000000001"
 	var sent []envelope
-	var notice sendMessageRequestPayload
-	requester := appRequestFunc(func(_ context.Context, method string, request any) (json.RawMessage, error) {
-		switch method {
-		case methodConversationMessagesList:
-			return json.Marshal(appListConversationMessagesResponsePayload{
-				Messages: []historyMessagePayload{
-					historyTextMessage("message-1", 1, "user-1", "Alice", "请处理 {(@app/"+appID+")}"),
-				},
-			})
-		case methodMessageSend:
-			raw, err := json.Marshal(request)
-			if err != nil {
-				return nil, err
-			}
-			if err := json.Unmarshal(raw, &notice); err != nil {
-				return nil, err
-			}
-			return json.Marshal(sendMessageResponsePayload{Message: messagePayload{ID: "notice-1", Seq: 2}})
-		case methodConversationTopicCreate:
-			var topicRequest topicMutationRequestPayload
-			raw, err := json.Marshal(request)
-			if err != nil {
-				return nil, err
-			}
-			if err := json.Unmarshal(raw, &topicRequest); err != nil {
-				return nil, err
-			}
-			if topicRequest.SourceMessageID != "notice-1" {
-				t.Fatalf("topic source message id = %q, want notice-1", topicRequest.SourceMessageID)
-			}
-			return testTopicMutationResponse("topic-1", "请处理")
-		default:
+	requester := appRequestFunc(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		if method != methodConversationMessagesList {
 			t.Fatalf("unexpected app request method %q", method)
-			return nil, nil
 		}
+		return json.Marshal(appListConversationMessagesResponsePayload{
+			Messages: []historyMessagePayload{
+				historyTextMessage("message-1", 1, "user-1", "Alice", "请处理 {(@app/"+appID+")}"),
+			},
+		})
 	})
 	router := topicRouterFunc(func(context.Context, agent.Request) (bool, error) {
 		return false, errors.New("invalid model response")
 	})
 	replyAgent := replyAgentFunc(func(ctx context.Context, _ agent.Request, sink agent.OutputSink) error {
-		return sink.SendMarkdown(ctx, agent.LoopLimitFallback)
+		return sink.SendMarkdown(ctx, "直接回复")
 	})
 
 	handled := handleParsedServerMessageWithTopicRouter(
@@ -248,17 +228,14 @@ func TestHandleParsedServerMessageDefaultsToTopicWhenRoutingFails(t *testing.T) 
 	if !handled || len(sent) != 1 {
 		t.Fatalf("handled = %t, sent = %d", handled, len(sent))
 	}
-	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice || notice.ReplyToMessageID != "message-1" {
-		t.Fatalf("topic notice = %#v", notice)
-	}
 	var reply sendMessageRequestPayload
 	if err := json.Unmarshal(sent[0].Payload, &reply); err != nil {
 		t.Fatalf("decode reply: %v", err)
 	}
-	if reply.Target.Type != "topic" || reply.Target.ConversationID != "topic-1" {
-		t.Fatalf("reply target = %#v", reply.Target)
+	if reply.Target.Type != "group" || reply.Target.ConversationID != "conversation-group-1" {
+		t.Fatalf("reply target = %#v, want original group conversation", reply.Target)
 	}
-	if reply.Message.Content != agent.LoopLimitFallback {
-		t.Fatalf("reply content = %q, want loop limit fallback", reply.Message.Content)
+	if reply.Message.Content != "直接回复" {
+		t.Fatalf("reply content = %q, want direct reply", reply.Message.Content)
 	}
 }

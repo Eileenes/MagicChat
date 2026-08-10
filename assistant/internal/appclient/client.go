@@ -698,14 +698,14 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 	})
 	replyConversation := payload.Conversation
 	if payload.Conversation.Type != "topic" && strings.TrimSpace(appID) != "" {
-		needsTopic := true
+		needsTopic := false
 		if router != nil {
 			decision, routeErr := router.NeedsTopic(ctx, prepared.Request)
 			if routeErr != nil {
 				if ctx.Err() != nil {
 					return false
 				}
-				log.Printf("route agent message failed; defaulting to topic: conversation_id=%s error=%v", payload.Conversation.ID, routeErr)
+				log.Printf("route agent message failed; defaulting to current conversation: conversation_id=%s error=%v", payload.Conversation.ID, routeErr)
 			} else {
 				needsTopic = decision
 			}
