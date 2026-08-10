@@ -349,6 +349,23 @@ const zhCN = {
   "startup.connecting": "正在连接工作空间",
   "startup.unknownServer": "链接指向尚未配置的服务器 {serverId}，请先添加并确认服务器地址。",
   "startup.openLinkError": "无法使用系统浏览器打开该链接",
+  "documentWindow.opened": "文档窗口已打开",
+  "documentWindow.focused": "已聚焦已有文档窗口",
+  "documentWindow.error.windowLimit": "同一服务器最多打开 8 个文档窗口，请先关闭已有窗口。",
+  "documentWindow.error.notAuthenticated": "当前服务器登录状态已失效，请重新登录后重试。",
+  "documentWindow.error.serverNotFound": "目标服务器不可用，请返回服务器设置检查配置。",
+  "documentWindow.error.targetMismatch": "文档窗口认证目标已变化，请从当前服务器重新打开。",
+  "documentWindow.error.invalidRequest": "文档窗口参数无效，请刷新后重试。",
+  "documentWindow.error.disposed": "应用正在退出，请稍后重试。",
+  "documentWindow.error.loadFailed": "文档窗口加载失败，请重试。",
+  "documentWindow.error.unavailable": "文档窗口服务暂不可用，请稍后重试。",
+  "documentWindow.error.missingTarget": "当前窗口缺少服务器认证目标。",
+  "documentWindow.startup.title": "无法打开文档窗口",
+  "documentWindow.startup.serverNotFound": "目标服务器不存在，无法打开文档窗口。",
+  "documentWindow.startup.invalidMode": "文档窗口模式无效。",
+  "documentWindow.startup.invalidParams": "文档窗口参数无效。",
+  "documentWindow.startup.invalidEncoding": "文档标识编码无效。",
+  "documentWindow.startup.invalidTarget": "文档窗口认证目标无效。",
   "setup.addServerError": "无法添加服务器",
   "setup.brandSlogan": "从沟通到行动，让协作持续向前",
   "setup.brandDesc":
@@ -1688,6 +1705,30 @@ const en: Record<TranslationKey, string> = {
   "startup.unknownServer":
     "The link points to an unconfigured server ({serverId}). Add it and confirm the address first.",
   "startup.openLinkError": "Could not open the link in the system browser",
+  "documentWindow.opened": "Document window opened",
+  "documentWindow.focused": "Focused the existing document window",
+  "documentWindow.error.windowLimit":
+    "You can open up to 8 document windows per server. Close an existing window and try again.",
+  "documentWindow.error.notAuthenticated":
+    "Your session for this server has expired. Sign in and try again.",
+  "documentWindow.error.serverNotFound":
+    "The target server is unavailable. Check your workspace settings.",
+  "documentWindow.error.targetMismatch":
+    "The document window target has changed. Open it again from the current server.",
+  "documentWindow.error.invalidRequest":
+    "The document window request is invalid. Refresh and try again.",
+  "documentWindow.error.disposed": "The app is closing. Try again in a moment.",
+  "documentWindow.error.loadFailed": "The document window failed to load. Try again.",
+  "documentWindow.error.unavailable":
+    "The document window service is temporarily unavailable. Try again later.",
+  "documentWindow.error.missingTarget": "This window does not have an authenticated server target.",
+  "documentWindow.startup.title": "Could not open the document window",
+  "documentWindow.startup.serverNotFound":
+    "The target server does not exist, so the document window cannot be opened.",
+  "documentWindow.startup.invalidMode": "The document window mode is invalid.",
+  "documentWindow.startup.invalidParams": "The document window parameters are invalid.",
+  "documentWindow.startup.invalidEncoding": "The document identifier encoding is invalid.",
+  "documentWindow.startup.invalidTarget": "The document window authentication target is invalid.",
   "setup.addServerError": "Could not add the server",
   "setup.brandSlogan": "From conversation to action, keep collaboration moving forward",
   "setup.brandDesc":

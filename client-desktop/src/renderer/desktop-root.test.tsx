@@ -24,6 +24,8 @@ const profile: ServerProfile = {
   id: "server-1",
   normalizedUrl: "https://chat.example.com",
 }
+const documentId = "550e8400-e29b-41d4-a716-446655440000"
+const documentUrl = `${profile.normalizedUrl}/documents/document/${documentId}`
 
 const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
   Element.prototype,
@@ -1336,6 +1338,117 @@ describe("桌面设置服务器管理", () => {
     await user.click(screen.getByRole("button", { name: "继续打开" }))
 
     expect(mocks.shellOpenExternal).toHaveBeenCalledWith("http://intranet.example.test/docs")
+  })
+
+  it("从宿主外链入口直接打开当前 Server 的文档窗口", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    await act(() => mocks.hostOpenExternal?.(documentUrl))
+
+    expect(bridge.navigation.openDocumentWindow).toHaveBeenCalledWith(documentId, profile.id)
+    expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it("从捕获式锚点入口直接打开当前 Server 的文档窗口", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    act(() => mocks.externalLinkHandler?.(documentUrl))
+
+    await waitFor(() =>
+      expect(bridge.navigation.openDocumentWindow).toHaveBeenCalledWith(documentId, profile.id),
+    )
+    expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it("重复点击同一文档继续交给幂等窗口管理器且不打开浏览器", async () => {
+    const bridge = createDesktopBridge()
+    vi.mocked(bridge.navigation.openDocumentWindow)
+      .mockResolvedValueOnce({ ok: true, result: { status: "created" } })
+      .mockResolvedValueOnce({ ok: true, result: { status: "focused" } })
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    await act(() => mocks.hostOpenExternal?.(documentUrl))
+    await act(() => mocks.hostOpenExternal?.(documentUrl))
+
+    expect(bridge.navigation.openDocumentWindow).toHaveBeenCalledTimes(2)
+    expect(bridge.navigation.openDocumentWindow).toHaveBeenNthCalledWith(1, documentId, profile.id)
+    expect(bridge.navigation.openDocumentWindow).toHaveBeenNthCalledWith(2, documentId, profile.id)
+    expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["not_authenticated", "当前服务器登录状态已失效，请重新登录后重试。"],
+    ["target_mismatch", "文档窗口认证目标已变化，请从当前服务器重新打开。"],
+    ["window_limit", "同一服务器最多打开 8 个文档窗口，请先关闭已有窗口。"],
+    ["load_failed", "文档窗口加载失败，请重试。"],
+    ["disposed", "应用正在退出，请稍后重试。"],
+  ] as const)("文档交接失败 %s 时显示稳定反馈且不回退浏览器", async (code, message) => {
+    const bridge = createDesktopBridge()
+    vi.mocked(bridge.navigation.openDocumentWindow).mockResolvedValue({
+      error: { code, message: "不应直接展示底层错误" },
+      ok: false,
+    })
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    act(() => mocks.externalLinkHandler?.(documentUrl))
+
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it("Bridge 不可用时显示稳定反馈且不泄露底层错误", async () => {
+    const bridge = createDesktopBridge()
+    vi.mocked(bridge.navigation.openDocumentWindow).mockRejectedValue(
+      new Error("包含敏感上下文的底层错误"),
+    )
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    act(() => mocks.externalLinkHandler?.(documentUrl))
+
+    expect(await screen.findByText("文档窗口服务暂不可用，请稍后重试。")).toBeInTheDocument()
+    expect(screen.queryByText("包含敏感上下文的底层错误")).not.toBeInTheDocument()
+    expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    `https://other.example.com/documents/document/${documentId}`,
+    `${profile.normalizedUrl}/projects/project-1/documents`,
+    `${profile.normalizedUrl}/documents/document/not-a-uuid`,
+  ])("未识别的 HTTPS 链接继续使用系统浏览器：%s", async (url) => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    await act(() => mocks.hostOpenExternal?.(url))
+
+    expect(mocks.shellOpenExternal).toHaveBeenCalledWith(url)
+    expect(bridge.navigation.openDocumentWindow).not.toHaveBeenCalled()
+  })
+
+  it("非法协议继续被统一外链入口拒绝", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    render(<DesktopRoot />)
+    await screen.findByRole("button", { name: "打开设置" })
+
+    await expect(mocks.hostOpenExternal?.("file:///etc/passwd")).rejects.toThrow(
+      "只允许打开 HTTP 或 HTTPS 外部链接",
+    )
+    expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
+    expect(bridge.navigation.openDocumentWindow).not.toHaveBeenCalled()
   })
 })
 
