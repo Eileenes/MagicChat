@@ -1,9 +1,17 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Route, Routes } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DocumentPage } from "./document-page"
 
+const deleteClientDocument = vi.fn()
 const getClientDocument = vi.fn()
 const getCurrentClientUser = vi.fn()
 const updateCollaborativeDocumentTitle = vi.fn()
@@ -43,6 +51,7 @@ vi.mock("@/lib/client-data-api", () => ({
 }))
 
 vi.mock("@/lib/document-data-api", () => ({
+  deleteClientDocument: (...args: unknown[]) => deleteClientDocument(...args),
   getClientDocument: (...args: unknown[]) => getClientDocument(...args),
   updateCollaborativeDocumentTitle: (...args: unknown[]) =>
     updateCollaborativeDocumentTitle(...args),
@@ -61,7 +70,7 @@ vi.mock("@/components/documents/document-editor", () => ({
 }))
 
 vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), info: vi.fn() },
+  toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }))
 
 const currentUser = {
@@ -93,6 +102,10 @@ const document = {
 
 beforeEach(() => {
   awarenessPeers.length = 0
+  deleteClientDocument.mockReset().mockResolvedValue({
+    deletedCount: 1,
+    documentId: document.id,
+  })
   getClientDocument.mockReset().mockResolvedValue(document)
   getCurrentClientUser.mockReset().mockResolvedValue(currentUser)
   getClientProject.mockReset().mockResolvedValue({ name: "产品项目" })
@@ -150,6 +163,27 @@ describe("DocumentPage", () => {
       await screen.findByText("文档不存在", { selector: "p" })
     ).toBeInTheDocument()
   })
+
+  it("confirms deletion and returns to the project document list", async () => {
+    const user = userEvent.setup()
+    renderDocumentPage()
+
+    await user.click(await screen.findByLabelText("更多文档操作"))
+    await user.click(await screen.findByRole("menuitem", { name: "删除" }))
+
+    const confirmation = await screen.findByRole("alertdialog", {
+      name: "删除文档",
+    })
+    expect(confirmation).toHaveTextContent(
+      "确定删除“产品需求文档”吗？此操作无法撤销。"
+    )
+    await user.click(within(confirmation).getByRole("button", { name: "删除" }))
+
+    await waitFor(() =>
+      expect(deleteClientDocument).toHaveBeenCalledWith(document.id)
+    )
+    expect(await screen.findByText("项目文档列表")).toBeInTheDocument()
+  })
 })
 
 function renderDocumentPage() {
@@ -159,6 +193,10 @@ function renderDocumentPage() {
         <Route
           path="/documents/document/:documentId"
           element={<DocumentPage />}
+        />
+        <Route
+          path="/projects/:projectId/documents"
+          element={<div>项目文档列表</div>}
         />
       </Routes>
     </MemoryRouter>
