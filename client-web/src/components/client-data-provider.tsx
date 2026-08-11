@@ -1,16 +1,30 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { matchPath, useLocation, useNavigate } from "react-router"
 
 import {
   ClientDataRequestError,
+  acceptFriendRequest as acceptFriendRequestRequest,
+  cancelFriendRequest as cancelFriendRequestRequest,
+  createFriendRequest as createFriendRequestRequest,
+  deleteFriend as deleteFriendRequest,
   dismissConversation as dismissConversationRequest,
   getCurrentClientUser,
   isClientMessageInitiatedByUser,
   listClientContacts,
   listClientConversations,
+  listFriendRequests,
   listConversationMessageChoiceSnapshots,
   listConversationMessageReactionSnapshots,
   markConversationRead as markConversationReadRequest,
+  rejectFriendRequest as rejectFriendRequestRequest,
+  resolveClientUsers,
   setConversationMessageReaction as setConversationMessageReactionRequest,
   submitConversationMessageChoiceResponse,
   setConversationMuted as setConversationMutedRequest,
@@ -20,8 +34,10 @@ import {
   type ClientMessageTopic,
   type ClientUser,
   type ContactApp,
+  type ContactDirectoryMode,
   type ContactGroup,
   type ContactUser,
+  type FriendRequest,
   type MarkConversationReadOptions,
   type MessageReactionsUpdatedEvent,
   type MessageChoiceSnapshot,
@@ -68,6 +84,21 @@ const refreshIntervalMs = 15_000
 const reactionSnapshotBatchSize = 100
 const choiceSnapshotBatchSize = 100
 const maxReactionSnapshotCatchUpAttempts = 3
+const userProfileCacheTtlMs = 5 * 60 * 1_000
+const unavailableUserCacheTtlMs = 30 * 1_000
+const userResolveBatchSize = 100
+
+type CachedUserProfile = {
+  fetchedAt: number
+  profile: ContactUser
+  updatedAt: string
+}
+
+type UserProfileDeferred = {
+  promise: Promise<void>
+  reject: (error: unknown) => void
+  resolve: () => void
+}
 
 export function ClientDataProvider({ children }: { children: ReactNode }) {
   const location = useLocation()
@@ -82,6 +113,10 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     Record<string, ClientConversationMessageState>
   >({})
   const [foregroundConversationId, setForegroundConversationId] = useState("")
+  const shouldLoadContacts = location.pathname.startsWith("/contacts")
+  const shouldLoadConversations =
+    !location.pathname.startsWith("/tasks") &&
+    !location.pathname.startsWith("/documents/document/")
   const routeConversationId =
     matchPath("/chat/:conversationId", location.pathname)?.params
       .conversationId ?? ""
@@ -91,12 +126,64 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     includedConversationIdRef.current = includedConversationId
   }, [includedConversationId])
   const [contactApps, setContactApps] = useState<ContactApp[]>([])
+  const [contactDirectoryMode, setContactDirectoryMode] =
+    useState<ContactDirectoryMode>("organization")
   const [contactGroups, setContactGroups] = useState<ContactGroup[]>([])
-  const [contacts, setContacts] = useState<ContactUser[]>([])
+  const [incomingFriendRequests, setIncomingFriendRequests] = useState<
+    FriendRequest[]
+  >([])
+  const [outgoingFriendRequests, setOutgoingFriendRequests] = useState<
+    FriendRequest[]
+  >([])
+  const [contactUserIds, setContactUserIds] = useState<string[]>([])
   const [contactsError, setContactsError] =
     useState<ClientDataRequestError | null>(null)
   const [contactsLoading, setContactsLoading] = useState(true)
   const [contactsRefreshing, setContactsRefreshing] = useState(false)
+  const [usersById, setUsersById] = useState<Record<string, ContactUser>>({})
+  const contacts = useMemo(() => {
+    if (contactUserIds.length === 0) return Object.values(usersById)
+    return contactUserIds.flatMap((id) => {
+      const user = usersById[id]
+      return user ? [user] : []
+    })
+  }, [contactUserIds, usersById])
+  const visibleContactGroups = useMemo(
+    () => hydrateContactGroupUsers(contactGroups, contactApps, usersById),
+    [contactApps, contactGroups, usersById]
+  )
+  const visibleConversations = useMemo(() => {
+    const appsById = Object.fromEntries(contactApps.map((app) => [app.id, app]))
+    return conversations.map((conversation) =>
+      hydrateConversationUsers(conversation, usersById, appsById)
+    )
+  }, [contactApps, conversations, usersById])
+  const visibleConversationMessageStates = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(conversationMessageStates).map(
+          ([conversationId, state]) => [
+            conversationId,
+            {
+              ...state,
+              messages: state.messages.map((message) =>
+                hydrateMessageUsers(message, usersById)
+              ),
+            },
+          ]
+        )
+      ),
+    [conversationMessageStates, usersById]
+  )
+  const userCacheRef = useRef<Map<string, CachedUserProfile>>(new Map())
+  const unavailableUsersRef = useRef<Map<string, number>>(new Map())
+  const requiredUserVersionsRef = useRef<Map<string, string>>(new Map())
+  const pendingUserIdsRef = useRef<Set<string>>(new Set())
+  const ensureUsersRef = useRef<(userIds: string[]) => Promise<void>>(
+    async () => undefined
+  )
+  const userDeferredsRef = useRef<Map<string, UserProfileDeferred>>(new Map())
+  const userFlushScheduledRef = useRef(false)
   const [me, setMe] = useState<ClientUser | null>(null)
   const [meError, setMeError] = useState<ClientDataRequestError | null>(null)
   const [meLoading, setMeLoading] = useState(true)
@@ -123,12 +210,12 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     useConversationMessageRetention()
 
   useEffect(() => {
-    conversationMessageStatesRef.current = conversationMessageStates
-  }, [conversationMessageStates])
+    conversationMessageStatesRef.current = visibleConversationMessageStates
+  }, [visibleConversationMessageStates])
 
   useEffect(() => {
-    conversationsRef.current = conversations
-  }, [conversations])
+    conversationsRef.current = visibleConversations
+  }, [visibleConversations])
 
   useEffect(() => {
     mountedRef.current = true
@@ -154,8 +241,15 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         setConversations([])
         setConversationMessageStates({})
         setContactApps([])
+        setContactDirectoryMode("organization")
         setContactGroups([])
-        setContacts([])
+        setIncomingFriendRequests([])
+        setOutgoingFriendRequests([])
+        setContactUserIds([])
+        setUsersById({})
+        userCacheRef.current.clear()
+        unavailableUsersRef.current.clear()
+        requiredUserVersionsRef.current.clear()
         setPersonalProject(null)
         setProjects([])
         setMe(null)
@@ -167,6 +261,210 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [navigate, setAuthenticated]
   )
 
+  const cacheUserProfiles = useCallback(
+    (profiles: ContactUser[], updatedAt = "") => {
+      const now = Date.now()
+      let changed = false
+      for (const profile of profiles) {
+        const current = userCacheRef.current.get(profile.id)
+        if (
+          current &&
+          updatedAt &&
+          current.updatedAt &&
+          compareUserVersions(current.updatedAt, updatedAt) > 0
+        ) {
+          continue
+        }
+        const requiredVersion = requiredUserVersionsRef.current.get(profile.id)
+        if (
+          requiredVersion &&
+          (!updatedAt || compareUserVersions(updatedAt, requiredVersion) < 0)
+        ) {
+          continue
+        }
+        userCacheRef.current.set(profile.id, {
+          fetchedAt: now,
+          profile,
+          updatedAt: updatedAt || current?.updatedAt || "",
+        })
+        unavailableUsersRef.current.delete(profile.id)
+        if (requiredVersion) requiredUserVersionsRef.current.delete(profile.id)
+        changed = true
+      }
+      if (changed) {
+        setUsersById(
+          Object.fromEntries(
+            Array.from(userCacheRef.current, ([id, value]) => [
+              id,
+              value.profile,
+            ])
+          )
+        )
+      }
+    },
+    []
+  )
+
+  const flushPendingUsers = useCallback(async () => {
+    userFlushScheduledRef.current = false
+    const ids = Array.from(pendingUserIdsRef.current)
+    pendingUserIdsRef.current.clear()
+    for (let index = 0; index < ids.length; index += userResolveBatchSize) {
+      const batch = ids.slice(index, index + userResolveBatchSize)
+      try {
+        const users = await resolveClientUsers(batch)
+        const returnedIds = new Set(users.map((user) => user.id))
+        const staleIds: string[] = []
+        for (const user of users) {
+          const requiredVersion = requiredUserVersionsRef.current.get(user.id)
+          cacheUserProfiles([user], user.updatedAt)
+          if (
+            requiredVersion &&
+            compareUserVersions(user.updatedAt, requiredVersion) < 0
+          ) {
+            staleIds.push(user.id)
+          }
+        }
+        const unavailableUntil = Date.now() + unavailableUserCacheTtlMs
+        let removedCachedUser = false
+        for (const id of batch) {
+          if (!returnedIds.has(id)) {
+            unavailableUsersRef.current.set(id, unavailableUntil)
+            requiredUserVersionsRef.current.delete(id)
+            removedCachedUser =
+              userCacheRef.current.delete(id) || removedCachedUser
+          }
+          userDeferredsRef.current.get(id)?.resolve()
+          userDeferredsRef.current.delete(id)
+        }
+        if (removedCachedUser) {
+          setUsersById(
+            Object.fromEntries(
+              Array.from(userCacheRef.current, ([id, value]) => [
+                id,
+                value.profile,
+              ])
+            )
+          )
+        }
+        if (staleIds.length > 0) {
+          window.setTimeout(() => {
+            void ensureUsersRef.current(staleIds).catch(() => undefined)
+          }, 50)
+        }
+      } catch (error) {
+        const requestError = handleError(error, "加载用户资料失败")
+        for (const id of batch) {
+          userDeferredsRef.current.get(id)?.reject(requestError)
+          userDeferredsRef.current.delete(id)
+        }
+      }
+    }
+  }, [cacheUserProfiles, handleError])
+
+  const ensureUsers = useCallback(
+    async (rawUserIds: string[]) => {
+      const now = Date.now()
+      const promises: Promise<void>[] = []
+      for (const id of new Set(rawUserIds.map((value) => value.trim()))) {
+        if (!id) continue
+        const cached = userCacheRef.current.get(id)
+        if (cached && now - cached.fetchedAt < userProfileCacheTtlMs) continue
+        const unavailableUntil = unavailableUsersRef.current.get(id) ?? 0
+        if (unavailableUntil > now) continue
+        let deferred = userDeferredsRef.current.get(id)
+        if (!deferred) {
+          let resolve!: () => void
+          let reject!: (error: unknown) => void
+          const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+            resolve = resolvePromise
+            reject = rejectPromise
+          })
+          deferred = { promise, reject, resolve }
+          userDeferredsRef.current.set(id, deferred)
+          pendingUserIdsRef.current.add(id)
+        }
+        promises.push(deferred.promise)
+      }
+      if (
+        pendingUserIdsRef.current.size > 0 &&
+        !userFlushScheduledRef.current
+      ) {
+        userFlushScheduledRef.current = true
+        queueMicrotask(() => void flushPendingUsers())
+      }
+      await Promise.all(promises)
+    },
+    [flushPendingUsers]
+  )
+  useEffect(() => {
+    ensureUsersRef.current = ensureUsers
+  }, [ensureUsers])
+
+  const getUser = useCallback(
+    (userId: string) => userCacheRef.current.get(userId)?.profile,
+    []
+  )
+
+  const invalidateUsers = useCallback(
+    (userIds: string[], updatedAt = "") => {
+      const refreshIds: string[] = []
+      for (const id of userIds) {
+        const cached = userCacheRef.current.get(id)
+        const pending = userDeferredsRef.current.has(id)
+        if (!cached && !pending) continue
+        if (updatedAt) {
+          const currentRequired = requiredUserVersionsRef.current.get(id)
+          if (
+            !currentRequired ||
+            compareUserVersions(updatedAt, currentRequired) > 0
+          ) {
+            requiredUserVersionsRef.current.set(id, updatedAt)
+          }
+        }
+        if (cached) cached.fetchedAt = 0
+        unavailableUsersRef.current.delete(id)
+        refreshIds.push(id)
+      }
+      if (refreshIds.length > 0) {
+        void ensureUsers(refreshIds).catch(() => undefined)
+      }
+    },
+    [ensureUsers]
+  )
+
+  const updateUserPresence = useCallback(
+    (userId: string, online: boolean, lastOnlineAt?: string | null) => {
+      const cached = userCacheRef.current.get(userId)
+      if (!cached) return
+      const profile = {
+        ...cached.profile,
+        lastOnlineAt:
+          lastOnlineAt === undefined
+            ? cached.profile.lastOnlineAt
+            : lastOnlineAt,
+        online,
+      }
+      userCacheRef.current.set(userId, { ...cached, profile })
+      setUsersById((current) => ({ ...current, [userId]: profile }))
+    },
+    []
+  )
+
+  useEffect(() => {
+    const userIds = conversations.flatMap((conversation) =>
+      conversationUserIDs(conversation)
+    )
+    if (userIds.length > 0) void ensureUsers(userIds).catch(() => undefined)
+  }, [conversations, ensureUsers])
+
+  useEffect(() => {
+    const userIds = Object.values(conversationMessageStates).flatMap((state) =>
+      state.messages.flatMap(messageUserIDs)
+    )
+    if (userIds.length > 0) void ensureUsers(userIds).catch(() => undefined)
+  }, [conversationMessageStates, ensureUsers])
+
   const refreshMe = useCallback(async () => {
     const isInitialLoad = me === null
     setMeError(null)
@@ -174,7 +472,21 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setMeRefreshing(!isInitialLoad)
 
     try {
-      setMe(await getCurrentClientUser())
+      const user = await getCurrentClientUser()
+      setMe(user)
+      cacheUserProfiles([
+        {
+          avatar: user.avatar,
+          email: user.email,
+          id: user.id,
+          lastOnlineAt: user.lastOnlineAt,
+          name: user.name,
+          nickname: user.nickname,
+          online: true,
+          phone: user.phone,
+          type: "user",
+        },
+      ])
     } catch (error) {
       const requestError = handleError(error, "加载当前用户失败")
       setMeError(requestError)
@@ -183,7 +495,30 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       setMeLoading(false)
       setMeRefreshing(false)
     }
-  }, [handleError, me])
+  }, [cacheUserProfiles, handleError, me])
+
+  const refreshFriendRequests = useCallback(async () => {
+    try {
+      const [incoming, outgoing] = await Promise.all([
+        listFriendRequests("incoming"),
+        listFriendRequests("outgoing"),
+      ])
+      setIncomingFriendRequests(incoming)
+      setOutgoingFriendRequests(outgoing)
+      await ensureUsers([
+        ...incoming.flatMap((request) => [
+          request.requesterUserId,
+          request.addresseeUserId,
+        ]),
+        ...outgoing.flatMap((request) => [
+          request.requesterUserId,
+          request.addresseeUserId,
+        ]),
+      ])
+    } catch (error) {
+      throw handleError(error, "加载好友申请失败")
+    }
+  }, [ensureUsers, handleError])
 
   const refreshContacts = useCallback(async () => {
     const isInitialLoad =
@@ -197,8 +532,16 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     try {
       const nextContacts = await listClientContacts()
       setContactApps(nextContacts.apps)
+      setContactDirectoryMode(nextContacts.directoryMode)
       setContactGroups(nextContacts.groups)
-      setContacts(nextContacts.users)
+      setContactUserIds(nextContacts.userIds)
+      await ensureUsers(nextContacts.userIds)
+      if (nextContacts.directoryMode === "friends") {
+        await refreshFriendRequests()
+      } else {
+        setIncomingFriendRequests([])
+        setOutgoingFriendRequests([])
+      }
     } catch (error) {
       const requestError = handleError(error, "加载通讯录失败")
       setContactsError(requestError)
@@ -207,7 +550,74 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       setContactsLoading(false)
       setContactsRefreshing(false)
     }
-  }, [contactApps.length, contactGroups.length, contacts.length, handleError])
+  }, [
+    contactApps.length,
+    contactGroups.length,
+    contacts.length,
+    ensureUsers,
+    handleError,
+    refreshFriendRequests,
+  ])
+
+  const createFriendRequest = useCallback(
+    async (userId: string) => {
+      try {
+        await createFriendRequestRequest(userId)
+        await refreshContacts()
+      } catch (error) {
+        throw handleError(error, "发送好友申请失败")
+      }
+    },
+    [handleError, refreshContacts]
+  )
+
+  const acceptFriendRequest = useCallback(
+    async (requestId: string) => {
+      try {
+        await acceptFriendRequestRequest(requestId)
+        await refreshContacts()
+      } catch (error) {
+        throw handleError(error, "接受好友申请失败")
+      }
+    },
+    [handleError, refreshContacts]
+  )
+
+  const rejectFriendRequest = useCallback(
+    async (requestId: string) => {
+      try {
+        await rejectFriendRequestRequest(requestId)
+        await refreshFriendRequests()
+      } catch (error) {
+        throw handleError(error, "拒绝好友申请失败")
+      }
+    },
+    [handleError, refreshFriendRequests]
+  )
+
+  const cancelFriendRequest = useCallback(
+    async (requestId: string) => {
+      try {
+        await cancelFriendRequestRequest(requestId)
+        await refreshFriendRequests()
+      } catch (error) {
+        throw handleError(error, "取消好友申请失败")
+      }
+    },
+    [handleError, refreshFriendRequests]
+  )
+
+  const deleteFriend = useCallback(
+    async (userId: string) => {
+      try {
+        await deleteFriendRequest(userId)
+        await refreshContacts()
+      } catch (error) {
+        throw handleError(error, "删除好友失败")
+      }
+    },
+    [handleError, refreshContacts]
+  )
 
   const refreshConversations = useCallback(async () => {
     try {
@@ -1141,7 +1551,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     addGroupConversationMembers,
     createGroupConversation,
     dissolveGroupConversation,
-    getConversation,
     getConversationMessageState,
     joinGroupConversation,
     leaveGroupConversation,
@@ -1186,18 +1595,45 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       const [nextMe, nextContacts, nextConversations, nextProjects] =
         await Promise.all([
           getCurrentClientUser(),
-          listClientContacts(),
-          listClientConversations(undefined, {
-            includeConversationId: includedConversationIdRef.current,
-          }),
+          shouldLoadContacts
+            ? listClientContacts()
+            : Promise.resolve({
+                apps: [],
+                directoryMode: "organization" as const,
+                groups: [],
+                userIds: [],
+              }),
+          shouldLoadConversations
+            ? listClientConversations(undefined, {
+                includeConversationId: includedConversationIdRef.current,
+              })
+            : Promise.resolve([]),
           listClientProjects({ limit: 100 }),
         ])
 
+      await ensureUsers(nextContacts.userIds)
+      if (nextContacts.directoryMode === "friends") {
+        await refreshFriendRequests()
+      }
       await minimumLoading
       setMe(nextMe)
+      cacheUserProfiles([
+        {
+          avatar: nextMe.avatar,
+          email: nextMe.email,
+          id: nextMe.id,
+          lastOnlineAt: nextMe.lastOnlineAt,
+          name: nextMe.name,
+          nickname: nextMe.nickname,
+          online: true,
+          phone: nextMe.phone,
+          type: "user",
+        },
+      ])
       setContactApps(nextContacts.apps)
+      setContactDirectoryMode(nextContacts.directoryMode)
       setContactGroups(nextContacts.groups)
-      setContacts(nextContacts.users)
+      setContactUserIds(nextContacts.userIds)
       setConversations(orderConversations(nextConversations))
       setPersonalProject(nextProjects.personalProject)
       setProjects(nextProjects.projects)
@@ -1217,7 +1653,14 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       setContactsLoading(false)
       setProjectsLoading(false)
     }
-  }, [handleError])
+  }, [
+    cacheUserProfiles,
+    ensureUsers,
+    handleError,
+    refreshFriendRequests,
+    shouldLoadContacts,
+    shouldLoadConversations,
+  ])
 
   const retryBootstrap = useCallback(async () => {
     setBootstrapError(null)
@@ -1225,7 +1668,11 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setConversations([])
     setConversationMessageStates({})
     setContactApps([])
+    setContactDirectoryMode("organization")
     setContactGroups([])
+    setIncomingFriendRequests([])
+    setOutgoingFriendRequests([])
+    setContactUserIds([])
     setContactsError(null)
     setContactsLoading(true)
     setContactsRefreshing(false)
@@ -1266,8 +1713,12 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
     function refresh() {
       void refreshMe().catch(() => undefined)
-      void refreshContacts().catch(() => undefined)
-      void refreshConversations().catch(() => undefined)
+      if (shouldLoadContacts) {
+        void refreshContacts().catch(() => undefined)
+      }
+      if (shouldLoadConversations) {
+        void refreshConversations().catch(() => undefined)
+      }
       void refreshProjects().catch(() => undefined)
     }
 
@@ -1291,7 +1742,24 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshConversations,
     refreshMe,
     refreshProjects,
+    shouldLoadContacts,
+    shouldLoadConversations,
   ])
+
+  const getVisibleConversation = useCallback(
+    (conversationId: string) =>
+      visibleConversations.find(
+        (conversation) => conversation.id === conversationId
+      ) ?? null,
+    [visibleConversations]
+  )
+
+  const getVisibleConversationMessageState = useCallback(
+    (conversationId: string) =>
+      visibleConversationMessageStates[conversationId] ??
+      getConversationMessageState(conversationId),
+    [getConversationMessageState, visibleConversationMessageStates]
+  )
 
   if (bootstrapState === "loading") {
     return <ClientLoadingPage />
@@ -1311,25 +1779,34 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   }
 
   const value: ClientDataContextValue = {
+    acceptFriendRequest,
     addGroupConversationMembers,
+    cancelFriendRequest,
     contactApps,
-    contactGroups,
+    contactDirectoryMode,
+    contactGroups: visibleContactGroups,
     compactConversationMessages,
     consumeConversationMessageFocus,
-    conversations,
+    conversations: visibleConversations,
     contacts,
     contactsError,
     contactsLoading,
     contactsRefreshing,
+    createFriendRequest,
     createGroupConversation,
     createProject,
     dissolveGroupConversation,
     dismissConversation,
+    deleteFriend,
     ensureConversationMessages,
+    ensureUsers,
     focusConversationMessage,
     foregroundConversationId,
-    getConversation,
-    getConversationMessageState,
+    getConversation: getVisibleConversation,
+    getConversationMessageState: getVisibleConversationMessageState,
+    getUser,
+    incomingFriendRequests,
+    invalidateUsers,
     joinGroupConversation,
     leaveGroupConversation,
     loadAfterConversationMessages,
@@ -1348,6 +1825,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     mergeIncomingConversationMessage,
     openAppConversation,
     openDirectConversation,
+    outgoingFriendRequests,
     personalProject,
     projects,
     projectsError,
@@ -1359,12 +1837,14 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     respondToChoice,
     refreshConversations,
     refreshContacts,
+    refreshFriendRequests,
     refreshMe,
     refreshProjects,
     loadMoreProjects,
     removeConversation,
     restoreConversation,
     removeGroupConversationMember,
+    rejectFriendRequest,
     returnToLatestConversationMessages,
     revokeConversationMessage,
     setMessageReaction,
@@ -1388,6 +1868,8 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     updateGroupConversationAvatar,
     updateGroupConversationAnnouncement,
     updateGroupConversationName,
+    updateUserPresence,
+    usersById,
   }
 
   return (
@@ -1403,6 +1885,223 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       </ClientProfileProvider>
     </ClientDataContext.Provider>
   )
+}
+
+function hydrateContactGroupUsers(
+  groups: ContactGroup[],
+  apps: ContactApp[],
+  usersById: Readonly<Record<string, ContactUser>>
+) {
+  const appsById = Object.fromEntries(apps.map((app) => [app.id, app]))
+  return groups.map((group) => ({
+    ...group,
+    avatarMembers: group.avatarMembers.map((member) => {
+      const profile = conversationIdentityProfile(
+        member.type,
+        member.id,
+        usersById,
+        appsById
+      )
+      return profile
+        ? {
+            ...member,
+            avatar: profile.avatar,
+            name: profile.name,
+            nickname: profile.nickname,
+          }
+        : member
+    }),
+  }))
+}
+
+function messageUserIDs(message: ClientMessage) {
+  const ids = new Set<string>()
+  if (message.sender.type === "user") ids.add(message.sender.id)
+  if (message.replyTo?.sender.type === "user")
+    ids.add(message.replyTo.sender.id)
+  for (const reaction of message.reactions) {
+    for (const user of reaction.users) ids.add(user.id)
+  }
+  for (const reply of message.topic?.recentReplies ?? []) {
+    if (reply.sender.type === "user") ids.add(reply.sender.id)
+  }
+  return Array.from(ids)
+}
+
+function hydrateMessageUsers(
+  message: ClientMessage,
+  usersById: Readonly<Record<string, ContactUser>>
+) {
+  let changed = false
+  const reactions = message.reactions.map((reaction) => {
+    let usersChanged = false
+    const users = reaction.users.map((user) => {
+      const profile = usersById[user.id]
+      const name = profile?.nickname || profile?.name
+      if (!name || name === user.name) return user
+      usersChanged = true
+      return { ...user, name }
+    })
+    changed ||= usersChanged
+    return usersChanged ? { ...reaction, users } : reaction
+  })
+  let replyTo = message.replyTo
+  if (replyTo?.sender.type === "user") {
+    const profile = usersById[replyTo.sender.id]
+    const name = profile?.nickname || profile?.name
+    if (name && name !== replyTo.sender.name) {
+      changed = true
+      replyTo = {
+        ...replyTo,
+        sender: { ...replyTo.sender, name },
+      }
+    }
+  }
+  return changed ? { ...message, reactions, replyTo } : message
+}
+
+function conversationUserIDs(conversation: ClientConversation) {
+  const ids = new Set<string>()
+  for (const member of conversation.members ?? []) {
+    if (member.type === "user" && member.id) ids.add(member.id)
+  }
+  if (conversation.lastMessageSender?.type === "user") {
+    ids.add(conversation.lastMessageSender.id)
+  }
+  if (conversation.topic?.sourceSender.type === "user") {
+    ids.add(conversation.topic.sourceSender.id)
+  }
+  return Array.from(ids)
+}
+
+function hydrateConversationUsers(
+  conversation: ClientConversation,
+  usersById: Readonly<Record<string, ContactUser>>,
+  appsById: Readonly<Record<string, ContactApp>>
+) {
+  let changed = false
+  const members = conversation.members?.map((member) => {
+    const profile = conversationIdentityProfile(
+      member.type,
+      member.id,
+      usersById,
+      appsById
+    )
+    if (!profile) return member
+    const next = {
+      ...member,
+      avatar: profile.avatar,
+      email: profile.email,
+      name: profile.name,
+      nickname: profile.nickname,
+      phone: profile.phone,
+    }
+    if (
+      next.avatar === member.avatar &&
+      next.email === member.email &&
+      next.name === member.name &&
+      next.nickname === member.nickname &&
+      next.phone === member.phone
+    ) {
+      return member
+    }
+    changed = true
+    return next
+  })
+  let lastMessageSender = conversation.lastMessageSender
+  if (lastMessageSender) {
+    const profile = conversationIdentityProfile(
+      lastMessageSender.type,
+      lastMessageSender.id,
+      usersById,
+      appsById
+    )
+    const nickname = profile?.nickname ?? ""
+    if (
+      profile &&
+      (lastMessageSender.name !== profile.name ||
+        lastMessageSender.nickname !== nickname)
+    ) {
+      changed = true
+      lastMessageSender = {
+        ...lastMessageSender,
+        name: profile.name,
+        nickname,
+      }
+    }
+  }
+  let topic = conversation.topic
+  if (topic) {
+    const sender = topic.sourceSender
+    const profile =
+      sender.type === "user" ? usersById[sender.id] : appsById[sender.id]
+    if (
+      profile &&
+      (sender.avatar !== profile.avatar || sender.name !== profile.name)
+    ) {
+      changed = true
+      topic = {
+        ...topic,
+        sourceSender: {
+          ...sender,
+          avatar: profile.avatar,
+          name: profile.name,
+        },
+      }
+    }
+  }
+  return changed
+    ? { ...conversation, lastMessageSender, members, topic }
+    : conversation
+}
+
+function conversationIdentityProfile(
+  type: "app" | "system" | "user",
+  id: string,
+  usersById: Readonly<Record<string, ContactUser>>,
+  appsById: Readonly<Record<string, ContactApp>>
+) {
+  if (type === "user") {
+    const user = usersById[id]
+    return user
+      ? {
+          avatar: user.avatar,
+          email: user.email,
+          name: user.name,
+          nickname: user.nickname,
+          phone: user.phone,
+        }
+      : undefined
+  }
+  if (type === "app") {
+    const app = appsById[id]
+    return app
+      ? {
+          avatar: app.avatar,
+          email: "",
+          name: app.name,
+          nickname: "",
+          phone: "",
+        }
+      : undefined
+  }
+  return undefined
+}
+
+function compareUserVersions(left: string, right: string) {
+  const leftMatch = left.match(/^(.*?)(?:\.(\d+))?Z$/)
+  const rightMatch = right.match(/^(.*?)(?:\.(\d+))?Z$/)
+  if (leftMatch && rightMatch && leftMatch[1] === rightMatch[1]) {
+    const leftFraction = (leftMatch[2] ?? "").padEnd(9, "0").slice(0, 9)
+    const rightFraction = (rightMatch[2] ?? "").padEnd(9, "0").slice(0, 9)
+    return leftFraction.localeCompare(rightFraction)
+  }
+  const leftTime = Date.parse(left)
+  const rightTime = Date.parse(right)
+  if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) {
+    return leftTime - rightTime
+  }
+  return left.localeCompare(right)
 }
 
 function getConversationLastMessageSender(

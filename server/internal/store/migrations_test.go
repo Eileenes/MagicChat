@@ -45,6 +45,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00030_add_documents.sql",
 		"00031_add_document_contributors.sql",
 		"00032_add_task_activities.sql",
+		"00033_add_friendships.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -52,6 +53,28 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	for index, match := range matches {
 		if got := filepath.Base(match); got != want[index] {
 			t.Fatalf("migration file %d = %q, want %q", index, got, want[index])
+		}
+	}
+}
+
+func TestFriendshipsMigrationDefinesDirectoryModeAndRelationships(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00033_add_friendships.sql")
+	if err != nil {
+		t.Fatalf("read friendships migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"add column contact_directory_mode text not null default 'organization'",
+		"create table user_friendships",
+		"primary key (user_id_low, user_id_high)",
+		"create table user_friend_requests",
+		"status in ('pending', 'accepted', 'rejected', 'canceled')",
+		"user_friend_requests_pending_pair_index",
+		"drop table user_friend_requests",
+		"drop table user_friendships",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("friendships migration missing %q", required)
 		}
 	}
 }

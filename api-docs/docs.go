@@ -2845,7 +2845,7 @@ const docTemplate = `{
         },
         "/api/client/contacts/users": {
             "get": {
-                "description": "普通用户获取通讯录。返回所有启用用户，包含当前用户；keyword 会搜索名称、昵称、邮箱和手机号。",
+                "description": "普通用户获取通讯录用户 ID。返回所有启用用户，包含当前用户；keyword 会搜索名称、昵称、邮箱和手机号。",
                 "produces": [
                     "application/json"
                 ],
@@ -6179,6 +6179,307 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/friend-requests": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端好友"
+                ],
+                "summary": "列出好友申请",
+                "parameters": [
+                    {
+                        "enum": [
+                            "incoming",
+                            "outgoing"
+                        ],
+                        "type": "string",
+                        "description": "申请方向",
+                        "name": "direction",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.listFriendRequestsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端好友"
+                ],
+                "summary": "发送好友申请",
+                "parameters": [
+                    {
+                        "description": "目标用户",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.createFriendRequestRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.friendRequestResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/friend-requests/{request_id}": {
+            "delete": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端好友"
+                ],
+                "summary": "取消好友申请",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "申请 ID",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.friendRequestResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/friend-requests/{request_id}/accept": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端好友"
+                ],
+                "summary": "接受好友申请",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "申请 ID",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.friendRequestResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/friend-requests/{request_id}/reject": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端好友"
+                ],
+                "summary": "拒绝好友申请",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "申请 ID",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.friendRequestResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/friends/{user_id}": {
+            "delete": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端好友"
+                ],
+                "summary": "删除好友",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "好友用户 ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.deleteFriendResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/info": {
             "get": {
                 "description": "返回客户端启动和登录页展示所需的公开信息，不需要登录。",
@@ -8242,6 +8543,128 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/client/users/resolve": {
+            "post": {
+                "description": "根据用户 ID 批量返回启用用户的资料，每次最多 100 个。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端通讯录"
+                ],
+                "summary": "批量解析用户资料",
+                "parameters": [
+                    {
+                        "description": "用户 ID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.resolveUsersRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.resolveUsersResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/users/search": {
+            "post": {
+                "description": "使用完整邮箱、手机号或用户 ID 精确查找启用用户。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端好友"
+                ],
+                "summary": "精确查找用户",
+                "parameters": [
+                    {
+                        "description": "查找条件",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.searchContactUsersRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.searchContactUsersResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -8483,6 +8906,14 @@ const docTemplate = `{
                 "app_name": {
                     "type": "string",
                     "example": "即应"
+                },
+                "contact_directory_mode": {
+                    "type": "string",
+                    "enum": [
+                        "organization",
+                        "friends"
+                    ],
+                    "example": "organization"
                 },
                 "organization_name": {
                     "type": "string",
@@ -8735,6 +9166,14 @@ const docTemplate = `{
                 "app_name": {
                     "type": "string",
                     "example": "即应"
+                },
+                "contact_directory_mode": {
+                    "type": "string",
+                    "enum": [
+                        "organization",
+                        "friends"
+                    ],
+                    "example": "organization"
                 },
                 "organization_name": {
                     "type": "string",
@@ -9012,6 +9451,9 @@ const docTemplate = `{
                 "avatar": {
                     "type": "string"
                 },
+                "id": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -9019,6 +9461,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 }
             }
@@ -9100,6 +9545,10 @@ const docTemplate = `{
                 "type": {
                     "type": "string",
                     "example": "user"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
                 }
             }
         },
@@ -9107,12 +9556,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "nickname": {
                     "type": "string"
                 },
                 "type": {
@@ -9224,28 +9667,23 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "avatar": {
-                    "type": "string",
-                    "example": "/assets/avatars/builtin/07.webp"
+                    "type": "string"
                 },
                 "email": {
-                    "type": "string",
-                    "example": "user@example.com"
+                    "type": "string"
                 },
                 "id": {
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 },
                 "name": {
-                    "type": "string",
-                    "example": "张三"
+                    "type": "string"
                 },
                 "nickname": {
-                    "type": "string",
-                    "example": "小张"
+                    "type": "string"
                 },
                 "phone": {
-                    "type": "string",
-                    "example": "+8613812345678"
+                    "type": "string"
                 },
                 "role": {
                     "type": "string",
@@ -9372,6 +9810,14 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.createFriendRequestRequest": {
+            "type": "object",
+            "properties": {
+                "user_id": {
                     "type": "string"
                 }
             }
@@ -9557,6 +10003,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "document_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.deleteFriendResponse": {
+            "type": "object",
+            "properties": {
+                "user_id": {
                     "type": "string"
                 }
             }
@@ -9762,6 +10216,32 @@ const docTemplate = `{
                 }
             }
         },
+        "client.friendRequestResponse": {
+            "type": "object",
+            "properties": {
+                "addressee_user_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "handled_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "requester_user_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "client.groupConversationResponse": {
             "type": "object",
             "properties": {
@@ -9940,16 +10420,23 @@ const docTemplate = `{
                         "$ref": "#/definitions/client.contactAppResponse"
                     }
                 },
+                "directory_mode": {
+                    "type": "string",
+                    "enum": [
+                        "organization",
+                        "friends"
+                    ]
+                },
                 "groups": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/client.contactGroupResponse"
                     }
                 },
-                "users": {
+                "user_ids": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/client.contactUserResponse"
+                        "type": "string"
                     }
                 }
             }
@@ -9968,10 +10455,10 @@ const docTemplate = `{
         "client.listContactUsersResponse": {
             "type": "object",
             "properties": {
-                "contacts": {
+                "user_ids": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/client.contactUserResponse"
+                        "type": "string"
                     }
                 }
             }
@@ -9987,6 +10474,17 @@ const docTemplate = `{
                 },
                 "page": {
                     "$ref": "#/definitions/client.listMessagesPageResponse"
+                }
+            }
+        },
+        "client.listFriendRequestsResponse": {
+            "type": "object",
+            "properties": {
+                "requests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.friendRequestResponse"
+                    }
                 }
             }
         },
@@ -10203,9 +10701,6 @@ const docTemplate = `{
             "properties": {
                 "id": {
                     "type": "string"
-                },
-                "name": {
-                    "type": "string"
                 }
             }
         },
@@ -10237,8 +10732,7 @@ const docTemplate = `{
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 },
                 "name": {
-                    "type": "string",
-                    "example": "Alice"
+                    "type": "string"
                 },
                 "type": {
                     "type": "string",
@@ -10555,22 +11049,7 @@ const docTemplate = `{
         "client.projectMemberResponse": {
             "type": "object",
             "properties": {
-                "avatar": {
-                    "type": "string"
-                },
-                "display_name": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string"
-                },
                 "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "nickname": {
                     "type": "string"
                 },
                 "role": {
@@ -10674,16 +11153,7 @@ const docTemplate = `{
         "client.projectUserResponse": {
             "type": "object",
             "properties": {
-                "avatar": {
-                    "type": "string"
-                },
                 "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "nickname": {
                     "type": "string"
                 }
             }
@@ -10745,6 +11215,28 @@ const docTemplate = `{
                 }
             }
         },
+        "client.resolveUsersRequest": {
+            "type": "object",
+            "properties": {
+                "user_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "client.resolveUsersResponse": {
+            "type": "object",
+            "properties": {
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.contactUserResponse"
+                    }
+                }
+            }
+        },
         "client.restoreConversationResponse": {
             "type": "object",
             "properties": {
@@ -10761,6 +11253,25 @@ const docTemplate = `{
                 },
                 "system_message": {
                     "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.searchContactUsersRequest": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.searchContactUsersResponse": {
+            "type": "object",
+            "properties": {
+                "user_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -11104,13 +11615,7 @@ const docTemplate = `{
         "client.topicSourceSenderResponse": {
             "type": "object",
             "properties": {
-                "avatar": {
-                    "type": "string"
-                },
                 "id": {
-                    "type": "string"
-                },
-                "name": {
                     "type": "string"
                 },
                 "type": {

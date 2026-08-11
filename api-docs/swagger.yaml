@@ -163,6 +163,12 @@ definitions:
       app_name:
         example: 即应
         type: string
+      contact_directory_mode:
+        enum:
+        - organization
+        - friends
+        example: organization
+        type: string
       organization_name:
         example: 长亭科技
         type: string
@@ -331,6 +337,12 @@ definitions:
     properties:
       app_name:
         example: 即应
+        type: string
+      contact_directory_mode:
+        enum:
+        - organization
+        - friends
+        example: organization
         type: string
       organization_name:
         example: 长亭科技
@@ -521,11 +533,15 @@ definitions:
     properties:
       avatar:
         type: string
+      id:
+        type: string
       name:
         type: string
       nickname:
         type: string
       role:
+        type: string
+      type:
         type: string
     type: object
   client.contactGroupResponse:
@@ -585,14 +601,13 @@ definitions:
       type:
         example: user
         type: string
+      updated_at:
+        format: date-time
+        type: string
     type: object
   client.conversationLastMessageSenderResponse:
     properties:
       id:
-        type: string
-      name:
-        type: string
-      nickname:
         type: string
       type:
         example: user
@@ -673,22 +688,17 @@ definitions:
   client.conversationMemberResponse:
     properties:
       avatar:
-        example: /assets/avatars/builtin/07.webp
         type: string
       email:
-        example: user@example.com
         type: string
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
       name:
-        example: 张三
         type: string
       nickname:
-        example: 小张
         type: string
       phone:
-        example: "+8613812345678"
         type: string
       role:
         example: member
@@ -775,6 +785,11 @@ definitions:
     required:
     - kind
     - title
+    type: object
+  client.createFriendRequestRequest:
+    properties:
+      user_id:
+        type: string
     type: object
   client.createGroupConversationRequest:
     properties:
@@ -903,6 +918,11 @@ definitions:
       deleted_count:
         type: integer
       document_id:
+        type: string
+    type: object
+  client.deleteFriendResponse:
+    properties:
+      user_id:
         type: string
     type: object
   client.deleteTaskResponse:
@@ -1038,6 +1058,23 @@ definitions:
       status:
         type: string
     type: object
+  client.friendRequestResponse:
+    properties:
+      addressee_user_id:
+        type: string
+      created_at:
+        type: string
+      handled_at:
+        type: string
+      id:
+        type: string
+      requester_user_id:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
   client.groupConversationResponse:
     properties:
       announcement:
@@ -1163,13 +1200,18 @@ definitions:
         items:
           $ref: '#/definitions/client.contactAppResponse'
         type: array
+      directory_mode:
+        enum:
+        - organization
+        - friends
+        type: string
       groups:
         items:
           $ref: '#/definitions/client.contactGroupResponse'
         type: array
-      users:
+      user_ids:
         items:
-          $ref: '#/definitions/client.contactUserResponse'
+          type: string
         type: array
     type: object
   client.listClientConversationsResponse:
@@ -1181,9 +1223,9 @@ definitions:
     type: object
   client.listContactUsersResponse:
     properties:
-      contacts:
+      user_ids:
         items:
-          $ref: '#/definitions/client.contactUserResponse'
+          type: string
         type: array
     type: object
   client.listConversationMessagesResponse:
@@ -1194,6 +1236,13 @@ definitions:
         type: array
       page:
         $ref: '#/definitions/client.listMessagesPageResponse'
+    type: object
+  client.listFriendRequestsResponse:
+    properties:
+      requests:
+        items:
+          $ref: '#/definitions/client.friendRequestResponse'
+        type: array
     type: object
   client.listMessageReactionSnapshotsRequest:
     properties:
@@ -1338,8 +1387,6 @@ definitions:
     properties:
       id:
         type: string
-      name:
-        type: string
     type: object
   client.messageReplyToResponse:
     properties:
@@ -1361,7 +1408,6 @@ definitions:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
       name:
-        example: Alice
         type: string
       type:
         example: user
@@ -1577,17 +1623,7 @@ definitions:
     type: object
   client.projectMemberResponse:
     properties:
-      avatar:
-        type: string
-      display_name:
-        type: string
-      email:
-        type: string
       id:
-        type: string
-      name:
-        type: string
-      nickname:
         type: string
       role:
         type: string
@@ -1655,13 +1691,7 @@ definitions:
     type: object
   client.projectUserResponse:
     properties:
-      avatar:
-        type: string
       id:
-        type: string
-      name:
-        type: string
-      nickname:
         type: string
     type: object
   client.publicThirdPartyProviderResponse:
@@ -1702,6 +1732,20 @@ definitions:
         example: 5
         type: integer
     type: object
+  client.resolveUsersRequest:
+    properties:
+      user_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  client.resolveUsersResponse:
+    properties:
+      users:
+        items:
+          $ref: '#/definitions/client.contactUserResponse'
+        type: array
+    type: object
   client.restoreConversationResponse:
     properties:
       conversation:
@@ -1713,6 +1757,18 @@ definitions:
         $ref: '#/definitions/client.messageResponse'
       system_message:
         $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.searchContactUsersRequest:
+    properties:
+      query:
+        type: string
+    type: object
+  client.searchContactUsersResponse:
+    properties:
+      user_ids:
+        items:
+          type: string
+        type: array
     type: object
   client.searchMessagesResponse:
     properties:
@@ -1940,11 +1996,7 @@ definitions:
     type: object
   client.topicSourceSenderResponse:
     properties:
-      avatar:
-        type: string
       id:
-        type: string
-      name:
         type: string
       type:
         type: string
@@ -3830,7 +3882,7 @@ paths:
       - 客户端通讯录
   /api/client/contacts/users:
     get:
-      description: 普通用户获取通讯录。返回所有启用用户，包含当前用户；keyword 会搜索名称、昵称、邮箱和手机号。
+      description: 普通用户获取通讯录用户 ID。返回所有启用用户，包含当前用户；keyword 会搜索名称、昵称、邮箱和手机号。
       parameters:
       - description: 搜索关键字，匹配名称、昵称、邮箱或手机号
         in: query
@@ -5898,6 +5950,185 @@ paths:
       summary: 移动文档节点
       tags:
       - 客户端文档
+  /api/client/friend-requests:
+    get:
+      parameters:
+      - description: 申请方向
+        enum:
+        - incoming
+        - outgoing
+        in: query
+        name: direction
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.listFriendRequestsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 列出好友申请
+      tags:
+      - 客户端好友
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 目标用户
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.createFriendRequestRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.friendRequestResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 发送好友申请
+      tags:
+      - 客户端好友
+  /api/client/friend-requests/{request_id}:
+    delete:
+      parameters:
+      - description: 申请 ID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.friendRequestResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 取消好友申请
+      tags:
+      - 客户端好友
+  /api/client/friend-requests/{request_id}/accept:
+    post:
+      parameters:
+      - description: 申请 ID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.friendRequestResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 接受好友申请
+      tags:
+      - 客户端好友
+  /api/client/friend-requests/{request_id}/reject:
+    post:
+      parameters:
+      - description: 申请 ID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.friendRequestResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 拒绝好友申请
+      tags:
+      - 客户端好友
+  /api/client/friends/{user_id}:
+    delete:
+      parameters:
+      - description: 好友用户 ID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.deleteFriendResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 删除好友
+      tags:
+      - 客户端好友
   /api/client/info:
     get:
       description: 返回客户端启动和登录页展示所需的公开信息，不需要登录。
@@ -7163,6 +7394,80 @@ paths:
       summary: 批量申请临时文件访问地址
       tags:
       - 客户端文件
+  /api/client/users/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 根据用户 ID 批量返回启用用户的资料，每次最多 100 个。
+      parameters:
+      - description: 用户 ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.resolveUsersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.resolveUsersResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 批量解析用户资料
+      tags:
+      - 客户端通讯录
+  /api/client/users/search:
+    post:
+      consumes:
+      - application/json
+      description: 使用完整邮箱、手机号或用户 ID 精确查找启用用户。
+      parameters:
+      - description: 查找条件
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.searchContactUsersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.searchContactUsersResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 精确查找用户
+      tags:
+      - 客户端好友
 securityDefinitions:
   UserSession:
     description: 使用 user_session=<token> 格式的会话 Cookie。

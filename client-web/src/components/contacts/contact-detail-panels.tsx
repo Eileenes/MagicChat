@@ -299,13 +299,19 @@ export function GroupDetailPanel({
 }
 
 export function ContactDetailPanel({
+  addFriendLabel,
+  addingFriend = false,
   canStartConversation,
   contact,
+  onAddFriend,
   onStartConversation,
   startingConversation,
 }: {
+  addFriendLabel?: string
+  addingFriend?: boolean
   canStartConversation: boolean
   contact: ContactUser
+  onAddFriend?: () => void
   onStartConversation: () => void
   startingConversation: boolean
 }) {
@@ -357,7 +363,19 @@ export function ContactDetailPanel({
             value={contact.phone ? formatContactPhone(contact.phone) : ""}
           />
         </div>
-        {canStartConversation && (
+        {addFriendLabel ? (
+          <Button
+            className="w-full"
+            disabled={addingFriend || !onAddFriend}
+            onClick={onAddFriend}
+            type="button"
+          >
+            {addingFriend && (
+              <Loader2Icon aria-hidden="true" className="animate-spin" />
+            )}
+            {addFriendLabel}
+          </Button>
+        ) : canStartConversation ? (
           <Button
             className="w-full"
             disabled={startingConversation}
@@ -369,7 +387,7 @@ export function ContactDetailPanel({
             )}
             发消息
           </Button>
-        )}
+        ) : null}
       </div>
     </div>
   )

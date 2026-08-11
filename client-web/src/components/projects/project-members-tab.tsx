@@ -12,22 +12,30 @@ import {
   ItemTitle,
 } from "@/components/ui/item"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useClientData } from "@/lib/client-data-context"
 import type { ClientProjectMember } from "@/lib/project-data-api"
-import { listAllClientProjectMembers } from "@/lib/project-members"
+import {
+  hydrateClientProjectMembers,
+  listAllClientProjectMembers,
+} from "@/lib/project-members"
 
 export function ProjectMembersTab({ projectId }: { projectId: string }) {
+  const { ensureUsers, usersById } = useClientData()
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(true)
-  const [members, setMembers] = React.useState<ClientProjectMember[]>([])
+  const [storedMembers, setMembers] = React.useState<ClientProjectMember[]>([])
+  const members = React.useMemo(
+    () => hydrateClientProjectMembers(storedMembers, usersById),
+    [storedMembers, usersById]
+  )
 
   React.useEffect(() => {
     let active = true
 
     void listAllClientProjectMembers(projectId)
-      .then((nextMembers) => {
-        if (active) {
-          setMembers(nextMembers)
-        }
+      .then(async (nextMembers) => {
+        await ensureUsers(nextMembers.map((member) => member.id))
+        if (active) setMembers(nextMembers)
       })
       .catch((loadError) => {
         if (active) {
@@ -45,7 +53,7 @@ export function ProjectMembersTab({ projectId }: { projectId: string }) {
     return () => {
       active = false
     }
-  }, [projectId])
+  }, [ensureUsers, projectId])
 
   if (loading) {
     return (

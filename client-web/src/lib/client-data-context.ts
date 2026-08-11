@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react"
+import { createContext, useContext, useEffect, useMemo } from "react"
 
 import {
   type ClientConversation,
@@ -16,6 +16,8 @@ import {
   type ContactApp,
   type ContactGroup,
   type ContactUser,
+  type ContactDirectoryMode,
+  type FriendRequest,
 } from "@/lib/client-data-api"
 import type {
   ClientProjectDetail,
@@ -57,6 +59,10 @@ export type ClientDataContextValue = {
   contactGroups: ContactGroup[]
   conversations: ClientConversation[]
   contacts: ContactUser[]
+  contactDirectoryMode: ContactDirectoryMode
+  incomingFriendRequests: FriendRequest[]
+  outgoingFriendRequests: FriendRequest[]
+  usersById: Readonly<Record<string, ContactUser>>
   contactsError: ClientDataRequestError | null
   contactsLoading: boolean
   contactsRefreshing: boolean
@@ -82,6 +88,11 @@ export type ClientDataContextValue = {
     memberIds: string[],
     appIds?: string[]
   ) => Promise<ClientConversation>
+  createFriendRequest: (userId: string) => Promise<void>
+  acceptFriendRequest: (requestId: string) => Promise<void>
+  rejectFriendRequest: (requestId: string) => Promise<void>
+  cancelFriendRequest: (requestId: string) => Promise<void>
+  deleteFriend: (userId: string) => Promise<void>
   createProject: (
     name: string,
     groupIds?: string[]
@@ -100,6 +111,14 @@ export type ClientDataContextValue = {
     requestKey: number
   ) => void
   getConversation: (conversationId: string) => ClientConversation | null
+  getUser: (userId: string) => ContactUser | undefined
+  ensureUsers: (userIds: string[]) => Promise<void>
+  invalidateUsers: (userIds: string[], updatedAt?: string) => void
+  updateUserPresence: (
+    userId: string,
+    online: boolean,
+    lastOnlineAt?: string | null
+  ) => void
   getConversationMessageState: (
     conversationId: string
   ) => ClientConversationMessageState
@@ -186,6 +205,7 @@ export type ClientDataContextValue = {
   ) => Promise<ClientConversation>
   refreshConversations: () => Promise<void>
   refreshContacts: () => Promise<void>
+  refreshFriendRequests: () => Promise<void>
   refreshMe: () => Promise<void>
   refreshProjects: () => Promise<void>
   loadMoreProjects: () => Promise<void>
@@ -239,8 +259,35 @@ export const ClientDataContext = createContext<ClientDataContextValue | null>(
   null
 )
 
+export function useClientUser(userId: string) {
+  const { ensureUsers, usersById } = useClientData()
+  useEffect(() => {
+    if (userId) void ensureUsers([userId]).catch(() => undefined)
+  }, [ensureUsers, userId])
+  return usersById[userId]
+}
+
+export function useClientUsers(userIds: string[]) {
+  const { ensureUsers, usersById } = useClientData()
+  const key = Array.from(new Set(userIds.filter(Boolean)))
+    .sort()
+    .join("\u0000")
+  useEffect(() => {
+    const ids = key ? key.split("\u0000") : []
+    if (ids.length > 0) void ensureUsers(ids).catch(() => undefined)
+  }, [ensureUsers, key])
+  return useMemo(
+    () => new Map(userIds.map((id) => [id, usersById[id]])),
+    [userIds, usersById]
+  )
+}
+
+export function useOptionalClientData() {
+  return useContext(ClientDataContext)
+}
+
 export function useClientData() {
-  const context = useContext(ClientDataContext)
+  const context = useOptionalClientData()
 
   if (!context) {
     throw new Error("useClientData must be used within ClientDataProvider")

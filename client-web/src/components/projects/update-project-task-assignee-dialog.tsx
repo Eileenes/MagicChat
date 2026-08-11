@@ -13,8 +13,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
+import { useOptionalClientData } from "@/lib/client-data-context"
 import type { ClientProjectMember } from "@/lib/project-data-api"
-import { listAllClientProjectMembers } from "@/lib/project-members"
+import {
+  hydrateClientProjectMembers,
+  listAllClientProjectMembers,
+} from "@/lib/project-members"
+
+const emptyAssigneeUsersById = {}
 import { updateClientProjectTask } from "@/lib/project-task-data-api"
 
 export function UpdateProjectTaskAssigneeDialog({
@@ -32,12 +38,19 @@ export function UpdateProjectTaskAssigneeDialog({
   projectId: string
   taskId: string
 }) {
+  const clientData = useOptionalClientData()
+  const ensureUsers = clientData?.ensureUsers
+  const usersById = clientData?.usersById ?? emptyAssigneeUsersById
   const [assigneeUserId, setAssigneeUserId] = React.useState(
     currentAssignee?.id ?? ""
   )
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(true)
-  const [members, setMembers] = React.useState<ClientProjectMember[]>([])
+  const [storedMembers, setMembers] = React.useState<ClientProjectMember[]>([])
+  const members = React.useMemo(
+    () => hydrateClientProjectMembers(storedMembers, usersById),
+    [storedMembers, usersById]
+  )
   const [saving, setSaving] = React.useState(false)
   const portal = React.useRef<HTMLDivElement | null>(null)
 
@@ -48,6 +61,12 @@ export function UpdateProjectTaskAssigneeDialog({
 
     let active = true
     void listAllClientProjectMembers(projectId)
+      .then(async (nextMembers) => {
+        if (ensureUsers) {
+          await ensureUsers(nextMembers.map((member) => member.id))
+        }
+        return nextMembers
+      })
       .then((nextMembers) => {
         if (active) {
           setMembers(nextMembers.filter((member) => member.status === "active"))
@@ -69,7 +88,7 @@ export function UpdateProjectTaskAssigneeDialog({
     return () => {
       active = false
     }
-  }, [open, projectId])
+  }, [ensureUsers, open, projectId])
 
   const fallbackAssignee = createFallbackMember(currentAssignee)
   const memberOptions =

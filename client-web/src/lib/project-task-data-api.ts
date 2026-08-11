@@ -602,13 +602,13 @@ function isProjectTaskReminderState(
 function normalizeProjectTaskUser(
   user: ProjectTaskUserResponse
 ): ProjectTaskUser {
-  if (typeof user.id !== "string" || typeof user.name !== "string") {
+  if (typeof user.id !== "string") {
     throw new ClientDataRequestError("任务用户响应格式不正确")
   }
   return {
     avatar: user.avatar ?? "",
     id: user.id,
-    name: user.name,
+    name: user.name ?? "",
     nickname: user.nickname ?? "",
   }
 }

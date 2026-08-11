@@ -12,6 +12,7 @@ import {
   type ClientProjectDetail,
   type ClientProjectMember,
 } from "@/lib/project-data-api"
+import { hydrateClientProjectMembers } from "@/lib/project-members"
 import type { ProjectDetailOutletContext } from "@/pages/projects/project-detail-context"
 
 export function ProjectDetailLayout() {
@@ -22,12 +23,39 @@ export function ProjectDetailLayout() {
 
 function LoadedProjectDetail({ projectId }: { projectId: string }) {
   const navigate = useNavigate()
-  const { conversations, me, refreshConversations, refreshProjects } =
-    useClientData()
+  const {
+    conversations,
+    ensureUsers,
+    me,
+    refreshConversations,
+    refreshProjects,
+    usersById,
+  } = useClientData()
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(true)
-  const [members, setMembers] = React.useState<ClientProjectMember[]>([])
-  const [project, setProject] = React.useState<ClientProjectDetail | null>(null)
+  const [storedMembers, setMembers] = React.useState<ClientProjectMember[]>([])
+  const [storedProject, setProject] = React.useState<ClientProjectDetail | null>(
+    null
+  )
+  const members = React.useMemo(
+    () => hydrateClientProjectMembers(storedMembers, usersById),
+    [storedMembers, usersById]
+  )
+  const project = React.useMemo(() => {
+    if (!storedProject) return null
+    const owner = usersById[storedProject.owner.id]
+    return owner
+      ? {
+          ...storedProject,
+          owner: {
+            avatar: owner.avatar,
+            id: owner.id,
+            name: owner.name,
+            nickname: owner.nickname,
+          },
+        }
+      : storedProject
+  }, [storedProject, usersById])
   const requestIdRef = React.useRef(0)
   const groups = React.useMemo(
     () => conversations.filter((conversation) => conversation.type === "group"),
@@ -37,7 +65,10 @@ function LoadedProjectDetail({ projectId }: { projectId: string }) {
   const loadProject = React.useCallback(async () => {
     const requestId = ++requestIdRef.current
     try {
-      const [nextProject, nextMembers] = await loadProjectDetail(projectId)
+      const [nextProject, nextMembers] = await loadProjectDetail(
+        projectId,
+        ensureUsers
+      )
       if (requestId === requestIdRef.current) {
         setProject(nextProject)
         setMembers(nextMembers)
@@ -46,11 +77,11 @@ function LoadedProjectDetail({ projectId }: { projectId: string }) {
     } catch {
       // Keep the current project visible when a background refresh fails.
     }
-  }, [projectId])
+  }, [ensureUsers, projectId])
 
   React.useEffect(() => {
     const requestId = ++requestIdRef.current
-    void loadProjectDetail(projectId)
+    void loadProjectDetail(projectId, ensureUsers)
       .then(([nextProject, nextMembers]) => {
         if (requestId === requestIdRef.current) {
           setProject(nextProject)
@@ -70,7 +101,7 @@ function LoadedProjectDetail({ projectId }: { projectId: string }) {
     return () => {
       requestIdRef.current += 1
     }
-  }, [projectId])
+  }, [ensureUsers, projectId])
 
   async function handleProjectDeleted() {
     navigate("/projects", { replace: true })
@@ -118,11 +149,19 @@ function LoadedProjectDetail({ projectId }: { projectId: string }) {
   )
 }
 
-async function loadProjectDetail(projectId: string) {
+async function loadProjectDetail(
+  projectId: string,
+  ensureUsers: (userIds: string[]) => Promise<void>
+) {
   const [project, memberPage] = await Promise.all([
     getClientProject(projectId),
     listClientProjectMembers(projectId, { limit: 3 }),
   ])
+  const userIds = [
+    project.owner.id,
+    ...memberPage.members.map((member) => member.id),
+  ]
+  await ensureUsers(userIds)
   return [project, memberPage.members] as const
 }
 

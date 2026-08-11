@@ -42,8 +42,15 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import {
+  useOptionalClientData,
+  type ClientDataContextValue,
+} from "@/lib/client-data-context"
 import type { ClientProjectMember } from "@/lib/project-data-api"
-import { listAllClientProjectMembers } from "@/lib/project-members"
+import {
+  hydrateClientProjectMembers,
+  listAllClientProjectMembers,
+} from "@/lib/project-members"
 import {
   getClientProjectTask,
   listClientProjectTasks,
@@ -58,6 +65,9 @@ const taskViews = [
 ] as const
 
 type TaskView = (typeof taskViews)[number]["value"]
+
+const emptyUsersById: ClientDataContextValue["usersById"] = {}
+const ensureNoUsers = async () => undefined
 
 const projectTaskViewStorageKey = "project-task-view"
 const projectTaskIdSearchParam = "taskId"
@@ -126,11 +136,14 @@ export function ProjectTasksTab({
   onTasksChanged: () => Promise<void>
   projectId: string
 }) {
+  const clientData = useOptionalClientData()
+  const ensureUsers = clientData?.ensureUsers ?? ensureNoUsers
+  const usersById = clientData?.usersById ?? emptyUsersById
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeView, setActiveView] = React.useState<TaskView>(
     readStoredProjectTaskView
   )
-  const [fallbackActiveTask, setFallbackActiveTask] =
+  const [storedFallbackActiveTask, setFallbackActiveTask] =
     React.useState<ProjectTask | null>(null)
   const [appliedFilters, setAppliedFilters] = React.useState<TaskFilters>(
     createDefaultTaskFilters
@@ -141,10 +154,26 @@ export function ProjectTasksTab({
   )
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(true)
-  const [members, setMembers] = React.useState<ClientProjectMember[]>([])
+  const [storedMembers, setMembers] = React.useState<ClientProjectMember[]>([])
+  const members = React.useMemo(
+    () => hydrateClientProjectMembers(storedMembers, usersById),
+    [storedMembers, usersById]
+  )
   const [membersError, setMembersError] = React.useState(false)
   const [membersLoading, setMembersLoading] = React.useState(true)
-  const [tasks, setTasks] = React.useState<ProjectTask[]>([])
+  const [storedTasks, setTasks] = React.useState<ProjectTask[]>([])
+  const tasks = React.useMemo(
+    () => hydrateTaskUsers(storedTasks, usersById),
+    [storedTasks, usersById]
+  )
+  const fallbackActiveTask = React.useMemo(
+    () =>
+      storedFallbackActiveTask
+        ? (hydrateTaskUsers([storedFallbackActiveTask], usersById)[0] ??
+          storedFallbackActiveTask)
+        : null,
+    [storedFallbackActiveTask, usersById]
+  )
   const closingTaskIdRef = React.useRef("")
   const activeTaskId = searchParams.get(projectTaskIdSearchParam)?.trim() ?? ""
   const activeTask =
@@ -184,6 +213,10 @@ export function ProjectTasksTab({
     let active = true
 
     void listAllClientProjectMembers(projectId)
+      .then(async (nextMembers) => {
+        await ensureUsers(nextMembers.map((member) => member.id))
+        return nextMembers
+      })
       .then((nextMembers) => {
         if (active) {
           setMembers(nextMembers.filter((member) => member.status === "active"))
@@ -203,7 +236,15 @@ export function ProjectTasksTab({
     return () => {
       active = false
     }
-  }, [projectId])
+  }, [ensureUsers, projectId])
+
+  React.useEffect(() => {
+    const userIds = tasks.flatMap((task) => [
+      task.creator.id,
+      ...(task.assignee ? [task.assignee.id] : []),
+    ])
+    if (userIds.length > 0) void ensureUsers(userIds).catch(() => undefined)
+  }, [ensureUsers, tasks])
 
   React.useEffect(() => {
     if (!activeTaskId) {
@@ -565,6 +606,46 @@ function StatusFilter({
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+function hydrateTaskUsers(
+  tasks: ProjectTask[],
+  usersById: ClientDataContextValue["usersById"]
+) {
+  let changed = false
+  const next = tasks.map((task) => {
+    const creator = usersById[task.creator.id]
+    const assignee = task.assignee ? usersById[task.assignee.id] : undefined
+    const nextCreator = creator
+      ? {
+          avatar: creator.avatar,
+          id: creator.id,
+          name: creator.name,
+          nickname: creator.nickname,
+        }
+      : task.creator
+    const nextAssignee = assignee
+      ? {
+          avatar: assignee.avatar,
+          id: assignee.id,
+          name: assignee.name,
+          nickname: assignee.nickname,
+        }
+      : task.assignee
+    if (
+      nextCreator.avatar === task.creator.avatar &&
+      nextCreator.name === task.creator.name &&
+      nextCreator.nickname === task.creator.nickname &&
+      nextAssignee?.avatar === task.assignee?.avatar &&
+      nextAssignee?.name === task.assignee?.name &&
+      nextAssignee?.nickname === task.assignee?.nickname
+    ) {
+      return task
+    }
+    changed = true
+    return { ...task, assignee: nextAssignee, creator: nextCreator }
+  })
+  return changed ? next : tasks
 }
 
 function PriorityFilter({

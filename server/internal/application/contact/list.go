@@ -2,12 +2,15 @@ package contact
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strings"
 
 	appapp "app/internal/application/app"
 	"app/internal/appregistry"
 	"app/internal/store"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +20,11 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 		return ListResult{}, internalError(err)
 	}
 	keyword := normalizeKeyword(cmd.Keyword)
-	users, err := s.listUsers(db, keyword)
+	directoryMode, userIDs, err := s.directoryUserScope(ctx, cmd.AccountID)
+	if err != nil {
+		return ListResult{}, err
+	}
+	users, err := s.listUsers(db, keyword, userIDs)
 	if err != nil {
 		return ListResult{}, internalError(err)
 	}
@@ -30,15 +37,63 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	if err != nil {
 		return ListResult{}, internalError(err)
 	}
-	return ListResult{Apps: apps, Groups: groups, Users: users}, nil
+	return ListResult{Apps: apps, DirectoryMode: directoryMode, Groups: groups, Users: users}, nil
 }
 
 func (s *Service) ListUsers(ctx context.Context, cmd ListUsersCommand) (ListUsersResult, error) {
-	users, err := s.listUsers(s.db.WithContext(ctx), normalizeKeyword(cmd.Keyword))
+	_, userIDs, err := s.directoryUserScope(ctx, cmd.AccountID)
+	if err != nil {
+		return ListUsersResult{}, err
+	}
+	users, err := s.listUsers(s.db.WithContext(ctx), normalizeKeyword(cmd.Keyword), userIDs)
 	if err != nil {
 		return ListUsersResult{}, internalError(err)
 	}
 	return ListUsersResult{Users: users}, nil
+}
+
+func (s *Service) ResolveUsers(ctx context.Context, cmd ResolveUsersCommand) (ResolveUsersResult, error) {
+	if len(cmd.UserIDs) > 100 {
+		return ResolveUsersResult{}, invalidError("每次最多查询 100 个用户", nil)
+	}
+	ids := make([]string, 0, len(cmd.UserIDs))
+	seen := make(map[string]struct{}, len(cmd.UserIDs))
+	for _, rawID := range cmd.UserIDs {
+		parsed, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil {
+			return ResolveUsersResult{}, invalidError("用户 ID 格式错误", fmt.Errorf("parse user ID: %w", err))
+		}
+		id := parsed.String()
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return ResolveUsersResult{Users: []User{}}, nil
+	}
+	var values []store.User
+	if err := s.db.WithContext(ctx).Where("id IN ? AND status = ?", ids, store.UserStatusActive).Find(&values).Error; err != nil {
+		return ResolveUsersResult{}, internalError(err)
+	}
+	valuesByID := make(map[string]store.User, len(values))
+	presenceIDs := make([]string, 0, len(values))
+	for _, value := range values {
+		valuesByID[value.ID] = value
+		presenceIDs = append(presenceIDs, value.ID)
+	}
+	online := map[string]bool{}
+	if s.userPresence != nil {
+		online = s.userPresence.OnlineStatus(presenceIDs)
+	}
+	users := make([]User, 0, len(values))
+	for _, id := range ids {
+		if value, exists := valuesByID[id]; exists {
+			users = append(users, newUser(value, online[id]))
+		}
+	}
+	return ResolveUsersResult{Users: users}, nil
 }
 
 func (s *Service) ListAppsForIdentity(ctx context.Context, cmd ListForIdentityCommand) (ListAppsResult, error) {
@@ -57,8 +112,40 @@ func (s *Service) ListGroupsForIdentity(ctx context.Context, cmd ListForIdentity
 	return ListGroupsResult{Groups: groups}, nil
 }
 
-func (s *Service) listUsers(db *gorm.DB, keyword string) ([]User, error) {
+func (s *Service) directoryUserScope(ctx context.Context, accountID string) (string, []string, error) {
+	if accountID == "" || s.settings == nil {
+		return DirectoryModeOrganization, nil, nil
+	}
+	mode, err := s.settings.ContactDirectoryMode(ctx)
+	if err != nil {
+		return "", nil, internalError(err)
+	}
+	if mode != DirectoryModeFriends {
+		return DirectoryModeOrganization, nil, nil
+	}
+	var friendships []store.UserFriendship
+	if err := s.db.WithContext(ctx).
+		Where("user_id_low = ? OR user_id_high = ?", accountID, accountID).
+		Find(&friendships).Error; err != nil {
+		return "", nil, internalError(err)
+	}
+	ids := make([]string, 0, len(friendships)+1)
+	ids = append(ids, accountID)
+	for _, friendship := range friendships {
+		if friendship.UserIDLow == accountID {
+			ids = append(ids, friendship.UserIDHigh)
+		} else {
+			ids = append(ids, friendship.UserIDLow)
+		}
+	}
+	return DirectoryModeFriends, ids, nil
+}
+
+func (s *Service) listUsers(db *gorm.DB, keyword string, userIDs []string) ([]User, error) {
 	query := db.Model(&store.User{}).Where("status = ?", store.UserStatusActive)
+	if userIDs != nil {
+		query = query.Where("id IN ?", userIDs)
+	}
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		query = query.Where("LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(nickname) LIKE ? OR phone LIKE ?", like, like, like, like)
@@ -218,7 +305,7 @@ func loadGroupAvatarMembers(db *gorm.DB, groupIDs []string) (map[string][]GroupA
 	for _, member := range members {
 		if member.MemberType == store.ConversationMemberTypeApp {
 			if app, ok := apps[member.MemberID]; ok {
-				result[member.ConversationID] = append(result[member.ConversationID], GroupAvatarMember{Avatar: app.Avatar, Name: app.Name, Role: member.Role})
+				result[member.ConversationID] = append(result[member.ConversationID], GroupAvatarMember{Avatar: app.Avatar, ID: app.ID, Name: app.Name, Role: member.Role, Type: ContactTypeApp})
 			}
 			continue
 		}
@@ -227,7 +314,7 @@ func loadGroupAvatarMembers(db *gorm.DB, groupIDs []string) (map[string][]GroupA
 			if avatar == "" {
 				avatar = store.DefaultUserAvatar
 			}
-			result[member.ConversationID] = append(result[member.ConversationID], GroupAvatarMember{Avatar: avatar, Name: user.Name, Nickname: user.Nickname, Role: member.Role})
+			result[member.ConversationID] = append(result[member.ConversationID], GroupAvatarMember{Avatar: avatar, ID: user.ID, Name: user.Name, Nickname: user.Nickname, Role: member.Role, Type: ContactTypeUser})
 		}
 	}
 	for groupID, values := range result {
@@ -304,6 +391,6 @@ func newUser(value store.User, online bool) User {
 	}
 	return User{
 		Avatar: avatar, Email: value.Email, ID: value.ID, LastOnlineAt: value.LastOnlineAt,
-		Name: value.Name, Nickname: value.Nickname, Online: online, Phone: phone, Type: ContactTypeUser,
+		Name: value.Name, Nickname: value.Nickname, Online: online, Phone: phone, Type: ContactTypeUser, UpdatedAt: value.UpdatedAt,
 	}
 }

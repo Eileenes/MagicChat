@@ -30,12 +30,19 @@ func (s *Server) clientWebSocket(c echo.Context) error {
 	}
 
 	conn := realtime.NewWebSocketConnection(user.ID, socket, s.realtime, s.handleRealtimeRequest)
-	s.realtime.Register(conn)
+	becameOnline := s.realtime.Register(conn)
 	conn.Enqueue(realtime.NewEvent(realtime.EventSystemReady, map[string]any{}))
+	if becameOnline {
+		s.publishUserPresenceUpdated(user.ID, true, nil)
+	}
 
 	conn.Serve()
 
-	s.realtime.Unregister(conn)
+	if s.realtime.Unregister(conn) {
+		lastOnlineAt := time.Now().UTC()
+		s.recordUserPong(user.ID, lastOnlineAt)
+		s.publishUserPresenceUpdated(user.ID, false, &lastOnlineAt)
+	}
 
 	return nil
 }

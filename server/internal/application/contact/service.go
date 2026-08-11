@@ -2,6 +2,7 @@ package contact
 
 import (
 	"strings"
+	"time"
 
 	"app/internal/config"
 
@@ -9,23 +10,34 @@ import (
 )
 
 type Dependencies struct {
-	DB           *gorm.DB
-	Apps         config.AppsConfig
-	UserPresence UserPresencePort
-	AppPresence  AppPresencePort
+	DB            *gorm.DB
+	Apps          config.AppsConfig
+	UserPresence  UserPresencePort
+	AppPresence   AppPresencePort
+	Settings      DirectorySettings
+	Notifications FriendNotifications
+	Now           func() time.Time
 }
 
 type Service struct {
-	db           *gorm.DB
-	apps         config.AppsConfig
-	userPresence UserPresencePort
-	appPresence  AppPresencePort
+	db            *gorm.DB
+	apps          config.AppsConfig
+	userPresence  UserPresencePort
+	appPresence   AppPresencePort
+	settings      DirectorySettings
+	notifications FriendNotifications
+	now           func() time.Time
 }
 
 func NewService(deps Dependencies) *Service {
+	now := deps.Now
+	if now == nil {
+		now = func() time.Time { return time.Now().UTC() }
+	}
 	return &Service{
 		db: deps.DB, apps: deps.Apps,
 		userPresence: deps.UserPresence, appPresence: deps.AppPresence,
+		settings: deps.Settings, notifications: deps.Notifications, now: now,
 	}
 }
 

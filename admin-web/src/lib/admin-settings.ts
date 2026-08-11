@@ -20,6 +20,7 @@ type AdminSettingsErrorEnvelope = {
 
 type InfoSettingsResponse = {
   app_name?: string
+  contact_directory_mode?: string
   organization_name?: string
 }
 
@@ -53,8 +54,11 @@ type ThirdPartyLoginProviderResponse = {
   type?: ThirdPartyLoginProviderType
 }
 
+export type ContactDirectoryMode = "friends" | "organization"
+
 export type InfoSettings = {
   appName: string
+  contactDirectoryMode: ContactDirectoryMode
   organizationName: string
 }
 
@@ -105,6 +109,7 @@ export type ThirdPartyLoginProvider = {
 
 export type UpdateInfoSettingsInput = {
   appName: string
+  contactDirectoryMode: ContactDirectoryMode
   organizationName: string
 }
 
@@ -154,6 +159,7 @@ export async function updateInfoSettings(
   const response = await fetcher("/api/admin/settings/info", {
     body: JSON.stringify({
       app_name: input.appName.trim(),
+      contact_directory_mode: input.contactDirectoryMode,
       organization_name: input.organizationName.trim(),
     }),
     credentials: "include",
@@ -539,12 +545,18 @@ function createRequestError(
 function normalizeInfoSettings(
   settings: InfoSettingsResponse | undefined
 ): InfoSettings {
-  if (!settings?.app_name || !settings.organization_name) {
+  if (
+    !settings?.app_name ||
+    !settings.organization_name ||
+    (settings.contact_directory_mode !== "organization" &&
+      settings.contact_directory_mode !== "friends")
+  ) {
     throw new AdminSettingsRequestError("系统设置响应格式不正确")
   }
 
   return {
     appName: settings.app_name,
+    contactDirectoryMode: settings.contact_directory_mode,
     organizationName: settings.organization_name,
   }
 }

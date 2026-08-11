@@ -230,9 +230,16 @@ func (p *ConnectionPool) SendToUsers(userIDs []string, message Envelope) int {
 }
 
 func (p *ConnectionPool) Broadcast(message Envelope) int {
+	return p.BroadcastExceptUser("", message)
+}
+
+func (p *ConnectionPool) BroadcastExceptUser(excludedUserID string, message Envelope) int {
 	p.mu.RLock()
 	connections := make([]*Connection, 0)
-	for _, userConns := range p.connsByUser {
+	for userID, userConns := range p.connsByUser {
+		if userID == excludedUserID {
+			continue
+		}
 		for conn := range userConns {
 			connections = append(connections, conn)
 		}

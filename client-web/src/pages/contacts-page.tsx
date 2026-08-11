@@ -13,6 +13,7 @@ import {
 import { AppCredentialsDialog } from "@/components/contacts/app-credentials-dialog"
 import { AppProfileDialog } from "@/components/contacts/app-profile-dialog"
 import { ContactDirectorySidebar } from "@/components/contacts/contact-directory-sidebar"
+import { FriendManagementDialog } from "@/components/contacts/friend-management-dialog"
 import {
   AppDetailPanel,
   ContactDetailPanel,
@@ -33,7 +34,7 @@ import {
   type ClientOwnedApp,
 } from "@/lib/client-api/apps"
 import { useAppInfo } from "@/lib/app-info-context"
-import { useClientData } from "@/lib/client-data-context"
+import { useClientData, useClientUser } from "@/lib/client-data-context"
 import { formatContactPhone } from "@/lib/contact-format"
 import { sortContactsByDisplayName } from "@/lib/contact-sort"
 import { cn } from "@/lib/utils"
@@ -41,17 +42,27 @@ import { cn } from "@/lib/utils"
 export function ContactsPage() {
   const { organizationName } = useAppInfo()
   const {
+    acceptFriendRequest,
+    cancelFriendRequest,
     contactApps,
+    contactDirectoryMode,
     contactGroups,
     contacts,
     contactsRefreshing,
+    createFriendRequest,
+    deleteFriend,
+    ensureUsers,
+    incomingFriendRequests,
     joinGroupConversation,
     me,
     openAppConversation,
     openDirectConversation,
+    outgoingFriendRequests,
     refreshContacts,
     refreshConversations,
+    rejectFriendRequest,
     restoreConversation,
+    usersById,
   } = useClientData()
   const location = useLocation()
   const navigate = useNavigate()
@@ -63,8 +74,13 @@ export function ContactsPage() {
     () => createDirectorySelection(directoryType, directoryId),
     [directoryId, directoryType]
   )
+  const routedUser = useClientUser(
+    activeSelection?.type === "user" ? activeSelection.id : ""
+  )
   const [openingDirectoryItemKey, setOpeningDirectoryItemKey] =
     React.useState("")
+  const [friendManagementOpen, setFriendManagementOpen] = React.useState(false)
+  const [updatingFriendUserId, setUpdatingFriendUserId] = React.useState("")
   const [appCredentials, setAppCredentials] =
     React.useState<ClientAppCredentials | null>(null)
   const [appProfile, setAppProfile] = React.useState<ClientOwnedApp | null>(
@@ -129,12 +145,36 @@ export function ContactsPage() {
       group.name.toLowerCase().includes(normalizedGroupKeyword)
     )
   }, [contactGroups, normalizedGroupKeyword])
-  const activeItem = resolveActiveDirectoryItem(
-    activeSelection,
-    contactApps,
-    contacts,
-    contactGroups
-  )
+  const activeItem =
+    activeSelection?.type === "user" && routedUser
+      ? ({ contact: routedUser, type: "user" } as const)
+      : resolveActiveDirectoryItem(
+          activeSelection,
+          contactApps,
+          contacts,
+          contactGroups
+        )
+  const activeUserIsFriend =
+    activeItem?.type === "user" &&
+    contacts.some((contact) => contact.id === activeItem.contact.id)
+  const activeUserOutgoingRequest =
+    activeItem?.type === "user"
+      ? outgoingFriendRequests.find(
+          (request) => request.addresseeUserId === activeItem.contact.id
+        )
+      : undefined
+
+  async function addFriend(contact: ContactUser) {
+    setUpdatingFriendUserId(contact.id)
+    try {
+      await createFriendRequest(contact.id)
+      toast.success("好友申请已发送")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "发送好友申请失败")
+    } finally {
+      setUpdatingFriendUserId("")
+    }
+  }
 
   async function startDirectConversation(contact: ContactUser) {
     if (contact.id === me.id) {
@@ -263,9 +303,16 @@ export function ContactsPage() {
         contactsRefreshing={contactsRefreshing}
         currentUserId={me.id}
         groups={filteredGroups}
-        organizationName={organizationName}
+        organizationName={
+          contactDirectoryMode === "friends" ? "我的好友" : organizationName
+        }
         onActiveTabChange={updateActiveTab}
         onKeywordChange={updateActiveKeyword}
+        onManageFriends={
+          contactDirectoryMode === "friends"
+            ? () => setFriendManagementOpen(true)
+            : undefined
+        }
         onRefresh={() => void refreshContacts().catch(() => undefined)}
         onSelect={selectDirectoryItem}
         onStartAppConversation={(app) => void startAppConversation(app)}
@@ -276,6 +323,22 @@ export function ContactsPage() {
           void openOrJoinGroupConversation(group)
         }
         openingDirectoryItemKey={openingDirectoryItemKey}
+      />
+
+      <FriendManagementDialog
+        acceptRequest={acceptFriendRequest}
+        cancelRequest={cancelFriendRequest}
+        contacts={contacts}
+        createRequest={createFriendRequest}
+        currentUserId={me.id}
+        deleteFriend={deleteFriend}
+        ensureUsers={ensureUsers}
+        incomingRequests={incomingFriendRequests}
+        onOpenChange={setFriendManagementOpen}
+        open={friendManagementOpen}
+        outgoingRequests={outgoingFriendRequests}
+        rejectRequest={rejectFriendRequest}
+        usersById={usersById}
       />
 
       <SidebarInset className="min-w-0 overflow-hidden">
@@ -338,8 +401,29 @@ export function ContactsPage() {
             />
           ) : activeItem?.type === "user" ? (
             <ContactDetailPanel
+              addFriendLabel={
+                contactDirectoryMode === "friends" &&
+                activeItem.contact.id !== me.id &&
+                !activeUserIsFriend
+                  ? activeUserOutgoingRequest
+                    ? "等待对方接受"
+                    : "添加好友"
+                  : undefined
+              }
+              addingFriend={updatingFriendUserId === activeItem.contact.id}
               contact={activeItem.contact}
-              canStartConversation={activeItem.contact.id !== me.id}
+              canStartConversation={
+                activeItem.contact.id !== me.id &&
+                (contactDirectoryMode !== "friends" || activeUserIsFriend)
+              }
+              onAddFriend={
+                contactDirectoryMode === "friends" &&
+                activeItem.contact.id !== me.id &&
+                !activeUserIsFriend &&
+                !activeUserOutgoingRequest
+                  ? () => void addFriend(activeItem.contact)
+                  : undefined
+              }
               onStartConversation={() =>
                 void startDirectConversation(activeItem.contact)
               }

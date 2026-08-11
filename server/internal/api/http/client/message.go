@@ -82,7 +82,7 @@ type listChoiceSnapshotsResponse struct {
 
 type messageReactionUserResponse struct {
 	ID   string `json:"id"`
-	Name string `json:"name"`
+	Name string `json:"-" swaggerignore:"true"`
 }
 
 type messageReactionResponse struct {
@@ -130,7 +130,7 @@ type messageDelegatedByResponse struct {
 
 type messageReplyToSenderResponse struct {
 	ID   string `json:"id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	Name string `json:"name" example:"Alice"`
+	Name string `json:"name,omitempty"`
 	Type string `json:"type" example:"user"`
 }
 
@@ -337,12 +337,14 @@ func newClientMessageResponse(value messageapp.Message) messageResponse {
 		result.DelegatedBy = &messageDelegatedByResponse{ID: value.DelegatedBy.ID, Name: value.DelegatedBy.Name, Type: value.DelegatedBy.Type}
 	}
 	if value.ReplyTo != nil {
+		replySender := messageReplyToSenderResponse{ID: value.ReplyTo.Sender.ID, Type: value.ReplyTo.Sender.Type}
+		if value.ReplyTo.Sender.Type == "app" {
+			replySender.Name = value.ReplyTo.Sender.Name
+		}
 		result.ReplyTo = &messageReplyToResponse{
-			ID: value.ReplyTo.ID,
-			Sender: messageReplyToSenderResponse{
-				ID: value.ReplyTo.Sender.ID, Name: value.ReplyTo.Sender.Name, Type: value.ReplyTo.Sender.Type,
-			},
-			Seq: value.ReplyTo.Seq, Summary: value.ReplyTo.Summary,
+			ID:     value.ReplyTo.ID,
+			Sender: replySender,
+			Seq:    value.ReplyTo.Seq, Summary: value.ReplyTo.Summary,
 		}
 	}
 	if value.Topic != nil {

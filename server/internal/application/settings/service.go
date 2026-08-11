@@ -14,13 +14,15 @@ import (
 )
 
 type Dependencies struct {
-	DB  *gorm.DB
-	Now func() time.Time
+	DB            *gorm.DB
+	Now           func() time.Time
+	Notifications Notifications
 }
 
 type Service struct {
-	db  *gorm.DB
-	now func() time.Time
+	db            *gorm.DB
+	now           func() time.Time
+	notifications Notifications
 }
 
 func NewService(deps Dependencies) *Service {
@@ -28,7 +30,15 @@ func NewService(deps Dependencies) *Service {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, now: now}
+	return &Service{db: deps.DB, now: now, notifications: deps.Notifications}
+}
+
+func (s *Service) ContactDirectoryMode(ctx context.Context) (string, error) {
+	value, err := s.getOrCreate(ctx)
+	if err != nil {
+		return "", internalError(err)
+	}
+	return newSettings(value).ContactDirectoryMode, nil
 }
 
 func (s *Service) Get(ctx context.Context) (Settings, error) {
@@ -48,20 +58,31 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (Settings, erro
 	if organizationName == "" {
 		return Settings{}, newError(CodeInvalidRequest, "组织名称不能为空", nil)
 	}
-
-	if _, err := s.getOrCreate(ctx); err != nil {
+	stored, err := s.getOrCreate(ctx)
+	if err != nil {
 		return Settings{}, internalError(err)
+	}
+	contactDirectoryMode := strings.TrimSpace(cmd.ContactDirectoryMode)
+	if contactDirectoryMode == "" {
+		contactDirectoryMode = newSettings(stored).ContactDirectoryMode
+	}
+	if contactDirectoryMode != ContactDirectoryModeOrganization && contactDirectoryMode != ContactDirectoryModeFriends {
+		return Settings{}, newError(CodeInvalidRequest, "通讯录模式不支持", nil)
 	}
 	if err := s.db.WithContext(ctx).Model(&store.AppSettings{}).
 		Where("id = ?", store.AppSettingsID).
 		Updates(map[string]any{
-			"app_name":          appName,
-			"organization_name": organizationName,
-			"updated_at":        s.now().UTC(),
+			"app_name":               appName,
+			"organization_name":      organizationName,
+			"contact_directory_mode": contactDirectoryMode,
+			"updated_at":             s.now().UTC(),
 		}).Error; err != nil {
 		return Settings{}, internalError(err)
 	}
-	return Settings{AppName: appName, OrganizationName: organizationName}, nil
+	if s.notifications != nil && newSettings(stored).ContactDirectoryMode != contactDirectoryMode {
+		s.notifications.PublishContactDirectoryModeUpdated(ctx, contactDirectoryMode)
+	}
+	return Settings{AppName: appName, OrganizationName: organizationName, ContactDirectoryMode: contactDirectoryMode}, nil
 }
 
 func (s *Service) GetPublicInfo(ctx context.Context) (PublicInfo, error) {
@@ -191,6 +212,7 @@ func (s *Service) getOrCreate(ctx context.Context) (store.AppSettings, error) {
 		ID:                   store.AppSettingsID,
 		AppName:              store.DefaultAppName,
 		OrganizationName:     store.DefaultOrganizationName,
+		ContactDirectoryMode: store.ContactDirectoryModeOrganization,
 		PasswordLoginEnabled: true,
 		SMTPPort:             465,
 		SMTPSecurity:         SMTPSecurityTLS,
@@ -207,7 +229,11 @@ func (s *Service) getOrCreate(ctx context.Context) (store.AppSettings, error) {
 }
 
 func newSettings(value store.AppSettings) Settings {
-	return Settings{AppName: value.AppName, OrganizationName: value.OrganizationName}
+	mode := value.ContactDirectoryMode
+	if mode == "" {
+		mode = ContactDirectoryModeOrganization
+	}
+	return Settings{AppName: value.AppName, OrganizationName: value.OrganizationName, ContactDirectoryMode: mode}
 }
 
 func newEmailLoginSettings(value store.AppSettings) EmailLoginSettings {

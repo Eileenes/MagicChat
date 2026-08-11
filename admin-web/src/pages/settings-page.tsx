@@ -67,6 +67,7 @@ import {
   getPasswordLoginSettings,
   listThirdPartyLoginProviders,
   moveThirdPartyLoginProvider,
+  type ContactDirectoryMode,
   type ThirdPartyLoginProvider,
   type ThirdPartyLoginProviderInput,
   type ThirdPartyLoginProviderMoveDirection,
@@ -155,8 +156,11 @@ const thirdPartyLoginProviderOptions: ThirdPartyLoginProviderOption[] = [
 export default function SettingsPage() {
   const { setAppName: setProductName } = useProductInfo()
   const appNameId = useId()
+  const contactDirectoryModeId = useId()
   const organizationNameId = useId()
   const [appName, setAppName] = useState("")
+  const [contactDirectoryMode, setContactDirectoryMode] =
+    useState<ContactDirectoryMode>("organization")
   const [callbackProvider, setCallbackProvider] =
     useState<ThirdPartyLoginProvider | null>(null)
   const [dialogProviderType, setDialogProviderType] =
@@ -169,12 +173,15 @@ export default function SettingsPage() {
   const [organizationName, setOrganizationName] = useState("")
   const [providers, setProviders] = useState<ThirdPartyLoginProvider[]>([])
   const [savedAppName, setSavedAppName] = useState("")
+  const [savedContactDirectoryMode, setSavedContactDirectoryMode] =
+    useState<ContactDirectoryMode>("organization")
   const [savedOrganizationName, setSavedOrganizationName] = useState("")
   const [updatingProviderId, setUpdatingProviderId] = useState<string | null>(
     null
   )
   const hasInfoSettingsChanged =
     appName.trim() !== savedAppName ||
+    contactDirectoryMode !== savedContactDirectoryMode ||
     organizationName.trim() !== savedOrganizationName
   const isSubmitDisabled =
     isLoading ||
@@ -200,8 +207,10 @@ export default function SettingsPage() {
         }
 
         setAppName(settings.appName)
+        setContactDirectoryMode(settings.contactDirectoryMode)
         setOrganizationName(settings.organizationName)
         setSavedAppName(settings.appName)
+        setSavedContactDirectoryMode(settings.contactDirectoryMode)
         setSavedOrganizationName(settings.organizationName)
         setProviders(sortThirdPartyProvidersForDisplay(loadedProviders))
       } catch (error) {
@@ -240,13 +249,16 @@ export default function SettingsPage() {
     try {
       const settings = await updateInfoSettings({
         appName,
+        contactDirectoryMode,
         organizationName,
       })
 
       setAppName(settings.appName)
       setProductName(settings.appName)
+      setContactDirectoryMode(settings.contactDirectoryMode)
       setOrganizationName(settings.organizationName)
       setSavedAppName(settings.appName)
+      setSavedContactDirectoryMode(settings.contactDirectoryMode)
       setSavedOrganizationName(settings.organizationName)
       toast.success("系统设置已保存")
     } catch (error) {
@@ -397,6 +409,38 @@ export default function SettingsPage() {
                     required
                     value={appName}
                   />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={contactDirectoryModeId}>
+                    通讯录模式
+                  </FieldLabel>
+                  <Select
+                    disabled={isLoading || isSaving}
+                    onValueChange={(value) =>
+                      setContactDirectoryMode(value as ContactDirectoryMode)
+                    }
+                    value={contactDirectoryMode}
+                  >
+                    <SelectTrigger
+                      className="w-full"
+                      id={contactDirectoryModeId}
+                    >
+                      <SelectValue>
+                        {contactDirectoryMode === "friends"
+                          ? "好友通讯录"
+                          : "全员通讯录"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        <SelectItem value="organization">全员通讯录</SelectItem>
+                        <SelectItem value="friends">好友通讯录</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    好友通讯录仅改变联系人列表，不限制业务场景中的用户资料。
+                  </FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor={organizationNameId}>组织名称</FieldLabel>

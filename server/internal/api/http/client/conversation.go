@@ -81,12 +81,12 @@ type markConversationReadRequest struct {
 }
 
 type conversationMemberResponse struct {
-	Avatar   string `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
-	Email    string `json:"email" example:"user@example.com"`
+	Avatar   string `json:"avatar,omitempty"`
+	Email    string `json:"email,omitempty"`
 	ID       string `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	Name     string `json:"name" example:"张三"`
-	Nickname string `json:"nickname" example:"小张"`
-	Phone    string `json:"phone" example:"+8613812345678"`
+	Name     string `json:"name,omitempty"`
+	Nickname string `json:"nickname,omitempty"`
+	Phone    string `json:"phone,omitempty"`
 	Role     string `json:"role" example:"member"`
 	Type     string `json:"type" example:"user"`
 }
@@ -100,8 +100,8 @@ type conversationProjectResponse struct {
 
 type conversationLastMessageSenderResponse struct {
 	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Nickname string `json:"nickname"`
+	Name     string `json:"-" swaggerignore:"true"`
+	Nickname string `json:"-" swaggerignore:"true"`
 	Type     string `json:"type" example:"user"`
 }
 
@@ -149,9 +149,9 @@ type topicReferenceResponse struct {
 }
 
 type topicSourceSenderResponse struct {
-	Avatar string `json:"avatar"`
+	Avatar string `json:"-" swaggerignore:"true"`
 	ID     string `json:"id"`
-	Name   string `json:"name"`
+	Name   string `json:"-" swaggerignore:"true"`
 	Type   string `json:"type"`
 }
 
@@ -1138,7 +1138,12 @@ func newGroupResponse(value conversationapp.Group) groupConversationResponse {
 func newConversationMembers(values []conversationapp.Member) []conversationMemberResponse {
 	result := make([]conversationMemberResponse, 0, len(values))
 	for _, value := range values {
-		result = append(result, conversationMemberResponse{Avatar: value.Avatar, Email: value.Email, ID: value.ID, Name: value.Name, Nickname: value.Nickname, Phone: value.Phone, Role: value.Role, Type: value.Type})
+		member := conversationMemberResponse{ID: value.ID, Role: value.Role, Type: value.Type}
+		if value.Type == "app" {
+			member.Avatar = value.Avatar
+			member.Name = value.Name
+		}
+		result = append(result, member)
 	}
 	return result
 }

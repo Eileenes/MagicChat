@@ -311,13 +311,13 @@ function uniqueUsers(users: ClientDocumentUser[]) {
 }
 
 function normalizeUser(value: DocumentUserResponse): ClientDocumentUser {
-  if (typeof value.id !== "string" || typeof value.name !== "string") {
+  if (typeof value.id !== "string") {
     throw new ClientDataRequestError("文档用户响应格式不正确")
   }
   return {
     avatar: typeof value.avatar === "string" ? value.avatar : "",
     id: value.id,
-    name: value.name,
+    name: typeof value.name === "string" ? value.name : "",
     nickname: typeof value.nickname === "string" ? value.nickname : "",
   }
 }

@@ -74,6 +74,7 @@ export function GlobalSearchCommand({
   currentUserId,
   getConversationDescription,
   messageSearch,
+  onOpen,
   onSelectDirectoryItem,
   onSelectConversation,
   onSelectMessageResult,
@@ -86,6 +87,7 @@ export function GlobalSearchCommand({
   currentUserId: string
   getConversationDescription: (conversation: ClientConversation) => string
   messageSearch?: MessageSearchProvider
+  onOpen?: () => void
   onSelectDirectoryItem: (item: DirectorySearchItem) => void
   onSelectConversation: (conversationId: string) => void
   onSelectMessageResult?: (result: ClientMessageSearchResult) => void
@@ -101,6 +103,20 @@ export function GlobalSearchCommand({
     results: emptySearchResults,
     searching: false,
   })
+  const directoryDataKey = React.useMemo(
+    () =>
+      JSON.stringify({
+        apps: contactApps.map((item) => [item.id, item.name]),
+        groups: contactGroups.map((item) => [item.id, item.name]),
+        users: contacts.map((item) => [
+          item.id,
+          item.name,
+          item.nickname,
+          item.email,
+        ]),
+      }),
+    [contactApps, contactGroups, contacts]
+  )
   const searchService = React.useMemo(
     () =>
       createClientSearchService({
@@ -169,13 +185,14 @@ export function GlobalSearchCommand({
       }
 
       event.preventDefault()
+      onOpen?.()
       setOpen(true)
       window.requestAnimationFrame(() => inputRef.current?.focus())
     }
 
     window.addEventListener("keydown", handleSearchShortcut)
     return () => window.removeEventListener("keydown", handleSearchShortcut)
-  }, [])
+  }, [onOpen])
 
   React.useEffect(() => {
     if (!canSearch) {
@@ -225,9 +242,17 @@ export function GlobalSearchCommand({
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [canSearch, keyword, scope, searchDebounceMs, searchKey])
+  }, [
+    canSearch,
+    directoryDataKey,
+    keyword,
+    scope,
+    searchDebounceMs,
+    searchKey,
+  ])
 
   function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen && !open) onOpen?.()
     setOpen(nextOpen)
     if (!nextOpen) {
       setKeyword("")
@@ -262,7 +287,7 @@ export function GlobalSearchCommand({
     <>
       <Button
         aria-label="全局搜索"
-        onClick={() => setOpen(true)}
+        onClick={() => handleOpenChange(true)}
         size="icon-sm"
         title="全局搜索"
         type="button"

@@ -22,6 +22,7 @@ vi.mock("@/lib/project-task-data-api", async (importOriginal) => {
 })
 
 vi.mock("@/lib/project-members", () => ({
+  hydrateClientProjectMembers: (members: unknown[]) => members,
   listAllClientProjectMembers: vi.fn().mockResolvedValue([]),
 }))
 

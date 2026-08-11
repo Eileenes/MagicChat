@@ -157,7 +157,7 @@ func TestMessageAPISetsReaction(t *testing.T) {
 	}
 	if !response.Success || response.Data.ReactionVersion != 2 || len(response.Data.Reactions) != 1 ||
 		!response.Data.Reactions[0].ReactedByMe || len(response.Data.Reactions[0].Users) != 3 ||
-		response.Data.Reactions[0].Users[0] != (messageReactionUserResponse{ID: "user-1", Name: "Alice"}) {
+		response.Data.Reactions[0].Users[0] != (messageReactionUserResponse{ID: "user-1"}) {
 		t.Fatalf("response = %#v", response)
 	}
 }
@@ -340,7 +340,7 @@ func TestMessageAPIListsReactionUsers(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	if !response.Success || response.Data.Text != "👍" || len(response.Data.Users) != 2 ||
-		response.Data.Users[1] != (messageReactionUserResponse{ID: "user-2", Name: "Bob"}) {
+		response.Data.Users[1] != (messageReactionUserResponse{ID: "user-2"}) {
 		t.Fatalf("response = %#v", response)
 	}
 }

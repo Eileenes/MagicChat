@@ -2,9 +2,15 @@ package settings
 
 import "context"
 
+const (
+	ContactDirectoryModeOrganization = "organization"
+	ContactDirectoryModeFriends      = "friends"
+)
+
 type Settings struct {
-	AppName          string
-	OrganizationName string
+	AppName              string
+	OrganizationName     string
+	ContactDirectoryMode string
 }
 
 type PublicProvider struct {
@@ -20,8 +26,9 @@ type PublicInfo struct {
 }
 
 type UpdateCommand struct {
-	AppName          string
-	OrganizationName string
+	AppName              string
+	OrganizationName     string
+	ContactDirectoryMode string
 }
 
 type PasswordLoginSettings struct {
@@ -58,6 +65,10 @@ type UpdateEmailLoginCommand struct {
 	SMTPPassword *string
 	FromEmail    string
 	FromName     string
+}
+
+type Notifications interface {
+	PublishContactDirectoryModeUpdated(context.Context, string)
 }
 
 type AdminService interface {

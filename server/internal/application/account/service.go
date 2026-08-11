@@ -31,6 +31,7 @@ type Dependencies struct {
 	DB                   *gorm.DB
 	Files                fileapp.PublicUploader
 	PasswordLoginPolicy  PasswordLoginPolicy
+	ProfileNotifications ProfileNotifications
 	Now                  func() time.Time
 	GenerateSessionToken func() (string, error)
 	SessionTTL           time.Duration
@@ -40,6 +41,7 @@ type Service struct {
 	db                   *gorm.DB
 	files                fileapp.PublicUploader
 	passwordLoginPolicy  PasswordLoginPolicy
+	profileNotifications ProfileNotifications
 	now                  func() time.Time
 	generateSessionToken func() (string, error)
 	sessionTTL           time.Duration
@@ -63,6 +65,7 @@ func NewService(deps Dependencies) *Service {
 		db:                   deps.DB,
 		files:                deps.Files,
 		passwordLoginPolicy:  deps.PasswordLoginPolicy,
+		profileNotifications: deps.ProfileNotifications,
 		now:                  now,
 		generateSessionToken: generateSessionToken,
 		sessionTTL:           sessionTTL,
@@ -238,7 +241,11 @@ func (s *Service) UpdateProfile(ctx context.Context, cmd UpdateProfileCommand) (
 		Updates(updates).Error; err != nil {
 		return Account{}, internalError(err)
 	}
-	return s.GetProfile(ctx, cmd.AccountID)
+	profile, err := s.GetProfile(ctx, cmd.AccountID)
+	if err == nil && s.profileNotifications != nil {
+		s.profileNotifications.PublishUserProfileUpdated(ctx, profile.ID, profile.UpdatedAt)
+	}
+	return profile, err
 }
 
 func (s *Service) UploadAvatar(ctx context.Context, cmd UploadAvatarCommand) (Account, error) {
@@ -290,7 +297,11 @@ func (s *Service) UploadAvatar(ctx context.Context, cmd UploadAvatarCommand) (Ac
 		Update("avatar", avatarURL).Error; err != nil {
 		return Account{}, wrapInternal("保存头像失败", err)
 	}
-	return s.GetProfile(ctx, accountID)
+	profile, err := s.GetProfile(ctx, accountID)
+	if err == nil && s.profileNotifications != nil {
+		s.profileNotifications.PublishUserProfileUpdated(ctx, profile.ID, profile.UpdatedAt)
+	}
+	return profile, err
 }
 
 func (s *Service) RecordOnlineActivity(ctx context.Context, accountID string, at time.Time) error {

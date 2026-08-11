@@ -12,7 +12,7 @@ describe("ClientDataProvider", () => {
     vi.useRealTimers()
   })
 
-  it("refreshes client data on the 15 second refresh interval", async () => {
+  it("refreshes active workspace data without loading the full directory", async () => {
     vi.useFakeTimers()
 
     let meRequestCount = 0
@@ -58,7 +58,7 @@ describe("ClientDataProvider", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={["/chat"]}>
         <ClientDataProvider>
           <ConversationCount />
         </ClientDataProvider>
@@ -73,7 +73,7 @@ describe("ClientDataProvider", () => {
 
     expect(screen.getByTestId("conversation-count")).toHaveTextContent("1")
     expect(meRequestCount).toBe(1)
-    expect(contactsRequestCount).toBe(1)
+    expect(contactsRequestCount).toBe(0)
     expect(conversationRequestCount).toBe(1)
 
     await act(async () => {
@@ -82,8 +82,253 @@ describe("ClientDataProvider", () => {
 
     expect(screen.getByTestId("conversation-count")).toHaveTextContent("2")
     expect(meRequestCount).toBe(2)
-    expect(contactsRequestCount).toBe(2)
+    expect(contactsRequestCount).toBe(0)
     expect(conversationRequestCount).toBe(2)
+  })
+
+  it("loads friend requests with a friends-only directory", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(jsonResponse(createConversationsResponse([])))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              apps: [],
+              directory_mode: "friends",
+              groups: [],
+              user_ids: ["user-2"],
+            },
+            success: true,
+          })
+        )
+      }
+      if (url === "/api/client/friend-requests?direction=incoming") {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              requests: [createFriendRequestResponse("request-1", "user-2", "user-1")],
+            },
+            success: true,
+          })
+        )
+      }
+      if (url === "/api/client/friend-requests?direction=outgoing") {
+        return Promise.resolve(jsonResponse({ data: { requests: [] }, success: true }))
+      }
+      if (url === "/api/client/users/resolve") {
+        const body = JSON.parse(String(init?.body)) as { user_ids: string[] }
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              users: body.user_ids.map((id) => ({
+                avatar: "",
+                email: `${id}@example.com`,
+                id,
+                name: "Bob",
+                nickname: "",
+                online: false,
+                phone: "",
+                type: "user",
+                updated_at: "2026-08-11T00:00:00Z",
+              })),
+            },
+            success: true,
+          })
+        )
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter initialEntries={["/contacts"]}>
+        <ClientDataProvider>
+          <FriendDirectoryProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    expect(screen.getByTestId("directory-mode")).toHaveTextContent("friends")
+    expect(screen.getByTestId("incoming-count")).toHaveTextContent("1")
+    expect(screen.getByTestId("friend-name")).toHaveTextContent("Bob")
+  })
+
+  it("batches and caches user profile resolution", async () => {
+    vi.useFakeTimers()
+    const resolveRequests: string[][] = []
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      if (url === "/api/client/users/resolve") {
+        const body = JSON.parse(String(init?.body)) as { user_ids: string[] }
+        resolveRequests.push(body.user_ids)
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              users: body.user_ids.map((id) => ({
+                avatar: "",
+                email: `${id}@example.com`,
+                id,
+                name: id === "user-2" ? "Bob" : "Carol",
+                nickname: "",
+                online: false,
+                phone: "",
+                type: "user",
+                updated_at: "2026-07-09T01:00:00Z",
+              })),
+            },
+            success: true,
+          })
+        )
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter initialEntries={["/tasks/project-1/task-1"]}>
+        <ClientDataProvider>
+          <UserDirectoryProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    act(() => screen.getByRole("button", { name: "resolve users" }).click())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByTestId("resolved-user")).toHaveTextContent("Bob")
+    expect(resolveRequests).toEqual([["user-2", "user-3"]])
+
+    act(() => screen.getByRole("button", { name: "resolve users" }).click())
+    await act(async () => undefined)
+    expect(resolveRequests).toHaveLength(1)
+  })
+
+  it("does not resolve users that were never cached when invalidated", async () => {
+    vi.useFakeTimers()
+    let resolveRequestCount = 0
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      if (url === "/api/client/users/resolve") {
+        resolveRequestCount += 1
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter initialEntries={["/tasks/project-1/task-1"]}>
+        <ClientDataProvider>
+          <UserDirectoryProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    act(() => screen.getByRole("button", { name: "invalidate user" }).click())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(resolveRequestCount).toBe(0)
+  })
+
+  it("rejects an in-flight profile response older than an invalidation event", async () => {
+    vi.useFakeTimers()
+    let releaseFirstResponse!: () => void
+    let resolveRequestCount = 0
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      if (url === "/api/client/users/resolve") {
+        resolveRequestCount += 1
+        const body = JSON.parse(String(init?.body)) as { user_ids: string[] }
+        const response = jsonResponse({
+          data: {
+            users: body.user_ids.map((id) => ({
+              avatar: "",
+              email: `${id}@example.com`,
+              id,
+              name: resolveRequestCount === 1 ? "Old Bob" : "New Bob",
+              nickname: "",
+              online: false,
+              phone: "",
+              type: "user",
+              updated_at:
+                resolveRequestCount === 1
+                  ? "2026-07-09T01:00:00Z"
+                  : "2026-07-09T01:00:01Z",
+            })),
+          },
+          success: true,
+        })
+        if (resolveRequestCount > 1) return Promise.resolve(response)
+        return new Promise<Response>((resolve) => {
+          releaseFirstResponse = () => resolve(response)
+        })
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter initialEntries={["/tasks/project-1/task-1"]}>
+        <ClientDataProvider>
+          <UserDirectoryProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    act(() => screen.getByRole("button", { name: "resolve users" }).click())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    act(() => screen.getByRole("button", { name: "invalidate user" }).click())
+    await act(async () => {
+      releaseFirstResponse()
+      await vi.advanceTimersByTimeAsync(50)
+    })
+
+    expect(resolveRequestCount).toBe(2)
+    expect(screen.getByTestId("resolved-user")).toHaveTextContent("New Bob")
   })
 
   it("removes an archived topic from the conversation list immediately", async () => {
@@ -410,6 +655,62 @@ describe("ClientDataProvider", () => {
   })
 })
 
+function FriendDirectoryProbe() {
+  const { contactDirectoryMode, contacts, incomingFriendRequests } =
+    useClientData()
+  return (
+    <>
+      <output data-testid="directory-mode">{contactDirectoryMode}</output>
+      <output data-testid="incoming-count">
+        {incomingFriendRequests.length}
+      </output>
+      <output data-testid="friend-name">{contacts[0]?.name}</output>
+    </>
+  )
+}
+
+function createFriendRequestResponse(
+  id: string,
+  requesterUserId: string,
+  addresseeUserId: string
+) {
+  return {
+    addressee_user_id: addresseeUserId,
+    created_at: "2026-08-11T00:00:00Z",
+    handled_at: null,
+    id,
+    requester_user_id: requesterUserId,
+    status: "pending",
+    updated_at: "2026-08-11T00:00:00Z",
+  }
+}
+
+function UserDirectoryProbe() {
+  const { ensureUsers, invalidateUsers, usersById } = useClientData()
+  return (
+    <>
+      <button
+        onClick={() => {
+          void ensureUsers(["user-2", "user-3"])
+          void ensureUsers(["user-3"])
+        }}
+        type="button"
+      >
+        resolve users
+      </button>
+      <button
+        onClick={() =>
+          invalidateUsers(["user-2"], "2026-07-09T01:00:01Z")
+        }
+        type="button"
+      >
+        invalidate user
+      </button>
+      <output data-testid="resolved-user">{usersById["user-2"]?.name}</output>
+    </>
+  )
+}
+
 function ConversationCount() {
   const { conversations } = useClientData()
 
@@ -717,8 +1018,9 @@ function createContactsResponse() {
   return {
     data: {
       apps: [],
+      directory_mode: "organization",
       groups: [],
-      users: [],
+      user_ids: [],
     },
     success: true,
   }

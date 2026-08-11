@@ -109,7 +109,7 @@ func TestServiceTaskLifecycleAndNotificationPort(t *testing.T) {
 	}
 }
 
-func TestBuildTaskActivityChangesUsesAssigneeDisplayNames(t *testing.T) {
+func TestBuildTaskActivityChangesUsesAssigneeIDs(t *testing.T) {
 	beforeID := uuid.NewString()
 	afterID := uuid.NewString()
 	changes := buildTaskActivityChanges(
@@ -126,13 +126,8 @@ func TestBuildTaskActivityChangesUsesAssigneeDisplayNames(t *testing.T) {
 	if len(changes) != 1 || changes[0].Field != "assignee" {
 		t.Fatalf("changes = %#v", changes)
 	}
-	from, ok := changes[0].From.(map[string]any)
-	if !ok || from["nickname"] != "小艾" {
-		t.Fatalf("from = %#v", changes[0].From)
-	}
-	to, ok := changes[0].To.(map[string]any)
-	if !ok || to["name"] != "Bob" {
-		t.Fatalf("to = %#v", changes[0].To)
+	if changes[0].From != beforeID || changes[0].To != afterID {
+		t.Fatalf("assignee change = %#v", changes[0])
 	}
 }
 

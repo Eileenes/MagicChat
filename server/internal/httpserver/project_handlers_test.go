@@ -682,12 +682,8 @@ func TestProjectGetReturnsOwnerAndDynamicCounts(t *testing.T) {
 		t.Fatalf("group/member counts = %v/%v, want 1/2", response["group_count"], response["member_count"])
 	}
 	ownerResponse := requireProjectObject(t, response["owner"])
-	for field, want := range map[string]any{
-		"id": owner.ID, "name": owner.Name, "nickname": owner.Nickname, "avatar": owner.Avatar,
-	} {
-		if ownerResponse[field] != want {
-			t.Fatalf("owner.%s = %v, want %v", field, ownerResponse[field], want)
-		}
+	if ownerResponse["id"] != owner.ID || len(ownerResponse) != 1 {
+		t.Fatalf("owner reference = %#v, want only id", ownerResponse)
 	}
 	taskCounts := requireProjectObject(t, response["task_counts"])
 	for field, want := range map[string]float64{
@@ -1649,11 +1645,11 @@ func TestProjectMemberListDeduplicatesSourcesAndIncludesDisabledUsers(t *testing
 		}
 		byID[member["id"].(string)] = member
 	}
-	if byID[crossGroup.ID]["display_name"] != "Alpha" || byID[crossGroup.ID]["role"] != store.ProjectRoleMember {
+	if byID[crossGroup.ID]["role"] != store.ProjectRoleMember {
 		t.Fatalf("cross-group member = %#v", byID[crossGroup.ID])
 	}
-	if byID[crossGroup.ID]["email"] != crossGroup.Email {
-		t.Fatalf("cross-group member email = %v, want %s", byID[crossGroup.ID]["email"], crossGroup.Email)
+	if _, leaked := byID[crossGroup.ID]["email"]; leaked {
+		t.Fatalf("cross-group member leaked profile = %#v", byID[crossGroup.ID])
 	}
 	assertStringList(t, byID[crossGroup.ID]["source_group_ids"], []string{low.ID, high.ID})
 	if byID[disabled.ID]["status"] != store.UserStatusDisabled {

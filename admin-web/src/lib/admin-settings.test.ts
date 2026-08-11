@@ -27,6 +27,7 @@ describe("admin settings", () => {
           success: true,
           data: {
             app_name: "即应",
+            contact_directory_mode: "organization",
             organization_name: "长亭科技",
           },
         }),
@@ -43,6 +44,7 @@ describe("admin settings", () => {
 
     expect(settings).toEqual({
       appName: "即应",
+      contactDirectoryMode: "organization",
       organizationName: "长亭科技",
     })
     expect(fetcher).toHaveBeenCalledWith("/api/admin/settings/info", {
@@ -58,6 +60,7 @@ describe("admin settings", () => {
           success: true,
           data: {
             app_name: "星环协作",
+            contact_directory_mode: "friends",
             organization_name: "长亭科技企业安全",
           },
         }),
@@ -73,6 +76,7 @@ describe("admin settings", () => {
     const settings = await updateInfoSettings(
       {
         appName: " 星环协作 ",
+        contactDirectoryMode: "friends",
         organizationName: " 长亭科技企业安全 ",
       },
       fetcher
@@ -80,11 +84,13 @@ describe("admin settings", () => {
 
     expect(settings).toEqual({
       appName: "星环协作",
+      contactDirectoryMode: "friends",
       organizationName: "长亭科技企业安全",
     })
     expect(fetcher).toHaveBeenCalledWith("/api/admin/settings/info", {
       body: JSON.stringify({
         app_name: "星环协作",
+        contact_directory_mode: "friends",
         organization_name: "长亭科技企业安全",
       }),
       credentials: "include",
@@ -118,6 +124,7 @@ describe("admin settings", () => {
       updateInfoSettings(
         {
           appName: "",
+          contactDirectoryMode: "organization",
           organizationName: "长亭科技",
         },
         fetcher

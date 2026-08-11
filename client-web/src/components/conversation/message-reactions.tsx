@@ -10,6 +10,7 @@ import {
   type ClientMessageReaction,
   type ClientMessageReactionUser,
 } from "@/lib/client-data-api"
+import { useOptionalClientData } from "@/lib/client-data-context"
 import { cn } from "@/lib/utils"
 import {
   Popover,
@@ -176,6 +177,7 @@ function MessageReactionUsersPopover({
   messageId: string
   reaction: ClientMessageReaction
 }) {
+  const clientData = useOptionalClientData()
   const [open, setOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState("")
@@ -193,7 +195,16 @@ function MessageReactionUsersPopover({
       messageId,
       reaction.text
     )
-      .then((nextUsers) => {
+      .then(async (nextUsers) => {
+        if (clientData) {
+          await clientData.ensureUsers(nextUsers.map((user) => user.id))
+          nextUsers = nextUsers.map((user) => {
+            const profile = clientData.getUser(user.id)
+            return profile
+              ? { ...user, name: profile.nickname || profile.name }
+              : user
+          })
+        }
         if (requestVersionRef.current === requestVersion) setUsers(nextUsers)
       })
       .catch(() => {
