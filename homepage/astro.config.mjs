@@ -17,6 +17,8 @@ export default defineConfig({
           'arrow-right',
           'brand-github-filled',
           'check',
+          'download',
+          'device-mobile',
           'file-text',
           'layout-kanban',
           'list-check',
