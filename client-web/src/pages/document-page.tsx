@@ -1,11 +1,12 @@
 import * as React from "react"
 import { HocuspocusProvider, WebSocketStatus } from "@hocuspocus/provider"
-import { Ellipsis, FileText, Loader2, Trash2 } from "lucide-react"
+import { Ellipsis, FileText, Loader2, Send, Trash2 } from "lucide-react"
 import { useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
 import * as Y from "yjs"
 
 import { ClientDocumentTitle } from "@/components/client-document-title"
+import { StandaloneCardDialog } from "@/components/conversation/send-card-dialog"
 import { DocumentEditor } from "@/components/documents/document-editor"
 import { DocumentWorkspaceSidebar } from "@/components/documents/document-workspace-sidebar"
 import {
@@ -55,6 +56,8 @@ import {
   getClientProject,
   type ClientProjectDetail,
 } from "@/lib/project-data-api"
+
+const maxDocumentCardTitleLength = 256
 
 type BodySyncState = "connecting" | "failed" | "saved" | "saving"
 
@@ -150,6 +153,7 @@ function DocumentWorkspace({
   const [collaborationDocument] = React.useState(() => new Y.Doc())
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [sendDialogOpen, setSendDialogOpen] = React.useState(false)
   const [collaborationProvider, setCollaborationProvider] =
     React.useState<HocuspocusProvider | null>(null)
   const [onlineUsers, setOnlineUsers] = React.useState<DocumentPresenceUser[]>(
@@ -180,6 +184,12 @@ function DocumentWorkspace({
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleRef = React.useRef(initialTitle)
   const pageTitle = title.trim() || "无标题文档"
+  const documentCard = {
+    description: `项目: ${projectName}`,
+    title: createDocumentCardTitle(pageTitle),
+    type: "card",
+    url: `/documents/document/${encodeURIComponent(documentId)}`,
+  } as const
 
   async function saveTitle() {
     if (timerRef.current) {
@@ -404,11 +414,14 @@ function DocumentWorkspace({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onSelect={() => toast.info("导出功能暂未开放")}>
-                导出文档
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => toast.info("文档信息暂未开放")}>
-                文档信息
+              <DropdownMenuItem
+                disabled={deleting}
+                onSelect={() => {
+                  requestAnimationFrame(() => setSendDialogOpen(true))
+                }}
+              >
+                <Send />
+                发送到对话
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -421,6 +434,11 @@ function DocumentWorkspace({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <StandaloneCardDialog
+            card={documentCard}
+            onOpenChange={setSendDialogOpen}
+            open={sendDialogOpen}
+          />
           <AlertDialog
             onOpenChange={(open) => {
               if (!deleting) setDeleteOpen(open)
@@ -540,6 +558,14 @@ function getPresenceInitial(name: string) {
 function collaborationWebSocketURL() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
   return `${protocol}//${window.location.host}/api/client/document/collaboration`
+}
+
+function createDocumentCardTitle(title: string) {
+  const prefix = "文档 - "
+  const characters = Array.from(title.trim())
+  const remaining = maxDocumentCardTitleLength - Array.from(prefix).length
+  if (characters.length <= remaining) return prefix + characters.join("")
+  return prefix + characters.slice(0, remaining - 1).join("") + "…"
 }
 
 function DocumentLoading() {

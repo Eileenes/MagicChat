@@ -3,7 +3,10 @@ import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { describe, expect, it, vi } from "vitest"
 
-import { SendCardDialog } from "@/components/conversation/send-card-dialog"
+import {
+  SendCardDialog,
+  StandaloneCardDialog,
+} from "@/components/conversation/send-card-dialog"
 import type { ClientCardMessageBody } from "@/lib/client-data-api"
 
 const mocks = vi.hoisted(() => ({
@@ -62,7 +65,22 @@ const mocks = vi.hoisted(() => ({
       visibility: "private",
     },
   ],
+  listClientConversations: vi.fn(),
   sendConversationCard: vi.fn(),
+  sendConversationCardMessage: vi.fn(),
+  sendConversationEntityCardMessage: vi.fn(),
+}))
+
+vi.mock("@/lib/client-api/conversations", () => ({
+  listClientConversations: (...args: unknown[]) =>
+    mocks.listClientConversations(...args),
+}))
+
+vi.mock("@/lib/client-api/messages", () => ({
+  sendConversationCardMessage: (...args: unknown[]) =>
+    mocks.sendConversationCardMessage(...args),
+  sendConversationEntityCardMessage: (...args: unknown[]) =>
+    mocks.sendConversationEntityCardMessage(...args),
 }))
 
 vi.mock("@/lib/client-data-context", () => ({
@@ -103,6 +121,40 @@ describe("SendCardDialog", () => {
       expect(mocks.sendConversationCard).toHaveBeenCalledWith(
         "conversation-2",
         card
+      )
+    })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("loads conversations and sends a standalone card", async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    const card = createCard()
+    mocks.listClientConversations
+      .mockReset()
+      .mockResolvedValue(mocks.conversations)
+    mocks.sendConversationCardMessage.mockReset().mockResolvedValue({
+      id: "message-1",
+    })
+
+    render(
+      <MemoryRouter>
+        <StandaloneCardDialog card={card} onOpenChange={onOpenChange} open />
+      </MemoryRouter>
+    )
+
+    await user.click(await screen.findByRole("radio", { name: "设计群" }))
+    await user.click(screen.getByRole("button", { name: "发送" }))
+
+    await waitFor(() => {
+      expect(mocks.sendConversationCardMessage).toHaveBeenCalledWith(
+        "conversation-1",
+        {
+          clientMessageId: expect.any(String),
+          description: card.description,
+          title: card.title,
+          url: card.url,
+        }
       )
     })
     expect(onOpenChange).toHaveBeenCalledWith(false)
