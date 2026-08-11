@@ -559,12 +559,13 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 		return sink.SendMarkdown(ctx, "收到")
 	})
 
-	handleParsedServerMessage(
+	handleParsedServerMessageWithTopicRouter(
 		context.Background(),
 		testGroupMessageCreatedEnvelope(t, appID, "user-1", "message-1", 1, "请处理 {(@app/"+appID+")}"),
 		appID,
 		requester,
 		replyAgent,
+		topicRouterDecision(true),
 		directAgentRunner{},
 		func(_ context.Context, message envelope) error {
 			var payload sendMessageRequestPayload

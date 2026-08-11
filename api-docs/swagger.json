@@ -7787,6 +7787,166 @@
                 }
             }
         },
+        "/api/client/projects/{project_id}/tasks/{task_id}/activities": {
+            "get": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
+                "description": "按时间顺序获取任务创建、修改和评论动态。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端任务"
+                ],
+                "summary": "列出任务动态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目 ID",
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务 ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 50，最大 100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "动态分页游标",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.taskActivityListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/projects/{project_id}/tasks/{task_id}/comments": {
+            "post": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
+                "description": "为当前用户可访问的任务添加评论动态。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端任务"
+                ],
+                "summary": "添加任务评论",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目 ID",
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务 ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "评论内容",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.addTaskCommentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.taskActivityResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/search/messages": {
             "get": {
                 "description": "在滚动最近一年内搜索当前用户有权查看的聊天记录。keyword 必填，其他过滤条件可选，按消息时间倒序最多返回 10 条。",
@@ -8716,6 +8876,15 @@
                 },
                 "message": {
                     "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.addTaskCommentRequest": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "example": "这个任务明天下午可以完成。"
                 }
             }
         },
@@ -10694,6 +10863,72 @@
                 "success": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "client.taskActivityChangeResponse": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "from": {
+                    "type": "object"
+                },
+                "to": {
+                    "type": "object"
+                }
+            }
+        },
+        "client.taskActivityListResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.taskActivityResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
+        "client.taskActivityResponse": {
+            "type": "object",
+            "properties": {
+                "actor": {
+                    "$ref": "#/definitions/client.projectUserResponse"
+                },
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.taskActivityChangeResponse"
+                    }
+                },
+                "content": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "created",
+                        "updated",
+                        "commented"
+                    ]
                 }
             }
         },

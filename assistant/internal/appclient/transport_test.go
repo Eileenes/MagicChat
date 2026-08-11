@@ -353,11 +353,12 @@ func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 		Sleep:        func(context.Context, time.Duration) error { return nil },
 	})
 	client := &Client{
-		cfg:       cfg,
-		dialer:    websocket.DefaultDialer,
-		runner:    newConversationAgentRunner(ctx),
-		transport: transport,
-		requester: requester,
+		cfg:         cfg,
+		dialer:      websocket.DefaultDialer,
+		runner:      newConversationAgentRunner(ctx),
+		transport:   transport,
+		requester:   requester,
+		topicRouter: topicRouterDecision(true),
 		assistantAgent: replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
 			return sink.SendMarkdown(ctx, "完成")
 		}),
@@ -597,10 +598,11 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 	var agentCalls atomic.Int32
 	agentMessageIDs := make(chan string, 2)
 	client := &Client{
-		cfg:       cfg,
-		transport: transport,
-		requester: requester,
-		runner:    newConversationAgentRunner(ctx),
+		cfg:         cfg,
+		transport:   transport,
+		requester:   requester,
+		runner:      newConversationAgentRunner(ctx),
+		topicRouter: topicRouterDecision(true),
 		assistantAgent: replyAgentFunc(func(_ context.Context, request agent.Request, _ agent.OutputSink) error {
 			agentCalls.Add(1)
 			agentMessageIDs <- request.MessageID
@@ -899,9 +901,10 @@ func TestClientReplayRetriesAcknowledgementWithoutReprocessingEvent(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	client := &Client{
-		cfg:       config.Config{AppID: "app-1"},
-		requester: requester,
-		runner:    newConversationAgentRunner(ctx),
+		cfg:         config.Config{AppID: "app-1"},
+		requester:   requester,
+		runner:      newConversationAgentRunner(ctx),
+		topicRouter: topicRouterDecision(true),
 		assistantAgent: replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
 			return sink.SendMarkdown(ctx, "完成")
 		}),

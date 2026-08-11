@@ -54,6 +54,28 @@ describe("ContactDetailPanel", () => {
 
     expect(screen.getByRole("button", { name: "发消息" })).toBeInTheDocument()
   })
+
+  it("constrains long profile values to the detail panel width", () => {
+    const longName = "名字".repeat(100)
+    render(
+      <ContactDetailPanel
+        canStartConversation
+        contact={{ ...contact, id: "other-user", name: longName }}
+        onStartConversation={vi.fn()}
+        startingConversation={false}
+      />
+    )
+
+    expect(screen.getByTestId("contact-detail-panel")).toHaveClass(
+      "min-w-0",
+      "overflow-hidden"
+    )
+    expect(screen.getByText(longName)).toHaveClass(
+      "min-w-0",
+      "flex-1",
+      "truncate"
+    )
+  })
 })
 
 describe("AppDetailPanel", () => {

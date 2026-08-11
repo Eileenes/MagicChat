@@ -218,15 +218,16 @@ export function AddGroupMembersDialog({
           <UserPlus className="size-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="gap-5 sm:max-w-lg">
+      <DialogContent className="min-w-0 gap-5 overflow-hidden sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-base">添加成员</DialogTitle>
           <DialogDescription className="sr-only">
             选择联系人添加到当前群聊
           </DialogDescription>
         </DialogHeader>
-        <form className="grid gap-4" onSubmit={handleSubmit}>
+        <form className="grid min-w-0 gap-4" onSubmit={handleSubmit}>
           <Tabs
+            className="min-w-0"
             onValueChange={(value) =>
               setTab(value === "apps" && canInviteApps ? "apps" : "users")
             }
@@ -258,15 +259,13 @@ export function AddGroupMembersDialog({
                   disabled={submitting}
                   id="add-group-member-search"
                   onChange={(event) => setKeyword(event.target.value)}
-                  placeholder={
-                    activeTab === "apps" ? "搜索应用" : "搜索联系人"
-                  }
+                  placeholder={activeTab === "apps" ? "搜索应用" : "搜索联系人"}
                   type="search"
                   value={keyword}
                 />
               </div>
             </div>
-            <TabsContent value="users">
+            <TabsContent className="min-w-0" value="users">
               <CandidateList
                 candidates={filteredUserCandidates}
                 emptyText="没有匹配的联系人"
@@ -276,7 +275,7 @@ export function AddGroupMembersDialog({
                 submitting={submitting}
               />
             </TabsContent>
-            <TabsContent value="apps">
+            <TabsContent className="min-w-0" value="apps">
               <CandidateList
                 candidates={filteredAppCandidates}
                 emptyText="没有匹配的应用"
@@ -322,10 +321,10 @@ function CandidateList({
   submitting: boolean
 }) {
   return (
-    <div className="h-64 overflow-y-auto rounded-md border">
+    <div className="h-64 min-w-0 overflow-x-hidden overflow-y-auto rounded-md border">
       <ItemGroup
         aria-label="添加群聊成员"
-        className="gap-1 p-2 has-data-[size=sm]:gap-1"
+        className="min-w-0 gap-1 p-2 has-data-[size=sm]:gap-1"
         role="group"
       >
         {candidates.map((candidate) => {
@@ -370,13 +369,13 @@ function AddGroupMemberItem({
     <Item
       asChild
       className={cn(
-        "px-2 py-1.5",
+        "min-w-0 flex-nowrap px-2 py-1.5",
         disabled ? "cursor-default opacity-75" : "cursor-pointer",
         checked ? "bg-primary/10" : "hover:bg-muted"
       )}
       size="sm"
     >
-      <Label htmlFor={checkboxId}>
+      <Label className="min-w-0" htmlFor={checkboxId}>
         <ItemMedia>
           <Avatar
             className="rounded-sm bg-muted after:rounded-sm"
@@ -395,9 +394,9 @@ function AddGroupMemberItem({
           </Avatar>
         </ItemMedia>
         <ItemContent className="min-w-0">
-          <ItemTitle className="truncate">{displayName}</ItemTitle>
+          <ItemTitle className="w-full truncate">{displayName}</ItemTitle>
         </ItemContent>
-        <ItemActions>
+        <ItemActions className="shrink-0">
           <Checkbox
             aria-label={displayName}
             checked={checked}

@@ -207,7 +207,10 @@ function UserProfilePopoverContent({
                 </Avatar>
               </button>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium [overflow-wrap:anywhere]">
+                <div
+                  className="truncate text-sm font-medium"
+                  title={displayName}
+                >
                   {displayName}
                 </div>
                 <div className="truncate text-xs text-muted-foreground">
@@ -320,6 +323,7 @@ function UserProfileRow({
           "min-w-0 flex-1 [overflow-wrap:anywhere]",
           !hasValue && "text-muted-foreground"
         )}
+        title={displayValue}
       >
         {displayValue}
       </span>

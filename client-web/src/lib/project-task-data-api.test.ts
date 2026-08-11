@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  addClientProjectTaskComment,
   deleteClientProjectTask,
   getClientProjectTask,
+  listClientProjectTaskActivities,
   updateClientProjectTask,
 } from "@/lib/project-task-data-api"
 
@@ -22,6 +24,55 @@ describe("project task data API", () => {
       "/api/client/projects/project-1/tasks/task-1",
       { credentials: "include", method: "DELETE" }
     )
+  })
+
+  it("lists activities and normalizes their actor", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          activities: [activityResponse("updated")],
+          next_cursor: "cursor-1",
+        },
+      })
+    )
+
+    await expect(
+      listClientProjectTaskActivities("project-1", "task-1", {}, fetcher)
+    ).resolves.toEqual({
+      activities: [
+        expect.objectContaining({
+          actor: { avatar: "", id: "user-1", name: "Alice", nickname: "" },
+          changes: [{ field: "status", from: "todo", to: "done" }],
+          type: "updated",
+        }),
+      ],
+      nextCursor: "cursor-1",
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/projects/project-1/tasks/task-1/activities?limit=20",
+      { credentials: "include", method: "GET" }
+    )
+  })
+
+  it("adds a comment", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ success: true, data: activityResponse("commented") })
+      )
+
+    await addClientProjectTaskComment(
+      "project-1",
+      "task-1",
+      "处理完成",
+      fetcher
+    )
+    const request = fetcher.mock.calls[0]?.[1] as RequestInit
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "/api/client/projects/project-1/tasks/task-1/comments"
+    )
+    expect(JSON.parse(String(request.body))).toEqual({ content: "处理完成" })
   })
 
   it("normalizes a weekly reminder", async () => {
@@ -98,6 +149,20 @@ describe("project task data API", () => {
     })
   })
 })
+
+function activityResponse(type: "updated" | "commented") {
+  return {
+    actor: { avatar: "", id: "user-1", name: "Alice", nickname: "" },
+    changes:
+      type === "updated" ? [{ field: "status", from: "todo", to: "done" }] : [],
+    content: type === "commented" ? "处理完成" : "",
+    created_at: "2026-07-15T01:00:00Z",
+    id: "activity-1",
+    project_id: "project-1",
+    task_id: "task-1",
+    type,
+  }
+}
 
 function taskResponse(reminder: Record<string, unknown>) {
   return {

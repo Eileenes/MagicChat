@@ -108,6 +108,32 @@ type deleteTaskResponse struct {
 	TaskID string `json:"task_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 }
 
+type addTaskCommentRequest struct {
+	Content string `json:"content" example:"这个任务明天下午可以完成。"`
+}
+
+type taskActivityChangeResponse struct {
+	Field string `json:"field"`
+	From  any    `json:"from" swaggertype:"object"`
+	To    any    `json:"to" swaggertype:"object"`
+}
+
+type taskActivityResponse struct {
+	ID        string                       `json:"id"`
+	ProjectID string                       `json:"project_id"`
+	TaskID    string                       `json:"task_id"`
+	Type      string                       `json:"type" enums:"created,updated,commented"`
+	Actor     projectUserResponse          `json:"actor"`
+	Content   string                       `json:"content"`
+	Changes   []taskActivityChangeResponse `json:"changes"`
+	CreatedAt time.Time                    `json:"created_at"`
+}
+
+type taskActivityListResponse struct {
+	Activities []taskActivityResponse `json:"activities"`
+	NextCursor *string                `json:"next_cursor" extensions:"x-nullable"`
+}
+
 func NewTaskAPI(tasks task.ClientService) *TaskAPI { return &TaskAPI{tasks: tasks} }
 
 func (a *TaskAPI) RegisterRoutes(group *echo.Group) {
@@ -116,6 +142,8 @@ func (a *TaskAPI) RegisterRoutes(group *echo.Group) {
 	group.GET("/projects/:project_id/tasks/:task_id", a.get)
 	group.PATCH("/projects/:project_id/tasks/:task_id", a.update)
 	group.DELETE("/projects/:project_id/tasks/:task_id", a.delete)
+	group.GET("/projects/:project_id/tasks/:task_id/activities", a.listActivities)
+	group.POST("/projects/:project_id/tasks/:task_id/comments", a.addComment)
 }
 
 // list godoc
@@ -274,6 +302,86 @@ func (a *TaskAPI) update(c echo.Context) error {
 	return writeSuccess(c, 200, newTaskResponse(value))
 }
 
+// listActivities godoc
+//
+// @Summary 列出任务动态
+// @Description 按时间顺序获取任务创建、修改和评论动态。
+// @Tags 客户端任务
+// @Produce json
+// @Param project_id path string true "项目 ID"
+// @Param task_id path string true "任务 ID"
+// @Param limit query int false "每页数量，默认 50，最大 100"
+// @Param cursor query string false "动态分页游标"
+// @Success 200 {object} successEnvelope{data=taskActivityListResponse}
+// @Failure 401 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Security UserSession
+// @Router /api/client/projects/{project_id}/tasks/{task_id}/activities [get]
+func (a *TaskAPI) listActivities(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, 500, string(task.CodeInternal), "服务端错误")
+	}
+	limit := 0
+	if raw, present := c.QueryParams()["limit"]; present {
+		value := ""
+		if len(raw) > 0 {
+			value = raw[0]
+		}
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > task.MaxPageLimit {
+			return writeFailure(c, 400, string(task.CodeInvalidRequest), "limit 必须为 1 到 100 的整数")
+		}
+		limit = parsed
+	}
+	result, err := a.tasks.ListActivities(c.Request().Context(), task.ListActivitiesCommand{
+		AccountID: current.ID, ProjectID: c.Param("project_id"), TaskID: c.Param("task_id"),
+		Limit: limit, Cursor: queryStringField(c.QueryParams(), "cursor"),
+	})
+	if err != nil {
+		return writeTaskError(c, err)
+	}
+	activities := make([]taskActivityResponse, 0, len(result.Activities))
+	for _, value := range result.Activities {
+		activities = append(activities, newTaskActivityResponse(value))
+	}
+	return writeSuccess(c, http.StatusOK, taskActivityListResponse{Activities: activities, NextCursor: result.NextCursor})
+}
+
+// addComment godoc
+//
+// @Summary 添加任务评论
+// @Description 为当前用户可访问的任务添加评论动态。
+// @Tags 客户端任务
+// @Accept json
+// @Produce json
+// @Param project_id path string true "项目 ID"
+// @Param task_id path string true "任务 ID"
+// @Param body body addTaskCommentRequest true "评论内容"
+// @Success 201 {object} successEnvelope{data=taskActivityResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Security UserSession
+// @Router /api/client/projects/{project_id}/tasks/{task_id}/comments [post]
+func (a *TaskAPI) addComment(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, 500, string(task.CodeInternal), "服务端错误")
+	}
+	var req addTaskCommentRequest
+	if err := decodeStrictJSON(c, &req); err != nil {
+		return writeFailure(c, 400, string(task.CodeInvalidRequest), "请求格式错误")
+	}
+	value, err := a.tasks.AddComment(c.Request().Context(), task.AddCommentCommand{
+		AccountID: current.ID, ProjectID: c.Param("project_id"), TaskID: c.Param("task_id"), Content: req.Content,
+	})
+	if err != nil {
+		return writeTaskError(c, err)
+	}
+	return writeSuccess(c, http.StatusCreated, newTaskActivityResponse(value))
+}
+
 // delete godoc
 //
 // @Summary 删除项目任务
@@ -374,6 +482,24 @@ func newTaskResponse(value task.Task) taskResponse {
 		}
 	}
 	return result
+}
+
+func newTaskActivityResponse(value task.Activity) taskActivityResponse {
+	changes := make([]taskActivityChangeResponse, 0, len(value.Changes))
+	for _, change := range value.Changes {
+		changes = append(changes, taskActivityChangeResponse{
+			Field: change.Field,
+			From:  change.From,
+			To:    change.To,
+		})
+	}
+	return taskActivityResponse{
+		ID: value.ID, ProjectID: value.ProjectID, TaskID: value.TaskID,
+		Type: value.Type, Actor: projectUserResponse{
+			ID: value.Actor.ID, Name: value.Actor.Name, Nickname: value.Actor.Nickname, Avatar: value.Actor.Avatar,
+		},
+		Content: value.Content, Changes: changes, CreatedAt: value.CreatedAt,
+	}
 }
 
 func writeTaskError(c echo.Context, err error) error {

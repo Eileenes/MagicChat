@@ -39,6 +39,35 @@ vi.mock("@/components/app-profile-popover", () => ({
 }))
 
 describe("MessageBubble reactions", () => {
+  it("truncates long author names without shrinking the message time", () => {
+    const longAuthor = "超长用户名".repeat(30)
+    renderBubble({
+      messageOverrides: { author: longAuthor },
+      onSetReaction: vi.fn(),
+    })
+
+    expect(screen.getByText(longAuthor)).toHaveClass("max-w-32", "truncate")
+    expect(screen.getByText(longAuthor)).toHaveAttribute("title", longAuthor)
+    expect(screen.getByText("08:00")).toHaveClass("shrink-0")
+  })
+
+  it("keeps reactions within fixed-width message cards", () => {
+    renderBubble({
+      messageOverrides: {
+        body: {
+          title: "示例链接",
+          type: "link",
+          url: "https://example.com",
+        },
+      },
+      onSetReaction: vi.fn(),
+    })
+
+    expect(
+      document.querySelector('[data-slot="message-reactions"]')
+    ).toHaveClass("[contain:inline-size]")
+  })
+
   it("uses the translucent background for reactions on current-user messages", () => {
     renderBubble({
       messageOverrides: {
@@ -78,9 +107,11 @@ describe("MessageBubble reactions", () => {
     expect(
       reactionChip?.querySelector('[data-slot="message-reaction-participants"]')
     ).toHaveClass("min-w-0", "flex-wrap")
-    expect(
-      reactionChip?.closest('[data-slot="message-reactions"]')
-    ).toHaveClass("min-w-0", "[contain:inline-size]")
+    const reactionList = reactionChip?.closest(
+      '[data-slot="message-reactions"]'
+    )
+    expect(reactionList).toHaveClass("min-w-0", "max-w-full", "flex-wrap")
+    expect(reactionList).not.toHaveClass("[contain:inline-size]")
     expect(reactionChip).toHaveTextContent(
       "自定义文本李昌志, 朱文磊, 王彪, 赵一, 钱二, 孙三, 周四, 吴五, 郑六, 王七等 16 人"
     )

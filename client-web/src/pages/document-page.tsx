@@ -1,7 +1,7 @@
 import * as React from "react"
 import { HocuspocusProvider, WebSocketStatus } from "@hocuspocus/provider"
-import { Ellipsis, FileText, Loader2 } from "lucide-react"
-import { useParams } from "react-router"
+import { Ellipsis, FileText, Loader2, Trash2 } from "lucide-react"
+import { useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
 import * as Y from "yjs"
 
@@ -16,11 +16,22 @@ import {
   AvatarGroupCount,
   AvatarImage,
 } from "@/components/ui/avatar"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -30,6 +41,7 @@ import {
 } from "@/components/ui/popover"
 import { getCurrentClientUser, type ClientUser } from "@/lib/client-data-api"
 import {
+  deleteClientDocument,
   getClientDocument,
   updateCollaborativeDocumentTitle,
   type ClientDocument,
@@ -134,7 +146,10 @@ function DocumentWorkspace({
   projectId: string
   projectName: string
 }) {
+  const navigate = useNavigate()
   const [collaborationDocument] = React.useState(() => new Y.Doc())
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
   const [collaborationProvider, setCollaborationProvider] =
     React.useState<HocuspocusProvider | null>(null)
   const [onlineUsers, setOnlineUsers] = React.useState<DocumentPresenceUser[]>(
@@ -316,6 +331,25 @@ function DocumentWorkspace({
     timerRef.current = setTimeout(() => void saveTitle(), 600)
   }
 
+  async function handleDelete() {
+    if (deleting) return
+    setDeleting(true)
+    try {
+      await deleteClientDocument(documentId)
+      toast.success("文档已删除")
+      setDeleteOpen(false)
+      navigate(`/projects/${encodeURIComponent(projectId)}/documents`, {
+        replace: true,
+      })
+    } catch (deleteError) {
+      toast.error(
+        deleteError instanceof Error ? deleteError.message : "删除文档失败"
+      )
+    } finally {
+      if (mountedRef.current) setDeleting(false)
+    }
+  }
+
   return (
     <main className="flex h-svh min-w-0 gap-3 overflow-hidden bg-muted p-3">
       <ClientDocumentTitle title={pageTitle} disableMessageAlert />
@@ -376,8 +410,46 @@ function DocumentWorkspace({
               <DropdownMenuItem onSelect={() => toast.info("文档信息暂未开放")}>
                 文档信息
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={deleting}
+                onSelect={() => setDeleteOpen(true)}
+                variant="destructive"
+              >
+                <Trash2 />
+                删除
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <AlertDialog
+            onOpenChange={(open) => {
+              if (!deleting) setDeleteOpen(open)
+            }}
+            open={deleteOpen}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>删除文档</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {`确定删除“${pageTitle}”吗？此操作无法撤销。`}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={deleting}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    void handleDelete()
+                  }}
+                  variant="destructive"
+                >
+                  {deleting && <Loader2 className="animate-spin" />}
+                  删除
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </header>
         {collaborationProvider ? (
           <DocumentEditor

@@ -37,7 +37,8 @@ import type {
 import { formatContactPhone } from "@/lib/contact-format"
 import { cn } from "@/lib/utils"
 
-const CONTACT_DETAIL_PANEL_CLASS = "mt-30 w-full max-w-sm"
+const CONTACT_DETAIL_PANEL_CLASS =
+  "mt-30 w-full min-w-0 max-w-sm overflow-hidden"
 
 export function AppDetailPanel({
   app,
@@ -87,8 +88,8 @@ export function AppDetailPanel({
       className={CONTACT_DETAIL_PANEL_CLASS}
       data-testid="contact-detail-panel"
     >
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-center gap-3 text-center">
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col items-center gap-3 text-center">
           <Avatar
             className="size-20 rounded-sm bg-muted after:rounded-sm"
             data-testid="contact-detail-avatar"
@@ -104,10 +105,10 @@ export function AppDetailPanel({
               <Bot className="size-7" />
             </AvatarFallback>
           </Avatar>
-          <div>
-            <div className="text-base font-medium">{app.name}</div>
+          <div className="max-w-full min-w-0">
+            <div className="truncate text-base font-medium">{app.name}</div>
             {app.description && (
-              <div className="mt-1 text-sm text-muted-foreground">
+              <div className="mt-1 line-clamp-2 text-sm break-words text-muted-foreground">
                 {app.description}
               </div>
             )}
@@ -253,16 +254,16 @@ export function GroupDetailPanel({
       className={CONTACT_DETAIL_PANEL_CLASS}
       data-testid="contact-detail-panel"
     >
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-center gap-3 text-center">
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col items-center gap-3 text-center">
           <GroupAvatar
             avatar={group.avatar}
             className="size-20"
             members={group.avatarMembers}
             name={group.name}
           />
-          <div>
-            <div className="text-base font-medium">{group.name}</div>
+          <div className="max-w-full min-w-0">
+            <div className="truncate text-base font-medium">{group.name}</div>
             <div className="mt-1 text-sm text-muted-foreground">
               {group.memberCount} 人群聊
             </div>
@@ -315,8 +316,8 @@ export function ContactDetailPanel({
       className={CONTACT_DETAIL_PANEL_CLASS}
       data-testid="contact-detail-panel"
     >
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-center text-center">
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col items-center text-center">
           <Avatar
             className="size-20 rounded-sm bg-muted after:rounded-sm"
             data-testid="contact-detail-avatar"
@@ -398,11 +399,14 @@ function ContactDetailRow({
   const displayValue = hasValue ? value : "未设置"
 
   return (
-    <div className="flex items-center gap-3 border-b py-2 last:border-b-0">
-      {icon}
+    <div className="flex min-w-0 items-center gap-3 border-b py-2 last:border-b-0">
+      <span className="shrink-0">{icon}</span>
       <span className="w-16 shrink-0 text-muted-foreground">{label}</span>
       <span
-        className={cn("min-w-0 truncate", !hasValue && "text-muted-foreground")}
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          !hasValue && "text-muted-foreground"
+        )}
       >
         {displayValue}
       </span>

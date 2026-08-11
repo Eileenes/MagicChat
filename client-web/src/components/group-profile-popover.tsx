@@ -68,7 +68,10 @@ export function GroupProfilePopover({
                 />
               </button>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium [overflow-wrap:anywhere]">
+                <div
+                  className="truncate text-sm font-medium"
+                  title={conversation.name}
+                >
                   {conversation.name}
                 </div>
                 <div className="truncate text-xs text-muted-foreground">
@@ -121,7 +124,9 @@ function GroupProfileRow({
     <div className="flex min-w-0 items-start gap-3 border-b py-2 last:border-b-0">
       <span className="mt-0.5 shrink-0">{icon}</span>
       <span className="w-12 shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{value}</span>
+      <span className="min-w-0 flex-1 truncate" title={value}>
+        {value}
+      </span>
     </div>
   )
 }

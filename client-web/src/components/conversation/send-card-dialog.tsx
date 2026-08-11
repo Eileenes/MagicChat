@@ -28,18 +28,103 @@ import type {
   ClientCardSendInput,
 } from "@/lib/client-data-api"
 import { useClientData } from "@/lib/client-data-context"
+import { listClientConversations } from "@/lib/client-api/conversations"
+import { sendConversationEntityCardMessage } from "@/lib/client-api/messages"
+import { createClientMessageId } from "@/lib/message-id"
 import { cn } from "@/lib/utils"
 
-export function SendCardDialog({
-  card,
-  onOpenChange,
-  open,
-}: {
+type SendCard = (
+  conversationId: string,
+  card: ClientCardSendInput
+) => Promise<unknown | null>
+
+type SendCardDialogProps = {
   card: ClientCardSendInput
   onOpenChange: (open: boolean) => void
   open: boolean
-}) {
+}
+
+export function SendCardDialog(props: SendCardDialogProps) {
   const { conversations, sendConversationCard } = useClientData()
+  return (
+    <SendCardDialogContent
+      {...props}
+      conversations={conversations}
+      sendConversationCard={sendConversationCard}
+    />
+  )
+}
+
+export function StandaloneEntityCardDialog({
+  card,
+  onOpenChange,
+  open,
+}: Omit<SendCardDialogProps, "card"> & {
+  card: Extract<ClientCardSendInput, { type: "entity_card" }>
+}) {
+  const [conversations, setConversations] = React.useState<
+    ClientConversation[]
+  >([])
+
+  React.useEffect(() => {
+    if (!open) return
+    let active = true
+    void listClientConversations()
+      .then((values) => {
+        if (active) setConversations(values)
+      })
+      .catch((loadError: unknown) => {
+        if (active) {
+          toast.error(
+            loadError instanceof Error ? loadError.message : "加载会话列表失败"
+          )
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [open])
+
+  const sendCard = React.useCallback<SendCard>(
+    async (conversationId, value) => {
+      if (value.type !== "entity_card") return null
+      try {
+        return await sendConversationEntityCardMessage(conversationId, {
+          clientMessageId: createClientMessageId(),
+          entityId: value.entityId,
+          entityType: value.entityType,
+        })
+      } catch (sendError) {
+        toast.error(
+          sendError instanceof Error ? sendError.message : "发送卡片失败"
+        )
+        return null
+      }
+    },
+    []
+  )
+
+  return (
+    <SendCardDialogContent
+      card={card}
+      conversations={conversations}
+      onOpenChange={onOpenChange}
+      open={open}
+      sendConversationCard={sendCard}
+    />
+  )
+}
+
+function SendCardDialogContent({
+  card,
+  conversations,
+  onOpenChange,
+  open,
+  sendConversationCard,
+}: SendCardDialogProps & {
+  conversations: ClientConversation[]
+  sendConversationCard: SendCard
+}) {
   const [keyword, setKeyword] = React.useState("")
   const [selectedConversationId, setSelectedConversationId] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
