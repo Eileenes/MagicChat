@@ -76,8 +76,8 @@ body:has(.scene-page) .brand img { filter: saturate(.75) brightness(1.1); }
 }
 @keyframes scene-image-drift { from { transform: scale(1.02) translate3d(0, 0, 0); } to { transform: scale(1.06) translate3d(0, -1.2%, 0); } }
 .scene-content { position: relative; z-index: 3; width: min(calc(100% - 40px), var(--container)); min-height: 100svh; margin: 0 auto; padding: var(--scene-space) var(--content-gutter); }
-.scene-content-bottom { display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: var(--scene-space); }
-.scene-content-top { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); align-items: end; gap: clamp(42px, 6vw, 86px); }
+.scene-content-bottom { display: flex; flex-direction: column; justify-content: center; }
+.scene-content-top { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); align-items: end; align-content: center; gap: clamp(42px, 6vw, 86px); }
 .scene-solution .scene-content-top { align-items: start; }
 .scene-content-right { display: flex; align-items: center; justify-content: flex-end; }
 .scene-content-right .scene-text-block { width: min(720px, 100%); margin-left: auto; }
@@ -140,7 +140,7 @@ body:has(.scene-page) .brand img { filter: saturate(.75) brightness(1.1); }
 /* Scene: capabilities and comparison */
 .dual-section { position: relative; min-height: 100svh; overflow: hidden; color: var(--white); }
 .dual-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 44%; filter: grayscale(1) contrast(1.08) brightness(.63); transform: scale(1.02); }
-.dual-inner { position: relative; z-index: 3; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; gap: clamp(34px, 5vw, 72px); width: min(calc(100% - 40px), var(--container)); min-height: 100svh; margin: 0 auto; padding: var(--scene-space) var(--content-gutter); }
+.dual-inner { position: relative; z-index: 3; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; align-content: center; gap: clamp(34px, 5vw, 72px); width: min(calc(100% - 40px), var(--container)); min-height: 100svh; margin: 0 auto; padding: var(--scene-space) var(--content-gutter); }
 .capability-panel, .comparison-panel { min-width: 0; }
 .capability-panel h2, .comparison-panel h2 { max-width: none; margin: 19px 0 0; color: #fff; font-size: var(--heading-size); font-weight: 800; line-height: 1; letter-spacing: 0; }
 .capability-panel h2 .title-line-accent, .comparison-panel h2 .title-line-accent { color: var(--green); }
@@ -213,9 +213,9 @@ body:has(.scene-page) .brand img { filter: saturate(.75) brightness(1.1); }
 .dual-faq .faq-list details p { max-width: none; margin-bottom: 24px; padding: 0 42px 0 10px; color: rgb(231 243 238 / 76%); }
 
 /* Download and footer */
-.scene-download { min-height: 0; }
-.scene-download .scene-content { min-height: 0; padding-block: var(--scene-space); }
-.scene-download .scene-content-center { align-items: flex-start; justify-content: flex-start; }
+.scene-download { min-height: 72svh; }
+.scene-download .scene-content { min-height: 72svh; padding-block: var(--scene-space); }
+.scene-download .scene-content-center { align-items: flex-start; justify-content: center; }
 .scene-download h2 { max-width: 760px; }
 .deploy-list { display: flex; flex-wrap: wrap; gap: 22px; margin-top: 58px; color: rgb(255 255 255 / 55%); font-size: 11px; font-weight: 650; }
 .deploy-list span + span::before { content: "/"; margin-right: 22px; color: var(--green); }
@@ -269,7 +269,7 @@ body:has(.scene-page) .brand img { filter: saturate(.75) brightness(1.1); }
 @media (max-width: 900px) {
   body:has(.scene-page) .site-nav { display: none; }
   .scene-content, .dual-inner { padding: 120px 20px 88px; }
-  .scene-content-top { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 44px; }
+  .scene-content-top { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 44px; }
   .scene-content-right { justify-content: flex-start; }
   .scene-content-right .scene-text-block { width: min(680px, 100%); }
   .scene-rail { margin-top: 46px; }
