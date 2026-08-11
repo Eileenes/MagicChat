@@ -592,7 +592,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 	if !slices.Equal(actions, []string{"send-notice", "create-topic", "send-reply"}) {
 		t.Fatalf("actions = %v", actions)
 	}
-	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice || notice.ReplyToMessageID != "message-1" {
+	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != deepWorkTopicNotice || notice.ReplyToMessageID != "message-1" {
 		t.Fatalf("topic notice = %#v", notice)
 	}
 	var reply sendMessageRequestPayload
@@ -691,7 +691,7 @@ func TestHandleParsedServerMessageRecoversAgentSessionFromTopic(t *testing.T) {
 				},
 				ParentConversationID: "parent-group",
 				SourceMessage: func() historyMessagePayload {
-					source := historyTextMessage("parent-notice-43", 43, appID, "茉莉", complexTaskTopicNotice)
+					source := historyTextMessage("parent-notice-43", 43, appID, "茉莉", deepWorkTopicNotice)
 					quoted := historyTextMessage("parent-message-42", 42, "user-1", "Alice", "请整理发布计划")
 					source.ReplyToMessageID = quoted.ID
 					source.ReplyTo = &quoted
@@ -719,7 +719,7 @@ func TestHandleParsedServerMessageRecoversAgentSessionFromTopic(t *testing.T) {
 		t.Fatalf("recovered agent request = %#v", request)
 	}
 	if len(request.History) != 4 || request.History[0].Seq != 0 || request.History[0].Summary != "请整理发布计划" ||
-		request.History[1].Seq != 0 || request.History[1].Summary != complexTaskTopicNotice ||
+		request.History[1].Seq != 0 || request.History[1].Summary != deepWorkTopicNotice ||
 		request.History[2].Summary != "已经开始处理" || request.History[3].Summary != "我们先讨论一下实现方案" {
 		t.Fatalf("recovered topic history = %#v", request.History)
 	}
