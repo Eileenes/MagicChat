@@ -1,7 +1,14 @@
-import { targetKey, type AuthenticatedTarget, type RealtimeEnvelope } from "@shared/client-contract"
+import {
+  targetKey,
+  type AuthenticatedTarget,
+  type RealtimeEnvelope,
+  type RealtimeSnapshot,
+} from "@shared/client-contract"
+import type { RealtimeDiagnosticContext } from "@shared/diagnostics-contract"
 import type { RealtimeWebSocketLike } from "@/lib/realtime-client"
 import { randomUUID } from "./random-id"
 import { beginDiagnosticRequest } from "@/lib/runtime-diagnostics"
+import { recordRendererDiagnostic } from "@/lib/desktop-diagnostics"
 
 export function installDesktopFetch(target: AuthenticatedTarget): () => void {
   const original = window.fetch.bind(window)
@@ -185,10 +192,16 @@ export class DesktopWebSocket implements RealtimeWebSocketLike {
   onopen: ((event: Event) => void) | null = null
   readyState = DesktopWebSocket.CONNECTING
   private readonly unsubscribe: () => void
+  private readonly unsubscribeSnapshot: () => void
   private readonly unsubscribeUnauthorized: () => void
+  private latestSnapshot?: RealtimeSnapshot
+  private receivedSnapshot = false
 
   constructor(private readonly target: AuthenticatedTarget) {
     this.unsubscribe = window.desktop.realtime.subscribe((envelope) => this.receive(envelope))
+    this.unsubscribeSnapshot = window.desktop.realtime.subscribeSnapshot((snapshot) =>
+      this.receiveSnapshot(snapshot),
+    )
     this.unsubscribeUnauthorized = window.desktop.realtime.subscribeUnauthorized((target) => {
       if (
         targetKey(target) !== targetKey(this.target) ||
@@ -197,17 +210,31 @@ export class DesktopWebSocket implements RealtimeWebSocketLike {
         return
       this.readyState = DesktopWebSocket.CLOSED
       this.unsubscribe()
+      this.unsubscribeSnapshot()
       this.unsubscribeUnauthorized()
+      this.recordState("disconnected")
       this.onclose?.(new CloseEvent("close", { code: 1008, reason: "unauthorized" }))
     })
     void window.desktop.realtime
       .connect(target)
-      .then(() => {
+      .then((snapshot) => {
+        if (!this.receivedSnapshot) {
+          this.latestSnapshot = snapshot
+          void recordRendererDiagnostic(
+            "realtime-bridge.snapshot-missed",
+            this.diagnosticContext(),
+            {
+              reason: "unknown",
+            },
+          )
+        }
         this.readyState = DesktopWebSocket.OPEN
+        this.recordState("connected")
         this.onopen?.(new Event("open"))
       })
       .catch(() => {
         this.readyState = DesktopWebSocket.CLOSED
+        this.recordState("disconnected")
         this.onerror?.(new Event("error"))
         this.onclose?.(new CloseEvent("close"))
       })
@@ -217,9 +244,11 @@ export class DesktopWebSocket implements RealtimeWebSocketLike {
     if (this.readyState >= DesktopWebSocket.CLOSING) return
     this.readyState = DesktopWebSocket.CLOSING
     this.unsubscribe()
+    this.unsubscribeSnapshot()
     this.unsubscribeUnauthorized()
     void window.desktop.realtime.close(this.target).finally(() => {
       this.readyState = DesktopWebSocket.CLOSED
+      this.recordState("disconnected")
       this.onclose?.(new CloseEvent("close"))
     })
   }
@@ -271,5 +300,32 @@ export class DesktopWebSocket implements RealtimeWebSocketLike {
     )
       return
     this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(envelope) }))
+  }
+
+  diagnosticContext(): RealtimeDiagnosticContext | undefined {
+    const snapshot = this.latestSnapshot
+    if (!snapshot?.connectionInstanceId || !snapshot.episodeId || !snapshot.targetScope)
+      return undefined
+    return {
+      connectionInstanceId: snapshot.connectionInstanceId,
+      episodeId: snapshot.episodeId,
+      targetScope: snapshot.targetScope,
+    }
+  }
+
+  private recordState(status: RealtimeSnapshot["status"]): void {
+    const context = this.diagnosticContext()
+    if (!context) return
+    void recordRendererDiagnostic("realtime.state-changed", context, { ready: false, status })
+  }
+
+  private receiveSnapshot(snapshot: RealtimeSnapshot): void {
+    if (snapshot.targetKey !== targetKey(this.target)) return
+    this.receivedSnapshot = true
+    this.latestSnapshot = snapshot
+    void recordRendererDiagnostic("realtime-bridge.snapshot-received", this.diagnosticContext(), {
+      ready: snapshot.ready,
+      status: snapshot.status,
+    })
   }
 }

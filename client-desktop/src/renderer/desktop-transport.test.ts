@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { DesktopBridge } from "@shared/bridge"
-import { installDesktopFetch } from "./desktop-transport"
+import { DesktopWebSocket, installDesktopFetch } from "./desktop-transport"
 import { startRuntimeDiagnostics } from "@/lib/runtime-diagnostics"
+import { RealtimeClient } from "@/lib/realtime-client"
 
 describe("installDesktopFetch", () => {
   const reportRuntime = vi.fn()
@@ -213,6 +214,103 @@ describe("installDesktopFetch", () => {
     await expect(second).rejects.toMatchObject({ name: "AbortError" })
     expect(new Set(cancel.mock.calls.map(([requestId]) => requestId))).toEqual(
       new Set(request.mock.calls.map(([, value]) => value.requestId)),
+    )
+  })
+})
+
+describe("DesktopWebSocket realtime snapshot", () => {
+  it("订阅快照缺失时使用 connect 返回值建立关联并记录遗漏", async () => {
+    let envelopeListener: ((value: unknown) => void) | undefined
+    const record = vi.fn().mockResolvedValue({ eventSeq: 1, timestamp: "2025-01-01T00:00:00.000Z" })
+    const target = { id: "server", normalizedUrl: "https://chat.example.com", userId: "user" }
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        diagnostics: { record },
+        realtime: {
+          close: vi.fn().mockResolvedValue(undefined),
+          connect: vi.fn().mockResolvedValue({
+            connectionInstanceId: "connection-1",
+            episodeId: "episode-1",
+            ready: true,
+            status: "connected",
+            targetKey: "server:https%3A%2F%2Fchat.example.com:user",
+            targetScope: "server",
+          }),
+          send: vi.fn(),
+          subscribe: vi.fn((listener) => {
+            envelopeListener = listener
+            return () => undefined
+          }),
+          subscribeSnapshot: vi.fn(() => () => undefined),
+          subscribeUnauthorized: vi.fn(() => () => undefined),
+        },
+      } as unknown as DesktopBridge,
+    })
+    const client = new RealtimeClient({ createWebSocket: () => new DesktopWebSocket(target) })
+
+    client.connect()
+    await vi.waitFor(() => expect(client.getSnapshot().status).toBe("connected"))
+
+    expect(client.getSnapshot().ready).toBe(false)
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: {
+          connectionInstanceId: "connection-1",
+          episodeId: "episode-1",
+          targetScope: "server",
+        },
+        type: "realtime-bridge.snapshot-missed",
+      }),
+    )
+    expect(record).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "realtime-bridge.snapshot-received" }),
+    )
+
+    envelopeListener?.({ event: "system.ready", kind: "event", v: 1 })
+    expect(client.getSnapshot().ready).toBe(true)
+  })
+
+  it("订阅推送到达时记录已接收快照而不误报遗漏", async () => {
+    let snapshotListener: ((value: unknown) => void) | undefined
+    const record = vi.fn().mockResolvedValue({ eventSeq: 1, timestamp: "2025-01-01T00:00:00.000Z" })
+    const target = { id: "server", normalizedUrl: "https://chat.example.com", userId: "user" }
+    const snapshot = {
+      connectionInstanceId: "connection-1",
+      episodeId: "episode-1",
+      ready: false,
+      status: "connecting" as const,
+      targetKey: "server:https%3A%2F%2Fchat.example.com:user",
+      targetScope: "server",
+    }
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        diagnostics: { record },
+        realtime: {
+          close: vi.fn().mockResolvedValue(undefined),
+          connect: vi.fn().mockResolvedValue(snapshot),
+          send: vi.fn(),
+          subscribe: vi.fn(() => () => undefined),
+          subscribeSnapshot: vi.fn((listener) => {
+            snapshotListener = listener
+            return () => undefined
+          }),
+          subscribeUnauthorized: vi.fn(() => () => undefined),
+        },
+      } as unknown as DesktopBridge,
+    })
+    const client = new RealtimeClient({ createWebSocket: () => new DesktopWebSocket(target) })
+
+    client.connect()
+    snapshotListener?.(snapshot)
+    await vi.waitFor(() => expect(client.getSnapshot().status).toBe("connected"))
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "realtime-bridge.snapshot-received" }),
+    )
+    expect(record).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "realtime-bridge.snapshot-missed" }),
     )
   })
 })
