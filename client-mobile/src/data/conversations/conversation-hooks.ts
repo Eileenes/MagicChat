@@ -12,7 +12,10 @@ import {
   setConversationMuted as setConversationMutedRequest,
   setConversationPinned as setConversationPinnedRequest,
 } from "@/data/conversations/conversations-api"
-import type { ClientContacts, ClientConversation } from "@/core/models"
+import type {
+  ClientContactDirectory,
+  ClientConversation,
+} from "@/core/models"
 import { messageManager } from "@/data/messages"
 import type { AuthenticatedTarget } from "@/core/server-target"
 import { queryKeys } from "@/data/query"
@@ -42,7 +45,7 @@ export function useOpenEntityConversation(target: AuthenticatedTarget) {
       )
 
       if (input.type === "group") {
-        queryClient.setQueryData<ClientContacts>(
+        queryClient.setQueryData<ClientContactDirectory>(
           queryKeys.contacts(target),
           (current) => markGroupJoined(current, conversation)
         )
@@ -205,7 +208,7 @@ function updateCachedConversation(
 }
 
 function markGroupJoined(
-  contacts: ClientContacts | undefined,
+  contacts: ClientContactDirectory | undefined,
   conversation: ClientConversation
 ) {
   if (!contacts) return contacts

@@ -20,6 +20,23 @@ export {
   type MessageMentionLabelResolver,
 } from "@/domain/messages/message-mentions"
 
+export function collectMessageUserIds(messages: ClientMessage[]) {
+  const ids = new Set<string>()
+  for (const message of messages) {
+    if (message.sender.type === "user") ids.add(message.sender.id)
+    if (message.replyTo?.sender.type === "user") {
+      ids.add(message.replyTo.sender.id)
+    }
+    for (const reaction of message.reactions) {
+      for (const user of reaction.users) ids.add(user.id)
+    }
+    for (const reply of message.topic?.recentReplies ?? []) {
+      if (reply.sender.type === "user") ids.add(reply.sender.id)
+    }
+  }
+  return Array.from(ids)
+}
+
 export type PresentedMessage = {
   author: string
   avatar: string
@@ -108,7 +125,14 @@ export function buildPresentedMessages({
       createdAt: message.createdAt,
       delegatedByName: message.delegatedBy?.name ?? "",
       id: message.id,
-      reactions: message.reactions,
+      reactions: message.reactions.map((reaction) => ({
+        ...reaction,
+        users: reaction.users.map((user) => {
+          const profile = usersById.get(user.id.toLowerCase())
+          const name = profile?.nickname.trim() || profile?.name.trim()
+          return name ? { ...user, name } : user
+        }),
+      })),
       replyTo: message.replyTo
         ? {
             author: getReplyAuthor(

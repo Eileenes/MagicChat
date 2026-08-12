@@ -1,22 +1,10 @@
 import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-client"
 import type {
-  ClientContacts,
+  ClientContactDirectory,
   ContactApp,
   ContactGroup,
   ContactGroupAvatarMember,
-  ContactUser,
 } from "@/core/models"
-
-type ContactUserResponse = {
-  avatar?: string
-  email?: string
-  id?: string
-  last_online_at?: string | null
-  name?: string
-  nickname?: string
-  online?: boolean
-  phone?: string
-}
 
 type ContactAppResponse = {
   avatar?: string
@@ -29,9 +17,11 @@ type ContactAppResponse = {
 
 type ContactGroupAvatarMemberResponse = {
   avatar?: string
+  id?: string
   name?: string
   nickname?: string
   role?: string
+  type?: string
 }
 
 type ContactGroupResponse = {
@@ -47,7 +37,7 @@ type ContactGroupResponse = {
 type ContactsResponse = {
   apps?: ContactAppResponse[]
   groups?: ContactGroupResponse[]
-  users?: ContactUserResponse[]
+  user_ids?: string[]
 }
 
 export async function fetchContacts(
@@ -66,7 +56,8 @@ export async function fetchContacts(
     !data ||
     !Array.isArray(data.apps) ||
     !Array.isArray(data.groups) ||
-    !Array.isArray(data.users)
+    !Array.isArray(data.user_ids) ||
+    data.user_ids.some((id) => typeof id !== "string")
   ) {
     throw new ApiRequestError("通讯录响应格式不正确")
   }
@@ -74,26 +65,8 @@ export async function fetchContacts(
   return {
     apps: data.apps.map(normalizeContactApp),
     groups: data.groups.map(normalizeContactGroup),
-    users: data.users.map(normalizeContactUser),
-  } satisfies ClientContacts
-}
-
-function normalizeContactUser(contact: ContactUserResponse): ContactUser {
-  if (!contact.email || !contact.id || !contact.name) {
-    throw new ApiRequestError("通讯录响应格式不正确")
-  }
-
-  return {
-    avatar: contact.avatar ?? "",
-    email: contact.email,
-    id: contact.id,
-    lastOnlineAt: contact.last_online_at ?? null,
-    name: contact.name,
-    nickname: contact.nickname ?? "",
-    online: Boolean(contact.online),
-    phone: contact.phone ?? "",
-    type: "user",
-  }
+    userIds: data.user_ids,
+  } satisfies ClientContactDirectory
 }
 
 function normalizeContactApp(app: ContactAppResponse): ContactApp {
@@ -138,17 +111,23 @@ function normalizeContactGroup(group: ContactGroupResponse): ContactGroup {
 function normalizeContactGroupAvatarMember(
   member: ContactGroupAvatarMemberResponse
 ): ContactGroupAvatarMember {
-  if (!member.name) {
+  if (
+    !member.id ||
+    (member.type !== "user" && member.type !== "app") ||
+    (member.type === "app" && !member.name)
+  ) {
     throw new ApiRequestError("通讯录群头像成员响应格式不正确")
   }
 
   return {
     avatar: member.avatar ?? "",
-    name: member.name,
+    id: member.id,
+    name: member.name ?? "",
     nickname: member.nickname ?? "",
     role:
       member.role === "owner" || member.role === "admin"
         ? member.role
         : "member",
+    type: member.type,
   }
 }

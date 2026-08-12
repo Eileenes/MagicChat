@@ -3,11 +3,12 @@ import * as Notifications from "expo-notifications"
 import { Platform } from "react-native"
 
 import type {
-  ClientContacts,
+  ClientContactDirectory,
   ClientConversation,
   ClientMessage,
   ClientMessageSender,
   ClientUser,
+  ContactUser,
 } from "@/core/models"
 import type { AuthenticatedTarget } from "@/core/server-target"
 import { queryKeys } from "@/data/query"
@@ -72,8 +73,11 @@ export async function showBackgroundMessageNotification(
     return
   }
 
-  const contacts = queryClient.getQueryData<ClientContacts>(
+  const contacts = queryClient.getQueryData<ClientContactDirectory>(
     queryKeys.contacts(server)
+  )
+  const usersById = queryClient.getQueryData<Record<string, ContactUser>>(
+    queryKeys.userProfiles(server)
   )
   const conversations = queryClient.getQueryData<ClientConversation[]>(
     queryKeys.conversations(server)
@@ -81,13 +85,16 @@ export async function showBackgroundMessageNotification(
   const conversation = conversations?.find(
     (item) => item.id === message.conversationId
   )
+  const profileContacts = contacts
+    ? { ...contacts, users: Object.values(usersById ?? {}) }
+    : undefined
   if (conversation?.notificationMuted) {
     return
   }
   const resolveMentionLabel =
-    contacts && conversation && currentUser
+    profileContacts && conversation && currentUser
       ? createMessageMentionLabelResolver({
-          contacts,
+          contacts: profileContacts,
           conversation,
           currentUser,
         })
@@ -102,7 +109,8 @@ export async function showBackgroundMessageNotification(
     message.sender,
     contacts,
     conversation,
-    currentUser
+    currentUser,
+    usersById
   )
 
   await Notifications.scheduleNotificationAsync({
@@ -123,9 +131,10 @@ export async function showBackgroundMessageNotification(
 
 function getSenderName(
   sender: ClientMessageSender,
-  contacts: ClientContacts | undefined,
+  contacts: ClientContactDirectory | undefined,
   conversation: ClientConversation | undefined,
-  currentUser: ClientUser | undefined
+  currentUser: ClientUser | undefined,
+  usersById: Readonly<Record<string, ContactUser>> | undefined
 ) {
   if (sender.type === "system") {
     return "系统"
@@ -137,7 +146,7 @@ function getSenderName(
   const contact =
     sender.type === "app"
       ? contacts?.apps.find((item) => item.id === sender.id)
-      : contacts?.users.find((item) => item.id === sender.id)
+      : usersById?.[sender.id]
   if (contact) {
     return "nickname" in contact
       ? contact.nickname.trim() || contact.name
