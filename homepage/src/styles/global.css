@@ -45,7 +45,7 @@ img, svg { display: block; }
 
 /* Persistent navigation keeps the brand and primary actions available on every scene. */
 body:has(.scene-page) .site-header { position: fixed; inset: 0 0 auto; z-index: 50; background: rgb(4 13 12 / 85%); border: 0; }
-body:has(.scene-page) .nav-shell { width: min(calc(100% - 40px), var(--container)); min-height: 82px; }
+body:has(.scene-page) .nav-shell { width: min(calc(100% - 40px), var(--container)); min-height: 74px; }
 .site-header .nav-shell { display: flex; align-items: center; justify-content: space-between; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 800; letter-spacing: .08em; }
 .brand img { width: 31px; height: 31px; border-radius: 7px; }
@@ -54,9 +54,11 @@ body:has(.scene-page) .brand img { filter: saturate(.75) brightness(1.1); }
 .site-nav { display: flex; align-items: center; gap: clamp(18px, 2.8vw, 38px); margin-left: auto; margin-right: clamp(17px, 3vw, 43px); }
 .site-nav a { color: rgb(255 255 255 / 75%); font-size: 12px; font-weight: 650; letter-spacing: .06em; transition: color 160ms var(--ease); }
 .site-nav a:hover { color: var(--green); }
-.header-actions { display: flex; align-items: center; gap: 4px; }
+.header-actions { display: flex; align-items: center; gap: 14px; }
 .header-icon { display: grid; place-items: center; width: 40px; height: 40px; color: rgb(255 255 255 / 82%); background: transparent; border: 1px solid transparent; border-radius: 3px; transition: color 160ms var(--ease), background 160ms var(--ease), border-color 160ms var(--ease); }
 .header-icon:hover { color: var(--green); background: transparent; border-color: transparent; }
+.header-trial { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; color: var(--green-deep); background: var(--green); border: 1px solid var(--green); border-radius: 3px; font-size: 12px; font-weight: 750; transition: color 160ms var(--ease), background 160ms var(--ease), border-color 160ms var(--ease); }
+.header-trial:hover { color: #fff; background: var(--green-dark); border-color: var(--green-dark); }
 
 /* Full-viewport scenes */
 .scene-page { overflow: hidden; background: var(--night); }
@@ -284,9 +286,10 @@ body:has(.scene-page) .brand img { filter: saturate(.75) brightness(1.1); }
 }
 
 @media (max-width: 620px) {
-  body:has(.scene-page) .nav-shell { width: calc(100% - 32px); min-height: 70px; }
+  body:has(.scene-page) .nav-shell { width: calc(100% - 32px); min-height: 64px; }
   body:has(.scene-page) .brand { font-size: 16px; }
   body:has(.scene-page) .header-icon { width: 36px; height: 36px; }
+  .header-trial { min-height: 34px; padding: 0 10px; }
   .container { width: calc(100% - 32px); }
   .scene-content { width: calc(100% - 32px); padding: 100px 16px 78px; }
   .scene-content-bottom { padding-bottom: 78px; }
