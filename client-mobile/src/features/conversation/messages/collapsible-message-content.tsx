@@ -4,10 +4,10 @@ import { Pressable, StyleSheet, View } from "react-native"
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg"
 import { SizableText, useTheme, XStack } from "tamagui"
 
-const COLLAPSED_HEIGHTS = {
-  markdown: 240,
-  text: 192,
-} as const
+import {
+  type CollapsibleMessageVariant,
+  getCollapsibleMessageLayout,
+} from "@/features/conversation/messages/collapsible-message-layout"
 
 const EXPAND_LABEL_HEIGHT = 28
 const FADE_HEIGHT = 52
@@ -22,15 +22,19 @@ export function CollapsibleMessageContent({
   bubblePressed: boolean
   children: ReactNode
   tone: "mine" | "other"
-  variant: keyof typeof COLLAPSED_HEIGHTS
+  variant: CollapsibleMessageVariant
 }) {
   const theme = useTheme()
   const gradientId = useId().replace(/[^a-zA-Z0-9_-]/g, "")
-  const [contentHeight, setContentHeight] = useState(0)
+  const [contentHeight, setContentHeight] = useState<number | null>(null)
   const [expanded, setExpanded] = useState(false)
-  const maxHeight = COLLAPSED_HEIGHTS[variant]
-  const canExpand = contentHeight > maxHeight + 1
-  const collapsed = canExpand && !expanded
+  const { collapsed, viewportHeight } = getCollapsibleMessageLayout({
+    contentHeight,
+    expanded,
+    variant,
+  })
+  const viewportStyle =
+    viewportHeight === null ? undefined : { height: viewportHeight }
   const fadeColor = String(
     tone === "mine"
       ? bubblePressed
@@ -49,13 +53,14 @@ export function CollapsibleMessageContent({
         collapsed ? styles.containerCollapsed : undefined,
       ]}
     >
-      <View
-        style={[styles.contentViewport, !expanded ? { maxHeight } : undefined]}
-      >
+      <View style={[styles.contentViewport, viewportStyle]}>
         <View
-          onLayout={(event) =>
-            setContentHeight(event.nativeEvent.layout.height)
-          }
+          onLayout={(event) => {
+            const nextHeight = event.nativeEvent.layout.height
+            setContentHeight((current) =>
+              current === null || nextHeight > current ? nextHeight : current
+            )
+          }}
           style={styles.content}
         >
           {children}
@@ -64,7 +69,7 @@ export function CollapsibleMessageContent({
 
       {collapsed ? (
         <Pressable
-          accessibilityLabel="展开全文"
+          accessibilityLabel="展开"
           accessibilityRole="button"
           accessibilityState={{ expanded: false }}
           onPress={() => setExpanded(true)}
@@ -106,7 +111,7 @@ export function CollapsibleMessageContent({
           >
             <ChevronDown color={actionColor} size={15} />
             <SizableText color="$color10" fontWeight="600" size="$2">
-              展开全文
+              展开
             </SizableText>
           </XStack>
         </Pressable>

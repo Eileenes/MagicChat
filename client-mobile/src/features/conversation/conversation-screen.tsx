@@ -36,6 +36,7 @@ import {
 import {
   buildPresentedMessages,
   collectMessageResources,
+  collectMessageUserIds,
   createMessageMentionLabelResolver,
   type MessageMentionLabelResolver,
 } from "@/domain/messages/message-presenter"
@@ -61,7 +62,10 @@ import {
 } from "@/providers/auth-provider"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
 import { buildAttachmentImagePreviewHref } from "@/navigation/image-preview"
-import { useClientData } from "@/providers/client-data-provider"
+import {
+  hydrateClientConversationUsers,
+  useClientData,
+} from "@/providers/client-data-provider"
 import { useRealtime } from "@/realtime/realtime-context"
 
 const EMPTY_MENTION_RESOLVER: MessageMentionLabelResolver = () => undefined
@@ -103,8 +107,15 @@ export function ConversationScreen() {
     setForwardSheetOpen(false)
   }, [])
   const [topicArchiveDialogOpen, setTopicArchiveDialogOpen] = useState(false)
-  const { contacts, conversations, currentUser, currentUserError, isReady } =
-    useClientData()
+  const {
+    contacts,
+    conversations,
+    currentUser,
+    currentUserError,
+    ensureUsers,
+    isReady,
+    usersById,
+  } = useClientData()
   const listedConversation = conversations.find(
     (item) => item.id === conversationId
   )
@@ -117,7 +128,40 @@ export function ConversationScreen() {
     conversationId,
     expectsTopic
   )
-  const conversation = topicQuery.data?.conversation ?? listedConversation
+  const conversationSource = topicQuery.data?.conversation ?? listedConversation
+  const conversationUserIds = useMemo(
+    () =>
+      conversationSource
+        ? [
+            ...(conversationSource.members ?? []).flatMap((member) =>
+              member.type === "user" ? [member.id] : []
+            ),
+            ...(conversationSource.lastMessageSender?.type === "user"
+              ? [conversationSource.lastMessageSender.id]
+              : []),
+            ...(conversationSource.topic?.sourceSender.type === "user"
+              ? [conversationSource.topic.sourceSender.id]
+              : []),
+          ]
+        : [],
+    [conversationSource]
+  )
+  const conversationUserIdsKey = conversationUserIds.slice().sort().join("\u0000")
+  useEffect(() => {
+    const ids = conversationUserIdsKey ? conversationUserIdsKey.split("\u0000") : []
+    if (ids.length > 0) void ensureUsers(ids).catch(() => undefined)
+  }, [conversationUserIdsKey, ensureUsers])
+  const conversation = useMemo(
+    () =>
+      conversationSource
+        ? hydrateClientConversationUsers(
+            conversationSource,
+            contacts.apps,
+            usersById
+          )
+        : undefined,
+    [contacts.apps, conversationSource, usersById]
+  )
   const isTopicConversation = expectsTopic || conversation?.type === "topic"
   const topicArchived = Boolean(conversation?.topic?.archived)
   const archiveTopicMutation = useArchiveConversationTopic(
@@ -147,23 +191,36 @@ export function ConversationScreen() {
     () => collectMessageResources(messagesQuery.messages),
     [messagesQuery.messages]
   )
+  const messageUserIds = useMemo(
+    () => collectMessageUserIds(messagesQuery.messages),
+    [messagesQuery.messages]
+  )
+  const messageUserIdsKey = messageUserIds.slice().sort().join("\u0000")
+  useEffect(() => {
+    const ids = messageUserIdsKey ? messageUserIdsKey.split("\u0000") : []
+    if (ids.length > 0) void ensureUsers(ids).catch(() => undefined)
+  }, [ensureUsers, messageUserIdsKey])
+  const profileContacts = useMemo(
+    () => ({ ...contacts, users: Object.values(usersById) }),
+    [contacts, usersById]
+  )
   const resources = useMessageResources(session, messageResources)
   const resolveMentionLabel = useMemo(
     () =>
       conversation && currentUser
         ? createMessageMentionLabelResolver({
-            contacts,
+            contacts: profileContacts,
             conversation,
             currentUser,
           })
         : EMPTY_MENTION_RESOLVER,
-    [contacts, conversation, currentUser]
+    [conversation, currentUser, profileContacts]
   )
   const presentedMessages = useMemo(
     () =>
       conversation && currentUser
         ? buildPresentedMessages({
-            contacts,
+            contacts: profileContacts,
             conversation,
             currentUser,
             messages: messagesQuery.messages,
@@ -171,10 +228,10 @@ export function ConversationScreen() {
           })
         : [],
     [
-      contacts,
       conversation,
       currentUser,
       messagesQuery.messages,
+      profileContacts,
       resolveMentionLabel,
     ]
   )

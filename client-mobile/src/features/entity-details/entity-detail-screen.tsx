@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router"
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { Alert } from "react-native"
 import { Card, Paragraph, ScrollView, XStack, YStack } from "tamagui"
 
@@ -29,22 +29,40 @@ export function EntityDetailScreen() {
   }>()
   const router = useRouter()
   const session = useAuthenticatedSession()
-  const { contacts, conversations, currentUser, isReady } = useClientData()
+  const {
+    contacts,
+    conversations,
+    currentUser,
+    ensureUsers,
+    isReady,
+    usersById,
+  } = useClientData()
   const openConversationMutation = useOpenEntityConversation(session)
   const entityId = getFirstParam(params.entityId)
   const entityTypeParam = getFirstParam(params.entityType)
   const entityType = isEntityType(entityTypeParam) ? entityTypeParam : null
+  useEffect(() => {
+    if (entityType === "user" && entityId) {
+      void ensureUsers([entityId]).catch(() => undefined)
+    }
+  }, [ensureUsers, entityId, entityType])
+  const profileContacts = useMemo(
+    () => ({ ...contacts, users: Object.values(usersById) }),
+    [contacts, usersById]
+  )
+  const isResolvingUserProfile =
+    entityType === "user" && Boolean(entityId) && !usersById[entityId]
   const profile = useMemo(
     () =>
       entityType && entityId
         ? resolveEntityProfile({
-            contacts,
+            contacts: profileContacts,
             conversations,
             currentUser,
             reference: { id: entityId, type: entityType },
           })
         : null,
-    [contacts, conversations, currentUser, entityId, entityType]
+    [conversations, currentUser, entityId, entityType, profileContacts]
   )
 
   async function handlePrimaryAction() {
@@ -81,7 +99,7 @@ export function EntityDetailScreen() {
         title={getPageTitle(entityType)}
       />
 
-      {!isReady && entityType ? (
+      {(!isReady || isResolvingUserProfile) && entityType ? (
         <ContentState loading message="正在加载资料" />
       ) : profile ? (
         <EntityProfileContent

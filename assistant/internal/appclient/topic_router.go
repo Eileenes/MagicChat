@@ -97,7 +97,8 @@ func (r *modelTopicRouter) NeedsTopic(ctx context.Context, request agent.Request
 	defer cancel()
 
 	response, err := r.model.CreateMessage(routerCtx, llm.Request{
-		System: topicRouterSystemPrompt,
+		System:        topicRouterSystemPrompt,
+		ForceToolName: decideTopicToolName,
 		Messages: []llm.Message{{
 			Role:    llm.RoleUser,
 			Content: string(payload),

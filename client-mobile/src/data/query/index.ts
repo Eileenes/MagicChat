@@ -62,6 +62,8 @@ export const queryKeys = {
     ] as const,
   currentUser: (target: AuthenticatedTarget) =>
     [...authenticatedQueryKey(target), "current-user"] as const,
+  userProfiles: (target: AuthenticatedTarget) =>
+    [...authenticatedQueryKey(target), "user-profiles"] as const,
   projects: (target: AuthenticatedTarget) =>
     [...authenticatedQueryKey(target), "projects"] as const,
   avatarResource: (server: ServerTarget, sourceUrl: string) =>

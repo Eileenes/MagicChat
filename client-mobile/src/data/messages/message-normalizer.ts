@@ -142,8 +142,8 @@ export function normalizeMessageReactionUsers(
   return value.map((candidate) => {
     const user = asRecord(candidate)
     const id = asString(user?.id)?.trim()
-    const name = asString(user?.name)?.trim()
-    if (!user || !id || !name) {
+    const name = asString(user?.name)?.trim() ?? ""
+    if (!user || !id) {
       throw new ApiRequestError("消息表情参与者响应格式不正确")
     }
     return { id, name }
@@ -533,7 +533,7 @@ function normalizeReplyTo(value: unknown): ClientMessageReplyTo | undefined {
   const sender = asRecord(reply?.sender)
   const id = asString(reply?.id)
   const senderId = asString(sender?.id) ?? ""
-  const senderName = asString(sender?.name)
+  const senderName = asString(sender?.name) ?? ""
   const senderType = normalizeSenderType(sender?.type)
   const seq = asNumber(reply?.seq)
   const summary = asString(reply?.summary)
@@ -542,7 +542,6 @@ function normalizeReplyTo(value: unknown): ClientMessageReplyTo | undefined {
     !sender ||
     !id ||
     (senderType !== "system" && !senderId) ||
-    senderName === undefined ||
     seq === undefined ||
     summary === undefined
   ) {

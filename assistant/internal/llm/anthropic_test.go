@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"assistant/internal/config"
@@ -236,8 +237,14 @@ func TestAnthropicClientCreateMessageSendsToolsAndParsesBlocks(t *testing.T) {
 	var gotToolName string
 	var gotToolDescription string
 	var gotToolPropertyType string
+	var gotToolChoiceName string
+	var gotToolChoiceType string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
+			ToolChoice struct {
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"tool_choice"`
 			Tools []struct {
 				Name        string `json:"name"`
 				Description string `json:"description"`
@@ -254,6 +261,8 @@ func TestAnthropicClientCreateMessageSendsToolsAndParsesBlocks(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
+		gotToolChoiceName = request.ToolChoice.Name
+		gotToolChoiceType = request.ToolChoice.Type
 		if len(request.Tools) == 1 {
 			gotToolName = request.Tools[0].Name
 			gotToolDescription = request.Tools[0].Description
@@ -286,7 +295,8 @@ func TestAnthropicClientCreateMessageSendsToolsAndParsesBlocks(t *testing.T) {
 	client.HTTPClient = server.Client()
 
 	response, err := client.CreateMessage(context.Background(), Request{
-		Messages: []Message{{Role: RoleUser, Blocks: []Block{{Type: BlockTypeText, Text: "查一下"}}}},
+		ForceToolName: "main__search",
+		Messages:      []Message{{Role: RoleUser, Blocks: []Block{{Type: BlockTypeText, Text: "查一下"}}}},
 		Tools: []Tool{
 			{
 				Name:        "main__search",
@@ -304,6 +314,9 @@ func TestAnthropicClientCreateMessageSendsToolsAndParsesBlocks(t *testing.T) {
 		t.Fatalf("CreateMessage() error = %v", err)
 	}
 
+	if gotToolChoiceType != "tool" || gotToolChoiceName != "main__search" {
+		t.Fatalf("tool choice = type %q name %q, want forced main__search", gotToolChoiceType, gotToolChoiceName)
+	}
 	if gotToolName != "main__search" {
 		t.Fatalf("tool name = %q, want main__search", gotToolName)
 	}
@@ -333,6 +346,19 @@ func TestAnthropicClientCreateMessageSendsToolsAndParsesBlocks(t *testing.T) {
 	}
 	if response.Blocks[2].Type != BlockTypeToolUse || response.Blocks[2].ToolUseID != "toolu_1" || response.Blocks[2].ToolName != "main__search" || toolInput.Query != "mygod" {
 		t.Fatalf("tool use block = %+v, want parsed tool use", response.Blocks[2])
+	}
+}
+
+func TestAnthropicClientRejectsForcedToolMissingFromRequest(t *testing.T) {
+	client := NewAnthropicClient(config.LLMConfig{
+		BaseURL: "https://api.example.com", APIKey: "test-api-key", ModelName: "claude-sonnet",
+	})
+	_, err := client.CreateMessage(context.Background(), Request{
+		ForceToolName: "decide_topic",
+		Messages:      []Message{{Role: RoleUser, Content: "route this"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), `forced tool "decide_topic" is not included`) {
+		t.Fatalf("CreateMessage() error = %v, want missing forced tool error", err)
 	}
 }
 

@@ -36,6 +36,10 @@ export type ContactUser = {
   type: "user"
 }
 
+export type ResolvedClientUser = ContactUser & {
+  updatedAt: string
+}
+
 export type ContactApp = {
   avatar: string
   creatorUserId: string | null
@@ -48,9 +52,11 @@ export type ContactApp = {
 
 export type ContactGroupAvatarMember = {
   avatar: string
+  id: string
   name: string
   nickname: string
   role: "owner" | "admin" | "member"
+  type: "app" | "user"
 }
 
 export type ContactGroup = {
@@ -68,6 +74,12 @@ export type ClientContacts = {
   apps: ContactApp[]
   groups: ContactGroup[]
   users: ContactUser[]
+}
+
+export type ClientContactDirectory = {
+  apps: ContactApp[]
+  groups: ContactGroup[]
+  userIds: string[]
 }
 
 export type ClientProjectSummary = {

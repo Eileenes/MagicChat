@@ -378,7 +378,6 @@ function normalizeConversationTopic(
     !topic.source_message_id ||
     typeof topic.source_message_seq !== "number" ||
     !sourceSender?.id ||
-    !sourceSender.name ||
     (sourceSender.type !== "user" && sourceSender.type !== "app")
   ) {
     throw new ApiRequestError("会话话题信息响应格式不正确")
@@ -397,7 +396,7 @@ function normalizeConversationTopic(
     sourceSender: {
       avatar: sourceSender.avatar ?? "",
       id: sourceSender.id,
-      name: sourceSender.name,
+      name: sourceSender.name ?? "",
       type: sourceSender.type,
     },
   }
@@ -408,7 +407,7 @@ function normalizeConversationMember(
 ): ClientConversationMember {
   const type = member.type === "app" ? "app" : "user"
 
-  if (!member.id || !member.name || (type === "user" && !member.email)) {
+  if (!member.id || (type === "app" && !member.name)) {
     throw new ApiRequestError("会话成员响应格式不正确")
   }
 
@@ -416,7 +415,7 @@ function normalizeConversationMember(
     avatar: member.avatar ?? "",
     email: member.email ?? "",
     id: member.id,
-    name: member.name,
+    name: member.name ?? "",
     nickname: member.nickname ?? "",
     phone: member.phone ?? "",
     role:

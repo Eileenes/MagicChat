@@ -78,7 +78,7 @@ func TestModelTopicRouterReturnsBooleanDecision(t *testing.T) {
 			if got != needsTopic {
 				t.Fatalf("NeedsTopic() = %t, want %t", got, needsTopic)
 			}
-			if gotRequest.System != topicRouterSystemPrompt || len(gotRequest.Tools) != 1 || gotRequest.Tools[0].Name != decideTopicToolName {
+			if gotRequest.System != topicRouterSystemPrompt || gotRequest.ForceToolName != decideTopicToolName || len(gotRequest.Tools) != 1 || gotRequest.Tools[0].Name != decideTopicToolName {
 				t.Fatalf("model request = %#v", gotRequest)
 			}
 			if len(gotRequest.Messages) != 1 {
