@@ -109,11 +109,22 @@ test("accepts ID-only user references in conversations and messages", async () =
         users: [{ id: "user-2" }],
       },
     ],
+    reply_to: {
+      id: "message-previous",
+      sender: { id: "user-2", type: "user" },
+      seq: 0,
+      summary: "previous message",
+    },
     sender: { id: "user-2", type: "user" },
     seq: 1,
   })
 
   assert.deepEqual(message.reactions[0]?.users, [{ id: "user-2", name: "" }])
+  assert.deepEqual(message.replyTo?.sender, {
+    id: "user-2",
+    name: "",
+    type: "user",
+  })
 })
 
 function jsonResponse(data: unknown) {

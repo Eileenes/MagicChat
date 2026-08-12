@@ -533,7 +533,7 @@ function normalizeReplyTo(value: unknown): ClientMessageReplyTo | undefined {
   const sender = asRecord(reply?.sender)
   const id = asString(reply?.id)
   const senderId = asString(sender?.id) ?? ""
-  const senderName = asString(sender?.name)
+  const senderName = asString(sender?.name) ?? ""
   const senderType = normalizeSenderType(sender?.type)
   const seq = asNumber(reply?.seq)
   const summary = asString(reply?.summary)
@@ -542,7 +542,6 @@ function normalizeReplyTo(value: unknown): ClientMessageReplyTo | undefined {
     !sender ||
     !id ||
     (senderType !== "system" && !senderId) ||
-    senderName === undefined ||
     seq === undefined ||
     summary === undefined
   ) {
