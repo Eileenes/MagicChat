@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/input-group"
 import { Spinner } from "@/components/ui/spinner"
 import { formatActivityTime } from "@/lib/activity-time"
+import { useClientUsers } from "@/lib/client-data-context"
 import {
   addClientProjectTaskComment,
   listClientProjectTaskActivities,
@@ -49,6 +50,30 @@ export function ProjectTaskActivityFeed({
   const [nextCursor, setNextCursor] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
   const visibleActivities = expanded ? activities : activities.slice(-20)
+  const activityUsers = useClientUsers(
+    visibleActivities.flatMap((activity) => [
+      activity.actor.id,
+      ...activity.changes.flatMap((change) =>
+        change.field === "assignee"
+          ? [change.from, change.to].filter(
+              (value): value is string => typeof value === "string"
+            )
+          : []
+      ),
+    ])
+  )
+  const resolvedAssigneeNames = React.useMemo(
+    () => ({
+      ...assigneeNames,
+      ...Object.fromEntries(
+        Array.from(activityUsers, ([id, user]) => [
+          id,
+          user?.nickname || user?.name || assigneeNames[id] || "",
+        ])
+      ),
+    }),
+    [activityUsers, assigneeNames]
+  )
   const canExpand = (!expanded && activities.length > 20) || nextCursor !== null
 
   const loadActivities = React.useCallback(async () => {
@@ -193,7 +218,7 @@ export function ProjectTaskActivityFeed({
             {visibleActivities.map((activity) => (
               <TaskActivityItem
                 activity={activity}
-                assigneeNames={assigneeNames}
+                assigneeNames={resolvedAssigneeNames}
                 key={activity.id}
               />
             ))}
@@ -219,11 +244,11 @@ export function ProjectTaskActivityFeed({
               const target = event.currentTarget
               const start = target.selectionStart
               const end = target.selectionEnd
-              const nextComment = `${comment.slice(0, start)}\n${comment.slice(end)}`
+              const currentValue = target.value
+              const nextComment = `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`
+              target.value = nextComment
+              target.setSelectionRange(start + 1, start + 1)
               setComment(nextComment)
-              requestAnimationFrame(() => {
-                target.setSelectionRange(start + 1, start + 1)
-              })
               return
             }
             event.preventDefault()
@@ -257,7 +282,11 @@ function TaskActivityItem({
   activity: ProjectTaskActivity
   assigneeNames: Record<string, string>
 }) {
-  const name = activity.actor.nickname || activity.actor.name
+  const name =
+    assigneeNames[activity.actor.id] ||
+    activity.actor.nickname ||
+    activity.actor.name ||
+    "用户"
   return (
     <article className="text-sm">
       <div className="min-w-0">

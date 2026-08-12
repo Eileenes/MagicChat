@@ -142,7 +142,8 @@ func TestServiceUpdatesProfileAndOnlineActivity(t *testing.T) {
 	db := openAccountTestDB(t)
 	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)
 	user := insertAccountTestUser(t, db, "alice@example.com", "test-password", now)
-	service := NewService(Dependencies{DB: db})
+	notifications := &accountProfileNotificationRecorder{}
+	service := NewService(Dependencies{DB: db, ProfileNotifications: notifications})
 	nickname := " Alice A "
 	avatar := "/assets/avatars/builtin/03.webp"
 
@@ -156,6 +157,9 @@ func TestServiceUpdatesProfileAndOnlineActivity(t *testing.T) {
 	}
 	if updated.Avatar != avatar || updated.Nickname != "Alice A" {
 		t.Fatalf("updated account = %#v", updated)
+	}
+	if notifications.userID != user.ID || !notifications.updatedAt.Equal(updated.UpdatedAt) {
+		t.Fatalf("profile notification = %#v", notifications)
 	}
 
 	activityAt := now.Add(time.Hour)
@@ -222,6 +226,16 @@ type recordingAvatarStorage struct {
 type fakePasswordLoginPolicy struct {
 	enabled bool
 	calls   int
+}
+
+type accountProfileNotificationRecorder struct {
+	updatedAt time.Time
+	userID    string
+}
+
+func (r *accountProfileNotificationRecorder) PublishUserProfileUpdated(_ context.Context, userID string, updatedAt time.Time) {
+	r.userID = userID
+	r.updatedAt = updatedAt
 }
 
 func (p *fakePasswordLoginPolicy) PasswordLoginEnabled(context.Context) (bool, error) {

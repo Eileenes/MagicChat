@@ -28,8 +28,14 @@ import {
 } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
+import { useOptionalClientData } from "@/lib/client-data-context"
 import type { ClientProjectMember } from "@/lib/project-data-api"
-import { listAllClientProjectMembers } from "@/lib/project-members"
+import {
+  hydrateClientProjectMembers,
+  listAllClientProjectMembers,
+} from "@/lib/project-members"
+
+const emptyCreateTaskUsersById = {}
 import { createClientProjectTask } from "@/lib/project-task-data-api"
 
 export function CreateProjectTaskDialog({
@@ -43,9 +49,16 @@ export function CreateProjectTaskDialog({
   open: boolean
   projectId: string
 }) {
+  const clientData = useOptionalClientData()
+  const ensureUsers = clientData?.ensureUsers
+  const usersById = clientData?.usersById ?? emptyCreateTaskUsersById
   const [assigneeUserId, setAssigneeUserId] = React.useState("")
   const [description, setDescription] = React.useState("")
-  const [members, setMembers] = React.useState<ClientProjectMember[]>([])
+  const [storedMembers, setMembers] = React.useState<ClientProjectMember[]>([])
+  const members = React.useMemo(
+    () => hydrateClientProjectMembers(storedMembers, usersById),
+    [storedMembers, usersById]
+  )
   const [membersError, setMembersError] = React.useState("")
   const [membersLoading, setMembersLoading] = React.useState(true)
   const [priority, setPriority] = React.useState<ProjectTaskPriority>(2)
@@ -62,6 +75,12 @@ export function CreateProjectTaskDialog({
 
     let active = true
     void listAllClientProjectMembers(projectId)
+      .then(async (nextMembers) => {
+        if (ensureUsers) {
+          await ensureUsers(nextMembers.map((member) => member.id))
+        }
+        return nextMembers
+      })
       .then((nextMembers) => {
         if (active) {
           setMembers(nextMembers.filter((member) => member.status === "active"))
@@ -83,7 +102,7 @@ export function CreateProjectTaskDialog({
     return () => {
       active = false
     }
-  }, [open, projectId])
+  }, [ensureUsers, open, projectId])
 
   const selectedAssignee = members.find(
     (member) => member.id === assigneeUserId

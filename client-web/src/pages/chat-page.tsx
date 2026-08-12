@@ -159,6 +159,7 @@ export function ChatPage() {
     openAppConversation,
     openDirectConversation,
     respondToChoice,
+    refreshContacts,
     refreshConversations,
     revokeConversationMessage,
     sendConversationFile,
@@ -955,8 +956,14 @@ export function ChatPage() {
         conversations={conversations}
         currentUser={me}
         drafts={drafts}
-        onCreateGroup={() => setCreateGroupDialogOpen(true)}
+        onCreateGroup={() => {
+          setCreateGroupDialogOpen(true)
+          void Promise.resolve(refreshContacts()).catch(() => undefined)
+        }}
         onDismissConversation={deleteConversation}
+        onOpenGlobalSearch={() =>
+          void Promise.resolve(refreshContacts()).catch(() => undefined)
+        }
         onSelectDirectoryItem={(item) => void selectDirectoryItem(item)}
         onSelectConversation={selectConversation}
         onSelectMessageResult={(result) =>

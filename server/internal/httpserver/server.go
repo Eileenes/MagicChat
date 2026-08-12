@@ -111,6 +111,8 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		cfg:            cfg,
 		asrRealtimeURL: defaultASRModelRealtimeURL,
 	}
+	realtimeOptions.RecordUserPong = server.recordUserPong
+	server.realtime = realtime.NewConnectionPool(realtimeOptions)
 	server.files = fileapp.NewService(fileapp.Dependencies{
 		DB:                  db,
 		Storage:             filestorage.New(cfg.Storage),
@@ -127,13 +129,14 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	})
 	server.adminApps = adminapi.NewAppAPI(server.apps)
 	server.clientApps = clientapi.NewAppAPI(server.apps)
-	server.settings = settingsapp.NewService(settingsapp.Dependencies{DB: db})
+	server.settings = settingsapp.NewService(settingsapp.Dependencies{DB: db, Notifications: server})
 	server.adminSettings = adminapi.NewSettingsAPI(server.settings)
 	server.adminPasswordLogin = adminapi.NewPasswordLoginSettingsAPI(server.settings)
 	server.accounts = account.NewService(account.Dependencies{
-		DB:                  db,
-		Files:               server.files,
-		PasswordLoginPolicy: server.settings,
+		DB:                   db,
+		Files:                server.files,
+		PasswordLoginPolicy:  server.settings,
+		ProfileNotifications: server,
 	})
 	server.clientAccounts = clientapi.NewAccountAPI(
 		server.accounts,
@@ -174,14 +177,12 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		Notifications: server,
 	})
 	server.clientTasks = clientapi.NewTaskAPI(server.tasks)
-	realtimeOptions.RecordUserPong = server.recordUserPong
-	server.realtime = realtime.NewConnectionPool(realtimeOptions)
 	server.dashboard = dashboard.NewService(dashboard.Dependencies{
 		DB: db, Presence: server.realtime,
 	})
 	server.adminDashboard = adminapi.NewDashboardAPI(server.dashboard)
 	server.userManagement = usermanagement.NewService(usermanagement.Dependencies{
-		DB: db, Presence: server.realtime, AppConnections: server.appConnections,
+		DB: db, Presence: server.realtime, AppConnections: server.appConnections, ProfileNotifications: server,
 	})
 	server.adminUsers = adminapi.NewUserAPI(server.userManagement)
 	server.identityProviders = identityprovider.NewService(identityprovider.Dependencies{DB: db})
@@ -192,6 +193,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientExternalAuth = clientapi.NewExternalAuthAPI(server.externalAuth, cfg.Server.ClientOrigin())
 	server.contacts = contactapp.NewService(contactapp.Dependencies{
 		DB: db, Apps: cfg.Apps, UserPresence: server.realtime, AppPresence: server.appConnections,
+		Settings: server.settings, Notifications: server,
 	})
 	server.clientContacts = clientapi.NewContactAPI(server.contacts)
 	server.messageContents = messagecontentapp.NewService(messagecontentapp.Dependencies{

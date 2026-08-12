@@ -75,7 +75,14 @@ import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { ClientProjectMember } from "@/lib/project-data-api"
-import { listAllClientProjectMembers } from "@/lib/project-members"
+import {
+  useOptionalClientData,
+  type ClientDataContextValue,
+} from "@/lib/client-data-context"
+import {
+  hydrateClientProjectMembers,
+  listAllClientProjectMembers,
+} from "@/lib/project-members"
 import {
   deleteClientProjectTask,
   getClientProjectTask,
@@ -83,6 +90,8 @@ import {
   type UpdateClientProjectTaskInput,
   updateClientProjectTask,
 } from "@/lib/project-task-data-api"
+
+const emptyTaskDetailsUsersById: ClientDataContextValue["usersById"] = {}
 
 type TaskEditForm = {
   assigneeUserId: string
@@ -123,11 +132,18 @@ export function ProjectTaskDetailsDialog({
   open: boolean
   task: ProjectTask
 }) {
+  const clientData = useOptionalClientData()
+  const ensureUsers = clientData?.ensureUsers
+  const usersById = clientData?.usersById ?? emptyTaskDetailsUsersById
   const initialForm = createTaskEditForm(task)
   const [baseline, setBaseline] = React.useState<NormalizedTaskEditForm>(() =>
     normalizeTaskEditForm(initialForm)
   )
-  const [details, setDetails] = React.useState(task)
+  const [storedDetails, setDetails] = React.useState(task)
+  const details = React.useMemo(
+    () => hydrateTaskDetailsUser(storedDetails, usersById),
+    [storedDetails, usersById]
+  )
   const [descriptionEditing, setDescriptionEditing] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -137,7 +153,11 @@ export function ProjectTaskDetailsDialog({
   const [labelOptions, setLabelOptions] = React.useState<string[]>([])
   const [labelsError, setLabelsError] = React.useState("")
   const [labelsLoading, setLabelsLoading] = React.useState(true)
-  const [members, setMembers] = React.useState<ClientProjectMember[]>([])
+  const [storedMembers, setMembers] = React.useState<ClientProjectMember[]>([])
+  const members = React.useMemo(
+    () => hydrateClientProjectMembers(storedMembers, usersById),
+    [storedMembers, usersById]
+  )
   const [membersError, setMembersError] = React.useState("")
   const [membersLoading, setMembersLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -162,7 +182,13 @@ export function ProjectTaskDetailsDialog({
 
     let active = true
     void getClientProjectTask(task.projectId, task.id)
-      .then((nextDetails) => {
+      .then(async (nextDetails) => {
+        if (ensureUsers) {
+          await ensureUsers([
+            nextDetails.creator.id,
+            ...(nextDetails.assignee ? [nextDetails.assignee.id] : []),
+          ])
+        }
         if (!active) {
           return
         }
@@ -188,6 +214,12 @@ export function ProjectTaskDetailsDialog({
       })
 
     void listAllClientProjectMembers(task.projectId)
+      .then(async (nextMembers) => {
+        if (ensureUsers) {
+          await ensureUsers(nextMembers.map((member) => member.id))
+        }
+        return nextMembers
+      })
       .then((nextMembers) => {
         if (active) {
           setMembers(nextMembers.filter((member) => member.status === "active"))
@@ -228,7 +260,7 @@ export function ProjectTaskDetailsDialog({
     return () => {
       active = false
     }
-  }, [open, task.id, task.projectId])
+  }, [ensureUsers, open, task.id, task.projectId])
 
   const normalizedForm = normalizeTaskEditForm(form)
   const validationError = getTaskEditValidationError(normalizedForm)
@@ -1087,6 +1119,33 @@ function reminderInputsEqual(
     JSON.stringify(normalizeReminderInput(left)) ===
     JSON.stringify(normalizeReminderInput(right))
   )
+}
+
+function hydrateTaskDetailsUser(
+  task: ProjectTask,
+  usersById: ClientDataContextValue["usersById"]
+) {
+  const creator = usersById[task.creator.id]
+  const assignee = task.assignee ? usersById[task.assignee.id] : undefined
+  return {
+    ...task,
+    creator: creator
+      ? {
+          avatar: creator.avatar,
+          id: creator.id,
+          name: creator.name,
+          nickname: creator.nickname,
+        }
+      : task.creator,
+    assignee: assignee
+      ? {
+          avatar: assignee.avatar,
+          id: assignee.id,
+          name: assignee.name,
+          nickname: assignee.nickname,
+        }
+      : task.assignee,
+  }
 }
 
 async function listAllProjectTaskLabels(

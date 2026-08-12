@@ -54,6 +54,27 @@ func TestConnectionPoolTracksUserConnectionsAndSendsToAllConnections(t *testing.
 	default:
 	}
 
+	if sent := pool.BroadcastExceptUser("user-1", message); sent != 1 {
+		t.Fatalf("BroadcastExceptUser() sent %d messages, want 1", sent)
+	}
+	select {
+	case got := <-other.Outgoing():
+		if got.Event != "test.event" {
+			t.Fatalf("other user got %#v, want test.event", got)
+		}
+	default:
+		t.Fatal("other user did not receive broadcast")
+	}
+	for name, outgoing := range map[string]<-chan Envelope{
+		"first": first.Outgoing(), "second": second.Outgoing(),
+	} {
+		select {
+		case got := <-outgoing:
+			t.Fatalf("excluded %s received %#v", name, got)
+		default:
+		}
+	}
+
 	if becameOffline := pool.Unregister(first); becameOffline {
 		t.Fatal("Unregister(first) = true, want user to stay online")
 	}

@@ -43,6 +43,36 @@ func TestServiceListsActiveUsersWithPresence(t *testing.T) {
 	}
 }
 
+func TestServiceResolvesActiveUsersByIDInRequestOrder(t *testing.T) {
+	db := openContactTestDB(t)
+	now := time.Date(2026, 7, 15, 10, 30, 0, 0, time.UTC)
+	alice := insertContactTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertContactTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	disabled := insertContactTestUser(t, db, "disabled@example.com", "Disabled", store.UserStatusDisabled, now)
+
+	service := NewService(Dependencies{DB: db, UserPresence: contactUserPresence{bob.ID: true}})
+	result, err := service.ResolveUsers(context.Background(), ResolveUsersCommand{
+		UserIDs: []string{bob.ID, disabled.ID, alice.ID, bob.ID},
+	})
+	if err != nil {
+		t.Fatalf("resolve users: %v", err)
+	}
+	if len(result.Users) != 2 || result.Users[0].ID != bob.ID || result.Users[1].ID != alice.ID {
+		t.Fatalf("users = %#v", result.Users)
+	}
+	if !result.Users[0].Online || !result.Users[0].UpdatedAt.Equal(bob.UpdatedAt) {
+		t.Fatalf("bob = %#v", result.Users[0])
+	}
+}
+
+func TestServiceRejectsInvalidResolveUsersRequest(t *testing.T) {
+	service := NewService(Dependencies{DB: openContactTestDB(t)})
+	_, err := service.ResolveUsers(context.Background(), ResolveUsersCommand{UserIDs: []string{"not-a-user-id"}})
+	if ErrorCodeOf(err) != CodeInvalidRequest {
+		t.Fatalf("error = %v, code = %s", err, ErrorCodeOf(err))
+	}
+}
+
 func TestServiceListsVisibleAppsAndGroups(t *testing.T) {
 	db := openContactTestDB(t)
 	now := time.Date(2026, 7, 15, 11, 0, 0, 0, time.UTC)

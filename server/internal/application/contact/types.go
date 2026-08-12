@@ -12,6 +12,12 @@ const (
 	ContactTypeUser  = "user"
 	ContactTypeApp   = "app"
 	ContactTypeGroup = "group"
+
+	DirectoryModeOrganization = "organization"
+	DirectoryModeFriends      = "friends"
+
+	FriendRequestDirectionIncoming = "incoming"
+	FriendRequestDirectionOutgoing = "outgoing"
 )
 
 type Identity struct {
@@ -29,6 +35,7 @@ type User struct {
 	Online       bool
 	Phone        string
 	Type         string
+	UpdatedAt    time.Time
 }
 
 type App struct {
@@ -43,9 +50,11 @@ type App struct {
 
 type GroupAvatarMember struct {
 	Avatar   string
+	ID       string
 	Name     string
 	Nickname string
 	Role     string
+	Type     string
 }
 
 type Group struct {
@@ -65,17 +74,84 @@ type ListCommand struct {
 }
 
 type ListResult struct {
-	Apps   []App
-	Groups []Group
-	Users  []User
+	Apps          []App
+	DirectoryMode string
+	Groups        []Group
+	Users         []User
 }
 
 type ListUsersCommand struct {
-	Keyword string
+	AccountID string
+	Keyword   string
 }
 
 type ListUsersResult struct {
 	Users []User
+}
+
+type ResolveUsersCommand struct {
+	UserIDs []string
+}
+
+type ResolveUsersResult struct {
+	Users []User
+}
+
+type FriendRequest struct {
+	ID              string
+	RequesterUserID string
+	AddresseeUserID string
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	HandledAt       *time.Time
+}
+
+type ListFriendRequestsCommand struct {
+	AccountID string
+	Direction string
+}
+
+type ListFriendRequestsResult struct {
+	Requests []FriendRequest
+}
+
+type CreateFriendRequestCommand struct {
+	AccountID string
+	UserID    string
+}
+
+type UpdateFriendRequestCommand struct {
+	AccountID string
+	RequestID string
+}
+
+type DeleteFriendCommand struct {
+	AccountID string
+	UserID    string
+}
+
+type SearchUsersCommand struct {
+	AccountID string
+	Query     string
+}
+
+type SearchUsersResult struct {
+	UserIDs []string
+}
+
+type FriendEvent struct {
+	RequestID string
+	Type      string
+	UserIDs   []string
+}
+
+type FriendNotifications interface {
+	PublishFriendEvent(context.Context, FriendEvent)
+}
+
+type DirectorySettings interface {
+	ContactDirectoryMode(context.Context) (string, error)
 }
 
 type ListForIdentityCommand struct {
@@ -94,6 +170,14 @@ type ListGroupsResult struct {
 type ClientService interface {
 	List(context.Context, ListCommand) (ListResult, error)
 	ListUsers(context.Context, ListUsersCommand) (ListUsersResult, error)
+	ResolveUsers(context.Context, ResolveUsersCommand) (ResolveUsersResult, error)
+	ListFriendRequests(context.Context, ListFriendRequestsCommand) (ListFriendRequestsResult, error)
+	CreateFriendRequest(context.Context, CreateFriendRequestCommand) (FriendRequest, error)
+	AcceptFriendRequest(context.Context, UpdateFriendRequestCommand) (FriendRequest, error)
+	RejectFriendRequest(context.Context, UpdateFriendRequestCommand) (FriendRequest, error)
+	CancelFriendRequest(context.Context, UpdateFriendRequestCommand) (FriendRequest, error)
+	DeleteFriend(context.Context, DeleteFriendCommand) error
+	SearchUsers(context.Context, SearchUsersCommand) (SearchUsersResult, error)
 }
 
 type AppService interface {

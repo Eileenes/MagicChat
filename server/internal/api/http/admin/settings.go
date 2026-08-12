@@ -13,9 +13,10 @@ type SettingsAPI struct {
 }
 
 type infoSettingsResponse struct {
-	AppName             string                             `json:"app_name" example:"即应"`
-	OrganizationName    string                             `json:"organization_name" example:"长亭科技"`
-	ThirdPartyProviders []publicThirdPartyProviderResponse `json:"third_party_providers"`
+	AppName              string                             `json:"app_name" example:"即应"`
+	OrganizationName     string                             `json:"organization_name" example:"长亭科技"`
+	ContactDirectoryMode string                             `json:"contact_directory_mode" enums:"organization,friends" example:"organization"`
+	ThirdPartyProviders  []publicThirdPartyProviderResponse `json:"third_party_providers"`
 }
 
 type publicThirdPartyProviderResponse struct {
@@ -24,8 +25,9 @@ type publicThirdPartyProviderResponse struct {
 }
 
 type updateInfoSettingsRequest struct {
-	AppName          string `json:"app_name" example:"即应"`
-	OrganizationName string `json:"organization_name" example:"长亭科技"`
+	AppName              string `json:"app_name" example:"即应"`
+	OrganizationName     string `json:"organization_name" example:"长亭科技"`
+	ContactDirectoryMode string `json:"contact_directory_mode" enums:"organization,friends" example:"organization"`
 }
 
 type successEnvelope struct {
@@ -89,8 +91,9 @@ func (a *SettingsAPI) updateInfoSettings(c echo.Context) error {
 		return writeFailure(c, http.StatusBadRequest, string(settingsapp.CodeInvalidRequest), "请求格式错误")
 	}
 	value, err := a.settings.Update(c.Request().Context(), settingsapp.UpdateCommand{
-		AppName:          req.AppName,
-		OrganizationName: req.OrganizationName,
+		AppName:              req.AppName,
+		OrganizationName:     req.OrganizationName,
+		ContactDirectoryMode: req.ContactDirectoryMode,
 	})
 	if err != nil {
 		return writeSettingsError(c, err)
@@ -100,9 +103,10 @@ func (a *SettingsAPI) updateInfoSettings(c echo.Context) error {
 
 func newInfoSettingsResponse(value settingsapp.Settings) infoSettingsResponse {
 	return infoSettingsResponse{
-		AppName:             value.AppName,
-		OrganizationName:    value.OrganizationName,
-		ThirdPartyProviders: []publicThirdPartyProviderResponse{},
+		AppName:              value.AppName,
+		OrganizationName:     value.OrganizationName,
+		ContactDirectoryMode: value.ContactDirectoryMode,
+		ThirdPartyProviders:  []publicThirdPartyProviderResponse{},
 	}
 }
 

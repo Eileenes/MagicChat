@@ -92,6 +92,8 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.User{},
 		&store.AdminSession{},
 		&store.UserSession{},
+		&store.UserFriendship{},
+		&store.UserFriendRequest{},
 		&store.Conversation{},
 		&store.ConversationMember{},
 		&store.ConversationUserPreference{},
@@ -551,12 +553,12 @@ func requireUsers(t *testing.T, data map[string]any) []any {
 func requireContacts(t *testing.T, data map[string]any) []any {
 	t.Helper()
 
-	contacts, ok := data["contacts"].([]any)
+	userIDs, ok := data["user_ids"].([]any)
 	if !ok {
-		t.Fatalf("contacts = %#v, want array", data["contacts"])
+		t.Fatalf("user_ids = %#v, want array", data["user_ids"])
 	}
 
-	return contacts
+	return userIDs
 }
 
 func requireThirdPartyLoginProviders(t *testing.T, data map[string]any) []any {
@@ -844,7 +846,7 @@ func dialAppWebSocket(t *testing.T, server *httptest.Server, appID string, secre
 	return conn
 }
 
-func readRealtimeEvent(t *testing.T, conn *websocket.Conn) realtime.Envelope {
+func readRawRealtimeEvent(t *testing.T, conn *websocket.Conn) realtime.Envelope {
 	t.Helper()
 
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
@@ -852,17 +854,36 @@ func readRealtimeEvent(t *testing.T, conn *websocket.Conn) realtime.Envelope {
 	if err := conn.ReadJSON(&envelope); err != nil {
 		t.Fatalf("ReadJSON() error = %v", err)
 	}
-
 	return envelope
+}
+
+func readRealtimeEvent(t *testing.T, conn *websocket.Conn) realtime.Envelope {
+	t.Helper()
+
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	for {
+		var envelope realtime.Envelope
+		if err := conn.ReadJSON(&envelope); err != nil {
+			t.Fatalf("ReadJSON() error = %v", err)
+		}
+		if envelope.Event != userPresenceUpdatedEvent {
+			return envelope
+		}
+	}
 }
 
 func requireNoRealtimeEvent(t *testing.T, conn *websocket.Conn) {
 	t.Helper()
 
 	_ = conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
-	var envelope realtime.Envelope
-	if err := conn.ReadJSON(&envelope); err == nil {
-		t.Fatalf("unexpected realtime envelope: %#v", envelope)
+	for {
+		var envelope realtime.Envelope
+		if err := conn.ReadJSON(&envelope); err != nil {
+			return
+		}
+		if envelope.Event != userPresenceUpdatedEvent {
+			t.Fatalf("unexpected realtime envelope: %#v", envelope)
+		}
 	}
 }
 
@@ -1053,6 +1074,40 @@ func TestClientWebSocketRequiresUserSession(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("Dial() status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestClientWebSocketBroadcastsPresenceTransitions(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice-presence@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob-presence@example.com", "Bob", store.UserStatusActive, now)
+	aliceConn := dialClientWebSocket(t, server, loginAsUser(t, server, alice.Email))
+	if ready := readRealtimeEvent(t, aliceConn); ready.Event != realtime.EventSystemReady {
+		t.Fatalf("alice ready envelope = %#v", ready)
+	}
+	bobConn := dialClientWebSocket(t, server, loginAsUser(t, server, bob.Email))
+	if ready := readRealtimeEvent(t, bobConn); ready.Event != realtime.EventSystemReady {
+		t.Fatalf("bob ready envelope = %#v", ready)
+	}
+
+	online := readRawRealtimeEvent(t, aliceConn)
+	var onlinePayload userPresenceUpdatedEventResponse
+	if online.Event != userPresenceUpdatedEvent || json.Unmarshal(online.Payload, &onlinePayload) != nil ||
+		onlinePayload.UserID != bob.ID || !onlinePayload.Online {
+		t.Fatalf("online envelope = %#v, payload = %#v", online, onlinePayload)
+	}
+
+	if err := bobConn.Close(); err != nil {
+		t.Fatalf("close bob websocket: %v", err)
+	}
+	offline := readRawRealtimeEvent(t, aliceConn)
+	var offlinePayload userPresenceUpdatedEventResponse
+	if offline.Event != userPresenceUpdatedEvent || json.Unmarshal(offline.Payload, &offlinePayload) != nil ||
+		offlinePayload.UserID != bob.ID || offlinePayload.Online || offlinePayload.LastOnlineAt == nil {
+		t.Fatalf("offline envelope = %#v, payload = %#v", offline, offlinePayload)
 	}
 }
 
@@ -4187,19 +4242,85 @@ func TestClientContactsIncludeRealtimePresence(t *testing.T) {
 	}
 	data := requireSuccess(t, body)
 	contacts := requireContacts(t, data)
-	bobContactIndex := slices.IndexFunc(contacts, func(contact any) bool {
-		contactMap, ok := contact.(map[string]any)
-		return ok && contactMap["id"] == bob.ID
-	})
-	if bobContactIndex < 0 {
-		t.Fatalf("contacts = %#v, want bob contact", contacts)
+	if !slices.ContainsFunc(contacts, func(value any) bool { return value == bob.ID }) {
+		t.Fatalf("user IDs = %#v, want bob", contacts)
 	}
-	bobContact := contacts[bobContactIndex].(map[string]any)
+	resolveResp, resolveBody := postJSON(t, server, "/api/client/users/resolve", map[string]any{"user_ids": []string{bob.ID}}, aliceCookie)
+	if resolveResp.StatusCode != http.StatusOK {
+		t.Fatalf("resolve status = %d, body = %#v", resolveResp.StatusCode, resolveBody)
+	}
+	resolvedUsers := requireUsers(t, requireSuccess(t, resolveBody))
+	if len(resolvedUsers) != 1 {
+		t.Fatalf("resolved users = %#v", resolvedUsers)
+	}
+	bobContact := resolvedUsers[0].(map[string]any)
 	if bobContact["online"] != true {
 		t.Fatalf("bob online = %#v, want true", bobContact["online"])
 	}
 	if bobContact["last_online_at"] != lastOnlineAt.Format(time.RFC3339) {
 		t.Fatalf("bob last_online_at = %#v, want %s", bobContact["last_online_at"], lastOnlineAt.Format(time.RFC3339))
+	}
+}
+
+func TestFriendModeLifecycleAndExactUserSearch(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice-friend-mode@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob-friend-mode@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol-friend-mode@example.com", "Carol", store.UserStatusActive, now)
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	bobCookie := loginAsUser(t, server, bob.Email)
+	adminCookie := loginAsAdmin(t, server)
+
+	settingsResp, settingsBody := putJSON(t, server, "/api/admin/settings/info", map[string]any{
+		"app_name": store.DefaultAppName, "organization_name": store.DefaultOrganizationName,
+		"contact_directory_mode": "friends",
+	}, adminCookie)
+	if settingsResp.StatusCode != http.StatusOK {
+		t.Fatalf("update directory mode status = %d, body = %#v", settingsResp.StatusCode, settingsBody)
+	}
+	createResp, createBody := postJSON(t, server, "/api/client/friend-requests", map[string]any{"user_id": bob.ID}, aliceCookie)
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create friend request status = %d, body = %#v", createResp.StatusCode, createBody)
+	}
+	request := requireSuccess(t, createBody)
+	requestID, _ := request["id"].(string)
+	if requestID == "" {
+		t.Fatalf("friend request = %#v", request)
+	}
+	acceptResp, acceptBody := postJSON(t, server, "/api/client/friend-requests/"+requestID+"/accept", map[string]any{}, bobCookie)
+	if acceptResp.StatusCode != http.StatusOK {
+		t.Fatalf("accept friend request status = %d, body = %#v", acceptResp.StatusCode, acceptBody)
+	}
+
+	contactsResp, contactsBody := getJSON(t, server, "/api/client/contacts", aliceCookie)
+	if contactsResp.StatusCode != http.StatusOK {
+		t.Fatalf("contacts status = %d, body = %#v", contactsResp.StatusCode, contactsBody)
+	}
+	contacts := requireSuccess(t, contactsBody)
+	if contacts["directory_mode"] != "friends" {
+		t.Fatalf("directory mode = %#v", contacts["directory_mode"])
+	}
+	userIDs := requireContacts(t, contacts)
+	containsUserID := func(userID string) bool {
+		return slices.ContainsFunc(userIDs, func(value any) bool { return value == userID })
+	}
+	if len(userIDs) != 2 || !containsUserID(alice.ID) || !containsUserID(bob.ID) || containsUserID(carol.ID) {
+		t.Fatalf("friend user IDs = %#v", userIDs)
+	}
+
+	searchResp, searchBody := postJSON(t, server, "/api/client/users/search", map[string]any{"query": carol.Email}, aliceCookie)
+	if searchResp.StatusCode != http.StatusOK {
+		t.Fatalf("search status = %d, body = %#v", searchResp.StatusCode, searchBody)
+	}
+	searchIDs := requireContacts(t, requireSuccess(t, searchBody))
+	if len(searchIDs) != 1 || searchIDs[0] != carol.ID {
+		t.Fatalf("search IDs = %#v", searchIDs)
+	}
+	resolveResp, resolveBody := postJSON(t, server, "/api/client/users/resolve", map[string]any{"user_ids": []string{carol.ID}}, aliceCookie)
+	if resolveResp.StatusCode != http.StatusOK || len(requireUsers(t, requireSuccess(t, resolveBody))) != 1 {
+		t.Fatalf("resolve non-friend status = %d, body = %#v", resolveResp.StatusCode, resolveBody)
 	}
 }
 
@@ -6095,8 +6216,8 @@ func TestCreateConversationMessageStoresReplyToAndReturnsReference(t *testing.T)
 		t.Fatalf("reply_to.summary = %v, want quoted summary", replyTo["summary"])
 	}
 	sender := replyTo["sender"].(map[string]any)
-	if sender["type"] != store.MessageSenderTypeUser || sender["id"] != bob.ID || sender["name"] != "Bob" {
-		t.Fatalf("reply_to.sender = %#v, want Bob user sender", sender)
+	if sender["type"] != store.MessageSenderTypeUser || sender["id"] != bob.ID || len(sender) != 2 {
+		t.Fatalf("reply_to.sender = %#v, want user ID and type", sender)
 	}
 
 	var storedMessage store.Message
@@ -11047,17 +11168,7 @@ func TestListContactsReturnsActiveUsersIncludingSelf(t *testing.T) {
 	contacts := requireContacts(t, requireSuccess(t, body))
 	ids := map[string]bool{}
 	for _, rawContact := range contacts {
-		contact := rawContact.(map[string]any)
-		ids[contact["id"].(string)] = true
-		if contact["type"] != "user" {
-			t.Fatalf("contact.type = %v, want user", contact["type"])
-		}
-		if _, ok := contact["nickname"].(string); !ok {
-			t.Fatalf("contact.nickname = %#v, want string", contact["nickname"])
-		}
-		if _, ok := contact["avatar"].(string); !ok {
-			t.Fatalf("contact.avatar = %#v, want string", contact["avatar"])
-		}
+		ids[rawContact.(string)] = true
 	}
 	if !ids[alice.ID] {
 		t.Fatal("contacts did not include current user")
@@ -11179,17 +11290,13 @@ func TestClientContactsReturnsVisibleAppsUsersAndGroups(t *testing.T) {
 		t.Fatal("contacts apps included disabled app")
 	}
 
-	users := data["users"].([]any)
+	users := data["user_ids"].([]any)
 	userIDs := map[string]bool{}
-	for _, rawUser := range users {
-		user := rawUser.(map[string]any)
-		userIDs[user["id"].(string)] = true
-		if user["type"] != "user" {
-			t.Fatalf("user.type = %v, want user", user["type"])
-		}
+	for _, rawUserID := range users {
+		userIDs[rawUserID.(string)] = true
 	}
 	if !userIDs[alice.ID] || !userIDs[bob.ID] {
-		t.Fatalf("users = %#v, want alice and bob", users)
+		t.Fatalf("user IDs = %#v, want alice and bob", users)
 	}
 	if userIDs[disabledUser.ID] {
 		t.Fatal("contacts users included disabled user")
@@ -11276,14 +11383,8 @@ func TestListContactsSearchesNameEmailNicknameAndPhone(t *testing.T) {
 	if len(contacts) != 1 {
 		t.Fatalf("contact count = %d, want 1", len(contacts))
 	}
-	contact := contacts[0].(map[string]any)
-	if contact["email"] != "bob@example.com" {
-		t.Fatalf("contact.email = %v, want bob@example.com", contact["email"])
-	}
-	if contact["phone"] != "+8613900000002" {
-		t.Fatalf("contact.phone = %v, want normalized phone", contact["phone"])
-	}
-	if contact["id"] == alice["id"] {
+	contactID := contacts[0].(string)
+	if contactID == alice["id"] {
 		t.Fatal("phone keyword matched the current user unexpectedly")
 	}
 }

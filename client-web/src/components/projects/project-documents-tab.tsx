@@ -79,6 +79,10 @@ import {
   type ClientDocument,
   type ClientDocumentKind,
 } from "@/lib/document-data-api"
+import {
+  useClientData,
+  type ClientDataContextValue,
+} from "@/lib/client-data-context"
 import { cn } from "@/lib/utils"
 
 type DocumentTreeNode = ClientDocument & { children: DocumentTreeNode[] }
@@ -97,11 +101,18 @@ type EditDialogState =
   | null
 
 export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
+  const { ensureUsers, usersById } = useClientData()
   const [activeId, setActiveId] = React.useState<string | null>(null)
   const [deleteNode, setDeleteNode] = React.useState<DocumentTreeNode | null>(
     null
   )
-  const [documentTree, setDocumentTree] = React.useState<DocumentTreeNode[]>([])
+  const [storedDocumentTree, setDocumentTree] = React.useState<
+    DocumentTreeNode[]
+  >([])
+  const documentTree = React.useMemo(
+    () => hydrateDocumentTreeUsers(storedDocumentTree, usersById),
+    [storedDocumentTree, usersById]
+  )
   const [editDialog, setEditDialog] = React.useState<EditDialogState>(null)
   const [error, setError] = React.useState("")
   const [expandedFolderIds, setExpandedFolderIds] = React.useState<Set<string>>(
@@ -123,6 +134,7 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
       const requestId = ++requestIdRef.current
       try {
         const documents = await listClientDocuments(projectId)
+        await ensureDocumentUsers(documents, ensureUsers)
         if (requestId !== requestIdRef.current) return
         const tree = buildDocumentTree(documents)
         setDocumentTree(tree)
@@ -137,12 +149,16 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
         if (requestId === requestIdRef.current) setLoading(false)
       }
     },
-    [projectId]
+    [ensureUsers, projectId]
   )
 
   React.useEffect(() => {
     const requestId = ++requestIdRef.current
     void listClientDocuments(projectId)
+      .then(async (documents) => {
+        await ensureDocumentUsers(documents, ensureUsers)
+        return documents
+      })
       .then((documents) => {
         if (requestId === requestIdRef.current) {
           const tree = buildDocumentTree(documents)
@@ -164,7 +180,7 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
     return () => {
       requestIdRef.current += 1
     }
-  }, [projectId])
+  }, [ensureUsers, projectId])
 
   const normalizedKeyword = keyword.trim().toLocaleLowerCase()
   const searching = normalizedKeyword.length > 0
@@ -955,6 +971,43 @@ function DocumentDragOverlay({ node }: { node: DocumentTreeNode }) {
       <div className="truncate text-sm font-medium">{node.title}</div>
     </div>
   )
+}
+
+async function ensureDocumentUsers(
+  documents: ClientDocument[],
+  ensureUsers: (userIds: string[]) => Promise<void>
+) {
+  const ids = new Set<string>()
+  for (const document of documents) {
+    ids.add(document.creator.id)
+    ids.add(document.updatedBy.id)
+    for (const contributor of document.contributors) ids.add(contributor.id)
+  }
+  await ensureUsers(Array.from(ids))
+}
+
+function hydrateDocumentTreeUsers(
+  tree: DocumentTreeNode[],
+  usersById: ClientDataContextValue["usersById"]
+): DocumentTreeNode[] {
+  const hydrateUser = (user: ClientDocument["creator"]) => {
+    const profile = usersById[user.id]
+    return profile
+      ? {
+          avatar: profile.avatar,
+          id: profile.id,
+          name: profile.name,
+          nickname: profile.nickname,
+        }
+      : user
+  }
+  return tree.map((document) => ({
+    ...document,
+    children: hydrateDocumentTreeUsers(document.children, usersById),
+    contributors: document.contributors.map(hydrateUser),
+    creator: hydrateUser(document.creator),
+    updatedBy: hydrateUser(document.updatedBy),
+  }))
 }
 
 function buildDocumentTree(documents: ClientDocument[]): DocumentTreeNode[] {

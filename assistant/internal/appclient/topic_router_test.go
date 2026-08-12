@@ -24,6 +24,28 @@ func topicRouterDecision(needsTopic bool) topicRouter {
 	})
 }
 
+func TestTopicRouterPromptUsesThinkingAndExecutionComplexity(t *testing.T) {
+	for _, rule := range []string{
+		"需要深度思考或实际执行，任一条件满足就创建独立话题",
+		"需要多阶段推理、系统分析",
+		"需要调用工具、查询外部或实时数据",
+		"困难的问题也可以创建话题",
+		"“查询今天北京的天气” => needs_topic=true",
+	} {
+		if !strings.Contains(topicRouterSystemPrompt, rule) {
+			t.Errorf("topic router prompt missing rule %q", rule)
+		}
+	}
+	for _, obsoleteRule := range []string{
+		"单次查询或单步操作",
+		"单纯问问题或展开讨论不创建话题",
+	} {
+		if strings.Contains(topicRouterSystemPrompt, obsoleteRule) {
+			t.Errorf("topic router prompt contains obsolete rule %q", obsoleteRule)
+		}
+	}
+}
+
 func TestModelTopicRouterReturnsBooleanDecision(t *testing.T) {
 	for _, needsTopic := range []bool{false, true} {
 		t.Run(fmt.Sprintf("needs_topic=%t", needsTopic), func(t *testing.T) {

@@ -55,6 +55,26 @@ describe("ContactDetailPanel", () => {
     expect(screen.getByRole("button", { name: "发消息" })).toBeInTheDocument()
   })
 
+  it("renders an add-friend action for a visible non-friend", async () => {
+    const onAddFriend = vi.fn()
+    render(
+      <ContactDetailPanel
+        addFriendLabel="添加好友"
+        canStartConversation={false}
+        contact={{ ...contact, id: "other-user" }}
+        onAddFriend={onAddFriend}
+        onStartConversation={vi.fn()}
+        startingConversation={false}
+      />
+    )
+
+    screen.getByRole("button", { name: "添加好友" }).click()
+    expect(onAddFriend).toHaveBeenCalledOnce()
+    expect(
+      screen.queryByRole("button", { name: "发消息" })
+    ).not.toBeInTheDocument()
+  })
+
   it("constrains long profile values to the detail panel width", () => {
     const longName = "名字".repeat(100)
     render(

@@ -26,6 +26,7 @@ type Dependencies struct {
 	DB                      *gorm.DB
 	Presence                PresencePort
 	AppConnections          AppConnectionPort
+	ProfileNotifications    ProfileNotifications
 	Now                     func() time.Time
 	NewID                   func() string
 	GenerateInitialPassword func(int) (string, error)
@@ -37,6 +38,7 @@ type Service struct {
 	db                      *gorm.DB
 	presence                PresencePort
 	appConnections          AppConnectionPort
+	profileNotifications    ProfileNotifications
 	now                     func() time.Time
 	newID                   func() string
 	generateInitialPassword func(int) (string, error)
@@ -66,7 +68,7 @@ func NewService(deps Dependencies) *Service {
 		generateAvatar = randomBuiltinAvatar
 	}
 	return &Service{
-		db: deps.DB, presence: deps.Presence, appConnections: deps.AppConnections, now: now, newID: newID,
+		db: deps.DB, presence: deps.Presence, appConnections: deps.AppConnections, profileNotifications: deps.ProfileNotifications, now: now, newID: newID,
 		generateInitialPassword: generateInitialPassword, hashPassword: hashPassword,
 		generateAvatar: generateAvatar,
 	}
@@ -249,6 +251,9 @@ func (s *Service) SetStatus(ctx context.Context, cmd SetStatusCommand) (User, er
 	}
 	if cmd.Status == store.UserStatusDisabled && s.presence != nil {
 		s.presence.CloseUser(storedUser.ID)
+	}
+	if s.profileNotifications != nil {
+		s.profileNotifications.PublishUserProfileUpdated(ctx, storedUser.ID, storedUser.UpdatedAt)
 	}
 	if cmd.Status == store.UserStatusDisabled && s.appConnections != nil {
 		for _, appID := range ownedAppIDs {

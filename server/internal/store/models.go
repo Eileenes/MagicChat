@@ -74,6 +74,14 @@ const (
 	DefaultAppName          = "即应"
 	DefaultOrganizationName = "长亭科技"
 	DefaultUserAvatar       = "/assets/avatars/builtin/01.webp"
+
+	ContactDirectoryModeOrganization = "organization"
+	ContactDirectoryModeFriends      = "friends"
+
+	FriendRequestStatusPending  = "pending"
+	FriendRequestStatusAccepted = "accepted"
+	FriendRequestStatusRejected = "rejected"
+	FriendRequestStatusCanceled = "canceled"
 )
 
 type User struct {
@@ -88,6 +96,22 @@ type User struct {
 	LastOnlineAt *time.Time
 	CreatedAt    time.Time `gorm:"not null"`
 	UpdatedAt    time.Time `gorm:"not null"`
+}
+
+type UserFriendship struct {
+	UserIDLow  string    `gorm:"type:uuid;primaryKey"`
+	UserIDHigh string    `gorm:"type:uuid;primaryKey"`
+	CreatedAt  time.Time `gorm:"not null"`
+}
+
+type UserFriendRequest struct {
+	ID              string    `gorm:"type:uuid;primaryKey"`
+	RequesterUserID string    `gorm:"type:uuid;not null;index"`
+	AddresseeUserID string    `gorm:"type:uuid;not null;index"`
+	Status          string    `gorm:"size:32;not null;index"`
+	CreatedAt       time.Time `gorm:"not null"`
+	UpdatedAt       time.Time `gorm:"not null"`
+	HandledAt       *time.Time
 }
 
 type AdminSession struct {
@@ -492,6 +516,7 @@ type AppSettings struct {
 	ID                    int       `gorm:"primaryKey"`
 	AppName               string    `gorm:"size:120;not null"`
 	OrganizationName      string    `gorm:"size:160;not null"`
+	ContactDirectoryMode  string    `gorm:"size:32;not null;default:organization"`
 	PasswordLoginEnabled  bool      `gorm:"not null;default:true"`
 	EmailCodeLoginEnabled bool      `gorm:"not null;default:false"`
 	SMTPHost              string    `gorm:"size:255;not null;default:''"`

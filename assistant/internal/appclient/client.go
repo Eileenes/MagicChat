@@ -50,7 +50,7 @@ const (
 	methodEventsAck                = "events.ack"
 
 	defaultConversationContextLimit = 30
-	complexTaskTopicNotice          = "这个工作有点复杂，我会创建一个独立的话题来跟进。"
+	deepWorkTopicNotice             = "这个请求需要进一步处理，我会创建一个独立的话题来跟进。"
 )
 
 var appMentionTokenPattern = regexp.MustCompile(`\{\(@app/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)\}`)
@@ -712,7 +712,7 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 		}
 		if needsTopic {
 			notice, err := sendMarkdownReplyRequest(
-				ctx, requester, payload.Conversation, complexTaskTopicNotice, payload.Message.ID,
+				ctx, requester, payload.Conversation, deepWorkTopicNotice, payload.Message.ID,
 			)
 			if err != nil {
 				log.Printf("send agent topic notice failed: %v", err)

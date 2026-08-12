@@ -89,6 +89,10 @@ type ActivityRecorder interface {
 	RecordOnlineActivity(context.Context, string, time.Time) error
 }
 
+type ProfileNotifications interface {
+	PublishUserProfileUpdated(context.Context, string, time.Time)
+}
+
 type PasswordLoginPolicy interface {
 	PasswordLoginEnabled(context.Context) (bool, error)
 }

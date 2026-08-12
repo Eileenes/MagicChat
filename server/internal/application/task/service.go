@@ -364,9 +364,6 @@ func (s *Service) ListActivities(ctx context.Context, cmd ListActivitiesCommand)
 		}
 		result = append(result, activity)
 	}
-	if err := hydrateActivityAssignees(s.db.WithContext(ctx), result); err != nil {
-		return ActivityListResult{}, internalError(err)
-	}
 	slices.Reverse(result)
 	return ActivityListResult{Activities: result, NextCursor: nextCursor}, nil
 }
@@ -806,11 +803,7 @@ func buildTaskActivityChanges(before, after store.Task, reminderChanged bool) []
 		appendChange("priority", before.Priority, after.Priority)
 	}
 	if !equalStrings(before.AssigneeUserID, after.AssigneeUserID) {
-		appendChange(
-			"assignee",
-			taskAssigneeActivityValue(before.AssigneeUser, before.AssigneeUserID),
-			taskAssigneeActivityValue(after.AssigneeUser, after.AssigneeUserID),
-		)
+		appendChange("assignee", optionalStringValue(before.AssigneeUserID), optionalStringValue(after.AssigneeUserID))
 	}
 	if !equalDates(before.StartDate, after.StartDate) {
 		appendChange("start_date", optionalDateValue(before.StartDate), optionalDateValue(after.StartDate))
@@ -827,67 +820,11 @@ func buildTaskActivityChanges(before, after store.Task, reminderChanged bool) []
 	return changes
 }
 
-func hydrateActivityAssignees(db *gorm.DB, activities []Activity) error {
-	ids := make(map[string]struct{})
-	for _, activity := range activities {
-		for _, change := range activity.Changes {
-			if change.Field != "assignee" {
-				continue
-			}
-			if id, ok := change.From.(string); ok {
-				ids[id] = struct{}{}
-			}
-			if id, ok := change.To.(string); ok {
-				ids[id] = struct{}{}
-			}
-		}
-	}
-	if len(ids) == 0 {
+func optionalStringValue(value *string) any {
+	if value == nil {
 		return nil
 	}
-	userIDs := make([]string, 0, len(ids))
-	for id := range ids {
-		userIDs = append(userIDs, id)
-	}
-	var users []store.User
-	if err := db.Where("id IN ?", userIDs).Find(&users).Error; err != nil {
-		return err
-	}
-	usersByID := make(map[string]*store.User, len(users))
-	for index := range users {
-		usersByID[users[index].ID] = &users[index]
-	}
-	for activityIndex := range activities {
-		for changeIndex := range activities[activityIndex].Changes {
-			change := &activities[activityIndex].Changes[changeIndex]
-			if change.Field != "assignee" {
-				continue
-			}
-			change.From = hydrateActivityAssigneeValue(change.From, usersByID)
-			change.To = hydrateActivityAssigneeValue(change.To, usersByID)
-		}
-	}
-	return nil
-}
-
-func hydrateActivityAssigneeValue(value any, usersByID map[string]*store.User) any {
-	id, ok := value.(string)
-	if !ok {
-		return value
-	}
-	return taskAssigneeActivityValue(usersByID[id], &id)
-}
-
-func taskAssigneeActivityValue(user *store.User, userID *string) any {
-	if userID == nil {
-		return nil
-	}
-	result := map[string]any{"id": *userID}
-	if user != nil {
-		result["name"] = user.Name
-		result["nickname"] = user.Nickname
-	}
-	return result
+	return *value
 }
 
 func optionalDateValue(value *time.Time) any {

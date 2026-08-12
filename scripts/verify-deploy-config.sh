@@ -251,19 +251,19 @@ assert_not_contains "homepage/src/styles/global.css" "HarmonyOS Sans SC"
 assert_not_contains "homepage/src/styles/global.css" "harmonyos-sans"
 assert_not_contains "homepage/src/styles/global.css" "Maple Mono CN"
 assert_not_contains "homepage/src/styles/global.css" "maple-mono"
-assert_contains "homepage/src/styles/global.css" "--teal: #14b8a6"
-assert_contains "homepage/src/styles/global.css" "--violet: #8b5cf6"
-assert_contains "homepage/src/styles/global.css" "--coral: #f59e0b"
+assert_contains "homepage/src/styles/global.css" "--green: #14b8a6"
+assert_contains "homepage/src/styles/global.css" "--green-dark: #0f766e"
 assert_contains "homepage/src/styles/global.css" "--container: 1280px"
-assert_contains "homepage/src/styles/global.css" "--transition-fast: 160ms ease"
-assert_contains "homepage/src/styles/global.css" "@media (max-width: 767px)"
+assert_contains "homepage/src/styles/global.css" "--ease: cubic-bezier"
+assert_contains "homepage/src/styles/global.css" "@media (max-width: 620px)"
 assert_contains "homepage/astro.config.mjs" "plugins: [tailwindcss()]"
 assert_not_contains "homepage/astro.config.mjs" "harmonyos-sans-sc-webfont-splitted"
 assert_contains "homepage/src/components/SiteHeader.astro" 'href="https://github.com/chaitin/MagicChat"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'target="_blank"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'rel="noopener noreferrer"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'name="tabler:brand-github-filled"'
-assert_contains "homepage/src/pages/index.astro" "开源 · 支持免费私有化部署"
+assert_contains "homepage/src/pages/index.astro" "内置 AI 助理茉莉"
+assert_contains "homepage/src/pages/index.astro" "支持免费私有化部署"
 assert_contains "homepage/src/pages/index.astro" "核心产品代码开源"
 assert_contains "homepage/src/pages/index.astro" "免费安装"
 assert_contains "homepage/src/pages/index.astro" "办公 AI 助理"
@@ -271,8 +271,6 @@ assert_contains "homepage/src/pages/index.astro" 'href="https://app.jiying.chat/
 assert_contains "homepage/src/components/SiteFooter.astro" 'href={`${import.meta.env.BASE_URL}privacy/`}'
 assert_not_contains "homepage/src/pages/index.astro" "chat.chaitin.net"
 assert_not_contains "homepage/src/components/SiteFooter.astro" "chat.chaitin.net"
-assert_not_contains "homepage/src/pages/index.astro" "茉莉"
-assert_not_contains "homepage/src/components/SiteFooter.astro" "茉莉"
 assert_not_contains "homepage/src/components/SiteHeader.astro" "desktop-nav"
 assert_not_contains "homepage/src/components/SiteHeader.astro" "mobile-nav"
 assert_contains "homepage/package.json" '"astro-icon"'

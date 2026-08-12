@@ -61,6 +61,27 @@ vi.mock("@/lib/project-data-api", () => ({
   getClientProject: (...args: unknown[]) => getClientProject(...args),
 }))
 
+vi.mock("@/components/conversation/send-card-dialog", () => ({
+  StandaloneCardDialog: ({
+    card,
+    open,
+  }: {
+    card: { description: string; title: string; url: string }
+    open: boolean
+  }) =>
+    open ? (
+      <div
+        aria-label="发送到对话"
+        data-card-title={card.title}
+        data-url={card.url}
+        role="dialog"
+      >
+        {card.title}
+        {card.description}
+      </div>
+    ) : null,
+}))
+
 vi.mock("@/components/documents/document-workspace-sidebar", () => ({
   DocumentWorkspaceSidebar: () => <aside>文档侧栏</aside>,
 }))
@@ -162,6 +183,43 @@ describe("DocumentPage", () => {
     expect(
       await screen.findByText("文档不存在", { selector: "p" })
     ).toBeInTheDocument()
+  })
+
+  it("opens a dialog to send the document card to a conversation", async () => {
+    const user = userEvent.setup()
+    renderDocumentPage()
+
+    await user.click(await screen.findByLabelText("更多文档操作"))
+    await user.click(
+      await screen.findByRole("menuitem", { name: "发送到对话" })
+    )
+
+    const dialog = await screen.findByRole("dialog", { name: "发送到对话" })
+    expect(dialog).toHaveTextContent("文档 - 产品需求文档")
+    expect(dialog).toHaveTextContent("项目: 产品项目")
+    expect(dialog).toHaveAttribute(
+      "data-url",
+      `/documents/document/${document.id}`
+    )
+  })
+
+  it("bounds long document titles for message cards", async () => {
+    const user = userEvent.setup()
+    getClientDocument.mockResolvedValueOnce({
+      ...document,
+      title: "文".repeat(300),
+    })
+    renderDocumentPage()
+
+    await user.click(await screen.findByLabelText("更多文档操作"))
+    await user.click(
+      await screen.findByRole("menuitem", { name: "发送到对话" })
+    )
+
+    const dialog = await screen.findByRole("dialog", { name: "发送到对话" })
+    const cardTitle = dialog.getAttribute("data-card-title") ?? ""
+    expect(Array.from(cardTitle)).toHaveLength(256)
+    expect(cardTitle).toMatch(/^文档 - .+…$/)
   })
 
   it("confirms deletion and returns to the project document list", async () => {

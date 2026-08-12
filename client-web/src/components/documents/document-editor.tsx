@@ -9,7 +9,6 @@ import { TableKit } from "@tiptap/extension-table"
 import TextAlign from "@tiptap/extension-text-align"
 import { Color, TextStyle } from "@tiptap/extension-text-style"
 import { EditorContent, useEditor, type Editor } from "@tiptap/react"
-import StarterKit from "@tiptap/starter-kit"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import { toast } from "sonner"
 import type * as Y from "yjs"
@@ -17,11 +16,13 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
+  ArrowDown,
+  ArrowLeftRight,
+  ArrowUp,
   Baseline,
   Bold,
   ChevronDown,
   Code,
-  Copy,
   GripVertical,
   Heading1,
   Heading2,
@@ -47,10 +48,15 @@ import {
   Unlink,
 } from "lucide-react"
 
+import {
+  DocumentBlockBackground,
+  documentBlockBackgroundTypes,
+} from "@/components/documents/document-block-background-extension"
 import { DocumentControlSeparator } from "@/components/documents/document-control-separator"
 import { DocumentHorizontalRule } from "@/components/documents/document-horizontal-rule-extension"
 import { DocumentImage } from "@/components/documents/document-image-extension"
 import { DocumentImageResolutionContext } from "@/components/documents/document-image-resolution"
+import { DocumentStarterKit } from "@/components/documents/document-inline-code-extension"
 import { DocumentTaskItem } from "@/components/documents/document-task-item-extension"
 import { sanitizeDocumentPasteHTML } from "@/components/documents/document-paste-sanitizer"
 import { useDocumentImageResolutions } from "@/components/documents/use-document-image-resolutions"
@@ -105,7 +111,7 @@ export function DocumentEditor({
         transformPastedHTML: sanitizeDocumentPasteHTML,
       },
       extensions: [
-        StarterKit.configure({
+        DocumentStarterKit.configure({
           heading: { levels: [1, 2, 3] },
           horizontalRule: false,
           link: { openOnClick: false },
@@ -123,6 +129,9 @@ export function DocumentEditor({
         DocumentHorizontalRule,
         DocumentImage,
         Highlight.configure({ multicolor: true }),
+        DocumentBlockBackground.configure({
+          allowedColors: documentColors.map((color) => color.value),
+        }),
         TextStyle,
         Color,
         TextAlign.configure({
@@ -191,6 +200,9 @@ function renderCollaborationSelection(user: Record<string, unknown>) {
   }
 }
 
+const blockHandleButtonClassName =
+  "cursor-grab bg-transparent text-muted-foreground/60 shadow-none hover:bg-secondary hover:text-foreground active:cursor-grabbing aria-expanded:bg-secondary aria-expanded:text-foreground"
+
 function DocumentBlockHandle({ editor }: { editor: Editor }) {
   const [menuOpen, setMenuOpen] = React.useState(false)
   const activeBlockElementRef = React.useRef<Element | null>(null)
@@ -213,7 +225,7 @@ function DocumentBlockHandle({ editor }: { editor: Editor }) {
       if (handleHoveredRef.current) {
         activeBlockElementRef.current?.classList.add("document-block-active")
       }
-      setActiveBlock(node ? { nodeSize: node.nodeSize, pos } : null)
+      if (node) setActiveBlock({ nodeSize: node.nodeSize, pos })
     },
     [editor]
   )
@@ -231,18 +243,40 @@ function DocumentBlockHandle({ editor }: { editor: Editor }) {
     editor.commands.setMeta("lockDragHandle", open)
   }
 
-  function duplicateBlock() {
+  function insertParagraph(position: "after" | "before") {
     if (!activeBlock) return
-    const node = editor.state.doc.nodeAt(activeBlock.pos)
-    if (!node) return
+    const paragraph = editor.schema.nodes.paragraph
+    if (!paragraph) return
 
-    const insertPos = activeBlock.pos + activeBlock.nodeSize
+    const insertPos =
+      position === "before"
+        ? activeBlock.pos
+        : activeBlock.pos + activeBlock.nodeSize
     editor.view.dispatch(
-      editor.state.tr
-        .insert(insertPos, node.copy(node.content))
-        .scrollIntoView()
+      editor.state.tr.insert(insertPos, paragraph.create()).scrollIntoView()
     )
     editor.commands.focus(insertPos + 1)
+  }
+
+  function setBlockTextColor(color: string | null) {
+    if (!activeBlock) return
+    const chain = editor.chain().focus().setNodeSelection(activeBlock.pos)
+    if (color) chain.setColor(color).run()
+    else chain.unsetColor().run()
+  }
+
+  function setBlockBackgroundColor(color: string | null) {
+    if (!activeBlock) return
+    const node = editor.state.doc.nodeAt(activeBlock.pos)
+    if (!node || !documentBlockBackgroundTypes.includes(node.type.name)) return
+
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(activeBlock.pos, undefined, {
+        ...node.attrs,
+        blockBackgroundColor: color,
+      })
+    )
+    editor.commands.focus()
   }
 
   function deleteBlock() {
@@ -319,29 +353,37 @@ function DocumentBlockHandle({ editor }: { editor: Editor }) {
     <DragHandle
       className="document-block-handle"
       editor={editor}
-      nested
       onNodeChange={handleNodeChange}
     >
       <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button
             aria-label="块操作"
-            className="cursor-grab bg-background shadow-xs active:cursor-grabbing"
+            className={blockHandleButtonClassName}
             onMouseEnter={() => setBlockHighlight(true)}
             onMouseLeave={() => setBlockHighlight(false)}
             size="icon-xs"
             title="点击打开菜单，拖动调整位置"
             type="button"
-            variant="outline"
+            variant="secondary"
           >
-            <GripVertical />
+            <GripVertical className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-36" side="left">
+        <DropdownMenuContent align="start" className="w-44" side="left">
+          <DropdownMenuItem onSelect={() => insertParagraph("before")}>
+            <ArrowUp />
+            在上方插入一行
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => insertParagraph("after")}>
+            <ArrowDown />
+            在下方插入一行
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
-              <Pilcrow />
-              转换为
+              <ArrowLeftRight />
+              格式转换
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-40">
               <DropdownMenuItem onSelect={() => transformBlock("paragraph")}>
@@ -383,11 +425,34 @@ function DocumentBlockHandle({ editor }: { editor: Editor }) {
               </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={duplicateBlock}>
-            <Copy />
-            复制块
-          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Paintbrush />
+              段落背景
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-auto">
+              <DocumentColorPaletteItems
+                label="段落背景"
+                onColorSelect={setBlockBackgroundColor}
+                resetLabel="无段落背景"
+                resetSwatchClassName="bg-background"
+              />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Baseline />
+              文字颜色
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-auto">
+              <DocumentColorPaletteItems
+                label="文字颜色"
+                onColorSelect={setBlockTextColor}
+                resetLabel="默认颜色"
+                resetSwatchClassName="bg-foreground"
+              />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={deleteBlock} variant="destructive">
             <Trash2 />
@@ -946,19 +1011,29 @@ const documentColors = documentColorShades.flatMap((shade, shadeIndex) =>
   }))
 )
 
-function DocumentColorPalette({
-  label,
-  onColorSelect,
-  resetLabel,
-  resetSwatchClassName,
-}: {
+type DocumentColorPaletteProps = {
   label: string
   onColorSelect: (color: string | null) => void
   resetLabel: string
   resetSwatchClassName: string
-}) {
+}
+
+function DocumentColorPalette(props: DocumentColorPaletteProps) {
   return (
     <DropdownMenuContent align="center" className="w-auto">
+      <DocumentColorPaletteItems {...props} />
+    </DropdownMenuContent>
+  )
+}
+
+function DocumentColorPaletteItems({
+  label,
+  onColorSelect,
+  resetLabel,
+  resetSwatchClassName,
+}: DocumentColorPaletteProps) {
+  return (
+    <>
       <div className="flex items-center justify-between gap-3 px-1">
         <DropdownMenuLabel className="px-1">{label}</DropdownMenuLabel>
         <DropdownMenuItem
@@ -988,7 +1063,7 @@ function DocumentColorPalette({
           </DropdownMenuItem>
         ))}
       </div>
-    </DropdownMenuContent>
+    </>
   )
 }
 

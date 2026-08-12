@@ -16,23 +16,24 @@ import (
 func TestServiceCreatesDefaultsAndUpdatesSettings(t *testing.T) {
 	db := openSettingsTestDB(t)
 	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
-	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
+	notifications := &settingsNotificationRecorder{}
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }, Notifications: notifications})
 
 	value, err := service.Get(context.Background())
 	if err != nil {
 		t.Fatalf("get settings: %v", err)
 	}
-	if value.AppName != store.DefaultAppName || value.OrganizationName != store.DefaultOrganizationName {
+	if value.AppName != store.DefaultAppName || value.OrganizationName != store.DefaultOrganizationName || value.ContactDirectoryMode != ContactDirectoryModeOrganization {
 		t.Fatalf("default settings = %#v", value)
 	}
 
 	updated, err := service.Update(context.Background(), UpdateCommand{
-		AppName: "  星环协作  ", OrganizationName: " 长亭科技企业安全 ",
+		AppName: "  星环协作  ", OrganizationName: " 长亭科技企业安全 ", ContactDirectoryMode: ContactDirectoryModeFriends,
 	})
 	if err != nil {
 		t.Fatalf("update settings: %v", err)
 	}
-	if updated.AppName != "星环协作" || updated.OrganizationName != "长亭科技企业安全" {
+	if updated.AppName != "星环协作" || updated.OrganizationName != "长亭科技企业安全" || updated.ContactDirectoryMode != ContactDirectoryModeFriends {
 		t.Fatalf("updated settings = %#v", updated)
 	}
 
@@ -40,8 +41,11 @@ func TestServiceCreatesDefaultsAndUpdatesSettings(t *testing.T) {
 	if err := db.First(&stored, "id = ?", store.AppSettingsID).Error; err != nil {
 		t.Fatalf("load stored settings: %v", err)
 	}
-	if stored.AppName != updated.AppName || stored.OrganizationName != updated.OrganizationName || !stored.UpdatedAt.Equal(now) {
+	if stored.AppName != updated.AppName || stored.OrganizationName != updated.OrganizationName || stored.ContactDirectoryMode != ContactDirectoryModeFriends || !stored.UpdatedAt.Equal(now) {
 		t.Fatalf("stored settings = %#v", stored)
+	}
+	if notifications.mode != ContactDirectoryModeFriends {
+		t.Fatalf("notified directory mode = %q", notifications.mode)
 	}
 
 	passwordSettings, err := service.GetPasswordLogin(context.Background())
@@ -180,6 +184,12 @@ func openSettingsTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("migrate database: %v", err)
 	}
 	return db
+}
+
+type settingsNotificationRecorder struct{ mode string }
+
+func (r *settingsNotificationRecorder) PublishContactDirectoryModeUpdated(_ context.Context, mode string) {
+	r.mode = mode
 }
 
 func newSettingsTestProvider(key, name string, enabled bool, sortOrder int) store.ThirdPartyLoginProvider {

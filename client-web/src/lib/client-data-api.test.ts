@@ -3,17 +3,21 @@ import { describe, expect, it, vi } from "vitest"
 import {
   addGroupConversationMembers,
   ClientDataRequestError,
+  createFriendRequest,
   createGroupConversation,
   dismissConversation,
   formatClientMessageBodySummary,
   getCurrentClientUser,
   listClientContacts,
   listClientConversations,
+  listFriendRequests,
   listConversationMessages,
   normalizeMessageCreatedEventPayload,
   normalizeConversationPinUpdatedEventPayload,
   normalizeConversationMuteUpdatedEventPayload,
   normalizeClientMessageBody,
+  resolveClientUsers,
+  searchContactUsers,
   restoreConversation,
   sendConversationFileMessage,
   sendConversationImageMessage,
@@ -72,6 +76,54 @@ describe("client data API", () => {
     })
   })
 
+  it("resolves users by ID", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            users: [
+              {
+                avatar: "/assets/avatars/builtin/03.webp",
+                email: "bob@example.com",
+                id: "user-2",
+                last_online_at: "2026-07-03T01:00:00Z",
+                name: "Bob Li",
+                nickname: "",
+                online: true,
+                phone: "+8613912345679",
+                type: "user",
+                updated_at: "2026-07-03T02:00:00Z",
+              },
+            ],
+          },
+        }),
+        { headers: { "content-type": "application/json" }, status: 200 }
+      )
+    )
+
+    await expect(resolveClientUsers(["user-2"], fetcher)).resolves.toEqual([
+      {
+        avatar: "/assets/avatars/builtin/03.webp",
+        email: "bob@example.com",
+        id: "user-2",
+        lastOnlineAt: "2026-07-03T01:00:00Z",
+        name: "Bob Li",
+        nickname: "",
+        online: true,
+        phone: "+8613912345679",
+        type: "user",
+        updatedAt: "2026-07-03T02:00:00Z",
+      },
+    ])
+    expect(fetcher).toHaveBeenCalledWith("/api/client/users/resolve", {
+      body: JSON.stringify({ user_ids: ["user-2"] }),
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    })
+  })
+
   it("loads unified client contacts with credentials", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(
@@ -89,6 +141,7 @@ describe("client data API", () => {
                 type: "app",
               },
             ],
+            directory_mode: "organization",
             groups: [
               {
                 avatar: "",
@@ -97,10 +150,9 @@ describe("client data API", () => {
                 member_count: 1,
                 avatar_members: [
                   {
-                    avatar: "/assets/avatars/builtin/03.webp",
-                    name: "Bob Li",
-                    nickname: "",
+                    id: "user-2",
                     role: "member",
+                    type: "user",
                   },
                 ],
                 name: "已加入群",
@@ -108,19 +160,7 @@ describe("client data API", () => {
                 visibility: "private",
               },
             ],
-            users: [
-              {
-                avatar: "/assets/avatars/builtin/03.webp",
-                email: "bob@example.com",
-                id: "user-2",
-                last_online_at: "2026-07-03T01:00:00Z",
-                name: "Bob Li",
-                nickname: "",
-                online: true,
-                phone: "+8613912345679",
-                type: "user",
-              },
-            ],
+            user_ids: ["user-2"],
           },
         }),
         {
@@ -144,15 +184,18 @@ describe("client data API", () => {
           type: "app",
         },
       ],
+      directoryMode: "organization",
       groups: [
         {
           avatar: "",
           avatarMembers: [
             {
-              avatar: "/assets/avatars/builtin/03.webp",
-              name: "Bob Li",
+              avatar: "",
+              id: "user-2",
+              name: "",
               nickname: "",
               role: "member",
+              type: "user",
             },
           ],
           id: "group-1",
@@ -163,24 +206,58 @@ describe("client data API", () => {
           visibility: "private",
         },
       ],
-      users: [
-        {
-          avatar: "/assets/avatars/builtin/03.webp",
-          email: "bob@example.com",
-          id: "user-2",
-          lastOnlineAt: "2026-07-03T01:00:00Z",
-          name: "Bob Li",
-          nickname: "",
-          online: true,
-          phone: "+8613912345679",
-          type: "user",
-        },
-      ],
+      userIds: ["user-2"],
     })
     expect(fetcher).toHaveBeenCalledWith("/api/client/contacts", {
       credentials: "include",
       method: "GET",
     })
+  })
+
+  it("searches users and maps friend request APIs", async () => {
+    const searchFetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ success: true, data: { user_ids: ["user-2"] } }),
+        { headers: { "content-type": "application/json" }, status: 200 }
+      )
+    )
+    await expect(searchContactUsers("bob@example.com", searchFetcher)).resolves.toEqual([
+      "user-2",
+    ])
+
+    const requestPayload = {
+      addressee_user_id: "user-2",
+      created_at: "2026-08-11T00:00:00Z",
+      handled_at: null,
+      id: "request-1",
+      requester_user_id: "user-1",
+      status: "pending",
+      updated_at: "2026-08-11T00:00:00Z",
+    }
+    const createFetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: requestPayload }), {
+        headers: { "content-type": "application/json" },
+        status: 201,
+      })
+    )
+    await expect(createFriendRequest("user-2", createFetcher)).resolves.toMatchObject({
+      id: "request-1",
+      status: "pending",
+    })
+    expect(createFetcher).toHaveBeenCalledWith("/api/client/friend-requests", {
+      body: JSON.stringify({ user_id: "user-2" }),
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    })
+
+    const listFetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ success: true, data: { requests: [requestPayload] } }),
+        { headers: { "content-type": "application/json" }, status: 200 }
+      )
+    )
+    await expect(listFriendRequests("incoming", listFetcher)).resolves.toHaveLength(1)
   })
 
   it("loads client conversations with credentials", async () => {

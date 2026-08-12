@@ -4,7 +4,12 @@ import "errors"
 
 type ErrorCode string
 
-const CodeInternal ErrorCode = "internal_error"
+const (
+	CodeInternal       ErrorCode = "internal_error"
+	CodeInvalidRequest ErrorCode = "invalid_request"
+	CodeNotFound       ErrorCode = "not_found"
+	CodeConflict       ErrorCode = "conflict"
+)
 
 type Error struct {
 	Code    ErrorCode
@@ -40,6 +45,18 @@ func ErrorMessage(err error) string {
 		return contactErr.Message
 	}
 	return "服务端错误"
+}
+
+func invalidError(message string, cause error) error {
+	return &Error{Code: CodeInvalidRequest, Message: message, Cause: cause}
+}
+
+func notFoundError(message string) error {
+	return &Error{Code: CodeNotFound, Message: message}
+}
+
+func conflictError(message string) error {
+	return &Error{Code: CodeConflict, Message: message}
 }
 
 func internalError(cause error) error {

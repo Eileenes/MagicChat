@@ -1139,11 +1139,8 @@ func requireTaskObject(t *testing.T, value any) map[string]any {
 
 func assertTaskUserSummary(t *testing.T, summary map[string]any, user store.User) {
 	t.Helper()
-	if summary["id"] != user.ID || summary["name"] != user.Name || summary["nickname"] != user.Nickname || summary["avatar"] != user.Avatar {
-		t.Fatalf("user summary = %#v, want id/name/nickname/avatar from %#v", summary, user)
-	}
-	if len(summary) != 4 {
-		t.Fatalf("user summary fields = %#v, want exactly id/name/nickname/avatar", summary)
+	if summary["id"] != user.ID || len(summary) != 1 {
+		t.Fatalf("user reference = %#v, want only id from %#v", summary, user)
 	}
 }
 

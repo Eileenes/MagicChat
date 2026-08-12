@@ -84,6 +84,7 @@ export function ConversationSidebar({
   drafts,
   onCreateGroup,
   onDismissConversation,
+  onOpenGlobalSearch,
   onSelectDirectoryItem = noopSelectDirectoryItem,
   onSelectConversation,
   onSelectMessageResult,
@@ -101,6 +102,7 @@ export function ConversationSidebar({
   drafts: ConversationDrafts
   onCreateGroup: () => void
   onDismissConversation?: (conversationId: string) => Promise<void>
+  onOpenGlobalSearch?: () => void
   onSelectDirectoryItem?: (item: DirectorySearchItem) => void
   onSelectConversation: (conversationId: string) => void
   onSelectMessageResult?: (result: ClientMessageSearchResult) => void
@@ -245,6 +247,7 @@ export function ConversationSidebar({
               conversations={conversations}
               currentUserId={currentUser.id}
               getConversationDescription={getSearchConversationDescription}
+              onOpen={onOpenGlobalSearch}
               onSelectDirectoryItem={onSelectDirectoryItem}
               onSelectConversation={onSelectConversation}
               onSelectMessageResult={onSelectMessageResult}

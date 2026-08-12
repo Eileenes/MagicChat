@@ -29,7 +29,10 @@ import type {
 } from "@/lib/client-data-api"
 import { useClientData } from "@/lib/client-data-context"
 import { listClientConversations } from "@/lib/client-api/conversations"
-import { sendConversationEntityCardMessage } from "@/lib/client-api/messages"
+import {
+  sendConversationCardMessage,
+  sendConversationEntityCardMessage,
+} from "@/lib/client-api/messages"
 import { createClientMessageId } from "@/lib/message-id"
 import { cn } from "@/lib/utils"
 
@@ -55,13 +58,19 @@ export function SendCardDialog(props: SendCardDialogProps) {
   )
 }
 
-export function StandaloneEntityCardDialog({
+export function StandaloneEntityCardDialog(
+  props: Omit<SendCardDialogProps, "card"> & {
+    card: Extract<ClientCardSendInput, { type: "entity_card" }>
+  }
+) {
+  return <StandaloneCardDialog {...props} />
+}
+
+export function StandaloneCardDialog({
   card,
   onOpenChange,
   open,
-}: Omit<SendCardDialogProps, "card"> & {
-  card: Extract<ClientCardSendInput, { type: "entity_card" }>
-}) {
+}: SendCardDialogProps) {
   const [conversations, setConversations] = React.useState<
     ClientConversation[]
   >([])
@@ -87,12 +96,19 @@ export function StandaloneEntityCardDialog({
 
   const sendCard = React.useCallback<SendCard>(
     async (conversationId, value) => {
-      if (value.type !== "entity_card") return null
       try {
-        return await sendConversationEntityCardMessage(conversationId, {
+        if (value.type === "entity_card") {
+          return await sendConversationEntityCardMessage(conversationId, {
+            clientMessageId: createClientMessageId(),
+            entityId: value.entityId,
+            entityType: value.entityType,
+          })
+        }
+        return await sendConversationCardMessage(conversationId, {
           clientMessageId: createClientMessageId(),
-          entityId: value.entityId,
-          entityType: value.entityType,
+          description: value.description,
+          title: value.title,
+          url: value.url,
         })
       } catch (sendError) {
         toast.error(

@@ -14,7 +14,7 @@ import (
 )
 
 func TestSettingsAPIRoutesUseApplicationService(t *testing.T) {
-	service := &fakeSettingsService{value: settingsapp.Settings{AppName: "即应", OrganizationName: "长亭科技"}}
+	service := &fakeSettingsService{value: settingsapp.Settings{AppName: "即应", OrganizationName: "长亭科技", ContactDirectoryMode: settingsapp.ContactDirectoryModeOrganization}}
 	api := NewSettingsAPI(service)
 	router := echo.New()
 	api.RegisterRoutes(router.Group("/api/admin"))
@@ -26,14 +26,14 @@ func TestSettingsAPIRoutesUseApplicationService(t *testing.T) {
 		t.Fatalf("get status = %d, calls = %d, body = %s", recorder.Code, service.getCalls, recorder.Body.String())
 	}
 
-	request = httptest.NewRequest(http.MethodPut, "/api/admin/settings/info", bytes.NewBufferString(`{"app_name":"星环协作","organization_name":"长亭科技企业安全"}`))
+	request = httptest.NewRequest(http.MethodPut, "/api/admin/settings/info", bytes.NewBufferString(`{"app_name":"星环协作","organization_name":"长亭科技企业安全","contact_directory_mode":"friends"}`))
 	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	recorder = httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("update status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if service.updateCommand.AppName != "星环协作" || service.updateCommand.OrganizationName != "长亭科技企业安全" {
+	if service.updateCommand.AppName != "星环协作" || service.updateCommand.OrganizationName != "长亭科技企业安全" || service.updateCommand.ContactDirectoryMode != settingsapp.ContactDirectoryModeFriends {
 		t.Fatalf("update command = %#v", service.updateCommand)
 	}
 	var payload map[string]any
@@ -62,6 +62,6 @@ func (s *fakeSettingsService) Get(context.Context) (settingsapp.Settings, error)
 
 func (s *fakeSettingsService) Update(_ context.Context, cmd settingsapp.UpdateCommand) (settingsapp.Settings, error) {
 	s.updateCommand = cmd
-	s.value = settingsapp.Settings{AppName: cmd.AppName, OrganizationName: cmd.OrganizationName}
+	s.value = settingsapp.Settings{AppName: cmd.AppName, OrganizationName: cmd.OrganizationName, ContactDirectoryMode: cmd.ContactDirectoryMode}
 	return s.value, nil
 }

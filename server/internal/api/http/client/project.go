@@ -43,9 +43,9 @@ type updateProjectRequest struct {
 
 type projectUserResponse struct {
 	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Nickname string `json:"nickname"`
-	Avatar   string `json:"avatar"`
+	Name     string `json:"-" swaggerignore:"true"`
+	Nickname string `json:"-" swaggerignore:"true"`
+	Avatar   string `json:"-" swaggerignore:"true"`
 }
 
 type projectTaskCountsResponse struct {
@@ -102,12 +102,12 @@ type projectGroupListResponse struct {
 
 type projectMemberResponse struct {
 	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Nickname       string   `json:"nickname"`
-	Email          string   `json:"email"`
-	Avatar         string   `json:"avatar"`
+	Name           string   `json:"-" swaggerignore:"true"`
+	Nickname       string   `json:"-" swaggerignore:"true"`
+	Email          string   `json:"-" swaggerignore:"true"`
+	Avatar         string   `json:"-" swaggerignore:"true"`
 	Status         string   `json:"status"`
-	DisplayName    string   `json:"display_name"`
+	DisplayName    string   `json:"-" swaggerignore:"true"`
 	Role           string   `json:"role"`
 	SourceGroupIDs []string `json:"source_group_ids"`
 }

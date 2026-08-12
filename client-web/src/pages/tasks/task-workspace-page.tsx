@@ -36,7 +36,13 @@ import {
   getClientProjectTask,
   listClientProjectTasks,
 } from "@/lib/project-task-data-api"
+import {
+  useOptionalClientData,
+  type ClientDataContextValue,
+} from "@/lib/client-data-context"
 import { cn } from "@/lib/utils"
+
+const emptyTaskUsersById: ClientDataContextValue["usersById"] = {}
 
 const statusLabels = {
   canceled: "已取消",
@@ -68,7 +74,12 @@ function LoadedTaskWorkspace({
   taskId: string
 }) {
   const navigate = useNavigate()
-  const [activeTask, setActiveTask] = React.useState<ProjectTask | null>(null)
+  const clientData = useOptionalClientData()
+  const ensureUsers = clientData?.ensureUsers
+  const usersById = clientData?.usersById ?? emptyTaskUsersById
+  const [storedActiveTask, setActiveTask] = React.useState<ProjectTask | null>(
+    null
+  )
   const [createOpen, setCreateOpen] = React.useState(false)
   const [error, setError] = React.useState("")
   const [keyword, setKeyword] = React.useState("")
@@ -85,8 +96,32 @@ function LoadedTaskWorkspace({
   const [projectsNextCursor, setProjectsNextCursor] = React.useState<
     string | null
   >(null)
-  const [tasks, setTasks] = React.useState<ProjectTask[]>([])
+  const [storedTasks, setTasks] = React.useState<ProjectTask[]>([])
+  const tasks = React.useMemo(
+    () => hydrateProjectTasks(storedTasks, usersById),
+    [storedTasks, usersById]
+  )
+  const activeTask = React.useMemo(
+    () =>
+      storedActiveTask
+        ? (hydrateProjectTasks([storedActiveTask], usersById)[0] ??
+          storedActiveTask)
+        : null,
+    [storedActiveTask, usersById]
+  )
   const requestIdRef = React.useRef(0)
+
+  React.useEffect(() => {
+    if (!ensureUsers) return
+    const userIds = new Set<string>()
+    for (const task of activeTask ? [...tasks, activeTask] : tasks) {
+      userIds.add(task.creator.id)
+      if (task.assignee) userIds.add(task.assignee.id)
+    }
+    if (userIds.size > 0) {
+      void ensureUsers(Array.from(userIds)).catch(() => undefined)
+    }
+  }, [activeTask, ensureUsers, tasks])
 
   const projectOptions = React.useMemo(() => {
     const values = [loadedProject, personalProject, ...projects].filter(
@@ -433,6 +468,46 @@ function LoadedTaskWorkspace({
       />
     </main>
   )
+}
+
+function hydrateProjectTasks(
+  tasks: ProjectTask[],
+  usersById: ClientDataContextValue["usersById"]
+) {
+  let changed = false
+  const next = tasks.map((task) => {
+    const creator = usersById[task.creator.id]
+    const assignee = task.assignee ? usersById[task.assignee.id] : undefined
+    const nextCreator = creator
+      ? {
+          avatar: creator.avatar,
+          id: creator.id,
+          name: creator.name,
+          nickname: creator.nickname,
+        }
+      : task.creator
+    const nextAssignee = assignee
+      ? {
+          avatar: assignee.avatar,
+          id: assignee.id,
+          name: assignee.name,
+          nickname: assignee.nickname,
+        }
+      : task.assignee
+    if (
+      nextCreator.avatar === task.creator.avatar &&
+      nextCreator.name === task.creator.name &&
+      nextCreator.nickname === task.creator.nickname &&
+      nextAssignee?.avatar === task.assignee?.avatar &&
+      nextAssignee?.name === task.assignee?.name &&
+      nextAssignee?.nickname === task.assignee?.nickname
+    ) {
+      return task
+    }
+    changed = true
+    return { ...task, assignee: nextAssignee, creator: nextCreator }
+  })
+  return changed ? next : tasks
 }
 
 function WorkspaceTaskItem({

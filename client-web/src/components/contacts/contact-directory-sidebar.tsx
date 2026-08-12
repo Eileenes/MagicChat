@@ -13,6 +13,7 @@ import {
   MessageCircle,
   RefreshCw,
   Search,
+  UsersRound,
 } from "lucide-react"
 
 import type {
@@ -67,6 +68,7 @@ export function ContactDirectorySidebar({
   organizationName,
   onActiveTabChange,
   onKeywordChange,
+  onManageFriends,
   onRefresh,
   onSelect,
   onStartAppConversation,
@@ -86,6 +88,7 @@ export function ContactDirectorySidebar({
   organizationName: string
   onActiveTabChange: (tab: DirectoryTab) => void
   onKeywordChange: (keyword: string) => void
+  onManageFriends?: () => void
   onRefresh: () => void
   onSelect: (selection: DirectorySelection) => void
   onStartAppConversation: (app: ContactApp) => void
@@ -115,7 +118,20 @@ export function ContactDirectorySidebar({
       <SidebarHeader className="gap-0 p-0">
         <div className="flex h-14 items-center justify-between px-4">
           <h1 className="text-base font-medium">通讯录</h1>
-          <Button
+          <div className="flex items-center gap-1">
+            {onManageFriends && (
+              <Button
+                aria-label="好友管理"
+                onClick={onManageFriends}
+                size="icon-sm"
+                title="好友管理"
+                type="button"
+                variant="ghost"
+              >
+                <UsersRound className="size-4" />
+              </Button>
+            )}
+            <Button
             aria-label="刷新"
             disabled={contactsRefreshing}
             onClick={onRefresh}
@@ -127,7 +143,8 @@ export function ContactDirectorySidebar({
             <RefreshCw
               className={cn("size-4", contactsRefreshing && "animate-spin")}
             />
-          </Button>
+            </Button>
+          </div>
         </div>
       </SidebarHeader>
       <Tabs

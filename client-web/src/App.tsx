@@ -8,6 +8,7 @@ import { ClientDocumentTitle } from "@/components/client-document-title"
 import { ClientMessageNotificationSync } from "@/components/client-message-notification-sync"
 import { ClientRealtimeProvider } from "@/components/client-realtime-provider"
 import { ClientVersionUpdateDialog } from "@/components/client-version-update-dialog"
+import { ClientUserDirectoryRealtimeSync } from "@/components/client-user-directory-realtime-sync"
 import { GlobalBeforeUnloadGuard } from "@/components/global-before-unload-guard"
 import { AppInfoProvider } from "@/components/app-info-provider"
 import { ChatPage } from "@/pages/chat-page"
@@ -43,7 +44,7 @@ export function App() {
         />
         <Route
           path="/documents/document/:documentId"
-          element={<DocumentPage />}
+          element={<DocumentWorkspaceRoute />}
         />
         <Route
           path="/tasks/:projectId/:taskId?"
@@ -57,6 +58,7 @@ export function App() {
                 <ClientRealtimeProvider>
                   <ClientConversationRealtimeSync />
                   <ClientMessageNotificationSync />
+                  <ClientUserDirectoryRealtimeSync />
                   <AppLayout />
                 </ClientRealtimeProvider>
               </ClientDataProvider>
@@ -119,12 +121,26 @@ export function App() {
 
 export default App
 
+function DocumentWorkspaceRoute() {
+  return (
+    <ClientDataProvider>
+      <ClientRealtimeProvider>
+        <ClientUserDirectoryRealtimeSync />
+        <DocumentPage />
+      </ClientRealtimeProvider>
+    </ClientDataProvider>
+  )
+}
+
 function TaskWorkspaceRoute() {
   return (
-    <>
-      <ClientDocumentTitle title="任务" />
-      <TaskWorkspacePage />
-    </>
+    <ClientDataProvider>
+      <ClientRealtimeProvider>
+        <ClientUserDirectoryRealtimeSync />
+        <ClientDocumentTitle title="任务" />
+        <TaskWorkspacePage />
+      </ClientRealtimeProvider>
+    </ClientDataProvider>
   )
 }
 
