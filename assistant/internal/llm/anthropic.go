@@ -33,9 +33,10 @@ type TokenCounter interface {
 }
 
 type Request struct {
-	System   string    `json:"system,omitempty"`
-	Messages []Message `json:"messages"`
-	Tools    []Tool    `json:"tools,omitempty"`
+	System        string    `json:"system,omitempty"`
+	Messages      []Message `json:"messages"`
+	Tools         []Tool    `json:"tools,omitempty"`
+	ForceToolName string    `json:"force_tool_name,omitempty"`
 }
 
 type Message struct {
@@ -126,11 +127,18 @@ func (c *AnthropicClient) CreateMessage(ctx context.Context, request Request) (R
 		return Response{}, fmt.Errorf("llm request messages are required")
 	}
 
+	forceToolName, err := validateForceToolName(request)
+	if err != nil {
+		return Response{}, err
+	}
 	params := anthropic.MessageNewParams{
 		MaxTokens: int64(c.maxTokens()),
 		Model:     anthropic.Model(c.ModelName),
 		Messages:  make([]anthropic.MessageParam, 0, len(request.Messages)),
 		Tools:     makeAnthropicTools(request.Tools),
+	}
+	if forceToolName != "" {
+		params.ToolChoice = anthropic.ToolChoiceParamOfTool(forceToolName)
 	}
 	if system := strings.TrimSpace(request.System); system != "" {
 		params.System = []anthropic.TextBlockParam{{Text: system}}
@@ -163,10 +171,17 @@ func (c *AnthropicClient) CountTokens(ctx context.Context, request Request) (int
 		return 0, fmt.Errorf("llm request messages are required")
 	}
 
+	forceToolName, err := validateForceToolName(request)
+	if err != nil {
+		return 0, err
+	}
 	params := anthropic.MessageCountTokensParams{
 		Messages: make([]anthropic.MessageParam, 0, len(request.Messages)),
 		Model:    anthropic.Model(c.ModelName),
 		Tools:    makeAnthropicCountTokensTools(request.Tools),
+	}
+	if forceToolName != "" {
+		params.ToolChoice = anthropic.ToolChoiceParamOfTool(forceToolName)
 	}
 	if system := strings.TrimSpace(request.System); system != "" {
 		params.System = anthropic.MessageCountTokensParamsSystemUnion{
@@ -192,6 +207,19 @@ func (c *AnthropicClient) CountTokens(ctx context.Context, request Request) (int
 		return 0, err
 	}
 	return int(count.InputTokens), nil
+}
+
+func validateForceToolName(request Request) (string, error) {
+	name := strings.TrimSpace(request.ForceToolName)
+	if name == "" {
+		return "", nil
+	}
+	for _, tool := range request.Tools {
+		if tool.Name == name {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("forced tool %q is not included in request tools", name)
 }
 
 func makeAnthropicMessage(message Message) (anthropic.MessageParam, error) {
