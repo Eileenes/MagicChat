@@ -1,0 +1,89 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+
+const title = '隐私政策｜即应';
+const description = '即应隐私政策，说明即应官网及官方在线服务中个人信息的收集、使用、存储和保护方式。';
+const updatedAt = '2026 年 8 月 13 日';
+const sections = [
+  ['collection', '我们如何收集信息'],
+  ['use', '我们如何使用信息'],
+  ['security', '信息的存储与保护'],
+  ['sharing', '信息的共享、转让与公开披露'],
+  ['self-hosting', '企业自建部署'],
+  ['rights', '你的权利'],
+  ['minors', '未成年人保护'],
+  ['updates', '政策更新与联系我们'],
+];
+---
+
+<BaseLayout title={title} description={description} pathname="/privacy-policy/" type="article">
+  <SiteHeader />
+  <main id="main-content" class="legal-page" style={`--legal-image: url('${import.meta.env.BASE_URL}team-collaboration.webp')`}>
+    <article class="container legal-content legal-document">
+      <header class="legal-header">
+        <span class="eyebrow">PRIVACY POLICY</span>
+        <h1>即应隐私政策</h1>
+        <p class="legal-lead">本政策适用于即应官网及由北京长亭科技有限公司运营的官方在线服务。即应是一个面向团队协作的 AI 工作空间，支持消息、任务、文件与 AI 助理等功能。</p>
+        <p class="legal-updated">生效及更新日期：{updatedAt}</p>
+      </header>
+
+      <nav class="legal-nav" aria-label="隐私政策章节导航">
+        <span>章节导航</span>
+        <ol>{sections.map(([id, label], index) => <li><a href={`#${id}`}><b>{String(index + 1).padStart(2, '0')}</b>{label}</a></li>)}</ol>
+      </nav>
+
+      <section id="collection">
+        <h2>1. 我们如何收集信息</h2>
+        <p>为提供、维护和改进即应服务，我们会在必要范围内收集以下信息：</p>
+        <ul>
+          <li><strong>账号与身份信息：</strong>你注册、登录或加入工作空间时提供的姓名、昵称、头像、邮箱、手机号，以及第三方登录服务返回的必要身份标识。</li>
+          <li><strong>协作与内容信息：</strong>你在服务中创建、发送、上传、编辑或管理的消息、任务、项目、文件、评论、通知及相应的时间、成员、权限等上下文信息。</li>
+          <li><strong>设备与日志信息：</strong>为保障服务安全和稳定而生成的设备型号、操作系统、应用版本、IP 地址、访问时间、操作日志、错误日志和诊断信息。</li>
+          <li><strong>官网访问数据：</strong>官网使用 Google Analytics 4 统计页面访问、设备类型、来源渠道和基础交互数据，用于了解网站表现并改进内容。该分析不会直接读取你在即应产品内的消息、任务或文件。</li>
+        </ul>
+      </section>
+
+      <section id="use">
+        <h2>2. 我们如何使用信息</h2>
+        <p>我们会将收集的信息用于提供账号登录、组织协作、消息与文件传递、问题排查、风险识别、服务优化和向你发送必要的服务通知。我们不会将你的个人信息用于与提供即应服务无关的目的。</p>
+        <p>当你使用 AI 助理功能时，系统会在你所在工作空间的权限范围内处理你主动提交的内容及为完成请求所需的上下文。涉及创建任务、发送通知或修改成员等重要写操作时，应由产品提供明确的确认和权限控制机制。</p>
+      </section>
+
+      <section id="security">
+        <h2>3. 信息的存储与保护</h2>
+        <p>我们采取合理的技术和管理措施保护信息安全，包括访问控制、权限管理、传输加密、日志审计与安全维护。任何安全措施都不能保证绝对安全；如发生或可能发生个人信息安全事件，我们会依法采取补救措施，并按适用法律法规要求告知相关主体。</p>
+        <p>我们会在实现服务目的所需的期限内保存信息；法律法规另有规定、你所在组织有合理的留存要求或为解决争议、履行法定义务所必需的除外。</p>
+      </section>
+
+      <section id="sharing">
+        <h2>4. 信息的共享、转让与公开披露</h2>
+        <p>除以下情形外，我们不会向第三方共享、转让或公开披露你的个人信息：取得你的单独同意；为提供服务所必需并受保密和安全义务约束；根据法律法规、司法机关或行政机关的合法要求；或为保护即应、用户及公众的人身财产安全和合法权益所必需。</p>
+        <p>第三方登录、云基础设施、分析统计和你选择接入的模型或应用服务，可能依据各自的隐私规则处理必要信息。使用前请审慎阅读其相关政策。</p>
+      </section>
+
+      <section id="self-hosting">
+        <h2>5. 企业自建部署</h2>
+        <p>即应支持部署在企业自有服务器或云基础设施。对于企业自行部署、配置和运营的实例，部署企业通常是相关工作空间内数据的处理者和管理者，应自行确定数据存储地点、访问权限、保留期限、第三方服务接入及对成员的告知安排，并遵守适用法律法规。本政策不替代部署企业应向其成员提供的隐私说明。</p>
+      </section>
+
+      <section id="rights">
+        <h2>6. 你的权利</h2>
+        <p>在适用法律法规规定的范围内，你可查询、更正、补充或删除与你有关的信息，撤回授权，注销账号，或要求解释本政策。为保护账号和工作空间安全，部分请求可能需要由组织管理员处理或完成身份核验。账号注销不影响在注销前已完成的信息处理活动；依法需要保留的信息将在法定期限届满后删除或匿名化处理。</p>
+      </section>
+
+      <section id="minors">
+        <h2>7. 未成年人保护</h2>
+        <p>即应主要面向企业和成年用户。若你是未成年人，请在监护人同意和指导下使用服务。若我们发现未经有效同意收集了未成年人的个人信息，将在法律法规要求的范围内尽快处理。</p>
+      </section>
+
+      <section id="updates">
+        <h2>8. 政策更新与联系我们</h2>
+        <p>我们可能根据服务变化或法律法规要求更新本政策。对重大变更，我们会通过官网、产品内通知或其他合理方式提示。继续使用服务即表示你已阅读并理解更新后的政策。</p>
+        <p>如对本政策或个人信息处理有疑问、意见或请求，可通过 <a href="https://www.chaitin.cn/" target="_blank" rel="noopener noreferrer">长亭科技官网</a> 联系我们。</p>
+      </section>
+    </article>
+  </main>
+  <SiteFooter />
+</BaseLayout>
