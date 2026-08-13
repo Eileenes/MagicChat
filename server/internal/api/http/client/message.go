@@ -704,7 +704,7 @@ func writeMessageError(c echo.Context, err error) error {
 	switch messageapp.ErrorCodeOf(err) {
 	case messageapp.CodeInvalidRequest:
 		status = http.StatusBadRequest
-	case messageapp.CodeForbidden:
+	case messageapp.CodeForbidden, messageapp.CodeDirectFriendshipRequired:
 		status = http.StatusForbidden
 	case messageapp.CodeNotFound:
 		status = http.StatusNotFound

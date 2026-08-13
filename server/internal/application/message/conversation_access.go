@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"app/internal/application/conversationaccess"
+	"app/internal/application/directmessagepolicy"
 	"app/internal/store"
 
 	"gorm.io/gorm"
@@ -66,8 +67,11 @@ func (value userConversationAccess) visibleFromSeq() int64 {
 	return visibleFromSeq
 }
 
-func ensureUserConversationSendable(db *gorm.DB, value userConversationAccess, userID string, readSeq int64, now time.Time) error {
+func (s *Service) ensureUserConversationSendable(db *gorm.DB, value userConversationAccess, userID string, readSeq int64, now time.Time) error {
 	if err := validateUserConversationSendable(db, value); err != nil {
+		return err
+	}
+	if err := s.validateUserDirectFriendship(db, value, userID); err != nil {
 		return err
 	}
 	if !value.Context.IsTopic() {
@@ -95,6 +99,35 @@ func validateUserDirectAppAccess(db *gorm.DB, value userConversationAccess) erro
 	if err := conversationaccess.RequireUserDirectAppAccess(db, value.Context, value.Member.MemberID); err != nil {
 		if errors.Is(err, conversationaccess.ErrDirectAppAccessDenied) {
 			return errAppDirectAccessDenied
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Service) validateUserDirectFriendship(db *gorm.DB, value userConversationAccess, userID string) error {
+	direct := value.Context.Conversation
+	if value.Context.ParentConversation != nil {
+		direct = *value.Context.ParentConversation
+	}
+	if direct.Kind != store.ConversationKindDirect {
+		return nil
+	}
+	var otherUserID string
+	if err := db.Model(&store.ConversationMember{}).
+		Where("conversation_id = ? AND member_type = ? AND member_id <> ? AND left_at IS NULL", direct.ID, store.ConversationMemberTypeUser, userID).
+		Limit(1).Pluck("member_id", &otherUserID).Error; err != nil {
+		return err
+	}
+	if otherUserID == "" {
+		return nil
+	}
+	if s.directMessaging == nil {
+		return nil
+	}
+	if err := s.directMessaging.Require(db, userID, otherUserID); err != nil {
+		if errors.Is(err, directmessagepolicy.ErrFriendshipRequired) {
+			return errDirectFriendshipRequired
 		}
 		return err
 	}

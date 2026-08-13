@@ -15,6 +15,7 @@ import (
 	appapp "app/internal/application/app"
 	contactapp "app/internal/application/contact"
 	conversationapp "app/internal/application/conversation"
+	"app/internal/application/directmessagepolicy"
 	"app/internal/application/dashboard"
 	documentapp "app/internal/application/document"
 	"app/internal/application/emailauth"
@@ -162,6 +163,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.entityCards = entitycardapp.NewService(entitycardapp.Dependencies{
 		DB: db, Projects: server.projects,
 	})
+	directMessaging := directmessagepolicy.New(server.settings)
 	server.conversations = conversationapp.NewService(conversationapp.Dependencies{
 		AppEvents:      server,
 		AppEventLocker: &server.appEventMu,
@@ -170,6 +172,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		Files:          server.files,
 		Projects:       server.projects,
 		Notifications:  server,
+		DirectMessaging: directMessaging,
 	})
 	server.clientConversations = clientapi.NewConversationAPI(server.conversations, server.projects)
 	server.tasks = taskapp.NewService(taskapp.Dependencies{
@@ -219,6 +222,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 				server.afterUserMessageCommit(legacyStoredMessage(message))
 			}
 		},
+		DirectMessaging: directMessaging,
 	})
 	server.clientMessages = clientapi.NewMessageAPI(server.messages, server.files)
 	server.searches = searchapp.NewService(searchapp.Dependencies{

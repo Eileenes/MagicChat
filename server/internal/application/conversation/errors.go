@@ -6,7 +6,8 @@ type ErrorCode string
 
 const (
 	CodeInvalidRequest  ErrorCode = "invalid_request"
-	CodeForbidden       ErrorCode = "forbidden"
+	CodeForbidden                 ErrorCode = "forbidden"
+	CodeDirectFriendshipRequired ErrorCode = "direct_friendship_required"
 	CodeNotFound        ErrorCode = "not_found"
 	CodeConflict        ErrorCode = "conflict"
 	CodeRequestTooLarge ErrorCode = "request_too_large"

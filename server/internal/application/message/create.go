@@ -86,6 +86,9 @@ func (s *Service) PrepareUpload(ctx context.Context, cmd PrepareUploadCommand) (
 	if err := validateUserConversationSendable(db, access); err != nil {
 		return PrepareUploadResult{}, mapCreateError(err)
 	}
+	if err := s.validateUserDirectFriendship(db, access, cmd.AccountID); err != nil {
+		return PrepareUploadResult{}, mapCreateError(err)
+	}
 	existing, ok, err := findExistingMessageByClientMessageID(
 		db, conversationID, store.MessageSenderTypeUser, cmd.AccountID, clientMessageID,
 	)
@@ -181,7 +184,7 @@ func (s *Service) createUserMessage(
 			return err
 		}
 		conversation := access.Context.Conversation
-		if err := ensureUserConversationSendable(tx, access, userID, 0, time.Now().UTC()); err != nil {
+		if err := s.ensureUserConversationSendable(tx, access, userID, 0, time.Now().UTC()); err != nil {
 			return err
 		}
 		existing, ok, err := findExistingMessageByClientMessageID(
@@ -389,6 +392,9 @@ func normalizeClientMessageID(raw string) (string, error) {
 func mapCreateError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return NotFoundError("会话不存在", err)
+	}
+	if errors.Is(err, errDirectFriendshipRequired) {
+		return &Error{Code: CodeDirectFriendshipRequired, Message: "仅好友之间可以发送私聊消息", Cause: err}
 	}
 	if errors.Is(err, errConversationAccessDenied) {
 		return forbidden("无权访问会话", err)

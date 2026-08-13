@@ -1049,7 +1049,7 @@ func (s *Server) handleAppListContactUsers(appID string, request realtime.Envelo
 		return appListContactUsersResponse{}, err
 	}
 
-	result, err := s.contacts.ListUsers(context.Background(), contactapp.ListUsersCommand{Keyword: req.Keyword})
+	result, err := s.contacts.ListUsers(context.Background(), contactapp.ListUsersCommand{AccountID: runAs.ID, Keyword: req.Keyword})
 	if err != nil {
 		return appListContactUsersResponse{}, err
 	}
@@ -1718,12 +1718,18 @@ func (s *Server) findAppSendAsUserConversation(req appSendAsUserRequest) (store.
 		if err != nil {
 			return store.User{}, store.Conversation{}, err
 		}
-		opened, _, err := s.conversations.OpenDirectForUsers(
+		opened, err := s.conversations.CreateDirect(
 			context.Background(),
-			conversationActorFromUser(actor),
-			conversationActorFromUser(target),
+			conversationapp.CreateDirectCommand{Actor: conversationActorFromUser(actor), UserID: target.ID},
 		)
-		return actor, store.Conversation{ID: opened.ID, Name: opened.Name, Kind: opened.Type}, err
+		if err != nil {
+			var appErr *conversationapp.Error
+			if errors.As(err, &appErr) {
+				return store.User{}, store.Conversation{}, newAppRequestFailure(string(appErr.Code), appErr.Message)
+			}
+			return store.User{}, store.Conversation{}, err
+		}
+		return actor, store.Conversation{ID: opened.Conversation.ID, Name: opened.Conversation.Name, Kind: opened.Conversation.Type}, nil
 	case appMessageTargetGroup:
 		actor, err := s.findActiveAppActor(req.ActorUserID)
 		if err != nil {
@@ -2164,6 +2170,8 @@ func mapMessageApplicationErrorForApp(err error) error {
 		return newAppRequestFailure("not_found", messageErr.Message)
 	case messageapp.CodeForbidden:
 		return newAppRequestFailure("forbidden", messageErr.Message)
+	case messageapp.CodeDirectFriendshipRequired:
+		return newAppRequestFailure(string(messageErr.Code), messageErr.Message)
 	case messageapp.CodeInvalidRequest:
 		return newAppRequestFailure("invalid_request", messageErr.Message)
 	default:

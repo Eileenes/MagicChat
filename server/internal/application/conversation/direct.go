@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"app/internal/application/directmessagepolicy"
 	"app/internal/store"
 
 	"github.com/google/uuid"
@@ -26,6 +27,14 @@ func (s *Service) CreateDirect(ctx context.Context, cmd CreateDirectCommand) (Op
 	}
 	if err != nil {
 		return OpenResult{}, internalError(err)
+	}
+	if s.directMessaging != nil {
+		if err := s.directMessaging.Require(db, current.ID, target.ID); err != nil {
+			if errors.Is(err, directmessagepolicy.ErrFriendshipRequired) {
+				return OpenResult{}, &Error{Code: CodeDirectFriendshipRequired, Message: "仅好友之间可以发送私聊消息", Cause: err}
+			}
+			return OpenResult{}, internalError(err)
+		}
 	}
 	conversation, created, err := s.getOrCreateDirect(db, current, target)
 	if err != nil {
