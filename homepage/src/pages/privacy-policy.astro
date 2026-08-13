@@ -30,9 +30,10 @@ const sections = [
       </header>
 
       <div class="legal-body">
-        <nav class="legal-nav" aria-label="隐私政策章节导航" data-legal-nav>
-          <span>章节导航</span>
-          <ol>{sections.map(([id, label], index) => <li><a href={`#${id}`}><b>{String(index + 1).padStart(2, '0')}</b>{label}</a></li>)}</ol>
+        <nav class="legal-nav" aria-label="隐私政策导航" data-legal-nav>
+          <div class="legal-nav-track" data-legal-nav-track>
+            <ol>{sections.map(([id, label], index) => <li><a href={`#${id}`}><b>{String(index + 1).padStart(2, '0')}</b>{label}</a></li>)}</ol>
+          </div>
         </nav>
 
         <div class="legal-sections">
@@ -95,29 +96,33 @@ const sections = [
     const sections = Array.from(document.querySelectorAll<HTMLElement>('.legal-sections > section'));
 
     if (nav && sections.length) {
+      const navTrack = nav.querySelector<HTMLElement>('[data-legal-nav-track]');
       const links = new Map(Array.from(nav.querySelectorAll<HTMLAnchorElement>('a')).map((link) => [link.hash.slice(1), link]));
       let currentId = '';
 
       const updateCurrentSection = () => {
         const activeSection = sections.reduce((current, section) => section.getBoundingClientRect().top <= 112 ? section : current, sections[0]);
-        if (activeSection.id === currentId) return;
-
-        currentId = activeSection.id;
-        links.forEach((link, id) => {
-          const isCurrent = id === currentId;
-          link.classList.toggle('is-current', isCurrent);
-          if (isCurrent) link.setAttribute('aria-current', 'true');
-          else link.removeAttribute('aria-current');
-        });
+        if (activeSection.id !== currentId) {
+          currentId = activeSection.id;
+          links.forEach((link, id) => {
+            const isCurrent = id === currentId;
+            link.classList.toggle('is-current', isCurrent);
+            if (isCurrent) link.setAttribute('aria-current', 'true');
+            else link.removeAttribute('aria-current');
+          });
+        }
 
         const activeLink = links.get(currentId);
-        if (activeLink && window.matchMedia('(min-width: 1260px)').matches) {
-          nav.scrollTo({ top: Math.max(0, activeLink.offsetTop - (nav.clientHeight - activeLink.offsetHeight) / 2), behavior: 'smooth' });
+        if (navTrack && activeLink && window.matchMedia('(min-width: 1260px)').matches) {
+          navTrack.style.transform = `translateY(${-activeLink.offsetTop - activeLink.offsetHeight / 2}px)`;
+        } else if (navTrack) {
+          navTrack.style.transform = '';
         }
       };
 
       updateCurrentSection();
       window.addEventListener('scroll', updateCurrentSection, { passive: true });
+      window.addEventListener('resize', updateCurrentSection);
     }
   </script>
 </BaseLayout>
