@@ -27,11 +27,20 @@ const year = new Date().getFullYear();
     </div>
     <div class="footer-community">
       <h2>技术交流群</h2>
-      <div class="qr-placeholder" role="img" aria-label="技术交流群二维码占位图"><span>二维码</span></div>
+      <div class="community-qr-list">
+        <figure class="community-qr">
+          <img src={`${import.meta.env.BASE_URL}wecom-community-qr.png`} width="396" height="396" alt="企业微信交流群二维码" loading="lazy" />
+          <figcaption>企业微信交流群</figcaption>
+        </figure>
+        <figure class="community-qr">
+          <img src={`${import.meta.env.BASE_URL}feishu-community-qr.png`} width="578" height="578" alt="飞书交流群二维码" loading="lazy" />
+          <figcaption>飞书交流群</figcaption>
+        </figure>
+      </div>
     </div>
   </div>
   <div class="container footer-bottom">
-    <p>京ICPxxxxxxxx</p>
+    <p>京ICP备2024055124号-17</p>
     <p>© {year} MagicChat · 版权所有：北京长亭科技有限公司 · 本应用由 MagicChat 开发</p>
   </div>
 </footer>
