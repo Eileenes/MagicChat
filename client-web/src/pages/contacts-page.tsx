@@ -48,9 +48,7 @@ export function ContactsPage() {
     contactDirectoryMode,
     contactGroups,
     contacts,
-    contactsRefreshing,
     createFriendRequest,
-    deleteFriend,
     ensureUsers,
     incomingFriendRequests,
     joinGroupConversation,
@@ -300,9 +298,12 @@ export function ContactsPage() {
         appGrantUsers={appGrantUsers}
         apps={filteredApps}
         contacts={filteredContacts}
-        contactsRefreshing={contactsRefreshing}
         currentUserId={me.id}
         groups={filteredGroups}
+        pendingFriendRequestCount={
+          incomingFriendRequests.filter((request) => request.status === "pending")
+            .length
+        }
         organizationName={
           contactDirectoryMode === "friends" ? "我的好友" : organizationName
         }
@@ -313,7 +314,6 @@ export function ContactsPage() {
             ? () => setFriendManagementOpen(true)
             : undefined
         }
-        onRefresh={() => void refreshContacts().catch(() => undefined)}
         onSelect={selectDirectoryItem}
         onStartAppConversation={(app) => void startAppConversation(app)}
         onStartContactConversation={(contact) =>
@@ -330,8 +330,6 @@ export function ContactsPage() {
         cancelRequest={cancelFriendRequest}
         contacts={contacts}
         createRequest={createFriendRequest}
-        currentUserId={me.id}
-        deleteFriend={deleteFriend}
         ensureUsers={ensureUsers}
         incomingRequests={incomingFriendRequests}
         onOpenChange={setFriendManagementOpen}

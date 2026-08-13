@@ -11,7 +11,6 @@ import {
   ChevronRight,
   Loader2Icon,
   MessageCircle,
-  RefreshCw,
   Search,
   UsersRound,
 } from "lucide-react"
@@ -62,9 +61,9 @@ export function ContactDirectorySidebar({
   appGrantUsers,
   apps,
   contacts,
-  contactsRefreshing,
   currentUserId,
   groups,
+  pendingFriendRequestCount = 0,
   organizationName,
   onActiveTabChange,
   onKeywordChange,
@@ -82,9 +81,9 @@ export function ContactDirectorySidebar({
   appGrantUsers: ContactUser[]
   apps: ContactApp[]
   contacts: ContactUser[]
-  contactsRefreshing: boolean
   currentUserId: string
   groups: ContactGroup[]
+  pendingFriendRequestCount?: number
   organizationName: string
   onActiveTabChange: (tab: DirectoryTab) => void
   onKeywordChange: (keyword: string) => void
@@ -121,29 +120,30 @@ export function ContactDirectorySidebar({
           <div className="flex items-center gap-1">
             {onManageFriends && (
               <Button
-                aria-label="好友管理"
+                aria-label="新朋友"
+                className="relative"
                 onClick={onManageFriends}
                 size="icon-sm"
-                title="好友管理"
+                title="新朋友"
                 type="button"
                 variant="ghost"
               >
                 <UsersRound className="size-4" />
+                {pendingFriendRequestCount > 0 && (
+                  <span className="absolute top-0 right-0 z-10 translate-x-1/3 -translate-y-1/3">
+                    <Badge
+                      aria-label={`${pendingFriendRequestCount} 个新的好友申请`}
+                      className="h-4 bg-red-500 px-1 py-0 text-[10px] leading-4 font-normal text-white hover:bg-red-500 dark:bg-red-500"
+                      variant="destructive"
+                    >
+                      {pendingFriendRequestCount > 99
+                        ? "99+"
+                        : pendingFriendRequestCount}
+                    </Badge>
+                  </span>
+                )}
               </Button>
             )}
-            <Button
-            aria-label="刷新"
-            disabled={contactsRefreshing}
-            onClick={onRefresh}
-            size="icon-sm"
-            title="刷新"
-            type="button"
-            variant="ghost"
-          >
-            <RefreshCw
-              className={cn("size-4", contactsRefreshing && "animate-spin")}
-            />
-            </Button>
           </div>
         </div>
       </SidebarHeader>
