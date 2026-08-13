@@ -78,7 +78,7 @@ func TestModelTopicRouterReturnsBooleanDecision(t *testing.T) {
 			if got != needsTopic {
 				t.Fatalf("NeedsTopic() = %t, want %t", got, needsTopic)
 			}
-			if gotRequest.System != topicRouterSystemPrompt || gotRequest.ForceToolName != decideTopicToolName || len(gotRequest.Tools) != 1 || gotRequest.Tools[0].Name != decideTopicToolName {
+			if gotRequest.System != topicRouterSystemPrompt || len(gotRequest.Tools) != 1 || gotRequest.Tools[0].Name != decideTopicToolName {
 				t.Fatalf("model request = %#v", gotRequest)
 			}
 			if len(gotRequest.Messages) != 1 {
@@ -98,14 +98,32 @@ func TestModelTopicRouterReturnsBooleanDecision(t *testing.T) {
 	}
 }
 
+func TestModelTopicRouterAcceptsStrictJSONTextDecision(t *testing.T) {
+	for _, needsTopic := range []bool{false, true} {
+		t.Run(fmt.Sprintf("needs_topic=%t", needsTopic), func(t *testing.T) {
+			response := llm.Response{Blocks: []llm.Block{
+				{Type: llm.BlockTypeThinking, Thinking: "判断请求复杂度"},
+				{Type: llm.BlockTypeText, Text: fmt.Sprintf(`{"needs_topic":%t}`, needsTopic)},
+			}}
+			got, err := parseTopicDecision(response)
+			if err != nil {
+				t.Fatalf("parseTopicDecision() error = %v", err)
+			}
+			if got != needsTopic {
+				t.Fatalf("parseTopicDecision() = %t, want %t", got, needsTopic)
+			}
+		})
+	}
+}
+
 func TestModelTopicRouterRejectsInvalidDecisions(t *testing.T) {
 	tests := []struct {
 		name     string
 		response llm.Response
 	}{
 		{
-			name:     "text instead of tool",
-			response: llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: `{"needs_topic":false}`}}},
+			name:     "markdown JSON text",
+			response: llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "```json\n{\"needs_topic\":false}\n```"}}},
 		},
 		{
 			name: "missing boolean",

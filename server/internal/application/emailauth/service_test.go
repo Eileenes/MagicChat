@@ -53,9 +53,9 @@ func TestServiceRequestsAndConsumesOneTimeCode(t *testing.T) {
 	}
 }
 
-func TestServiceDoesNotSendForUnknownAccount(t *testing.T) {
+func TestServiceSendsCodeForUnknownAccountWhenRegistrationIsAllowed(t *testing.T) {
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
-	accounts := &fakeAccounts{allowed: false}
+	accounts := &fakeAccounts{allowed: true}
 	mailer := &fakeMailer{}
 	service := newEmailAuthTestService(&now, accounts, mailer)
 
@@ -63,7 +63,7 @@ func TestServiceDoesNotSendForUnknownAccount(t *testing.T) {
 	if err != nil || result.ExpiresInSeconds != 900 {
 		t.Fatalf("request missing account = %#v, error = %v", result, err)
 	}
-	if len(mailer.messages) != 0 {
+	if len(mailer.messages) != 1 || mailer.messages[0].Recipient != "missing@example.com" {
 		t.Fatalf("messages = %#v", mailer.messages)
 	}
 }

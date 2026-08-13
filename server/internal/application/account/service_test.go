@@ -102,6 +102,36 @@ func TestServiceRejectsPasswordLoginWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestServiceVerifiedEmailLoginCreatesMissingAccountAndPersonalWorkspace(t *testing.T) {
+	db := openAccountTestDB(t)
+	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)
+	service := NewService(Dependencies{
+		DB: db, Now: func() time.Time { return now },
+		GenerateSessionToken: func() (string, error) { return "new-user-session-token", nil },
+	})
+
+	allowed, err := service.CanLoginWithEmail(context.Background(), " New.User@Example.com ")
+	if err != nil || !allowed {
+		t.Fatalf("missing email allowed = %t, error = %v", allowed, err)
+	}
+	result, err := service.LoginWithVerifiedEmail(context.Background(), VerifiedEmailLoginCommand{
+		Email: "New.User@Example.com", UserAgent: "verified-email-test", IP: "127.0.0.1",
+	})
+	if err != nil {
+		t.Fatalf("verified registration: %v", err)
+	}
+	if result.Account.Email != "new.user@example.com" || result.Account.Name != "new.user" || result.Session.Token != "new-user-session-token" {
+		t.Fatalf("verified registration result = %#v", result)
+	}
+	if result.Account.Status != store.UserStatusActive || result.Account.Avatar != store.DefaultUserAvatar {
+		t.Fatalf("registered account = %#v", result.Account)
+	}
+	var project store.Project
+	if err := db.Where("owner_user_id = ? AND is_personal = ?", result.Account.ID, true).First(&project).Error; err != nil {
+		t.Fatalf("load personal workspace: %v", err)
+	}
+}
+
 func TestServiceIssuesSessionOnlyForVerifiedActiveEmail(t *testing.T) {
 	db := openAccountTestDB(t)
 	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)
@@ -257,7 +287,7 @@ func openAccountTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&store.User{}, &store.UserSession{}); err != nil {
+	if err := db.AutoMigrate(&store.User{}, &store.UserSession{}, &store.Project{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	return db
