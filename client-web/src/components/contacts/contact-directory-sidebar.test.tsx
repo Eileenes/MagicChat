@@ -308,7 +308,6 @@ function createSidebarProps(
     appGrantUsers: [],
     apps: [],
     contacts: [],
-    contactsRefreshing: false,
     currentUserId: "current-user",
     groups: [],
     organizationName: "测试组织",

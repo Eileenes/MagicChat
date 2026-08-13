@@ -314,6 +314,7 @@ export function ContactsPage() {
             ? () => setFriendManagementOpen(true)
             : undefined
         }
+        onRefresh={() => void refreshContacts()}
         onSelect={selectDirectoryItem}
         onStartAppConversation={(app) => void startAppConversation(app)}
         onStartContactConversation={(contact) =>
