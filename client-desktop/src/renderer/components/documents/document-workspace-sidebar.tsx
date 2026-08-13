@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils"
 import { useDesktopTarget } from "@/hooks/use-desktop-target"
 import {
   documentNavigationPath,
-  documentWindowFeedbackMessage,
+  documentWindowFeedbackKey,
   DocumentWindowOpenError,
   parseDocumentWindowLocation,
   requestDocumentWindow,
@@ -50,16 +50,13 @@ export function DocumentWorkspaceSidebar({
     setOpeningDocumentId(documentId)
     try {
       const result = await requestDocumentWindow(documentId, target.id)
-      toast.success(result.status === "focused" ? "已聚焦已有文档窗口" : "文档窗口已打开")
+      toast.success(
+        t(result.status === "focused" ? "documentWindow.focused" : "documentWindow.opened"),
+      )
       return true
     } catch (reason) {
       const code = reason instanceof DocumentWindowOpenError ? reason.code : "bridge_unavailable"
-      toast.error(
-        documentWindowFeedbackMessage(
-          code,
-          reason instanceof Error ? reason.message : "文档窗口暂时不可用",
-        ),
-      )
+      toast.error(t(documentWindowFeedbackKey(code)))
       return false
     } finally {
       setOpeningDocumentId(undefined)

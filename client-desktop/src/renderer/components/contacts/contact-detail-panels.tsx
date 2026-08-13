@@ -23,7 +23,7 @@ import type { ContactApp, ContactGroup, ContactUser } from "@/lib/client-data-ap
 import { formatContactPhone } from "@/lib/contact-format"
 import { cn } from "@/lib/utils"
 
-const CONTACT_DETAIL_PANEL_CLASS = "mt-30 w-full max-w-sm"
+const CONTACT_DETAIL_PANEL_CLASS = "mt-30 w-full min-w-0 max-w-sm overflow-hidden"
 
 export function AppDetailPanel({
   app,
@@ -70,8 +70,8 @@ export function AppDetailPanel({
 
   return (
     <div className={CONTACT_DETAIL_PANEL_CLASS} data-testid="contact-detail-panel">
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-center gap-3 text-center">
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col items-center gap-3 text-center">
           <Avatar
             className="size-20 rounded-sm bg-muted after:rounded-sm"
             data-testid="contact-detail-avatar"
@@ -81,10 +81,12 @@ export function AppDetailPanel({
               <Bot className="size-7" />
             </AvatarFallback>
           </Avatar>
-          <div>
-            <div className="text-base font-medium">{app.name}</div>
+          <div className="max-w-full min-w-0">
+            <div className="truncate text-base font-medium">{app.name}</div>
             {app.description && (
-              <div className="mt-1 text-sm text-muted-foreground">{app.description}</div>
+              <div className="mt-1 line-clamp-2 text-sm break-words text-muted-foreground">
+                {app.description}
+              </div>
             )}
           </div>
         </div>
@@ -216,16 +218,16 @@ export function GroupDetailPanel({
   const { t } = useLocale()
   return (
     <div className={CONTACT_DETAIL_PANEL_CLASS} data-testid="contact-detail-panel">
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-center gap-3 text-center">
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col items-center gap-3 text-center">
           <GroupAvatar
             avatar={group.avatar}
             className="size-20"
             members={group.avatarMembers}
             name={group.name}
           />
-          <div>
-            <div className="text-base font-medium">{group.name}</div>
+          <div className="max-w-full min-w-0">
+            <div className="truncate text-base font-medium">{group.name}</div>
             <div className="mt-1 text-sm text-muted-foreground">
               {t("app.memberCountGroup", { count: group.memberCount })}
             </div>
@@ -261,21 +263,24 @@ export function GroupDetailPanel({
 export function ContactDetailPanel({
   canStartConversation,
   contact,
+  friendAction,
   onStartConversation,
   startingConversation,
 }: {
   canStartConversation: boolean
   contact: ContactUser
+  friendAction?: ContactFriendAction
   onStartConversation: () => void
   startingConversation: boolean
 }) {
   const { t } = useLocale()
   const displayName = getContactDisplayName(contact)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   return (
     <div className={CONTACT_DETAIL_PANEL_CLASS} data-testid="contact-detail-panel">
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-center text-center">
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col items-center text-center">
           <Avatar
             className="size-20 rounded-sm bg-muted after:rounded-sm"
             data-testid="contact-detail-avatar"
@@ -311,20 +316,117 @@ export function ContactDetailPanel({
             value={contact.phone ? formatContactPhone(contact.phone) : ""}
           />
         </div>
-        {canStartConversation && (
-          <Button
-            className="w-full"
-            disabled={startingConversation}
-            onClick={onStartConversation}
-            type="button"
-          >
-            {startingConversation && <Loader2Icon aria-hidden="true" className="animate-spin" />}
-            {t("app.sendMessage")}
-          </Button>
-        )}
+        <div className="grid gap-2">
+          {canStartConversation && (
+            <Button
+              className="w-full"
+              disabled={startingConversation}
+              onClick={onStartConversation}
+              type="button"
+            >
+              {startingConversation && <Loader2Icon aria-hidden="true" className="animate-spin" />}
+              {t("app.sendMessage")}
+            </Button>
+          )}
+          {friendAction && friendAction.kind !== "delete" && (
+            <Button
+              className="w-full"
+              disabled={friendAction.pending || friendAction.disabled}
+              onClick={() => void friendAction.onAction()}
+              type="button"
+              variant={friendAction.kind === "accept" ? "default" : "secondary"}
+            >
+              {friendAction.pending && <Loader2Icon aria-hidden="true" className="animate-spin" />}
+              {t(friendAction.labelKey)}
+            </Button>
+          )}
+          {friendAction?.secondaryAction && (
+            <Button
+              className="w-full"
+              disabled={
+                friendAction.secondaryAction.pending || friendAction.secondaryAction.disabled
+              }
+              onClick={() => void friendAction.secondaryAction?.onAction()}
+              type="button"
+              variant="outline"
+            >
+              {friendAction.secondaryAction.pending && (
+                <Loader2Icon aria-hidden="true" className="animate-spin" />
+              )}
+              {t(friendAction.secondaryAction.labelKey)}
+            </Button>
+          )}
+          {friendAction?.kind === "delete" && (
+            <>
+              <Button
+                className="w-full"
+                disabled={friendAction.pending}
+                onClick={() => setDeleteOpen(true)}
+                type="button"
+                variant="destructive"
+              >
+                {friendAction.pending && (
+                  <Loader2Icon aria-hidden="true" className="animate-spin" />
+                )}
+                {t(friendAction.labelKey)}
+              </Button>
+              <AlertDialog onOpenChange={setDeleteOpen} open={deleteOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t("friend.deleteConfirm")}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t("friend.deleteDescription", { name: displayName })}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={friendAction.pending}>
+                      {t("friend.cancel")}
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={friendAction.pending}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void friendAction
+                          .onAction()
+                          .then((succeeded) => {
+                            if (succeeded) setDeleteOpen(false)
+                          })
+                          .catch(() => undefined)
+                      }}
+                      variant="destructive"
+                    >
+                      {friendAction.pending && (
+                        <Loader2Icon aria-hidden="true" className="animate-spin" />
+                      )}
+                      {t(friendAction.labelKey)}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
+}
+
+export type ContactFriendActionControl = {
+  disabled?: boolean
+  kind: "accept" | "add" | "cancel" | "delete" | "reject" | "waiting"
+  labelKey:
+    | "friend.accept"
+    | "friend.add"
+    | "friend.cancelRequest"
+    | "friend.delete"
+    | "friend.reject"
+    | "friend.waiting"
+  onAction: () => Promise<boolean>
+  pending: boolean
+}
+
+export type ContactFriendAction = ContactFriendActionControl & {
+  secondaryAction?: ContactFriendActionControl
 }
 
 export function ContactEmptyState() {
@@ -353,10 +455,10 @@ function ContactDetailRow({
   const displayValue = hasValue ? value : t("app.notSet")
 
   return (
-    <div className="flex items-center gap-3 border-b py-2 last:border-b-0">
-      {icon}
+    <div className="flex min-w-0 items-center gap-3 border-b py-2 last:border-b-0">
+      <span className="shrink-0">{icon}</span>
       <span className="w-16 shrink-0 text-muted-foreground">{label}</span>
-      <span className={cn("min-w-0 truncate", !hasValue && "text-muted-foreground")}>
+      <span className={cn("min-w-0 flex-1 truncate", !hasValue && "text-muted-foreground")}>
         {displayValue}
       </span>
     </div>

@@ -9,6 +9,7 @@ import { FileDocumentWindowStateStore } from "@main/document-window-state"
 import { ConfigStore } from "@main/config-store"
 import { CredentialStore } from "@main/credential-store"
 import { Diagnostics } from "@main/diagnostics"
+import { normalizeDiagnosticProcessExitReason } from "@shared/diagnostics-contract"
 import { parseDeepLink } from "@main/deep-links"
 import { FileService } from "@main/file-service"
 import { HttpTransport } from "@main/http-transport"
@@ -54,7 +55,7 @@ async function start(): Promise<void> {
   const startupHealth = new StartupHealth(app.getPath("userData"), app.getVersion())
   const healthResult = await startupHealth.begin()
   if (healthResult.previousStartupIncomplete)
-    await diagnostics.record("main", "previous-startup-incomplete")
+    await diagnostics.recordEvent({ origin: "main", type: "application.startup-incomplete" })
   const store = new ConfigStore(app.getPath("userData"))
   await store.load()
   const profiles = new ServerProfiles(store)
@@ -89,12 +90,15 @@ async function start(): Promise<void> {
   screenshots.installProtocol()
   const unregisterScreenshotIpc = screenshots.registerIpc()
   const proxyAuth = new ProxyAuthPrompt(windows, iconPath)
-  const realtime = new RealtimeController(profiles, sessions, proxyAuth)
+  const realtime = new RealtimeController(profiles, sessions, proxyAuth, diagnostics)
   const asr = new ASRController(profiles, sessions, proxyAuth)
   const documentCollaboration = new DocumentCollaborationController(profiles, sessions, proxyAuth)
   const documentWindowState = new FileDocumentWindowStateStore(app.getPath("userData"))
   await documentWindowState.load().catch(() => {
-    void diagnostics.record("main", "document-window-state-load-failed")
+    void diagnostics.recordEvent({
+      origin: "main",
+      type: "application.document-window-state-load-failed",
+    })
   })
   const documentWindows = new DocumentWindowManager({
     collaboration: documentCollaboration,
@@ -177,6 +181,25 @@ async function start(): Promise<void> {
 
   const hidden = process.argv.includes("--hidden") && store.getSettings().autoLaunch
   const mainWindow = windows.create(hidden)
+  const recordWindowState = () => {
+    const episodeId = diagnostics.getCurrentEpisodeId()
+    void diagnostics.recordEvent({
+      ...(episodeId ? { context: { episodeId } } : {}),
+      data: {
+        windowFocused: mainWindow.isFocused(),
+        windowMinimized: mainWindow.isMinimized(),
+        windowVisible: mainWindow.isVisible(),
+      },
+      origin: "main",
+      type: "environment.window-state-changed",
+    })
+  }
+  mainWindow.on("show", recordWindowState)
+  mainWindow.on("hide", recordWindowState)
+  mainWindow.on("focus", recordWindowState)
+  mainWindow.on("blur", recordWindowState)
+  mainWindow.on("minimize", recordWindowState)
+  mainWindow.on("restore", recordWindowState)
   shortcuts.start()
   const cancelScreenshotForDisplayChange = () => screenshots.cancelActive()
   screen.on("display-added", cancelScreenshotForDisplayChange)
@@ -184,12 +207,17 @@ async function start(): Promise<void> {
   screen.on("display-metrics-changed", cancelScreenshotForDisplayChange)
   mainWindow.webContents.once("did-finish-load", () => void startupHealth.markHealthy())
   powerMonitor.on("suspend", () => {
+    diagnostics.createEpisode("suspend")
     asr.closeAll()
     documentCollaboration.closeAll()
   })
-  powerMonitor.on("resume", () => realtime.reconnectAll())
-  powerMonitor.on("unlock-screen", () => realtime.reconnectAll())
-  app.on("activate", () => windows.show())
+  powerMonitor.on("resume", () => realtime.reconnectAll(diagnostics.createEpisode("resume")))
+  powerMonitor.on("lock-screen", () => diagnostics.createEpisode("locked"))
+  powerMonitor.on("unlock-screen", () => realtime.reconnectAll(diagnostics.createEpisode("resume")))
+  app.on("activate", () => {
+    diagnostics.createEpisode("window")
+    windows.show()
+  })
   app.on("second-instance", (_event, argv, _workingDirectory, additionalData) => {
     const data = additionalData as { deepLink?: unknown }
     const link =
@@ -272,10 +300,21 @@ async function start(): Promise<void> {
     system.dispose()
     updater.dispose()
   })
-  process.on("uncaughtException", (error) => void diagnostics.record("main", error.name))
-  process.on("unhandledRejection", () => void diagnostics.record("main", "unhandled-rejection"))
+  process.on(
+    "uncaughtException",
+    () => void diagnostics.recordEvent({ origin: "main", type: "application.uncaught-exception" }),
+  )
+  process.on(
+    "unhandledRejection",
+    () => void diagnostics.recordEvent({ origin: "main", type: "application.unhandled-rejection" }),
+  )
   app.on("child-process-gone", (_event, details) => {
-    if (details.type === "GPU") void diagnostics.record("gpu", details.reason)
+    if (details.type === "GPU")
+      void diagnostics.recordEvent({
+        data: { processExitReason: normalizeDiagnosticProcessExitReason(details.reason) },
+        origin: "gpu",
+        type: "gpu.process-error",
+      })
   })
   if (initialDeepLink) await handleDeepLink(initialDeepLink)
 

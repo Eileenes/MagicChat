@@ -1,7 +1,6 @@
 import * as React from "react"
 import { useLocale } from "@/components/locale-provider"
-import { useSearchParams } from "react-router"
-import { toast } from "sonner"
+import { useNavigate } from "react-router"
 import {
   CalendarDays,
   ChevronDown,
@@ -20,7 +19,6 @@ import {
 } from "lucide-react"
 
 import { CreateProjectTaskDialog } from "@/components/projects/create-project-task-dialog"
-import { ProjectTaskDetailsDialog } from "@/components/projects/project-task-details-dialog"
 import { ProjectTaskBoardView } from "@/components/projects/project-task-board-view"
 import { ProjectTaskCalendarView } from "@/components/projects/project-task-calendar-view"
 import { ProjectTaskGanttView } from "@/components/projects/project-task-gantt-view"
@@ -45,7 +43,15 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { ClientProjectMember } from "@/lib/project-data-api"
 import { listAllClientProjectMembers } from "@/lib/project-members"
-import { getClientProjectTask, listClientProjectTasks } from "@/lib/project-task-data-api"
+import { listClientProjectTasks } from "@/lib/project-task-data-api"
+import { useOptionalClientData } from "@/lib/client-data-context"
+import {
+  EMPTY_PROJECT_USERS,
+  getProjectMemberUserIds,
+  getProjectTaskUserIds,
+  hydrateProjectMembers,
+  hydrateProjectTasks,
+} from "@/lib/project-user-hydration"
 import { cn } from "@/lib/utils"
 
 function getTaskViews(t: ReturnType<typeof useLocale>["t"]) {
@@ -60,8 +66,6 @@ function getTaskViews(t: ReturnType<typeof useLocale>["t"]) {
 type TaskView = ReturnType<typeof getTaskViews>[number]["value"]
 
 const projectTaskViewStorageKey = "project-task-view"
-const projectTaskIdSearchParam = "taskId"
-
 type TaskFilters = {
   assigneeUserIds: string[]
   keyword: string
@@ -134,9 +138,11 @@ export function ProjectTasksTab({
   projectId: string
 }) {
   const { t } = useLocale()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const clientData = useOptionalClientData()
+  const ensureUsers = clientData?.ensureUsers
+  const usersById = clientData?.usersById ?? EMPTY_PROJECT_USERS
   const [activeView, setActiveView] = React.useState<TaskView>(readStoredProjectTaskView)
-  const [fallbackActiveTask, setFallbackActiveTask] = React.useState<ProjectTask | null>(null)
   const [appliedFilters, setAppliedFilters] = React.useState<TaskFilters>(createDefaultTaskFilters)
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [filters, setFilters] = React.useState<TaskFilters>(createDefaultTaskFilters)
@@ -146,13 +152,6 @@ export function ProjectTasksTab({
   const [membersError, setMembersError] = React.useState(false)
   const [membersLoading, setMembersLoading] = React.useState(true)
   const [tasks, setTasks] = React.useState<ProjectTask[]>([])
-  const activeTaskId = searchParams.get(projectTaskIdSearchParam)?.trim() ?? ""
-  const activeTask =
-    tasks.find((task) => task.id === activeTaskId) ??
-    (fallbackActiveTask?.id === activeTaskId && fallbackActiveTask.projectId === projectId
-      ? fallbackActiveTask
-      : null)
-
   React.useEffect(() => {
     let active = true
     void listAllProjectTasks(projectId, appliedFilters)
@@ -202,47 +201,22 @@ export function ProjectTasksTab({
     }
   }, [projectId])
 
+  const directoryUserIds = React.useMemo(
+    () => [...getProjectTaskUserIds(tasks), ...getProjectMemberUserIds(members)],
+    [members, tasks],
+  )
+  const directoryUserKey = directoryUserIds.join("\u0000")
   React.useEffect(() => {
-    if (!activeTaskId) {
-      return
-    }
-
-    const listedTask = tasks.find((task) => task.id === activeTaskId)
-    if (
-      listedTask ||
-      loading ||
-      (fallbackActiveTask?.id === activeTaskId && fallbackActiveTask.projectId === projectId)
-    ) {
-      return
-    }
-
-    let active = true
-    void getClientProjectTask(projectId, activeTaskId)
-      .then((task) => {
-        if (active) {
-          setFallbackActiveTask(task)
-        }
-      })
-      .catch((loadError: unknown) => {
-        if (!active) {
-          return
-        }
-        setFallbackActiveTask(null)
-        setSearchParams(
-          (current) => {
-            const next = new URLSearchParams(current)
-            next.delete(projectTaskIdSearchParam)
-            return next
-          },
-          { replace: true },
-        )
-        toast.error(loadError instanceof Error ? loadError.message : t("project.loadTaskFailed"))
-      })
-
-    return () => {
-      active = false
-    }
-  }, [activeTaskId, fallbackActiveTask, loading, projectId, setSearchParams, tasks, t])
+    if (directoryUserKey) void ensureUsers?.(directoryUserIds).catch(() => undefined)
+  }, [directoryUserIds, directoryUserKey, ensureUsers])
+  const hydratedTasks = React.useMemo(
+    () => hydrateProjectTasks(tasks, usersById),
+    [tasks, usersById],
+  )
+  const hydratedMembers = React.useMemo(
+    () => hydrateProjectMembers(members, usersById),
+    [members, usersById],
+  )
 
   async function refreshTasks() {
     try {
@@ -261,12 +235,6 @@ export function ProjectTasksTab({
     await Promise.allSettled([refreshTasks(), onTasksChanged()])
   }
 
-  function handleTaskDeleted(taskId: string) {
-    setTasks((current) => current.filter((task) => task.id !== taskId))
-    setFallbackActiveTask(null)
-    void onTasksChanged().catch(() => undefined)
-  }
-
   function handleTaskStatusChange(taskId: string, status: ProjectTaskStatus) {
     setTasks((current) => current.map((task) => (task.id === taskId ? { ...task, status } : task)))
   }
@@ -277,24 +245,7 @@ export function ProjectTasksTab({
   }
 
   function handleOpenTask(task: ProjectTask) {
-    setFallbackActiveTask(task)
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current)
-      next.set(projectTaskIdSearchParam, task.id)
-      return next
-    })
-  }
-
-  function handleCloseTask() {
-    setFallbackActiveTask(null)
-    setSearchParams(
-      (current) => {
-        const next = new URLSearchParams(current)
-        next.delete(projectTaskIdSearchParam)
-        return next
-      },
-      { replace: true },
-    )
+    navigate(`/tasks/${encodeURIComponent(projectId)}/${encodeURIComponent(task.id)}`)
   }
 
   function applyFilters(nextFilters: TaskFilters) {
@@ -328,7 +279,7 @@ export function ProjectTasksTab({
           <TaskToolbar
             activeView={activeView}
             filters={filters}
-            members={members}
+            members={hydratedMembers}
             membersError={membersError}
             membersLoading={membersLoading}
             onCreateTask={() => setCreateDialogOpen(true)}
@@ -358,7 +309,7 @@ export function ProjectTasksTab({
               onOpenTask={handleOpenTask}
               onTaskStatusChange={handleTaskStatusChange}
               onTaskUpdated={handleTaskUpdated}
-              tasks={tasks}
+              tasks={hydratedTasks}
             />
           ) : (
             <ScrollArea className="min-h-0 flex-1">
@@ -370,26 +321,12 @@ export function ProjectTasksTab({
                 onOpenTask={handleOpenTask}
                 onTaskStatusChange={handleTaskStatusChange}
                 onTaskUpdated={handleTaskUpdated}
-                tasks={tasks}
+                tasks={hydratedTasks}
               />
             </ScrollArea>
           )}
         </div>
       </div>
-      {activeTask && activeTask.id === activeTaskId && (
-        <ProjectTaskDetailsDialog
-          key={`${activeTask.id}-${activeTask.updatedAt}`}
-          onDeleted={handleTaskDeleted}
-          onOpenChange={(open) => {
-            if (!open) {
-              handleCloseTask()
-            }
-          }}
-          onUpdated={handleTaskUpdated}
-          open
-          task={activeTask}
-        />
-      )}
       <CreateProjectTaskDialog
         onCreated={handleTaskCreated}
         onOpenChange={setCreateDialogOpen}

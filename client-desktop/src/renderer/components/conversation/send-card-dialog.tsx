@@ -18,21 +18,260 @@ import { Input } from "@/components/ui/input"
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import type { ClientConversation, ClientCardSendInput } from "@/lib/client-data-api"
+import type {
+  ClientConversation,
+  ClientCardSendInput,
+  ClientConversationMember,
+  ContactGroup,
+  ResolvedClientUser,
+} from "@/lib/client-data-api"
 import { useClientData } from "@/lib/client-data-context"
+import { listClientContacts, resolveClientUsers } from "@/lib/client-api/account"
+import { listClientConversations } from "@/lib/client-api/conversations"
+import { sendConversationCardMessage } from "@/lib/client-api/messages"
+import { createClientMessageId } from "@/lib/message-id"
 import { cn } from "@/lib/utils"
 
-export function SendCardDialog({
-  card,
-  onOpenChange,
-  open,
-}: {
+type SendCard = (conversationId: string, card: ClientCardSendInput) => Promise<unknown | null>
+type SendCardDialogProps = {
   card: ClientCardSendInput
   onOpenChange: (open: boolean) => void
   open: boolean
+}
+
+export function SendCardDialog(props: SendCardDialogProps) {
+  return props.open ? <ConnectedSendCardDialog {...props} /> : null
+}
+
+function ConnectedSendCardDialog(props: SendCardDialogProps) {
+  const { conversations, sendConversationCard } = useClientData()
+  return (
+    <SendCardDialogContent
+      {...props}
+      conversations={conversations}
+      sendConversationCard={sendConversationCard}
+    />
+  )
+}
+
+/** The document child window deliberately has no ClientDataProvider. */
+export function StandaloneCardDialog(props: SendCardDialogProps) {
+  return props.open ? <StandaloneCardDialogContent {...props} /> : null
+}
+
+function StandaloneCardDialogContent(props: SendCardDialogProps) {
+  const { t } = useLocale()
+  const [conversations, setConversations] = React.useState<ClientConversation[]>([])
+
+  React.useEffect(() => {
+    if (!props.open) return
+    let active = true
+    const controller = new AbortController()
+
+    async function loadConversations() {
+      try {
+        const values = await listClientConversations()
+        if (!active) return
+
+        setConversations(values)
+        void hydrateStandaloneGroupAvatars(values, controller.signal)
+      } catch (error) {
+        if (active) toast.error(error instanceof Error ? error.message : t("sendCard.loadFailed"))
+      }
+    }
+
+    async function hydrateStandaloneGroupAvatars(
+      values: readonly ClientConversation[],
+      signal: AbortSignal,
+    ) {
+      try {
+        const contacts = await listClientContacts(undefined, signal)
+        if (!active || signal.aborted) return
+
+        const conversationsWithAvatarMembers = withStandaloneGroupAvatarMembers(
+          values,
+          contacts.groups,
+        )
+        setConversations(conversationsWithAvatarMembers)
+
+        const userIds = collectStandaloneGroupAvatarUserIds(conversationsWithAvatarMembers)
+        if (userIds.length === 0) return
+
+        const users = await resolveStandaloneGroupAvatarUsers(userIds, signal)
+        if (active && !signal.aborted) {
+          setConversations(withStandaloneGroupAvatarUsers(conversationsWithAvatarMembers, users))
+        }
+      } catch {
+        // 头像补全为非阻塞增强，保留已加载的会话并回退至群组图标。
+      }
+    }
+
+    void loadConversations()
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [props.open, t])
+
+  const sendConversationCard = React.useCallback<SendCard>(
+    async (conversationId, card) => {
+      if (card.type !== "card") return null
+      try {
+        return await sendConversationCardMessage(conversationId, {
+          clientMessageId: createClientMessageId(),
+          description: card.description,
+          title: card.title,
+          url: card.url,
+        })
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : t("sendCard.failed"))
+        return null
+      }
+    },
+    [t],
+  )
+
+  return (
+    <SendCardDialogContent
+      {...props}
+      conversations={conversations}
+      sendConversationCard={sendConversationCard}
+    />
+  )
+}
+
+function withStandaloneGroupAvatarMembers(
+  conversations: readonly ClientConversation[],
+  groups: readonly ContactGroup[],
+): ClientConversation[] {
+  const groupsById = new Map(groups.map((group) => [group.id, group]))
+
+  return conversations.map((conversation) => {
+    if (conversation.type !== "group") return conversation
+
+    const group = groupsById.get(conversation.id)
+    if (!group) return conversation
+
+    return {
+      ...conversation,
+      avatar: conversation.avatar || group.avatar,
+      members:
+        group.avatarMembers.length > 0
+          ? mergeStandaloneGroupAvatarMembers(conversation.members, group.avatarMembers)
+          : conversation.members,
+    }
+  })
+}
+
+function mergeStandaloneGroupAvatarMembers(
+  conversationMembers: ClientConversationMember[] | undefined,
+  avatarMembers: ContactGroup["avatarMembers"],
+): ClientConversationMember[] {
+  const conversationMembersByIdentity = new Map(
+    conversationMembers?.map((member) => [getMemberIdentity(member), member]),
+  )
+
+  return avatarMembers.map((member) => {
+    const conversationMember = conversationMembersByIdentity.get(getMemberIdentity(member))
+    return {
+      ...conversationMember,
+      ...member,
+      avatar: member.avatar || conversationMember?.avatar || "",
+      email: conversationMember?.email ?? "",
+      name: member.name || conversationMember?.name || "",
+      nickname: member.nickname || conversationMember?.nickname || "",
+      phone: conversationMember?.phone ?? "",
+    }
+  })
+}
+
+function collectStandaloneGroupAvatarUserIds(conversations: readonly ClientConversation[]) {
+  const userIds = new Set<string>()
+  for (const conversation of conversations) {
+    if (conversation.type !== "group") continue
+    for (const member of getStandaloneGroupAvatarMembers(conversation)) {
+      if (member.type === "user" && !member.avatar && member.id.trim()) userIds.add(member.id)
+    }
+  }
+  return [...userIds]
+}
+
+async function resolveStandaloneGroupAvatarUsers(userIds: readonly string[], signal: AbortSignal) {
+  const users: ResolvedClientUser[] = []
+  for (let start = 0; start < userIds.length; start += 100) {
+    users.push(...(await resolveClientUsers(userIds.slice(start, start + 100), undefined, signal)))
+  }
+  return users
+}
+
+function withStandaloneGroupAvatarUsers(
+  conversations: readonly ClientConversation[],
+  users: readonly ResolvedClientUser[],
+): ClientConversation[] {
+  const usersById = new Map(users.map((user) => [user.id, user]))
+
+  return conversations.map((conversation) => {
+    if (conversation.type !== "group" || !conversation.members) return conversation
+
+    let changed = false
+    const members = conversation.members.map((member) => {
+      if (member.type !== "user") return member
+      const user = usersById.get(member.id)
+      if (!user) return member
+
+      const nextMember = {
+        ...member,
+        avatar: user.avatar,
+        email: user.email,
+        name: user.name,
+        nickname: user.nickname,
+        phone: user.phone,
+      }
+      if (
+        nextMember.avatar === member.avatar &&
+        nextMember.email === member.email &&
+        nextMember.name === member.name &&
+        nextMember.nickname === member.nickname &&
+        nextMember.phone === member.phone
+      ) {
+        return member
+      }
+
+      changed = true
+      return nextMember
+    })
+
+    return changed ? { ...conversation, members } : conversation
+  })
+}
+
+function getStandaloneGroupAvatarMembers(conversation: ClientConversation) {
+  return [...(conversation.members ?? [])]
+    .sort((left, right) => getMemberRoleOrder(left.role) - getMemberRoleOrder(right.role))
+    .slice(0, 4)
+}
+
+function getMemberIdentity(member: Pick<ClientConversationMember, "id" | "type">) {
+  return `${member.type}:${member.id}`
+}
+
+function getMemberRoleOrder(role: ClientConversationMember["role"]) {
+  if (role === "owner") return 0
+  if (role === "admin") return 1
+  return 2
+}
+
+function SendCardDialogContent({
+  card,
+  conversations,
+  onOpenChange,
+  open,
+  sendConversationCard,
+}: SendCardDialogProps & {
+  conversations: ClientConversation[]
+  sendConversationCard: SendCard
 }) {
   const { t } = useLocale()
-  const { conversations, sendConversationCard } = useClientData()
   const [keyword, setKeyword] = React.useState("")
   const [selectedConversationId, setSelectedConversationId] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)

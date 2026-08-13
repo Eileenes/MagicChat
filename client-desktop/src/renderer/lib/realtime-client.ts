@@ -1,4 +1,6 @@
 import { createClientMessageId } from "@/lib/message-id"
+import type { DiagnosticContext, RealtimeDiagnosticContext } from "@shared/diagnostics-contract"
+import { recordRealtimeParseFailure, recordRendererDiagnostic } from "@/lib/desktop-diagnostics"
 
 export type RealtimeConnectionStatus = "connecting" | "connected" | "reconnecting" | "disconnected"
 
@@ -9,6 +11,7 @@ export type RealtimeSnapshot = {
 
 export type RealtimeWebSocketLike = {
   close: () => void
+  diagnosticContext?: () => DiagnosticContext | undefined
   onclose: ((event: CloseEvent) => void) | null
   onerror: ((event: Event) => void) | null
   onmessage: ((event: MessageEvent) => void) | null
@@ -64,6 +67,7 @@ export class RealtimeClient {
   private shouldReconnect = false
   private socket: RealtimeWebSocketLike | null = null
   private status: RealtimeConnectionStatus = "disconnected"
+  private systemReadyCount = 0
   private url: string
 
   constructor(options: RealtimeClientOptions = {}) {
@@ -84,14 +88,19 @@ export class RealtimeClient {
   }
 
   disconnect() {
+    const previousReady = this.ready
+    const previousStatus = this.status
+    const diagnosticContext = this.diagnosticContext()
     this.shouldReconnect = false
     this.reconnectSequence += 1
     this.clearReconnectTimer()
-    this.rejectPendingRequests(new Error("实时连接已断开"))
+    this.rejectPendingRequests(new Error("实时连接已断开"), "cancelled", diagnosticContext)
     this.ready = false
     this.status = "disconnected"
-    this.socket?.close()
+    const socket = this.socket
     this.socket = null
+    socket?.close()
+    this.recordState(previousStatus, previousReady, diagnosticContext)
     this.notify()
   }
 
@@ -151,17 +160,22 @@ export class RealtimeClient {
     }
   }
 
-  private openSocket(status: RealtimeConnectionStatus) {
+  private openSocket(status: RealtimeConnectionStatus, diagnosticContext?: DiagnosticContext) {
+    const previousReady = this.ready
+    const previousStatus = this.status
     this.clearReconnectTimer()
     this.ready = false
     this.status = status
+    this.recordState(previousStatus, previousReady, diagnosticContext)
     this.notify()
 
     const socket = this.createWebSocket(this.url)
     this.socket = socket
     socket.onopen = () => {
+      const previousStatus = this.status
       this.reconnectAttempt = 0
       this.status = "connected"
+      this.recordState(previousStatus, this.ready)
       this.notify()
     }
     socket.onmessage = (event) => {
@@ -174,13 +188,16 @@ export class RealtimeClient {
   }
 
   private async handleSocketClose(socket: RealtimeWebSocketLike) {
-    if (this.socket === socket) {
-      this.socket = null
-    }
-    this.rejectPendingRequests(new Error("实时连接已断开"))
+    if (this.socket !== socket) return
+    const diagnosticContext = socket.diagnosticContext?.()
+    this.socket = null
+    this.rejectPendingRequests(new Error("实时连接已断开"), "network", diagnosticContext)
+    const previousReady = this.ready
+    const previousStatus = this.status
     this.ready = false
     if (!this.shouldReconnect) {
       this.status = "disconnected"
+      this.recordState(previousStatus, previousReady, diagnosticContext)
       this.notify()
       return
     }
@@ -188,10 +205,11 @@ export class RealtimeClient {
     const reconnectSequence = this.reconnectSequence + 1
     this.reconnectSequence = reconnectSequence
     this.status = "reconnecting"
+    this.recordState(previousStatus, previousReady, diagnosticContext)
     this.notify()
 
     if (!this.authCheck) {
-      this.scheduleReconnect()
+      this.scheduleReconnect(diagnosticContext)
       return
     }
 
@@ -203,12 +221,13 @@ export class RealtimeClient {
       this.shouldReconnect = false
       this.clearReconnectTimer()
       this.status = "disconnected"
+      this.recordState("reconnecting", false, diagnosticContext)
       this.notify()
       this.onUnauthorized?.()
       return
     }
 
-    this.scheduleReconnect()
+    this.scheduleReconnect(diagnosticContext)
   }
 
   private async checkReconnectAuthorization() {
@@ -219,21 +238,26 @@ export class RealtimeClient {
     }
   }
 
-  private scheduleReconnect() {
+  private scheduleReconnect(diagnosticContext?: DiagnosticContext) {
     const delay =
       this.reconnectDelaysMs[Math.min(this.reconnectAttempt, this.reconnectDelaysMs.length - 1)] ??
       defaultReconnectDelaysMs[defaultReconnectDelaysMs.length - 1]
     this.reconnectAttempt += 1
+    void recordRendererDiagnostic("realtime.reconnect-scheduled", diagnosticContext, {
+      attempt: this.reconnectAttempt,
+      durationMs: delay,
+    })
     this.reconnectTimer = window.setTimeout(() => {
       if (!this.shouldReconnect) {
         return
       }
-      this.openSocket("connecting")
+      this.openSocket("connecting", diagnosticContext)
     }, delay)
   }
 
   private handleMessage(data: unknown) {
     if (typeof data !== "string") {
+      recordRealtimeParseFailure()
       return
     }
 
@@ -241,9 +265,11 @@ export class RealtimeClient {
     try {
       envelope = JSON.parse(data) as RealtimeEnvelope
     } catch {
+      recordRealtimeParseFailure()
       return
     }
     if (envelope.v !== protocolVersion) {
+      recordRealtimeParseFailure()
       return
     }
 
@@ -258,7 +284,15 @@ export class RealtimeClient {
 
   private handleEvent(envelope: RealtimeEnvelope) {
     if (envelope.event === "system.ready") {
+      const previousReady = this.ready
       this.ready = true
+      this.systemReadyCount += 1
+      void recordRendererDiagnostic("realtime.system-ready", this.diagnosticContext(), {
+        previousReady,
+        ready: true,
+        status: this.status,
+        systemReadyCount: this.systemReadyCount,
+      })
       this.notify()
       this.dispatchEvent("system.ready", envelope.payload)
       return
@@ -297,11 +331,42 @@ export class RealtimeClient {
     this.reconnectTimer = null
   }
 
-  private rejectPendingRequests(error: Error) {
+  private rejectPendingRequests(
+    error: Error,
+    reason?: "cancelled" | "network",
+    context?: DiagnosticContext,
+  ) {
+    const pendingRequestCount = this.pendingRequests.size
     for (const pending of this.pendingRequests.values()) {
       pending.reject(error)
     }
     this.pendingRequests.clear()
+    if (pendingRequestCount > 0 && reason && isRealtimeDiagnosticContext(context))
+      void recordRendererDiagnostic("realtime.state-changed", context, {
+        pendingRequestCount,
+        reason,
+        ready: this.ready,
+        status: this.status,
+      })
+  }
+
+  private diagnosticContext(): DiagnosticContext | undefined {
+    return this.socket?.diagnosticContext?.()
+  }
+
+  private recordState(
+    previousStatus: RealtimeConnectionStatus,
+    previousReady: boolean,
+    diagnosticContext?: DiagnosticContext,
+  ): void {
+    const context = diagnosticContext ?? this.diagnosticContext()
+    if (!isRealtimeDiagnosticContext(context)) return
+    void recordRendererDiagnostic("realtime.state-changed", context, {
+      previousReady,
+      previousStatus,
+      ready: this.ready,
+      status: this.status,
+    })
   }
 
   private notify() {
@@ -320,6 +385,12 @@ export class RealtimeClient {
       listener(payload)
     }
   }
+}
+
+function isRealtimeDiagnosticContext(
+  context: DiagnosticContext | undefined,
+): context is RealtimeDiagnosticContext {
+  return Boolean(context?.connectionInstanceId && context.episodeId && context.targetScope)
 }
 
 export function buildRealtimeWebSocketURL(location: Pick<Location | URL, "host" | "protocol">) {

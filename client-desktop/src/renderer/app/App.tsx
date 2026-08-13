@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from "react-router"
 
 import { AppLayout } from "@/components/app-layout"
 import { ClientConversationRealtimeSync } from "@/components/client-conversation-realtime-sync"
+import { ClientUserDirectoryRealtimeSync } from "@/components/client-user-directory-realtime-sync"
 import { ClientBrandMetadata } from "@/components/client-brand-metadata"
 import { ClientDataProvider } from "@/components/client-data-provider"
 import { ClientDocumentTitle } from "@/components/client-document-title"
@@ -14,6 +15,7 @@ import { ChatPage } from "@/pages/chat-page"
 import { ContactsPage } from "@/pages/contacts-page"
 import { LoginPage } from "@/pages/login-page"
 import { ProjectsPage } from "@/pages/projects-page"
+import { TaskWorkspacePage } from "@/pages/task-workspace-page"
 import {
   documentWindowPath,
   rememberLastNonDocumentRoute,
@@ -67,7 +69,16 @@ function NormalRoutes({ updatePrompt }: { updatePrompt?: ReactNode }) {
           </>
         }
       />
-      <Route element={<AuthenticatedProviderShell />}>
+      <Route element={<AuthenticatedProviderShell workspaceErrorAction={updatePrompt} />}>
+        <Route
+          path="/tasks/:projectId/:taskId?"
+          element={
+            <>
+              <ClientDocumentTitle title={t("app.title.projects")} />
+              <TaskWorkspacePage />
+            </>
+          }
+        />
         <Route element={<AppLayout footerAction={updatePrompt} />}>
           <Route
             path="/init"
@@ -143,11 +154,16 @@ function DocumentRoutes({ context }: { context: DocumentWindowRouteContext }) {
   )
 }
 
-function AuthenticatedProviderShell() {
+function AuthenticatedProviderShell({
+  workspaceErrorAction,
+}: {
+  workspaceErrorAction?: ReactNode
+}) {
   return (
-    <ClientDataProvider>
+    <ClientDataProvider workspaceErrorAction={workspaceErrorAction}>
       <ClientRealtimeProvider>
         <ClientConversationRealtimeSync />
+        <ClientUserDirectoryRealtimeSync />
         <ClientMessageNotificationSync />
         <Outlet />
       </ClientRealtimeProvider>

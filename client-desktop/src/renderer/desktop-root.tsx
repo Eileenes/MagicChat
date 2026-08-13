@@ -33,6 +33,7 @@ import type { AuthenticatedTarget } from "@shared/client-contract"
 import type { ServerProfile, UpdaterState } from "@shared/bridge"
 import { DesktopWebSocket, installDesktopFetch } from "./desktop-transport"
 import { resolveDesktopResourceUrl } from "@/lib/desktop-resource-url"
+import { parseDesktopDocumentLink } from "@/lib/desktop-document-link"
 import { installDesktopLinkNavigation } from "@/lib/desktop-link-navigation"
 import { startRuntimeDiagnostics } from "@/lib/runtime-diagnostics"
 import { showScreenshotStartError } from "@/lib/screenshot-start-error"
@@ -43,7 +44,10 @@ import { configureMessageCacheTarget } from "@/lib/messages"
 import { parseExternalWebLink } from "@shared/external-link"
 import { DesktopTargetProvider } from "@/components/desktop-target-provider"
 import {
+  documentWindowFeedbackKey,
+  DocumentWindowOpenError,
   parseDocumentWindowLocation,
+  requestDocumentWindow,
   type DocumentWindowRouteContext,
 } from "@/lib/document-window-route"
 
@@ -193,7 +197,7 @@ function DesktopRootContent({ platform }: { platform?: string }) {
       {loading ? (
         <StatusPage text={t("startup.starting")} />
       ) : documentWindowRoute.kind === "invalid" ? (
-        <DocumentWindowStartupError message={documentWindowRoute.message} />
+        <DocumentWindowStartupError message={t(documentWindowRoute.messageKey)} />
       ) : selected ? (
         <DesktopWorkspace
           key={`${selected.id}:${selected.lastUserId ?? "anonymous"}`}
@@ -210,7 +214,7 @@ function DesktopRootContent({ platform }: { platform?: string }) {
           onUpdaterChange={setUpdater}
         />
       ) : documentWindowRoute.kind === "document" ? (
-        <DocumentWindowStartupError message="目标服务器不存在，无法打开文档窗口。" />
+        <DocumentWindowStartupError message={t("documentWindow.startup.serverNotFound")} />
       ) : (
         <ServerSetup onAdded={added} />
       )}
@@ -482,6 +486,19 @@ function DesktopHostedApp({
       ? () => undefined
       : configureMessageCacheTarget(target)
     const requestExternalLink = async (url: string) => {
+      const documentId = parseDesktopDocumentLink(url, target)
+      if (documentId) {
+        try {
+          await requestDocumentWindow(documentId, target.id)
+        } catch (error) {
+          const code = error instanceof DocumentWindowOpenError ? error.code : "bridge_unavailable"
+          throw new DocumentWindowOpenError(
+            code,
+            latestTRef.current(documentWindowFeedbackKey(code)),
+          )
+        }
+        return
+      }
       const link = parseExternalWebLink(url)
       if (!link) throw new Error("只允许打开 HTTP 或 HTTPS 外部链接")
       if (link.protocol === "http:") {
@@ -556,9 +573,13 @@ function DesktopHostedApp({
       window.dispatchEvent(new PopStateEvent("popstate"))
     })
     const restoreLinkNavigation = installDesktopLinkNavigation((url) => {
-      void requestExternalLink(url).catch(() =>
-        toast.error(latestTRef.current("startup.openLinkError")),
-      )
+      void requestExternalLink(url).catch((error) => {
+        toast.error(
+          error instanceof DocumentWindowOpenError
+            ? error.message
+            : latestTRef.current("startup.openLinkError"),
+        )
+      })
     })
     window.addEventListener("magicchat:authenticated", authenticated)
     setReady(true)
@@ -747,10 +768,11 @@ function StatusPage({ detail, text }: { detail?: string; text: string }) {
 }
 
 function DocumentWindowStartupError({ message }: { message: string }) {
+  const { t } = useLocale()
   return (
     <main className="flex h-svh min-h-0 items-center justify-center px-6 pt-10">
       <section className="max-w-sm space-y-4 border bg-background p-8 text-center">
-        <h1 className="text-lg font-semibold">无法打开文档窗口</h1>
+        <h1 className="text-lg font-semibold">{t("documentWindow.startup.title")}</h1>
         <p className="text-sm text-muted-foreground">{message}</p>
       </section>
     </main>

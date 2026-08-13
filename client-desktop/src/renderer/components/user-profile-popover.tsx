@@ -4,7 +4,7 @@ import { Loader2Icon, Mail, Phone, UserPen, UserRound } from "lucide-react"
 import { toast } from "sonner"
 
 import { formatContactPhone } from "@/lib/contact-format"
-import { useClientData } from "@/lib/client-data-context"
+import { useClientData, useClientUser } from "@/lib/client-data-context"
 import { cn } from "@/lib/utils"
 import { AvatarPreviewDialog } from "@/components/avatar-preview-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -59,14 +59,15 @@ export function UserProfilePopover({
   triggerClassName,
   userId,
 }: UserProfilePopoverProps) {
-  const { contacts, me, openDirectConversation } = useClientData()
+  const { contactDirectoryMode, contacts, me, openDirectConversation } = useClientData()
+  const cachedUser = useClientUser(userId ?? "")
   const navigate = useNavigate()
   const [open, setOpen] = React.useState(false)
   const [avatarPreviewOpen, setAvatarPreviewOpen] = React.useState(false)
   const [openingConversation, setOpeningConversation] = React.useState(false)
   const user = React.useMemo(
-    () => resolveUserProfile(userId, me, contacts, fallbackProfile),
-    [contacts, fallbackProfile, me, userId],
+    () => resolveUserProfile(userId, me, contacts, cachedUser ?? fallbackProfile),
+    [cachedUser, contacts, fallbackProfile, me, userId],
   )
 
   if (!user) {
@@ -75,7 +76,9 @@ export function UserProfilePopover({
 
   const profile = user
   const displayName = getUserDisplayName(profile)
-  const canStartConversation = profile.id !== me.id
+  const canStartConversation =
+    profile.id !== me.id &&
+    (contactDirectoryMode !== "friends" || contacts.some((contact) => contact.id === profile.id))
 
   async function handleStartConversation() {
     if (!canStartConversation || openingConversation) {
@@ -137,8 +140,10 @@ export function UserProfilePopover({
                   </AvatarFallback>
                 </Avatar>
               </button>
-              <div className="min-w-0">
-                <div className="overflow-wrap-anywhere text-sm font-medium">{displayName}</div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium" title={displayName}>
+                  {displayName}
+                </div>
                 <div className="truncate text-xs text-muted-foreground">用户资料</div>
               </div>
             </div>
@@ -166,15 +171,17 @@ export function UserProfilePopover({
               />
             </div>
 
-            <Button
-              className="w-full"
-              disabled={!canStartConversation || openingConversation}
-              onClick={() => void handleStartConversation()}
-              type="button"
-            >
-              {openingConversation && <Loader2Icon aria-hidden="true" className="animate-spin" />}
-              发消息
-            </Button>
+            {canStartConversation ? (
+              <Button
+                className="w-full"
+                disabled={openingConversation}
+                onClick={() => void handleStartConversation()}
+                type="button"
+              >
+                {openingConversation && <Loader2Icon aria-hidden="true" className="animate-spin" />}
+                发消息
+              </Button>
+            ) : null}
           </div>
         </PopoverContent>
       </Popover>
@@ -230,13 +237,14 @@ function UserProfileRow({
 
   return (
     <div className="flex items-center gap-3 border-b py-2 last:border-b-0">
-      {icon}
+      <span className="shrink-0">{icon}</span>
       <span className="w-12 shrink-0 text-muted-foreground">{label}</span>
       <span
         className={cn(
-          "overflow-wrap-anywhere min-w-0 flex-1",
+          "overflow-wrap-anywhere min-w-0 flex-1 [overflow-wrap:anywhere]",
           !hasValue && "text-muted-foreground",
         )}
+        title={displayValue}
       >
         {displayValue}
       </span>

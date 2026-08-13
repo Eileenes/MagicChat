@@ -1,57 +1,60 @@
+import { randomUUID } from "node:crypto"
 import { appendFile, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { app, crashReporter, dialog } from "electron"
+import {
+  DIAGNOSTIC_SCHEMA_VERSION,
+  parseDiagnosticEvent,
+  parseDiagnosticEventInput,
+  type DiagnosticEvent,
+  type DiagnosticEventInput,
+  type DiagnosticStorageStats,
+  type DiagnosticType,
+} from "@shared/diagnostics-contract"
 import type { RendererRuntimeSnapshot } from "@shared/bridge"
 
-type ResourceSnapshot = {
-  processes: ReadonlyArray<{ cpuPercent: number; memoryMb: number; type: string }>
-  system: { freeMemoryMb: number; totalMemoryMb: number }
-}
-
-type RendererSnapshot = RendererRuntimeSnapshot & { ageMs: number }
-type RecordDetails = {
+type RuntimeStallDetails = {
   durationMs?: number
-  episodeId?: string
-  resources?: ResourceSnapshot
-  runtime?: RendererSnapshot
+  memoryMb: number
+  runtime?: RendererRuntimeSnapshot
 }
+type DiagnosticsState = { eventSeq: number; rotationCount: number }
+export type DiagnosticEpisodeReason =
+  | "connection"
+  | "locked"
+  | "reconnect"
+  | "resume"
+  | "suspend"
+  | "window"
 
 export const diagnosticLogMaxBytes = 5 * 1024 * 1024
 export const runtimeStallCooldownMs = 30_000
 
-export type DiagnosticRecord = {
-  arch: string
-  code: string
-  durationMs?: number
-  episodeId?: string
-  platform: string
-  processType: "gpu" | "main" | "renderer"
-  resources?: ResourceSnapshot
-  runtime?: RendererSnapshot
-  timestamp: string
-  version: string
-}
+export type DiagnosticRecord = DiagnosticEvent
 
 export class Diagnostics {
   private readonly logPath: string
   private readonly rotatedLogPath: string
+  private readonly statePath: string
   private readonly maxLogBytes: number
   private readonly stallCooldownMs: number
+  private currentEpisodeId?: string
+  private currentEpisodeReason?: DiagnosticEpisodeReason
   private lastRuntimeStallAt?: number
-  private pendingRuntimeStall?: Required<
-    Pick<RecordDetails, "durationMs" | "resources" | "runtime">
-  >
+  private pendingRuntimeStall?: Required<RuntimeStallDetails>
   private persistenceEnabled = false
   private rendererRuntime?: { receivedAt: number; snapshot: RendererRuntimeSnapshot }
   private runtimeStallTimer?: ReturnType<typeof setTimeout>
+  private state: DiagnosticsState = { eventSeq: 0, rotationCount: 0 }
   private writeQueue = Promise.resolve()
 
   constructor(
     userDataPath: string,
     options: { maxLogBytes?: number; stallCooldownMs?: number } = {},
   ) {
-    this.logPath = path.join(userDataPath, "diagnostics", "crashes.jsonl")
+    this.logPath = path.join(userDataPath, "diagnostics", "realtime.jsonl")
     this.rotatedLogPath = `${this.logPath}.1`
+    this.statePath = path.join(userDataPath, "diagnostics", "realtime-state.json")
     this.maxLogBytes = options.maxLogBytes ?? diagnosticLogMaxBytes
     this.stallCooldownMs = options.stallCooldownMs ?? runtimeStallCooldownMs
   }
@@ -60,7 +63,21 @@ export class Diagnostics {
     this.persistenceEnabled = false
     try {
       await mkdir(path.dirname(this.logPath), { recursive: true })
-      await repairTruncatedTail(this.logPath)
+      await removeObsoleteDiagnosticLogs(path.dirname(this.logPath)).catch(() => undefined)
+      await Promise.all([
+        repairTruncatedTail(this.logPath),
+        repairTruncatedTail(this.rotatedLogPath),
+      ])
+      const state = await readState(this.statePath)
+      const records = await this.readRecords()
+      const lastEventSeq = records.reduce(
+        (maximum, record) => Math.max(maximum, record.eventSeq),
+        0,
+      )
+      this.state = {
+        eventSeq: Math.max(state.eventSeq, lastEventSeq),
+        rotationCount: state.rotationCount,
+      }
       this.persistenceEnabled = true
     } catch {
       // 诊断属于辅助能力，本地日志不可用时不能阻止客户端启动。
@@ -78,30 +95,57 @@ export class Diagnostics {
     }
   }
 
-  async record(
-    processType: DiagnosticRecord["processType"],
-    code: string,
-    details: RecordDetails = {},
-  ): Promise<void> {
-    if (!this.persistenceEnabled) return
-    const record: DiagnosticRecord = {
-      arch: process.arch,
-      code: sanitizeCode(code),
-      ...(Number.isFinite(details.durationMs)
-        ? { durationMs: Math.max(0, Math.round(details.durationMs ?? 0)) }
-        : {}),
-      ...(details.episodeId ? { episodeId: details.episodeId.slice(0, 64) } : {}),
-      platform: process.platform,
-      processType,
-      ...(details.resources ? { resources: details.resources } : {}),
-      ...(details.runtime ? { runtime: details.runtime } : {}),
-      timestamp: new Date().toISOString(),
-      version: app.getVersion(),
-    }
-    const line = `${JSON.stringify(record)}\n`
-    const write = this.writeQueue.then(() => this.appendRecord(line))
+  async recordEvent(input: DiagnosticEventInput): Promise<DiagnosticRecord | undefined> {
+    if (!this.persistenceEnabled) return undefined
+    let recorded: DiagnosticRecord | undefined
+    const write = this.writeQueue.then(async () => {
+      const normalized = parseDiagnosticEventInput(input)
+      const contextualized =
+        this.currentEpisodeId && !normalized.context?.episodeId
+          ? {
+              ...normalized,
+              context: { ...normalized.context, episodeId: this.currentEpisodeId },
+            }
+          : normalized
+      const eventSeq = this.state.eventSeq + 1
+      const event: DiagnosticRecord = {
+        ...contextualized,
+        ...(contextualized.type === "realtime.parse-failures-aggregated"
+          ? {
+              data: {
+                ...contextualized.data,
+                suppressedToEventSeq: eventSeq,
+              },
+            }
+          : {}),
+        eventSeq,
+        timestamp: new Date().toISOString(),
+      }
+      await this.appendRecord(`${JSON.stringify(event)}\n`)
+      this.state.eventSeq = event.eventSeq
+      await this.writeState()
+      recorded = event
+    })
     this.writeQueue = write.catch(() => undefined)
     await write.catch(() => undefined)
+    return recorded
+  }
+
+  createEpisode(reason: DiagnosticEpisodeReason): string {
+    const episodeId = randomUUID().replace(/-/g, "")
+    this.currentEpisodeId = episodeId
+    this.currentEpisodeReason = reason
+    void this.recordEvent({
+      context: { episodeId },
+      data: { reason },
+      origin: "main",
+      type: "environment.lifecycle-changed",
+    })
+    return episodeId
+  }
+
+  getCurrentEpisodeId(): string | undefined {
+    return this.currentEpisodeId
   }
 
   updateRuntimeSnapshot(snapshot: RendererRuntimeSnapshot): void {
@@ -112,30 +156,10 @@ export class Diagnostics {
     ) {
       this.queueRuntimeStall({
         durationMs: Math.max(snapshot.eventLoopLagMs, snapshot.longTasks.maxDurationMs),
-        resources: collectResources(),
-        runtime: { ...snapshot, ageMs: 0 },
+        memoryMb: systemFreeMemoryMb(),
+        runtime: snapshot,
       })
     }
-  }
-
-  async recordRendererLifecycle(
-    code: string,
-    episodeId: string,
-    durationMs?: number,
-  ): Promise<void> {
-    if (!this.persistenceEnabled) return
-    const runtime = this.rendererRuntime
-      ? {
-          ...this.rendererRuntime.snapshot,
-          ageMs: Math.max(0, Date.now() - this.rendererRuntime.receivedAt),
-        }
-      : undefined
-    await this.record("renderer", code, {
-      durationMs,
-      episodeId,
-      resources: collectResources(),
-      runtime,
-    })
   }
 
   async export(): Promise<{ path?: string }> {
@@ -145,7 +169,7 @@ export class Diagnostics {
     if (result.canceled || !result.filePath) return {}
     await this.flushPendingRuntimeStall()
     await this.writeQueue
-    const records = await this.readRecords()
+    const events = await this.readRecords()
     const payload = {
       application: {
         arch: process.arch,
@@ -154,13 +178,50 @@ export class Diagnostics {
         platform: process.platform,
         version: app.getVersion(),
       },
-      events: records,
+      clientEvidenceBoundary:
+        "客户端未观察到对应事件不代表服务端未发送；服务端发送情况不在本诊断包的证据范围内。",
+      events,
       exportedAt: new Date().toISOString(),
       remoteTelemetryEnabled: false,
-      schemaVersion: 3,
+      schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+      summary: summarize(events),
+      timeline: timeline(events, this.state.rotationCount),
     }
     await writeFile(result.filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
     return { path: result.filePath }
+  }
+
+  async getStorageStats(): Promise<DiagnosticStorageStats> {
+    await this.writeQueue
+    return this.readStorageStats()
+  }
+
+  async clearStorage(): Promise<DiagnosticStorageStats> {
+    if (!this.persistenceEnabled) return this.readStorageStats()
+    await this.flushPendingRuntimeStall()
+    const clear = this.writeQueue.then(async () => {
+      await Promise.all(
+        [this.logPath, this.rotatedLogPath].map((filePath) => rm(filePath, { force: true })),
+      )
+      this.state.rotationCount = 0
+      await this.writeState()
+    })
+    this.writeQueue = clear.catch(() => undefined)
+    await clear
+    return this.readStorageStats()
+  }
+
+  private async readStorageStats(): Promise<DiagnosticStorageStats> {
+    if (!this.persistenceEnabled) return { bytes: 0, status: "unavailable" }
+    try {
+      const bytes = (
+        await Promise.all([this.logPath, this.rotatedLogPath].map(diagnosticLogSize))
+      ).reduce((total, size) => total + size, 0)
+      if (!Number.isSafeInteger(bytes)) throw new Error("诊断日志大小超出安全范围")
+      return { bytes, status: "available" }
+    } catch {
+      return { bytes: 0, status: "unavailable" }
+    }
   }
 
   private async readRecords(): Promise<DiagnosticRecord[]> {
@@ -169,15 +230,16 @@ export class Diagnostics {
         readOptional(this.rotatedLogPath),
         readOptional(this.logPath),
       ])
-      const lines = contents.join("\n").split("\n").filter(Boolean).slice(-200)
-      return lines.flatMap((line) => {
-        try {
-          const record: unknown = JSON.parse(line)
-          return isDiagnosticRecord(record) ? [record] : []
-        } catch {
-          return []
-        }
-      })
+      return contents
+        .flatMap((content) => content.split("\n").filter(Boolean))
+        .flatMap((line) => {
+          try {
+            return [parseDiagnosticEvent(JSON.parse(line) as unknown)]
+          } catch {
+            return []
+          }
+        })
+        .sort((left, right) => left.eventSeq - right.eventSeq)
     } catch {
       return []
     }
@@ -191,13 +253,18 @@ export class Diagnostics {
     if (currentSize > 0 && currentSize + Buffer.byteLength(line) > this.maxLogBytes) {
       await rm(this.rotatedLogPath, { force: true })
       await rename(this.logPath, this.rotatedLogPath)
+      this.state.rotationCount += 1
     }
     await appendFile(this.logPath, line, { mode: 0o600 })
   }
 
-  private queueRuntimeStall(
-    details: Required<Pick<RecordDetails, "durationMs" | "resources" | "runtime">>,
-  ): void {
+  private async writeState(): Promise<void> {
+    const temporaryPath = `${this.statePath}.tmp`
+    await writeFile(temporaryPath, JSON.stringify(this.state), { mode: 0o600 })
+    await rename(temporaryPath, this.statePath)
+  }
+
+  private queueRuntimeStall(details: Required<RuntimeStallDetails>): void {
     const now = Date.now()
     const cooldownElapsed =
       this.lastRuntimeStallAt === undefined || now - this.lastRuntimeStallAt >= this.stallCooldownMs
@@ -210,7 +277,7 @@ export class Diagnostics {
       if (this.runtimeStallTimer) clearTimeout(this.runtimeStallTimer)
       this.runtimeStallTimer = undefined
       this.lastRuntimeStallAt = now
-      void this.record("renderer", "renderer-runtime-stall", selected)
+      void this.recordRuntimeStall(selected)
       return
     }
 
@@ -235,12 +302,125 @@ export class Diagnostics {
     this.pendingRuntimeStall = undefined
     if (!pending) return
     this.lastRuntimeStallAt = Date.now()
-    await this.record("renderer", "renderer-runtime-stall", pending)
+    await this.recordRuntimeStall(pending)
+  }
+
+  private async recordRuntimeStall(details: Required<RuntimeStallDetails>): Promise<void> {
+    await this.recordEvent({
+      ...(this.currentEpisodeId ? { context: { episodeId: this.currentEpisodeId } } : {}),
+      data: {
+        appActivatedAgeMs: bounded(details.runtime.appActivatedAgeMs ?? 0, 86_400_000),
+        documentVisibility: details.runtime.documentVisibility ?? "hidden",
+        durationMs: bounded(details.durationMs, 600_000),
+        eventLoopLagMs: bounded(details.runtime.eventLoopLagMs, 600_000),
+        longTaskCount: bounded(details.runtime.longTasks.count, 100_000),
+        longTaskMaxDurationMs: bounded(details.runtime.longTasks.maxDurationMs, 600_000),
+        memoryMb: bounded(details.memoryMb, 1_000_000),
+        navigatorOnline: details.runtime.navigatorOnline ?? false,
+        ...(this.currentEpisodeReason ? { reason: this.currentEpisodeReason } : {}),
+        windowFocused: details.runtime.windowFocused ?? false,
+        windowMinimized: details.runtime.windowMinimized ?? false,
+        windowVisible: details.runtime.windowVisible ?? false,
+      },
+      origin: "renderer",
+      type: "runtime.stall-observed",
+    })
+  }
+}
+
+function timeline(events: ReadonlyArray<DiagnosticRecord>, rotationCount: number) {
+  return {
+    eventCount: events.length,
+    firstEventSeq: events[0]?.eventSeq,
+    firstTimestamp: events[0]?.timestamp,
+    lastEventSeq: events.at(-1)?.eventSeq,
+    lastTimestamp: events.at(-1)?.timestamp,
+    rotationCount,
+  }
+}
+
+function summarize(events: ReadonlyArray<DiagnosticRecord>) {
+  const byType: Record<string, number> = {}
+  const connectionCounters = {
+    authorizationFailures: 0,
+    closes: 0,
+    reconnects: 0,
+    systemReady: 0,
+  }
+  const errorCategories: Record<string, number> = {}
+  const episodes = new Map<string, string>()
+  const syncOperations = new Map<string, string>()
+  let suppressedCount = 0
+  for (const event of events) {
+    byType[event.type] = (byType[event.type] ?? 0) + 1
+    if (event.type === "realtime.socket-closed") connectionCounters.closes += 1
+    if (event.type === "realtime.reconnect-scheduled") connectionCounters.reconnects += 1
+    if (event.type === "realtime.system-ready") connectionCounters.systemReady += 1
+    if (event.type === "realtime.authorization-checked" && event.data?.responseStatus === 401)
+      connectionCounters.authorizationFailures += 1
+    const error = event.data?.error
+    if (error && typeof error === "object" && typeof error.category === "string")
+      errorCategories[error.category] = (errorCategories[error.category] ?? 0) + 1
+    if (event.context?.episodeId) episodes.set(event.context.episodeId, event.type)
+    if (event.context?.syncOperationId && isSyncOutcome(event.type))
+      syncOperations.set(event.context.syncOperationId, event.type)
+    if (event.type === "realtime.parse-failures-aggregated")
+      suppressedCount +=
+        typeof event.data?.suppressedCount === "number" ? event.data.suppressedCount : 0
+  }
+  return {
+    connectionCounters,
+    episodeCount: episodes.size,
+    errorCategories,
+    eventTypes: byType,
+    parseFailuresSuppressed: suppressedCount,
+    syncOperationResults: Object.values(Object.fromEntries(syncOperations)).reduce<
+      Record<string, number>
+    >((result, outcome) => ({ ...result, [outcome]: (result[outcome] ?? 0) + 1 }), {}),
+  }
+}
+
+function isSyncOutcome(type: DiagnosticType): boolean {
+  return (
+    type === "message-sync.completed" ||
+    type === "message-sync.failed" ||
+    type === "message-sync.cancelled" ||
+    type === "message-sync.skipped"
+  )
+}
+
+async function readState(filePath: string): Promise<DiagnosticsState> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(filePath, "utf8"))
+    if (!parsed || typeof parsed !== "object") return { eventSeq: 0, rotationCount: 0 }
+    const value = parsed as Partial<DiagnosticsState>
+    return {
+      eventSeq:
+        Number.isSafeInteger(value.eventSeq) && (value.eventSeq ?? -1) >= 0 ? value.eventSeq! : 0,
+      rotationCount:
+        Number.isSafeInteger(value.rotationCount) && (value.rotationCount ?? -1) >= 0
+          ? value.rotationCount!
+          : 0,
+    }
+  } catch {
+    return { eventSeq: 0, rotationCount: 0 }
   }
 }
 
 async function readOptional(filePath: string): Promise<string> {
   return readFile(filePath, "utf8").catch(() => "")
+}
+
+async function diagnosticLogSize(filePath: string): Promise<number> {
+  try {
+    const file = await stat(filePath)
+    if (!file.isFile() || !Number.isSafeInteger(file.size) || file.size < 0)
+      throw new Error("诊断日志文件状态无效")
+    return file.size
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0
+    throw error
+  }
 }
 
 async function repairTruncatedTail(filePath: string): Promise<void> {
@@ -275,47 +455,24 @@ async function repairTruncatedTail(filePath: string): Promise<void> {
   }
 }
 
-function collectResources(): ResourceSnapshot {
+function systemFreeMemoryMb(): number {
   const memory = process.getSystemMemoryInfo()
-  return {
-    processes: app.getAppMetrics().map((metric) => ({
-      cpuPercent: bounded(metric.cpu.percentCPUUsage, 100_000),
-      memoryMb: bounded(metric.memory.workingSetSize / 1024, 1_000_000),
-      type: String(metric.type).slice(0, 32),
-    })),
-    system: {
-      freeMemoryMb: bounded(memory.free / 1024, 1_000_000),
-      totalMemoryMb: bounded(memory.total / 1024, 1_000_000),
-    },
-  }
+  return bounded(memory.free / 1024, 1_000_000)
 }
 
 function bounded(value: number, maximum: number): number {
   return Math.min(maximum, Math.max(0, Math.round(Number.isFinite(value) ? value : 0)))
 }
 
+async function removeObsoleteDiagnosticLogs(diagnosticsDirectory: string): Promise<void> {
+  await Promise.all(
+    ["crashes.jsonl", "crashes.jsonl.1"].map((fileName) =>
+      rm(path.join(diagnosticsDirectory, fileName), { force: true }),
+    ),
+  )
+}
+
 export function releaseChannel(): "preview" | "stable" | "test" {
   const channel = process.env.MAGICCHAT_RELEASE_CHANNEL
   return channel === "stable" || channel === "preview" ? channel : "test"
-}
-
-function sanitizeCode(value: string): string {
-  return value
-    .replace(/https?:\/\/\S+/gi, "[url]")
-    .replace(/[\\/][^\s]+/g, "[path]")
-    .slice(0, 160)
-}
-
-function isDiagnosticRecord(value: unknown): value is DiagnosticRecord {
-  if (!value || typeof value !== "object") return false
-  const record = value as Partial<DiagnosticRecord>
-  return Boolean(
-    typeof record.timestamp === "string" &&
-    typeof record.version === "string" &&
-    typeof record.processType === "string" &&
-    typeof record.code === "string" &&
-    record.code.length <= 160 &&
-    (record.durationMs === undefined ||
-      (Number.isFinite(record.durationMs) && (record.durationMs ?? -1) >= 0)),
-  )
 }

@@ -58,6 +58,11 @@ import {
   listClientProjectMembers,
 } from "@/lib/project-data-api"
 import {
+  getProjectMemberUserIds,
+  hydrateProjectMembers,
+  hydrateProjectOwner,
+} from "@/lib/project-user-hydration"
+import {
   isProjectSection,
   normalizeProjectSectionPath,
   projectSectionPath,
@@ -102,10 +107,19 @@ export function ProjectsPage() {
       )
     : projects
   const activeSection: ProjectSection = isProjectSection(section) ? section : "tasks"
+  const linkedTaskId = projectId ? new URLSearchParams(location.search).get("taskId")?.trim() : ""
 
   if (projectId && !isProjectSection(section)) {
     return (
       <Navigate replace to={normalizeProjectSectionPath(projectId, section, location.search)} />
+    )
+  }
+  if (projectId && linkedTaskId) {
+    return (
+      <Navigate
+        replace
+        to={`/tasks/${encodeURIComponent(projectId)}/${encodeURIComponent(linkedTaskId)}`}
+      />
     )
   }
 
@@ -312,6 +326,7 @@ function SelectedProjectPanel({
   refreshProjects: () => Promise<void>
   user: ClientUser
 }) {
+  const { ensureUsers, usersById = {} } = useClientData()
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(true)
   const [members, setMembers] = React.useState<ClientProjectMember[]>([])
@@ -332,6 +347,23 @@ function SelectedProjectPanel({
       // Keep the current detail visible when a background refresh fails.
     }
   }, [projectId])
+
+  const projectUserIds = React.useMemo(
+    () => [project?.owner.id ?? "", ...getProjectMemberUserIds(members)].filter(Boolean),
+    [members, project?.owner.id],
+  )
+  const projectUserKey = projectUserIds.join("\u0000")
+  React.useEffect(() => {
+    if (projectUserKey) void ensureUsers?.(projectUserIds).catch(() => undefined)
+  }, [ensureUsers, projectUserIds, projectUserKey])
+  const hydratedMembers = React.useMemo(
+    () => hydrateProjectMembers(members, usersById),
+    [members, usersById],
+  )
+  const hydratedProject = React.useMemo(
+    () => (project ? { ...project, owner: hydrateProjectOwner(project.owner, usersById) } : null),
+    [project, usersById],
+  )
 
   React.useEffect(() => {
     const requestId = ++requestIdRef.current
@@ -369,18 +401,18 @@ function SelectedProjectPanel({
     return <ProjectPanelState loading message="正在加载项目" />
   }
 
-  if (error || !project) {
+  if (error || !hydratedProject) {
     return <ProjectPanelState message={error || "项目不存在或无法访问"} />
   }
 
   return (
     <ProjectPanel
       groups={groups}
-      members={members}
+      members={hydratedMembers}
       onProjectDeleted={onProjectDeleted}
       onProjectUpdated={handleProjectUpdated}
       onRelationsChanged={handleRelationsChanged}
-      project={project}
+      project={hydratedProject}
       section={section}
       user={user}
     />

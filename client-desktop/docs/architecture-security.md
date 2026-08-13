@@ -53,6 +53,14 @@ sessionId 隔离；页面卸载、WebContents 销毁、注销、认证失效、S
 外链流程的远程导航和任意新窗口。CSP 禁止远程脚本、对象、Frame 和 Renderer 直接发起
 任意网络连接。外部 HTTP 图片仍不得自动加载。
 
+Desktop 在统一外链入口中会额外识别当前不可变认证 Target 下的 HTTPS 文档链接。只有协议、
+主机、端口、部署路径与已保存的 `normalizedUrl` 完整匹配，且路径严格为
+`/documents/document/<document UUID>`、不含查询、片段、凭据或额外路径段时，Renderer 才会
+通过 `DesktopBridge.navigation.openDocumentWindow(documentId, serverId)` 请求创建或聚焦文档
+窗口。该分类只决定交互，不承担权限边界；Main 仍验证可信发送方、已保存 Profile、当前用户、
+Target、UUID、窗口所有权和窗口上限。其他 Server、其他 Web 路由、HTTP 或无法无歧义解析的
+链接继续执行既有外链规则；已开始文档交接但窗口服务失败时显示稳定错误，不静默回退系统浏览器。
+
 ## 文档独立窗口
 
 Desktop 文档窗口是由 Main 创建的独立顶层 `BrowserWindow`，主窗口仍负责聊天、通知、托盘和
@@ -161,8 +169,13 @@ Renderer 请求登录
 ## 本地数据与诊断
 
 POC 不启用远程崩溃遥测，`crashReporter.uploadToServer=false`，也不接入 Sentry、远程
-日志或行为分析。诊断只能由用户主动导出，使用字段白名单，不包含 Server 地址、
-身份、消息、文件路径、完整 URL、Header、Cookie、Token 或原始 dump。
+日志或行为分析。诊断包只能由用户主动导出，使用字段白名单，不包含 Server 地址、消息、
+文件路径、完整 URL、Header、Cookie、Token 或原始 dump。设置页仅通过受信 Bridge 显示
+实时诊断日志的聚合大小和可用状态；用户明确确认后可清理未导出的当前、轮转和兼容日志，
+不会删除已导出的诊断包、消息缓存或其他应用数据。专用实时连接、会话列表和消息
+追赶诊断事件可以在 `context` 中保存经过长度和字符集校验的 `conversationId`，以关联同一
+会话的客户端阶段；这项例外不适用于消息缓存服务自身日志、缓存诊断字段或消息 payload，
+后者仍不得保存身份标识。
 
 消息缓存位于 Electron `userData/message-cache/messages-v1.sqlite3`，由 Main 管理的专用
 Worker 使用 Node.js 内置 `node:sqlite` 独占访问。Renderer 只能通过版本化的
