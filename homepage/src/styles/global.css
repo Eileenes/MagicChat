@@ -46,19 +46,19 @@ img, svg { display: block; }
 
 /* Persistent navigation keeps the brand and primary actions available on every scene. */
 body:has(.scene-page) .site-header, body:has(.legal-page) .site-header { position: fixed; inset: 0 0 auto; z-index: 50; background: rgb(4 13 12 / 85%); border: 0; }
-body:has(.scene-page) .nav-shell, body:has(.legal-page) .nav-shell { width: min(calc(100% - 40px), var(--container)); min-height: 74px; }
+body:has(.scene-page) .nav-shell, body:has(.legal-page) .nav-shell { width: min(calc(100% - 40px), var(--container)); min-height: 62px; }
 .site-header .nav-shell { display: flex; align-items: center; justify-content: space-between; }
-.brand { display: inline-flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 800; letter-spacing: .08em; }
-.brand img { width: 31px; height: 31px; border-radius: 7px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 800; letter-spacing: .08em; }
+.brand img { width: 27px; height: 27px; border-radius: 6px; }
 body:has(.scene-page) .brand, body:has(.legal-page) .brand { color: #fff; letter-spacing: .13em; text-transform: uppercase; }
 body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: saturate(.75) brightness(1.1); }
 .site-nav { display: flex; align-items: center; gap: clamp(18px, 2.8vw, 38px); margin-left: auto; margin-right: clamp(17px, 3vw, 43px); }
 .site-nav a { color: rgb(255 255 255 / 75%); font-size: 12px; font-weight: 650; letter-spacing: .06em; transition: color 160ms var(--ease); }
 .site-nav a:hover { color: var(--green); }
-.header-actions { display: flex; align-items: center; gap: 14px; }
-.header-icon { display: grid; place-items: center; width: 40px; height: 40px; color: rgb(255 255 255 / 82%); background: transparent; border: 1px solid transparent; border-radius: 3px; transition: color 160ms var(--ease), background 160ms var(--ease), border-color 160ms var(--ease); }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.header-icon { display: grid; place-items: center; width: 34px; height: 34px; color: rgb(255 255 255 / 82%); background: transparent; border: 1px solid transparent; border-radius: 3px; transition: color 160ms var(--ease), background 160ms var(--ease), border-color 160ms var(--ease); }
 .header-icon:hover { color: var(--green); background: transparent; border-color: transparent; }
-.header-trial { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; color: var(--green-deep); background: var(--green); border: 1px solid var(--green); border-radius: 3px; font-size: 12px; font-weight: 750; transition: color 160ms var(--ease), background 160ms var(--ease), border-color 160ms var(--ease); }
+.header-trial { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; color: var(--green-deep); background: var(--green); border: 1px solid var(--green); border-radius: 3px; font-size: 11px; font-weight: 750; transition: color 160ms var(--ease), background 160ms var(--ease), border-color 160ms var(--ease); }
 .header-trial:hover { color: #fff; background: var(--green-dark); border-color: var(--green-dark); }
 
 /* Full-viewport scenes */
@@ -148,6 +148,7 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
 .dual-inner { position: relative; z-index: 3; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; align-content: center; gap: clamp(34px, 5vw, 72px); width: min(calc(100% - 40px), var(--container)); min-height: 100svh; margin: 0 auto; padding: var(--scene-space) var(--content-gutter); }
 .capability-panel, .comparison-panel { min-width: 0; }
 .capability-panel h2, .comparison-panel h2 { max-width: none; margin: 19px 0 0; color: #fff; font-size: var(--heading-size); font-weight: 800; line-height: 1; letter-spacing: 0; }
+.capability-panel h2 .title-accent { margin-top: 22px; }
 .capability-intro, .panel-intro { max-width: 530px; margin: 22px 0 0; color: rgb(239 249 246 / 82%); font-size: var(--body-size); line-height: 1.85; }
 .capability-cards { display: grid; grid-template-rows: repeat(4, minmax(0, 1fr)); height: 588px; gap: 1px; margin-top: 38px; border: 1px solid rgb(255 255 255 / 24%); background: rgb(255 255 255 / 24%); }
 .capability-card { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 15px; padding: 19px 20px; background: rgb(5 17 15 / 58%); transition: background 220ms var(--ease), box-shadow 220ms var(--ease); }
@@ -206,6 +207,7 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
 .dual-faq { position: relative; z-index: 3; width: min(calc(100% - 40px), var(--container)); margin: 0 auto; padding: clamp(64px, 8vh, 96px) var(--content-gutter) var(--scene-space); }
 .dual-faq-inner { display: grid; grid-template-columns: minmax(210px, .42fr) minmax(0, 1fr); align-items: start; gap: clamp(38px, 7vw, 108px); padding-top: 28px; border-top: 1px solid rgb(255 255 255 / 24%); }
 .dual-faq h2 { margin: 18px 0 0; color: #fff; font-size: clamp(34px, 3.3vw, 46px); font-weight: 800; line-height: 1; }
+.faq-intro { max-width: 310px; margin: 22px 0 0; color: rgb(231 243 238 / 74%); font-size: 14px; line-height: 1.8; }
 .dual-faq .faq-list { display: block; max-width: none; margin: 0; border: 0; }
 .dual-faq .faq-list details { min-width: 0; border-bottom: 1px solid rgb(255 255 255 / 20%); background: transparent; transition: background 200ms var(--ease); }
 .dual-faq .faq-list details:first-child { border-top: 1px solid rgb(255 255 255 / 20%); }
@@ -219,6 +221,7 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
 .scene-download .scene-content { min-height: 72svh; padding-block: var(--scene-space); }
 .scene-download .scene-content-center { align-items: flex-start; justify-content: center; }
 .scene-download h2 { max-width: 760px; }
+.download-intro { margin: 22px 0 0; color: rgb(239 249 246 / 82%); font-size: var(--body-size); line-height: 1.85; white-space: nowrap; }
 .deploy-list { display: flex; flex-wrap: wrap; gap: 22px; margin-top: 58px; color: rgb(255 255 255 / 55%); font-size: 11px; font-weight: 650; }
 .deploy-list span + span::before { content: "/"; margin-right: 22px; color: var(--green); }
 .download-links { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; align-self: center; width: min(1100px, 100%); margin-top: 42px; border: 1px solid rgb(255 255 255 / 24%); background: rgb(255 255 255 / 24%); }
@@ -315,10 +318,11 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
 }
 
 @media (max-width: 620px) {
-  body:has(.scene-page) .nav-shell, body:has(.legal-page) .nav-shell { width: calc(100% - 32px); min-height: 64px; }
-  body:has(.scene-page) .brand, body:has(.legal-page) .brand { font-size: 16px; }
-  body:has(.scene-page) .header-icon, body:has(.legal-page) .header-icon { width: 36px; height: 36px; }
-  .header-trial { min-height: 34px; padding: 0 10px; }
+  body:has(.scene-page) .nav-shell, body:has(.legal-page) .nav-shell { width: calc(100% - 32px); min-height: 56px; }
+  body:has(.scene-page) .brand, body:has(.legal-page) .brand { font-size: 15px; }
+  body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { width: 25px; height: 25px; }
+  body:has(.scene-page) .header-icon, body:has(.legal-page) .header-icon { width: 32px; height: 32px; }
+  .header-trial { min-height: 30px; padding: 0 9px; font-size: 11px; }
   .container { width: calc(100% - 32px); }
   .scene-content { width: calc(100% - 32px); padding: 100px 16px 78px; }
   .scene-content-bottom { padding-bottom: 78px; }
@@ -346,8 +350,10 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
   .dual-faq .faq-list { margin: 0; }
   .dual-faq .faq-list summary { min-height: 68px; font-size: 15px; }
   .dual-faq .faq-list details p { padding: 0 20px 0 6px; font-size: 13px; }
+  .faq-intro { margin-top: 18px; font-size: 14px; }
   .capability-card h3 { font-size: 18px; }
   .capability-card div > p:last-child { font-size: 12px; }
+  .capability-panel h2 .title-accent { margin-top: 18px; }
   .capability-panel blockquote { font-size: 14px; }
   .info-inner { width: calc(100% - 32px); padding: 0 16px; }
   .info-heading h2 { font-size: clamp(38px, 10vw, 48px); }
@@ -355,6 +361,7 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
   .faq-list { margin-top: 58px; }
   .download-links { grid-template-columns: 1fr; }
   .scene-download .scene-content { padding: 100px 16px 78px; }
+  .download-intro { margin-top: 18px; font-size: 14px; line-height: 1.8; white-space: normal; }
   .deploy-list { gap: 11px; line-height: 1.7; }
   .deploy-list span + span::before { margin-right: 11px; }
   .footer-grid { grid-template-columns: 1fr; width: calc(100% - 32px); padding: 48px 16px 34px; }
