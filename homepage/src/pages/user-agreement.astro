@@ -30,11 +30,13 @@ const sections = [
         <p class="legal-updated">生效及更新日期：{updatedAt}</p>
       </header>
 
-      <nav class="legal-nav" aria-label="用户协议章节导航">
-        <span>章节导航</span>
-        <ol>{sections.map(([id, label], index) => <li><a href={`#${id}`}><b>{String(index + 1).padStart(2, '0')}</b>{label}</a></li>)}</ol>
-      </nav>
+      <div class="legal-body">
+        <nav class="legal-nav" aria-label="用户协议章节导航" data-legal-nav>
+          <span>章节导航</span>
+          <ol>{sections.map(([id, label], index) => <li><a href={`#${id}`}><b>{String(index + 1).padStart(2, '0')}</b>{label}</a></li>)}</ol>
+        </nav>
 
+        <div class="legal-sections">
       <section id="acceptance">
         <h2>1. 协议的接受与适用</h2>
         <p>当你访问即应官网、注册账号、加入工作空间、下载客户端或使用即应的任何功能时，即表示你已阅读、理解并同意本协议及<a href={`${import.meta.env.BASE_URL}privacy-policy/`}>《即应隐私政策》</a>。如你不同意本协议，请停止使用相关服务。</p>
@@ -86,7 +88,39 @@ const sections = [
         <h2>9. 联系我们</h2>
         <p>如对本协议有任何疑问或建议，可通过 <a href="https://www.chaitin.cn/" target="_blank" rel="noopener noreferrer">长亭科技官网</a> 联系我们。</p>
       </section>
+        </div>
+      </div>
     </article>
   </main>
   <SiteFooter />
+  <script>
+    const nav = document.querySelector<HTMLElement>('[data-legal-nav]');
+    const sections = Array.from(document.querySelectorAll<HTMLElement>('.legal-sections > section'));
+
+    if (nav && sections.length) {
+      const links = new Map(Array.from(nav.querySelectorAll<HTMLAnchorElement>('a')).map((link) => [link.hash.slice(1), link]));
+      let currentId = '';
+
+      const updateCurrentSection = () => {
+        const activeSection = sections.reduce((current, section) => section.getBoundingClientRect().top <= 112 ? section : current, sections[0]);
+        if (activeSection.id === currentId) return;
+
+        currentId = activeSection.id;
+        links.forEach((link, id) => {
+          const isCurrent = id === currentId;
+          link.classList.toggle('is-current', isCurrent);
+          if (isCurrent) link.setAttribute('aria-current', 'true');
+          else link.removeAttribute('aria-current');
+        });
+
+        const activeLink = links.get(currentId);
+        if (activeLink && window.matchMedia('(min-width: 1260px)').matches) {
+          nav.scrollTo({ top: Math.max(0, activeLink.offsetTop - (nav.clientHeight - activeLink.offsetHeight) / 2), behavior: 'smooth' });
+        }
+      };
+
+      updateCurrentSection();
+      window.addEventListener('scroll', updateCurrentSection, { passive: true });
+    }
+  </script>
 </BaseLayout>

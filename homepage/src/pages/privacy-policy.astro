@@ -29,11 +29,13 @@ const sections = [
         <p class="legal-updated">生效及更新日期：{updatedAt}</p>
       </header>
 
-      <nav class="legal-nav" aria-label="隐私政策章节导航">
-        <span>章节导航</span>
-        <ol>{sections.map(([id, label], index) => <li><a href={`#${id}`}><b>{String(index + 1).padStart(2, '0')}</b>{label}</a></li>)}</ol>
-      </nav>
+      <div class="legal-body">
+        <nav class="legal-nav" aria-label="隐私政策章节导航" data-legal-nav>
+          <span>章节导航</span>
+          <ol>{sections.map(([id, label], index) => <li><a href={`#${id}`}><b>{String(index + 1).padStart(2, '0')}</b>{label}</a></li>)}</ol>
+        </nav>
 
+        <div class="legal-sections">
       <section id="collection">
         <h2>1. 我们如何收集信息</h2>
         <p>为提供、维护和改进即应服务，我们会在必要范围内收集以下信息：</p>
@@ -83,7 +85,39 @@ const sections = [
         <p>我们可能根据服务变化或法律法规要求更新本政策。对重大变更，我们会通过官网、产品内通知或其他合理方式提示。继续使用服务即表示你已阅读并理解更新后的政策。</p>
         <p>如对本政策或个人信息处理有疑问、意见或请求，可通过 <a href="https://www.chaitin.cn/" target="_blank" rel="noopener noreferrer">长亭科技官网</a> 联系我们。</p>
       </section>
+        </div>
+      </div>
     </article>
   </main>
   <SiteFooter />
+  <script>
+    const nav = document.querySelector<HTMLElement>('[data-legal-nav]');
+    const sections = Array.from(document.querySelectorAll<HTMLElement>('.legal-sections > section'));
+
+    if (nav && sections.length) {
+      const links = new Map(Array.from(nav.querySelectorAll<HTMLAnchorElement>('a')).map((link) => [link.hash.slice(1), link]));
+      let currentId = '';
+
+      const updateCurrentSection = () => {
+        const activeSection = sections.reduce((current, section) => section.getBoundingClientRect().top <= 112 ? section : current, sections[0]);
+        if (activeSection.id === currentId) return;
+
+        currentId = activeSection.id;
+        links.forEach((link, id) => {
+          const isCurrent = id === currentId;
+          link.classList.toggle('is-current', isCurrent);
+          if (isCurrent) link.setAttribute('aria-current', 'true');
+          else link.removeAttribute('aria-current');
+        });
+
+        const activeLink = links.get(currentId);
+        if (activeLink && window.matchMedia('(min-width: 1260px)').matches) {
+          nav.scrollTo({ top: Math.max(0, activeLink.offsetTop - (nav.clientHeight - activeLink.offsetHeight) / 2), behavior: 'smooth' });
+        }
+      };
+
+      updateCurrentSection();
+      window.addEventListener('scroll', updateCurrentSection, { passive: true });
+    }
+  </script>
 </BaseLayout>
