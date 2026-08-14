@@ -20,6 +20,7 @@ import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { appConfig } from "@/config/app-config"
 import { ApiRequestError } from "@/data/api-client"
 import { useCachedAppInfo } from "@/data/auth/auth-hooks"
+import { SelectedServerButton } from "@/features/servers/selected-server-button"
 import { AppUpdateDialog } from "@/features/updates/app-update-dialog"
 import { useAppUpdate } from "@/features/updates/use-app-update"
 import {
@@ -111,6 +112,13 @@ export function MeScreen() {
               </YStack>
             </XStack>
           </Card>
+
+          <YStack gap="$2">
+            <SizableText color="$gray10" fontWeight="600" px="$1" size="$2">
+              服务器
+            </SizableText>
+            <SelectedServerButton />
+          </YStack>
 
           <YStack gap="$2">
             <SizableText color="$gray10" fontWeight="600" px="$1" size="$2">
