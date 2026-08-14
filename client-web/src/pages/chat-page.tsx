@@ -376,7 +376,7 @@ export function ChatPage() {
               message,
               activeConversation,
               me,
-              contactsById,
+              usersById,
               contactAppsByLookup,
               activeClientMessagesById,
               activeMentionLabelResolver
@@ -389,7 +389,7 @@ export function ChatPage() {
       activeConversation,
       activeMentionLabelResolver,
       contactAppsByLookup,
-      contactsById,
+      usersById,
       me,
     ]
   )

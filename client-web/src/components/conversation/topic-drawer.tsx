@@ -106,6 +106,7 @@ function TopicDrawerContent({
     sendConversationVoice,
     setMessageReaction,
     updateMessageTopic,
+    usersById,
   } = useClientData()
   const [detail, setDetail] = React.useState<ClientTopicDetail | null>(null)
   const [error, setError] = React.useState("")
@@ -312,7 +313,7 @@ function TopicDrawerContent({
               message,
               conversation,
               me,
-              contactsById,
+              usersById,
               appsById,
               messagesById,
               mentionLabelResolver
@@ -322,11 +323,11 @@ function TopicDrawerContent({
     [
       appsById,
       clientMessages,
-      contactsById,
       conversation,
       me,
       mentionLabelResolver,
       messagesById,
+      usersById,
     ]
   )
 

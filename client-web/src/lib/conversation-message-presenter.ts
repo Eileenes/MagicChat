@@ -25,7 +25,7 @@ export function toConversationPanelMessage(
   message: ClientMessage,
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "avatar" | "id" | "name" | "nickname">,
-  contactsById: ReadonlyMap<string, ContactUser>,
+  usersById: Readonly<Record<string, ContactUser>>,
   appsById: ReadonlyMap<string, ContactApp>,
   messagesById: ReadonlyMap<string, ClientMessage>,
   mentionLabelResolver: MentionLabelResolver
@@ -40,14 +40,14 @@ export function toConversationPanelMessage(
       message,
       conversation,
       currentUser,
-      contactsById,
+      usersById,
       appsById
     ),
     avatar: getMessageAvatar(
       message,
       conversation,
       currentUser,
-      contactsById,
+      usersById,
       appsById
     ),
     body: message.body,
@@ -63,7 +63,7 @@ export function toConversationPanelMessage(
       message,
       conversation,
       currentUser,
-      contactsById,
+      usersById,
       appsById,
       messagesById,
       mentionLabelResolver
@@ -77,7 +77,7 @@ export function toConversationPanelMessage(
       message,
       conversation,
       currentUser,
-      contactsById,
+      usersById,
       appsById,
       mentionLabelResolver
     ),
@@ -88,7 +88,7 @@ function getMessageTopic(
   message: ClientMessage,
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "avatar" | "id" | "name" | "nickname">,
-  contactsById: ReadonlyMap<string, ContactUser>,
+  usersById: Readonly<Record<string, ContactUser>>,
   appsById: ReadonlyMap<string, ContactApp>,
   mentionLabelResolver: MentionLabelResolver
 ) {
@@ -103,14 +103,14 @@ function getMessageTopic(
         reply.sender,
         conversation,
         currentUser,
-        contactsById,
+        usersById,
         appsById
       ),
       avatar: getTopicReplyAvatar(
         reply.sender,
         conversation,
         currentUser,
-        contactsById,
+        usersById,
         appsById
       ),
       id: reply.id,
@@ -134,7 +134,7 @@ function getTopicReplyAuthor(
   >["recentReplies"][number]["sender"],
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "id" | "name" | "nickname">,
-  contactsById: ReadonlyMap<string, ContactUser>,
+  usersById: Readonly<Record<string, ContactUser>>,
   appsById: ReadonlyMap<string, ContactApp>
 ) {
   if (sender.type === "app") {
@@ -143,7 +143,7 @@ function getTopicReplyAuthor(
   if (sender.id === currentUser.id) {
     return formatMessageUserName(currentUser)
   }
-  const contact = contactsById.get(sender.id)
+  const contact = usersById[sender.id]
   if (contact) {
     return formatMessageUserName(contact)
   }
@@ -156,7 +156,7 @@ function getTopicReplyAvatar(
   >["recentReplies"][number]["sender"],
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "avatar" | "id">,
-  contactsById: ReadonlyMap<string, ContactUser>,
+  usersById: Readonly<Record<string, ContactUser>>,
   appsById: ReadonlyMap<string, ContactApp>
 ) {
   if (sender.type === "app") {
@@ -166,7 +166,7 @@ function getTopicReplyAvatar(
     return currentUser.avatar
   }
   return (
-    contactsById.get(sender.id)?.avatar ||
+    usersById[sender.id]?.avatar ||
     (conversation.type === "direct" ? conversation.avatar : "")
   )
 }
@@ -273,7 +273,7 @@ function getMessageReplyTarget(
   message: ClientMessage,
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "avatar" | "id" | "name" | "nickname">,
-  contactsById: ReadonlyMap<string, ContactUser>,
+  usersById: Readonly<Record<string, ContactUser>>,
   appsById: ReadonlyMap<string, ContactApp>,
   messagesById: ReadonlyMap<string, ClientMessage>,
   mentionLabelResolver: MentionLabelResolver
@@ -285,7 +285,7 @@ function getMessageReplyTarget(
         message.replyTo.sender,
         conversation,
         currentUser,
-        contactsById,
+        usersById,
         appsById
       ),
       summary: formatMentionTemplateText(
@@ -310,7 +310,7 @@ function getMessageReplyTarget(
       replyMessage,
       conversation,
       currentUser,
-      contactsById,
+      usersById,
       appsById
     ),
     summary: formatConversationMessageSummary(
@@ -324,7 +324,7 @@ function getReplyToSenderAuthor(
   sender: NonNullable<ClientMessage["replyTo"]>["sender"],
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "id" | "name" | "nickname">,
-  contactsById: ReadonlyMap<string, ContactUser>,
+  usersById: Readonly<Record<string, ContactUser>>,
   appsById: ReadonlyMap<string, ContactApp>
 ) {
   if (sender.type === "system") {
@@ -342,7 +342,7 @@ function getReplyToSenderAuthor(
     return formatMessageUserName(currentUser)
   }
 
-  const contact = contactsById.get(sender.id)
+  const contact = usersById[sender.id]
   if (contact) {
     return formatMessageUserName(contact)
   }
@@ -356,7 +356,7 @@ function getMessageAuthor(
   message: ClientMessage,
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "id" | "name" | "nickname">,
-  contactsById: ReadonlyMap<string, ContactUser>,
+  usersById: Readonly<Record<string, ContactUser>>,
   appsById: ReadonlyMap<string, ContactApp>
 ) {
   if (message.sender.type === "system") {
@@ -376,7 +376,7 @@ function getMessageAuthor(
   }
 
   if (message.sender.type === "user") {
-    const contact = contactsById.get(message.sender.id)
+    const contact = usersById[message.sender.id]
     if (contact) {
       return formatMessageUserName(contact)
     }
@@ -400,7 +400,7 @@ function getMessageAvatar(
   message: ClientMessage,
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "avatar" | "id">,
-  contactsById: ReadonlyMap<string, ContactUser>,
+  usersById: Readonly<Record<string, ContactUser>>,
   appsById: ReadonlyMap<string, ContactApp>
 ) {
   if (message.sender.type === "user" && message.sender.id === currentUser.id) {
@@ -409,7 +409,7 @@ function getMessageAvatar(
 
   if (message.sender.type === "user") {
     return (
-      contactsById.get(message.sender.id)?.avatar ||
+      usersById[message.sender.id]?.avatar ||
       (conversation.type === "direct" ? conversation.avatar : "")
     )
   }
