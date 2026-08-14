@@ -41,6 +41,10 @@ export function applyChoiceMessageTombstone(
   }
 }
 
+export function clearAllMessageTombstones() {
+  choiceMessageTombstones.clear()
+}
+
 export function clearConversationMessageTombstones(
   target: AuthenticatedTarget,
   conversationId: string

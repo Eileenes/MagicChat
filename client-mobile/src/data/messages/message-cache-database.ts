@@ -10,6 +10,26 @@ const DATABASE_NAME = "magicchat-messages-v1.db"
 
 let databasePromise: Promise<SQLiteDatabase | null> | null = null
 
+export async function getGlobalMessageCacheSize(): Promise<number> {
+  const database = await getMessageCacheDatabase()
+  if (!database) return 0
+  const result = await database.getFirstAsync<{ bytes: number }>(
+    `SELECT COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB)) + 256), 0) AS bytes FROM cached_messages`
+  )
+  return result?.bytes ?? 0
+}
+
+export async function clearGlobalMessageCache(): Promise<void> {
+  const database = await getMessageCacheDatabase()
+  if (!database) return
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    await transaction.execAsync(
+      `DELETE FROM cached_messages; DELETE FROM message_sync_state; DELETE FROM message_cache_stats;`
+    )
+  })
+  await database.execAsync("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;").catch(() => undefined)
+}
+
 export function getMessageCacheDatabase() {
   if (Platform.OS === "web") {
     return Promise.resolve(null)

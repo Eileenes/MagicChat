@@ -750,6 +750,10 @@ function scheduleMessageCacheMaintenance() {
     })
 }
 
+export async function waitForMessageCacheMaintenance() {
+  while (maintenancePromise) await maintenancePromise
+}
+
 async function runMessageCacheMaintenance() {
   const database = await getMessageCacheDatabase()
   if (!database) return

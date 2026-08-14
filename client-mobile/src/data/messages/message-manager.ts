@@ -32,10 +32,13 @@ import {
   removeConversationMessageCache,
   removeServerMessageCache,
   updatePersistedMessage,
+  waitForMessageCacheMaintenance,
 } from "@/data/messages/message-cache-store"
+import { clearGlobalMessageCache, getGlobalMessageCacheSize } from "@/data/messages/message-cache-database"
 import { publishConversationMessagesChanged } from "@/data/messages/message-events"
 import {
   applyChoiceMessageTombstone,
+  clearAllMessageTombstones,
   clearConversationMessageTombstones,
   clearServerMessageTombstones,
   recordChoiceMessageTombstone,
@@ -76,8 +79,28 @@ const MAX_RUNTIME_MESSAGES_PER_CONVERSATION = 3_000
 const runtimeMessages = new Map<string, RuntimeConversation>()
 const runtimePageState = new Map<string, ClientMessagePage>()
 const latestSynchronization = new Map<string, Promise<void>>()
+const activeMessageCacheWrites = new Set<Promise<unknown>>()
+let messageCacheClearBarrier: Promise<void> | null = null
+let messageCacheClearOperation: Promise<void> | null = null
+
+function runMessageCacheWrite<T>(operation: () => Promise<T>): Promise<T> {
+  if (messageCacheClearBarrier) {
+    const barrier = messageCacheClearBarrier
+    return barrier.then(() => runMessageCacheWrite(operation))
+  }
+
+  const task = Promise.resolve().then(operation)
+  activeMessageCacheWrites.add(task)
+  void task.then(
+    () => activeMessageCacheWrites.delete(task),
+    () => activeMessageCacheWrites.delete(task)
+  )
+  return task
+}
 
 export const messageManager = {
+  clearAllOfflineMessages,
+  getOfflineMessageSize: getGlobalMessageCacheSize,
   applyChoiceEvent,
   applyChoiceSnapshot,
   applyReactionEvent,
@@ -106,15 +129,41 @@ export const messageManager = {
   writeMessages,
 }
 
+function clearAllOfflineMessages() {
+  if (messageCacheClearOperation) return messageCacheClearOperation
+
+  let releaseBarrier: () => void = () => undefined
+  const barrier = new Promise<void>((resolve) => {
+    releaseBarrier = resolve
+  })
+  messageCacheClearBarrier = barrier
+  const activeWrites = Array.from(activeMessageCacheWrites)
+
+  const operation = (async () => {
+    await Promise.allSettled(activeWrites)
+    await waitForMessageCacheMaintenance()
+    await clearGlobalMessageCache()
+    runtimeMessages.clear()
+    runtimePageState.clear()
+    clearAllMessageTombstones()
+  })().finally(() => {
+    if (messageCacheClearOperation === operation) {
+      messageCacheClearOperation = null
+      messageCacheClearBarrier = null
+    }
+    releaseBarrier()
+  })
+  messageCacheClearOperation = operation
+  return operation
+}
+
 async function readLatestPage(
   target: AuthenticatedTarget,
   conversationId: string,
   limit: number
 ): Promise<ClientMessageList> {
-  const cached = await loadLatestCachedMessagePage(
-    target,
-    conversationId,
-    limit
+  const cached = await runMessageCacheWrite(() =>
+    loadLatestCachedMessagePage(target, conversationId, limit)
   ).catch(() => null)
   const protectedCached = cached
     ? applyMessageListTombstones(target, cached)
@@ -146,26 +195,26 @@ async function loadMessagePage(
   input: { beforeSeq?: number; limit: number },
   options: { signal?: AbortSignal } = {}
 ) {
-  if (input.beforeSeq === undefined) {
+  const beforeSeq = input.beforeSeq
+  if (beforeSeq === undefined) {
     return readLatestPage(target, conversationId, input.limit)
   }
 
   const result = applyMessageListTombstones(
     target,
-    await fetchConversationMessagePage(
-      target,
-      conversationId,
-      input,
-      options
+    await runMessageCacheWrite(() =>
+      fetchConversationMessagePage(target, conversationId, input, options)
     )
   )
   upsertRuntimeMessages(target, result.messages)
-  const persisted = await loadCachedMessagePageBefore(
-    target,
-    conversationId,
-    input.beforeSeq,
-    input.limit,
-    result.page.hasMoreBefore
+  const persisted = await runMessageCacheWrite(() =>
+    loadCachedMessagePageBefore(
+      target,
+      conversationId,
+      beforeSeq,
+      input.limit,
+      result.page.hasMoreBefore
+    )
   ).catch(() => null)
   return persisted ? applyMessageListTombstones(target, persisted) : result
 }
@@ -174,15 +223,13 @@ function synchronizeLatest(
   target: AuthenticatedTarget,
   conversationId: string,
   limit: number
-) {
+): Promise<void> {
   const key = createRuntimeConversationKey(target, conversationId)
   const current = latestSynchronization.get(key)
   if (current) return current
 
-  const operation = initializeConversationMessageSync(
-    target,
-    conversationId,
-    limit
+  const operation = runMessageCacheWrite(() =>
+    initializeConversationMessageSync(target, conversationId, limit)
   )
     .then(async (rawResult) => {
       const result = applyMessageListTombstones(target, rawResult)
@@ -213,11 +260,8 @@ async function catchUpAfter(
   afterSeq: number,
   limit: number
 ) {
-  const result = await fetchAndPersistMessagesAfter(
-    target,
-    conversationId,
-    afterSeq,
-    limit
+  const result = await runMessageCacheWrite(() =>
+    fetchAndPersistMessagesAfter(target, conversationId, afterSeq, limit)
   )
   const protectedResult = applyMessageListTombstones(target, result.result)
   upsertRuntimeMessages(target, protectedResult.messages)
@@ -235,9 +279,9 @@ async function writeMessages(
   const protectedMessages = applyMessageTombstones(target, messages)
   if (protectedMessages.length === 0) return
 
-  await persistRealtimeMessages(target, protectedMessages).catch(
-    () => undefined
-  )
+  await runMessageCacheWrite(() =>
+    persistRealtimeMessages(target, protectedMessages)
+  ).catch(() => undefined)
   upsertRuntimeMessages(target, protectedMessages)
   for (const conversationId of new Set(
     protectedMessages.map((message) => message.conversationId)
@@ -414,7 +458,9 @@ async function applyChoiceSnapshot(
   snapshot: MessageChoiceSnapshot
 ) {
   recordChoiceMessageTombstone(target, snapshot)
-  await persistMessageChoiceSnapshot(target, snapshot).catch(() => undefined)
+  await runMessageCacheWrite(() =>
+    persistMessageChoiceSnapshot(target, snapshot)
+  ).catch(() => undefined)
   if (snapshot.status === "deleted") {
     removeRuntimeMessage(
       target,
@@ -447,7 +493,9 @@ async function applyChoiceEvent(
   target: AuthenticatedTarget,
   event: MessageChoiceUpdatedEvent
 ) {
-  await persistMessageChoiceEvent(target, event).catch(() => undefined)
+  await runMessageCacheWrite(() =>
+    persistMessageChoiceEvent(target, event)
+  ).catch(() => undefined)
   updateRuntimeMessage(
     target,
     event.conversationId,
@@ -476,9 +524,9 @@ async function applyReactionSnapshot(
   target: AuthenticatedTarget,
   snapshot: MessageReactionSnapshot
 ) {
-  await persistMessageReactionSnapshot(target, snapshot).catch(
-    () => undefined
-  )
+  await runMessageCacheWrite(() =>
+    persistMessageReactionSnapshot(target, snapshot)
+  ).catch(() => undefined)
   const message = updateRuntimeMessage(
     target,
     snapshot.conversationId,
@@ -497,9 +545,8 @@ async function applyReactionEvent(
   target: AuthenticatedTarget,
   event: MessageReactionsUpdatedEvent
 ) {
-  const persistedStatus = await persistMessageReactionsEvent(
-    target,
-    event
+  const persistedStatus = await runMessageCacheWrite(() =>
+    persistMessageReactionsEvent(target, event)
   ).catch(() => "missing" as const)
   const runtimeResult: {
     status: "applied" | "gap" | "missing" | "stale"
@@ -604,11 +651,8 @@ async function updateMessage(
   messageId: string,
   update: (message: ClientMessage) => ClientMessage
 ) {
-  await updatePersistedMessage(
-    target,
-    conversationId,
-    messageId,
-    update
+  await runMessageCacheWrite(() =>
+    updatePersistedMessage(target, conversationId, messageId, update)
   ).catch(() => undefined)
   const message = updateRuntimeMessage(
     target,
@@ -628,9 +672,9 @@ async function clearConversation(
   target: AuthenticatedTarget,
   conversationId: string
 ) {
-  await removeConversationMessageCache(target, conversationId).catch(
-    () => undefined
-  )
+  await runMessageCacheWrite(() =>
+    removeConversationMessageCache(target, conversationId)
+  ).catch(() => undefined)
   runtimeMessages.delete(createRuntimeConversationKey(target, conversationId))
   runtimePageState.delete(createRuntimeConversationKey(target, conversationId))
   clearConversationMessageTombstones(target, conversationId)
@@ -638,7 +682,9 @@ async function clearConversation(
 }
 
 async function clearServer(server: ServerTarget) {
-  await removeServerMessageCache(server).catch(() => undefined)
+  await runMessageCacheWrite(() => removeServerMessageCache(server)).catch(
+    () => undefined
+  )
   const keys = new Set([
     ...runtimeMessages.keys(),
     ...runtimePageState.keys(),

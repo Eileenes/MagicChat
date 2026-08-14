@@ -18,6 +18,11 @@ export default function AppStackLayout() {
       />
       <Stack.Screen name="entity/[entityType]/[entityId]" />
       <Stack.Screen name="search" />
+      <Stack.Screen
+        name="profile"
+        options={{ headerShown: true, title: "个人信息" }}
+      />
+      <Stack.Screen name="storage" />
       <Stack.Screen name="theme-debug" />
     </Stack>
   )

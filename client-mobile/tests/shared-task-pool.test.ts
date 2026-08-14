@@ -57,6 +57,45 @@ test("evicts failed tasks so a later caller can retry", async () => {
   assert.equal(operationCount, 2)
 })
 
+test("exclusive operation waits for active tasks and blocks new tasks", async () => {
+  const pool = new SharedTaskPool<string>()
+  const active = createDeferred<string>()
+  const releaseExclusive = createDeferred<void>()
+  const events: string[] = []
+
+  const activeTask = pool.run("active", async () => {
+    events.push("active:start")
+    return active.promise
+  })
+  const exclusive = pool.runExclusive(async () => {
+    events.push("exclusive:start")
+    await releaseExclusive.promise
+    events.push("exclusive:end")
+  })
+  const blockedTask = pool.run("blocked", async () => {
+    events.push("blocked:start")
+    return "blocked"
+  })
+
+  await Promise.resolve()
+  assert.deepEqual(events, ["active:start"])
+
+  active.resolve("active")
+  await activeTask
+  await Promise.resolve()
+  assert.deepEqual(events, ["active:start", "exclusive:start"])
+
+  releaseExclusive.resolve()
+  await exclusive
+  assert.equal(await blockedTask, "blocked")
+  assert.deepEqual(events, [
+    "active:start",
+    "exclusive:start",
+    "exclusive:end",
+    "blocked:start",
+  ])
+})
+
 function createDeferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (error: unknown) => void
