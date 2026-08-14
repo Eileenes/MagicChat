@@ -10,10 +10,7 @@ export function ClientBrandMetadata() {
     setMetaContent('meta[property="og:site_name"]', appName)
     setMetaContent('meta[property="og:title"]', `有事｜${appName}`)
     setMetaContent('meta[name="twitter:title"]', `有事｜${appName}`)
-    setMetaContent(
-      'meta[name="description"]',
-      "AI时代下的团队协作入口",
-    )
+    setMetaContent('meta[name="description"]', "AI时代下的团队协作入口")
     setMetaContent('meta[property="og:description"]', "AI时代下的团队协作入口")
     setMetaContent('meta[name="twitter:description"]', "AI时代下的团队协作入口")
     setMetaContent(
