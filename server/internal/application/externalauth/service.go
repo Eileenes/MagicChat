@@ -7,8 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"math/big"
 	"net/mail"
 	"net/url"
 	"strings"
@@ -74,7 +72,7 @@ func NewService(deps Dependencies) *Service {
 	}
 	randomAvatar := deps.RandomAvatar
 	if randomAvatar == nil {
-		randomAvatar = randomBuiltinAvatar
+		randomAvatar = store.RandomBuiltinAvatar
 	}
 	stateTTL := deps.StateTTL
 	if stateTTL <= 0 {
@@ -550,14 +548,6 @@ func generateRandomValueDefault(size int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(value), nil
-}
-
-func randomBuiltinAvatar() string {
-	index, err := crand.Int(crand.Reader, big.NewInt(64))
-	if err != nil {
-		return store.DefaultUserAvatar
-	}
-	return fmt.Sprintf("/assets/avatars/builtin/%02d.webp", index.Int64()+1)
 }
 
 func normalizeAvatar(value string) string {

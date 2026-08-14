@@ -36,6 +36,7 @@ type Dependencies struct {
 	ProfileNotifications ProfileNotifications
 	Now                  func() time.Time
 	GenerateSessionToken func() (string, error)
+	RandomAvatar         func() string
 	SessionTTL           time.Duration
 }
 
@@ -46,6 +47,7 @@ type Service struct {
 	profileNotifications ProfileNotifications
 	now                  func() time.Time
 	generateSessionToken func() (string, error)
+	randomAvatar         func() string
 	sessionTTL           time.Duration
 }
 
@@ -57,6 +59,10 @@ func NewService(deps Dependencies) *Service {
 	generateSessionToken := deps.GenerateSessionToken
 	if generateSessionToken == nil {
 		generateSessionToken = auth.GenerateSessionToken
+	}
+	randomAvatar := deps.RandomAvatar
+	if randomAvatar == nil {
+		randomAvatar = store.RandomBuiltinAvatar
 	}
 	sessionTTL := deps.SessionTTL
 	if sessionTTL <= 0 {
@@ -70,6 +76,7 @@ func NewService(deps Dependencies) *Service {
 		profileNotifications: deps.ProfileNotifications,
 		now:                  now,
 		generateSessionToken: generateSessionToken,
+		randomAvatar:         randomAvatar,
 		sessionTTL:           sessionTTL,
 	}
 }
@@ -154,7 +161,7 @@ func (s *Service) LoginWithVerifiedEmail(ctx context.Context, cmd VerifiedEmailL
 		}
 		now := s.now().UTC()
 		candidate := store.User{
-			ID: uuid.NewString(), Email: email, Name: emailName(email), Avatar: store.DefaultUserAvatar,
+			ID: uuid.NewString(), Email: email, Name: emailName(email), Avatar: s.randomAvatar(),
 			PasswordHash: passwordHash, Status: store.UserStatusActive, CreatedAt: now, UpdatedAt: now,
 		}
 		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate)
