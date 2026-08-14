@@ -17,8 +17,10 @@ describe("ClientBrandMetadata", () => {
       <meta name="description" content="" />
       <meta name="keywords" content="" />
       <meta property="og:site_name" content="即应" />
-      <meta property="og:title" content="即应 AI 企业 IM" />
-      <meta name="twitter:title" content="即应 AI 企业 IM" />
+      <meta property="og:title" content="有事｜即应" />
+      <meta property="og:description" content="" />
+      <meta name="twitter:title" content="有事｜即应" />
+      <meta name="twitter:description" content="" />
     `
 
     render(
@@ -41,10 +43,19 @@ describe("ClientBrandMetadata", () => {
     await waitFor(() => {
       expect(getMetaContent('meta[name="application-name"]')).toBe("星环协作")
       expect(getMetaContent('meta[property="og:site_name"]')).toBe("星环协作")
-      expect(getMetaContent('meta[property="og:title"]')).toBe(
-        "星环协作 AI 企业 IM"
+      expect(getMetaContent('meta[property="og:title"]')).toBe("有事｜星环协作")
+      expect(getMetaContent('meta[name="twitter:title"]')).toBe(
+        "有事｜星环协作"
       )
-      expect(getMetaContent('meta[name="description"]')).toContain("星环协作")
+      expect(getMetaContent('meta[name="description"]')).toBe(
+        "AI时代下的团队协作入口"
+      )
+      expect(getMetaContent('meta[property="og:description"]')).toBe(
+        "AI时代下的团队协作入口"
+      )
+      expect(getMetaContent('meta[name="twitter:description"]')).toBe(
+        "AI时代下的团队协作入口"
+      )
       expect(getMetaContent('meta[name="keywords"]')).toContain("星环协作")
     })
   })
