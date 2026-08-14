@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
       notificationMuted?: boolean
       unreadCount: number
     }>,
+    incomingFriendRequests: [] as Array<{ status: string }>,
     me: {
       avatar: "",
       createdAt: "2026-07-09T00:00:00Z",
@@ -37,6 +38,7 @@ const mocks = vi.hoisted(() => ({
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.clientData.conversations = []
+  mocks.clientData.incomingFriendRequests = []
 })
 
 vi.mock("@/lib/client-data-context", () => ({
@@ -73,6 +75,20 @@ describe("AppLayout", () => {
 
     expect(screen.getByLabelText("聊天")).toBeInTheDocument()
     expect(screen.queryByLabelText("聊天，有未读消息")).not.toBeInTheDocument()
+  })
+
+  it("shows a notification dot on contacts for pending friend requests", () => {
+    mocks.clientData.incomingFriendRequests = [{ status: "pending" }]
+
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>
+    )
+
+    expect(
+      screen.getByLabelText("通讯录，有新的好友申请")
+    ).toBeInTheDocument()
   })
 
   it("splits profile and settings actions in the user avatar menu", async () => {

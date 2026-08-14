@@ -2076,6 +2076,7 @@ func TestAppWebSocketContactsUsersListReturnsActiveUsersOnly(t *testing.T) {
 		t.Fatalf("set alice nickname: %v", err)
 	}
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
 	_ = insertTestUser(t, db, "disabled@example.com", "Disabled", store.UserStatusDisabled, now)
 	agentAppID := appregistry.AIAssistantAppID
 	authorizationConversation := insertTestConversation(t, db, testConversationInput{
@@ -2138,8 +2139,26 @@ func TestAppWebSocketContactsUsersListReturnsActiveUsersOnly(t *testing.T) {
 			t.Fatalf("contact.type = %v, want user", contact["type"])
 		}
 	}
-	if !contactIDs[alice.ID] || !contactIDs[bob.ID] {
-		t.Fatalf("contact ids = %#v, want alice and bob", contactIDs)
+	if err := db.Create(&store.UserFriendship{UserIDLow: alice.ID, UserIDHigh: bob.ID, CreatedAt: now}).Error; err != nil {
+		t.Fatalf("create friendship: %v", err)
+	}
+	if err := db.Model(&store.AppSettings{}).Where("id = ?", store.AppSettingsID).Update("contact_directory_mode", store.ContactDirectoryModeFriends).Error; err != nil {
+		t.Fatalf("set friend directory mode: %v", err)
+	}
+	response = sendAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest, ID: "app-contacts-friends-request", Method: appMethodContactsUsersList,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{"runas": runAs}),
+	})
+	if err := json.Unmarshal(response.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal friend contacts response: %v", err)
+	}
+	contacts = payload["contacts"].([]any)
+	friendContactIDs := make(map[string]bool, len(contacts))
+	for _, rawContact := range contacts {
+		friendContactIDs[rawContact.(map[string]any)["id"].(string)] = true
+	}
+	if len(contacts) != 2 || !friendContactIDs[alice.ID] || !friendContactIDs[bob.ID] || friendContactIDs[carol.ID] {
+		t.Fatalf("friend contact ids = %#v, want alice and bob only", friendContactIDs)
 	}
 }
 
@@ -2722,6 +2741,71 @@ func TestAppWebSocketMessageSendAsUserStoresDelegatedByAndPushesDirectMessage(t 
 	historyDelegatedBy := historyMessage["delegated_by"].(map[string]any)
 	if historyDelegatedBy["type"] != store.MessageSenderTypeApp || historyDelegatedBy["name"] != app.Name {
 		t.Fatalf("history delegated_by = %#v, want app delegate", historyDelegatedBy)
+	}
+}
+
+func TestAppWebSocketMessageSendAsUserRejectsNonFriend(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 8, 13, 11, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice-assistant-policy@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob-assistant-policy@example.com", "Bob", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{ID: appregistry.AIAssistantAppID, Name: "茉莉", Enabled: true, Visibility: store.AppVisibilityPublic, ConnectionSecret: "test-ai-assistant-secret", CreatedAt: now, UpdatedAt: now})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	adminCookie := loginAsAdmin(t, server)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	appResp, appBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{"app_id": app.ID}, aliceCookie)
+	if appResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, body = %#v", appResp.StatusCode, appBody)
+	}
+	appConversationID := requireSuccess(t, appBody)["conversation"].(map[string]any)["id"].(string)
+	triggerResp, triggerBody := postJSON(t, server, "/api/client/conversations/"+appConversationID+"/messages", map[string]any{
+		"client_message_id": "assistant-non-friend-trigger", "body": map[string]any{"type": "text", "content": "发给 Bob"},
+	}, aliceCookie)
+	if triggerResp.StatusCode != http.StatusCreated {
+		t.Fatalf("trigger status = %d, body = %#v", triggerResp.StatusCode, triggerBody)
+	}
+	triggerID := requireSuccess(t, triggerBody)["message"].(map[string]any)["id"]
+	_ = readRealtimeEvent(t, appConn)
+
+	settingsResp, settingsBody := putJSON(t, server, "/api/admin/settings/info", map[string]any{
+		"app_name": store.DefaultAppName, "organization_name": store.DefaultOrganizationName,
+		"contact_directory_mode": store.ContactDirectoryModeFriends,
+	}, adminCookie)
+	if settingsResp.StatusCode != http.StatusOK {
+		t.Fatalf("update directory mode status = %d, body = %#v", settingsResp.StatusCode, settingsBody)
+	}
+	response := sendRawAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest, ID: "assistant-non-friend-send", Method: appMethodMessageSendAsUser,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"actor_user_id": alice.ID, "target_user_id": bob.ID, "trigger_message_id": triggerID,
+			"message": map[string]any{"type": "text", "content": "不应发送"},
+		}),
+	})
+	if response.OK == nil || *response.OK || response.Error == nil || response.Error.Code != "direct_friendship_required" {
+		t.Fatalf("response = %#v, want direct_friendship_required", response)
+	}
+	var directCount int64
+	if err := db.Model(&store.DirectConversation{}).Count(&directCount).Error; err != nil {
+		t.Fatalf("count direct conversations: %v", err)
+	}
+	if directCount != 0 {
+		t.Fatalf("direct conversation count = %d, want 0", directCount)
+	}
+}
+
+func TestMapMessageApplicationErrorForAppPreservesFriendshipRequired(t *testing.T) {
+	err := mapMessageApplicationErrorForApp(&messageapp.Error{
+		Code:    messageapp.CodeDirectFriendshipRequired,
+		Message: "仅好友之间可以发送私聊消息",
+	})
+	failure, ok := err.(appRequestFailure)
+	if !ok {
+		t.Fatalf("error = %T, want appRequestFailure", err)
+	}
+	if failure.Code != "direct_friendship_required" || failure.Message != "仅好友之间可以发送私聊消息" {
+		t.Fatalf("failure = %#v", failure)
 	}
 }
 
@@ -4321,6 +4405,60 @@ func TestFriendModeLifecycleAndExactUserSearch(t *testing.T) {
 	resolveResp, resolveBody := postJSON(t, server, "/api/client/users/resolve", map[string]any{"user_ids": []string{carol.ID}}, aliceCookie)
 	if resolveResp.StatusCode != http.StatusOK || len(requireUsers(t, requireSuccess(t, resolveBody))) != 1 {
 		t.Fatalf("resolve non-friend status = %d, body = %#v", resolveResp.StatusCode, resolveBody)
+	}
+}
+
+func TestFriendModeBlocksNonFriendDirectMessaging(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice-direct-policy@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob-direct-policy@example.com", "Bob", store.UserStatusActive, now)
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	adminCookie := loginAsAdmin(t, server)
+
+	createResp, createBody := postJSON(t, server, "/api/client/conversations/direct", map[string]any{"user_id": bob.ID}, aliceCookie)
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("organization direct status = %d, body = %#v", createResp.StatusCode, createBody)
+	}
+	conversationID := requireSuccess(t, createBody)["conversation"].(map[string]any)["id"].(string)
+
+	settingsResp, settingsBody := putJSON(t, server, "/api/admin/settings/info", map[string]any{
+		"app_name": store.DefaultAppName, "organization_name": store.DefaultOrganizationName,
+		"contact_directory_mode": store.ContactDirectoryModeFriends,
+	}, adminCookie)
+	if settingsResp.StatusCode != http.StatusOK {
+		t.Fatalf("update directory mode status = %d, body = %#v", settingsResp.StatusCode, settingsBody)
+	}
+
+	openResp, openBody := postJSON(t, server, "/api/client/conversations/direct", map[string]any{"user_id": bob.ID}, aliceCookie)
+	if openResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-friend direct status = %d, body = %#v", openResp.StatusCode, openBody)
+	}
+	requireError(t, openBody, "direct_friendship_required")
+
+	sendResp, sendBody := postJSON(t, server, "/api/client/conversations/"+conversationID+"/messages", map[string]any{
+		"client_message_id": "blocked-non-friend-message",
+		"body":              map[string]any{"type": "text", "content": "不能发送"},
+	}, aliceCookie)
+	if sendResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-friend send status = %d, body = %#v", sendResp.StatusCode, sendBody)
+	}
+	requireError(t, sendBody, "direct_friendship_required")
+
+	lowID, highID := alice.ID, bob.ID
+	if lowID > highID {
+		lowID, highID = highID, lowID
+	}
+	if err := db.Create(&store.UserFriendship{UserIDLow: lowID, UserIDHigh: highID, CreatedAt: now}).Error; err != nil {
+		t.Fatalf("create friendship: %v", err)
+	}
+	allowedResp, allowedBody := postJSON(t, server, "/api/client/conversations/"+conversationID+"/messages", map[string]any{
+		"client_message_id": "allowed-friend-message",
+		"body":              map[string]any{"type": "text", "content": "好友消息"},
+	}, aliceCookie)
+	if allowedResp.StatusCode != http.StatusCreated {
+		t.Fatalf("friend send status = %d, body = %#v", allowedResp.StatusCode, allowedBody)
 	}
 }
 

@@ -37,6 +37,7 @@ import {
   formatConversationMessageSummary,
   toConversationPanelMessage,
 } from "@/lib/conversation-message-presenter"
+import { FriendManagementDialog } from "@/components/contacts/friend-management-dialog"
 import { CreateGroupConversationDialog } from "@/components/conversation/create-group-conversation-dialog"
 import { ForwardMessageDialog } from "@/components/conversation/forward-message-dialog"
 import { ConversationSidebar } from "@/components/conversation/conversation-sidebar"
@@ -137,6 +138,8 @@ export function ChatPage() {
   const navigate = useNavigate()
   const { conversationId } = useParams<{ conversationId?: string }>()
   const {
+    acceptFriendRequest,
+    cancelFriendRequest,
     contactApps,
     contactGroups,
     contacts,
@@ -144,7 +147,9 @@ export function ChatPage() {
     compactConversationMessages,
     consumeConversationMessageFocus,
     createGroupConversation,
+    createFriendRequest,
     dismissConversation,
+    ensureUsers,
     ensureConversationMessages,
     focusConversationMessage,
     getConversation,
@@ -156,8 +161,11 @@ export function ChatPage() {
     mergeIncomingConversationMessage,
     registerConversationMessageView,
     joinGroupConversation,
+    incomingFriendRequests,
     openAppConversation,
     openDirectConversation,
+    outgoingFriendRequests,
+    rejectFriendRequest,
     respondToChoice,
     refreshContacts,
     refreshConversations,
@@ -175,6 +183,7 @@ export function ChatPage() {
     restoreConversation,
     returnToLatestConversationMessages,
     updateMessageTopic,
+    usersById,
   } = useClientData()
   const {
     clearConversationDraft,
@@ -185,6 +194,7 @@ export function ChatPage() {
   const [richTextMode, setRichTextMode] = React.useState(false)
   const [createGroupDialogOpen, setCreateGroupDialogOpen] =
     React.useState(false)
+  const [friendManagementOpen, setFriendManagementOpen] = React.useState(false)
   const [forwardOperation, setForwardOperation] =
     React.useState<ForwardOperation | null>(null)
   const [createTopicOperation, setCreateTopicOperation] =
@@ -960,6 +970,7 @@ export function ChatPage() {
           setCreateGroupDialogOpen(true)
           void Promise.resolve(refreshContacts()).catch(() => undefined)
         }}
+        onManageFriends={() => setFriendManagementOpen(true)}
         onDismissConversation={deleteConversation}
         onOpenGlobalSearch={() =>
           void Promise.resolve(refreshContacts()).catch(() => undefined)
@@ -1032,6 +1043,20 @@ export function ChatPage() {
         readOnlyReason={activeConversationReadOnlyReason}
         sending={Boolean(activeMessageState?.sending)}
       />
+      <FriendManagementDialog
+        acceptRequest={acceptFriendRequest}
+        cancelRequest={cancelFriendRequest}
+        contacts={contacts}
+        createRequest={createFriendRequest}
+        ensureUsers={ensureUsers}
+        incomingRequests={incomingFriendRequests}
+        onOpenChange={setFriendManagementOpen}
+        open={friendManagementOpen}
+        outgoingRequests={outgoingFriendRequests}
+        rejectRequest={rejectFriendRequest}
+        usersById={usersById}
+      />
+
       <CreateGroupConversationDialog
         apps={contactApps}
         contacts={contacts}

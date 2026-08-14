@@ -113,7 +113,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     Record<string, ClientConversationMessageState>
   >({})
   const [foregroundConversationId, setForegroundConversationId] = useState("")
-  const shouldLoadContacts = location.pathname.startsWith("/contacts")
   const shouldLoadConversations =
     !location.pathname.startsWith("/tasks") &&
     !location.pathname.startsWith("/documents/document/")
@@ -141,13 +140,14 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const [contactsLoading, setContactsLoading] = useState(true)
   const [contactsRefreshing, setContactsRefreshing] = useState(false)
   const [usersById, setUsersById] = useState<Record<string, ContactUser>>({})
-  const contacts = useMemo(() => {
-    if (contactUserIds.length === 0) return Object.values(usersById)
-    return contactUserIds.flatMap((id) => {
-      const user = usersById[id]
-      return user ? [user] : []
-    })
-  }, [contactUserIds, usersById])
+  const contacts = useMemo(
+    () =>
+      contactUserIds.flatMap((id) => {
+        const user = usersById[id]
+        return user ? [user] : []
+      }),
+    [contactUserIds, usersById]
+  )
   const visibleContactGroups = useMemo(
     () => hydrateContactGroupUsers(contactGroups, contactApps, usersById),
     [contactApps, contactGroups, usersById]
@@ -1595,14 +1595,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       const [nextMe, nextContacts, nextConversations, nextProjects] =
         await Promise.all([
           getCurrentClientUser(),
-          shouldLoadContacts
-            ? listClientContacts()
-            : Promise.resolve({
-                apps: [],
-                directoryMode: "organization" as const,
-                groups: [],
-                userIds: [],
-              }),
+          listClientContacts(),
           shouldLoadConversations
             ? listClientConversations(undefined, {
                 includeConversationId: includedConversationIdRef.current,
@@ -1658,7 +1651,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     ensureUsers,
     handleError,
     refreshFriendRequests,
-    shouldLoadContacts,
     shouldLoadConversations,
   ])
 
@@ -1713,9 +1705,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
     function refresh() {
       void refreshMe().catch(() => undefined)
-      if (shouldLoadContacts) {
-        void refreshContacts().catch(() => undefined)
-      }
+      void refreshContacts().catch(() => undefined)
       if (shouldLoadConversations) {
         void refreshConversations().catch(() => undefined)
       }
@@ -1742,7 +1732,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshConversations,
     refreshMe,
     refreshProjects,
-    shouldLoadContacts,
     shouldLoadConversations,
   ])
 

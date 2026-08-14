@@ -4,8 +4,8 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 
-const title = '即应｜AI 时代的办公协作入口';
-const description = '即应把团队沟通、办公 AI 助理、项目和任务放进同一个工作空间。让 AI 进入团队，把工作继续推进下去。';
+const title = '即应｜AI时代下的团队协作入口';
+const description = '即应（MagicChat）将团队沟通、个人 AI 助理茉莉、项目与任务协作深度集成在同一个空间，帮助团队达成闭环交付。';
 const siteOrigin = Astro.site ?? Astro.url.origin;
 const pageUrl = new URL(import.meta.env.BASE_URL, siteOrigin).href;
 const logoUrl = new URL(`${import.meta.env.BASE_URL}favicon.webp`, siteOrigin).href;
@@ -16,31 +16,32 @@ const schema = [
 ];
 
 const painPoints = [
-  ['01', '找人、找群难', '消息、文件、成员和项目各自分散。每次用 AI，都得先找到人，再重新寻找、复制和解释背景。'],
-  ['02', '找记录、过程难', '普通 AI 一问一答，答完就结束。看不见联系人、会话和任务，也等不了别人的回复。'],
-  ['03', '讨论和执行有断点', '共识还要人工整理成任务、通知负责人、追踪进展。沟通经常止于“收到”。'],
+  ['01', '沟通与上下文严重割裂', '消息、文件、成员和项目分散在不同工具里。每次寻求 AI 或同事协助，都不得不重新翻找资料、复制背景、重复解释需求。'],
+  ['02', '传统 AI 缺乏协同记忆', '普通 AI 助手仅停留在“一问一答”的单机对话框。看不见团队成员、缺乏长期项目上下文、无法跨会话追踪，答完即结束。'],
+  ['03', '信息过载与重复爬楼', '每日面对数百条群聊消息与邮件，人工爬楼抓重点耗时耗力；同一个业务背景需要向不同部门的干系人反复口述交代。'],
+  ['04', '讨论与行动断层严重', '会议和聊天中达成的共识缺乏自动跟进机制，仍需人工手动整理待办、指派负责人并反复催办，沟通经常止于“收到”。'],
+  ['05', '数据隐私与风控隐患', '公共 AI 无法保障企业核心业务数据的私有可控，且缺乏对敏感数据读取隔离及高风险操作（如发公告、改状态）的人工审核屏障。'],
 ];
 
 const workflow = [
-  ['01', '提出目标', '接收“整理活动群合作意向”这类自然语言目标，识别主题、时间范围、涉及成员和希望的交付形式；不需要再填写复杂表单。'],
-  ['02', '找到相关的人和会话', '根据目标在成员、群聊、项目和任务之间关联定位，先把与当前工作真正相关的上下文找全，再开始处理。'],
-  ['03', '查询消息、文件和背景', '在授权范围内读取历史消息、附件、项目资料和执行记录，并把引用来源保留在会话中，方便随时回看依据。'],
-  ['04', '总结已有共识', '合并重复信息，区分已经确认的事实、已经作出的决定和仍待确认的问题，避免把模糊讨论直接当成结论。'],
-  ['05', '识别任务与风险', '从讨论里抽取待办、负责人、截止时间、卡点和依赖关系，形成能够继续推进的任务清单与风险提示。'],
-  ['06', '检查重复项与权限', '在写入前检查是否已经存在同类任务，并确认当前用户是否拥有对应的读取和操作权限，避免重复创建或越权。'],
-  ['07', '起草消息与计划', '为负责人生成提醒、群公告、任务描述和执行顺序；所有内容先作为草稿展示，方便团队按实际情况调整。'],
-  ['08', '确认变更', '涉及创建任务、修改状态或发送消息时，茉莉会把对象、字段和影响范围完整列出，等待确认后再执行。'],
-  ['09', '执行协作并等待回复', '确认后创建任务、联系成员、发送提醒；收到回复后继续沿用当前会话的上下文，而不是从头再问一遍。'],
-  ['10', '交付并沉淀结果', '汇总完成情况，把任务卡片、结论和后续提醒回写到原会话，让下一次协作可以直接从已有结果继续。'],
+  ['01', '提出自然语言目标', '用户只需输入：“茉莉，把近期客户群里关于导出功能报错的吐槽整理一下，帮我找研发跟进修复。” 茉莉自动识别主题、涉及角色与交付预期，无需填写复杂表单。'],
+  ['02', '智能定位关联上下文', '茉莉快速穿梭于“客户反馈群”、“产品体验组”及“Q3 迭代看板”，毫秒级锁死与导出故障相关的 5 个历史会话、关键干系人（产品小王、研发老张）及需求文档。'],
+  ['03', '跨会话查询背景与溯源', '自动调取客户上传的报错截图与日志附件，在对话框中直观标注引用来源（如“依据 8/10 客户群 L34 消息”），方便干系人随时一键回看原始凭证。'],
+  ['04', '深度提炼与事实对齐', '交叉比对多方反馈，自动区分已知事实（海量导出超时报错）、已定结论（产品经理已规划异步导出）与未决疑点（后端服务是否扩容），避免把调侃误当结论。'],
+  ['05', '结构化提取任务与卡点', '自动从零碎聊天中提炼出结构化待办：“1. 前端补充导出进度条（小张/周三前）；2. 后端优化流式传输（老李/周四前）”，并自动标注潜在依赖卡点。'],
+  ['06', '重复校验与合规风控', '准备创建任务前，茉莉自动检索系统现存任务库，发现老李上周已创建过类似优化任务并自动提示合并，同时核验操作者的写入权限，杜绝越权或重复建单。'],
+  ['07', '智能起草通知与方案', '自动为产品经理小王起草《导出功能优化方案草稿》，并为研发老李生成任务指派提醒与群公告卡片，呈送用户直观预览与微调。'],
+  ['08', '全透明变更确认', '涉及“创建项目任务”、“修改负责人”及“在研发群发送提醒”等写操作时，茉莉展示完整变更字段与受影响对象，经由用户明确点击确认后才真正执行。'],
+  ['09', '闭环执行与动态跟进', '确认后自动创建任务并 @研发老李，定时跟进进度。当老李回复“已提交 Hotfix 代码”时，茉莉自动感知并延续当前上下文，无需用户手动二次交代背景。'],
+  ['10', '沉淀结果与知识闭环', '自动汇总解决进度，把“客户问题-修复任务-发布记录”全链路卡片回写至原始客户群，并沉淀到团队知识库，让下一次类似问题处理可以直接继承经验。'],
 ];
 
 const capabilities = [
-  ['记得住', '上下文沉淀在会话、任务与执行记录里，不需要每次重新交代。'],
-  ['会办事', '整理待办、起草消息、跟进进展，重要写入先征求确认。'],
-  ['守边界', '只在授权范围内读取与操作，敏感信息与高风险动作始终可控。'],
+  ['全域感知·记得住', '上下文自动沉淀在会话、任务与项目日志中，跨会话长期记忆，告别每次对话重新交代背景的繁琐。'],
+  ['主动协同·会办事', '主动梳理待办、自动起草通知、智能催办跟进，将零散沟通自动转化为可执行、有反馈的闭环行动。'],
+  ['严密风控·守边界', '严格遵循企业级权限体系，敏感数据读取可控，所有重要写操作与外部通知均需经由人工明确确认。'],
+  ['自主可控·易扩展', '支持企业自建环境私有化部署，核心代码开源，可自由接入企业已有大模型、API 及业务系统。'],
 ];
-
-const capabilityStages = ['理解团队上下文', '推进协作行动', '守住权限边界'];
 
 const comparisonRows = [
   ['企业即时通讯', true, true, true, true, true, true, true],
@@ -56,12 +57,12 @@ const comparisonRows = [
 ];
 
 const faqs = [
-  ['即应和飞书、钉钉是什么关系？', '它们是成熟的团队协作生态；即应聚焦于让 AI 以明确身份参与协作，并支持完全私有化部署，核心代码开源。'],
-  ['用即应，我的数据安全吗？', '可部署到企业自有环境；数据读取与操作均受权限约束，关键写入需要人确认，核心代码开源可审计。'],
-  ['茉莉能做什么？', '在授权范围内：查询历史信息、整理待办、起草与发送消息、创建和推进项目任务，并在需要判断时交还给人。'],
-  ['需要什么基础才能用？', '支持 Web、桌面与移动端；可以先用在线 Demo 体验，再决定免费安装或私有化部署。'],
-  ['是免费的吗？', '支持免费安装与私有化部署；具体授权方式以开源许可证（AGPL-3.0）及发布说明为准。'],
-  ['我可以自己二次开发吗？', '可以，核心代码开源，并提供应用接入与扩展能力。'],
+  ['即应和飞书、钉钉等企业 IM 是什么关系？', '飞书和钉钉是成熟的大而全团队生态；即应聚焦于“助理优先”的 AI 原生协作模式，让 AI 以明确身份与员工同频工作，且支持完全私有化部署与开源二次开发。'],
+  ['使用即应，我们的企业数据安全有保障吗？', '非常安全。即应支持全套代码私有化部署在企业自有服务器或云基础设施中。数据读取与操作均遵循企业权限隔离策略，关键动作必须经由人工二次确认，核心代码开源可随时审计。'],
+  ['AI 助理“茉莉”具体能帮我们做什么？', '在授权范围内，茉莉可跨聊天与项目查询历史上下文、总结会议与讨论共识、结构化提取待办任务、智能起草通知与公文、自动追踪项目进展，并在需要决策时安全地将控制权交还给人。'],
+  ['部署即应需要什么样的基础条件？', '即应采用容器化部署方案（提供 Docker / Compose 等依赖配置），支持 Web、桌面客户端（macOS / Windows / Linux）及移动端。您既可以在线体验 Demo，也可一键部署至私有服务器。'],
+  ['即应是免费开源的吗？', '即应的核心产品代码基于 AGPL-3.0 许可证开源，支持企业与个人免费安装、使用和私有化部署。具体授权细则与商业支持可参阅 GitHub 官方发布说明。'],
+  ['我们团队可以基于即应进行二次开发吗？', '完全可以！即应采用模块化架构与开源代码库，欢迎开发者根据自身业务需求定制 UI、扩展 Agent 插件或接入特定的企业工作流。'],
 ];
 
 const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
@@ -73,29 +74,29 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
     <section class="scene scene-hero" aria-labelledby="hero-title">
       <img class="scene-image" src={asset('team-collaboration.webp')} alt="" aria-hidden="true" />
       <div class="scene-shade"></div>
-      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title">有事即应</h1><p class="scene-subtitle">AI 时代下的办公协作入口</p><p class="scene-lead">即应把团队沟通、办公 AI 助理、项目和任务放进同一个工作空间。AI 不只回答问题，也能在明确授权下查询信息、联系成员并执行工作。让 AI 进入团队，把工作继续推进下去。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理茉莉</span><span>支持免费私有化部署</span></div></div>
+      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title">有事即应</h1><p class="scene-subtitle title-accent">AI 时代下的团队协作入口</p><p class="scene-lead">即应将团队沟通、个人 AI 助理茉莉、项目与任务协作深度集成在同一个空间。AI 不再只是被动打字回答问题，而是在明确授权下感知全局上下文、跨部门协同并主动推进复杂工作，帮助团队达成闭环交付。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理茉莉</span><span>支持免费私有化部署</span></div></div>
     </section>
 
     <section class="scene scene-why" id="why" aria-labelledby="why-title">
       <img class="scene-image" src={asset('workspace-detail.webp')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow">为什么需要即应</span><h2 id="why-title">AI 已经会回答问题，<br /><em>工作却仍然由人来搬运</em></h2><p>真正的办公协作不只有一轮问答。它需要理解持续变化的上下文，找到正确的人，并把讨论推进到有结果。</p></div><div class="scene-rail">{painPoints.map(([number, itemTitle, body]) => <article class="scene-rail-item"><span>{number}</span><div><h3>{itemTitle}</h3><p>{body}</p></div><Icon name="tabler:arrow-right" size={18} aria-hidden="true" /></article>)}</div></div>
+      <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow">为什么需要即应</span><h2 id="why-title"><span class="title-line">AI 已经会回答问题，</span><span class="title-line title-accent">工作却仍然由人来搬运</span></h2><p>真正的企业级办公协作远超一问一答。它需要持续理解团队演进的上下文，找到正确的人与会话，把复杂的沟通转化为可落地的结果。</p></div><div class="scene-rail">{painPoints.map(([number, itemTitle, body]) => <article class="scene-rail-item"><span>{number}</span><div><h3>{itemTitle}</h3><p>{body}</p></div><Icon name="tabler:arrow-right" size={18} aria-hidden="true" /></article>)}</div></div>
     </section>
 
     <section class="scene scene-solution" id="solution" aria-labelledby="solution-title">
       <img class="scene-image" src={asset('team-meeting.webp')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-top"><div class="scene-text-block"><span class="scene-eyebrow">即应的解决方案</span><h2 id="solution-title"><span class="title-line">一句话说出目标，</span><span class="title-line title-line-accent">剩下的交给茉莉</span></h2><p>茉莉把查询、沟通和执行连接成同一段工作。每一步的依据和下一步动作，都在会话里清楚可见。</p></div><div class="workflow-panel"><div class="scene-flow-head"><span>真实工作流</span></div><div class="workflow-tabs" role="tablist" aria-label="真实工作流步骤">{workflow.map(([number, stepTitle], index) => <button class:list={['workflow-tab', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`workflow-panel-${number}`} data-workflow-tab={number}><span>{number}</span><strong>{stepTitle}</strong></button>)}</div><div class="workflow-cards">{workflow.map(([number, stepTitle, body], index) => <article class:list={['workflow-card', index === 0 && 'is-active']} id={`workflow-panel-${number}`} role="tabpanel" data-workflow-panel={number} hidden={index !== 0}><span class="workflow-card-number">{number}</span><div><p class="workflow-card-kicker">茉莉正在做什么</p><h3>{stepTitle}</h3><p>{body}</p></div><Icon name="tabler:arrow-right" size={22} aria-hidden="true" /></article>)}</div></div></div>
+      <div class="scene-content scene-content-top"><div class="scene-text-block"><span class="scene-eyebrow">即应的解决方案</span><h2 id="solution-title"><span class="title-line">一句话说出目标，</span><span class="title-line title-accent">剩下的交给茉莉</span></h2><p>茉莉将背景查询、跨角色沟通与任务执行连贯为同一段工作流。每一步的操作依据与下一步推进计划，在工作空间中一目了然。</p></div><div class="workflow-panel"><div class="scene-flow-head"><span>真实工作流</span></div><div class="workflow-tabs" role="tablist" aria-label="真实工作流步骤">{workflow.map(([number, stepTitle], index) => <button class:list={['workflow-tab', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`workflow-panel-${number}`} data-workflow-tab={number}><span>{number}</span><strong>{stepTitle}</strong></button>)}</div><div class="workflow-cards">{workflow.map(([number, stepTitle, body], index) => <article class:list={['workflow-card', index === 0 && 'is-active']} id={`workflow-panel-${number}`} role="tabpanel" data-workflow-panel={number} hidden={index !== 0}><span class="workflow-card-number">{number}</span><div><p class="workflow-card-kicker">茉莉正在做什么</p><h3>{stepTitle}</h3><p>{body}</p></div><Icon name="tabler:arrow-right" size={22} aria-hidden="true" /></article>)}</div></div></div>
     </section>
 
     <section class="dual-section" id="capabilities" aria-labelledby="capability-title">
-      <img class="dual-image" src={asset('capabilities-team.jpg')} alt="" aria-hidden="true" loading="lazy" />
+      <img class="dual-image" src={asset('download-workspace.webp')} alt="" aria-hidden="true" loading="lazy" />
       <div class="scene-shade scene-shade-heavy"></div>
       <div class="dual-inner">
         <div class="capability-panel">
           <span class="scene-eyebrow">核心能力</span>
-          <h2 id="capability-title"><span class="title-line">茉莉不是工具栏，</span><span class="title-line title-line-accent">是团队里多了一位同事</span></h2>
-          <p class="capability-intro">她读得懂你们的上下文，记得住谁在负责什么，也会在动手前把计划拿给你确认。</p>
-          <div class="capability-cards">{capabilities.map(([itemTitle, body], index) => <article class="capability-card"><span class="capability-number">0{index + 1}</span><div><p class="capability-kicker">{capabilityStages[index]}</p><h3>{itemTitle}</h3><p>{body}</p></div></article>)}</div>
-          <blockquote>“茉莉，发布的事跟到哪了？帮我把卡住的提醒一下。”</blockquote>
+          <h2 id="capability-title"><span class="title-line">茉莉不是工具栏，</span><span class="title-line title-accent">是团队里多了一位同事</span></h2>
+          <p class="capability-intro">她读得懂持续演进的团队上下文，清楚谁在负责什么，并且始终在执行关键动作前把计划提交给你确认。</p>
+          <div class="capability-cards">{capabilities.map(([itemTitle, body], index) => <article class="capability-card"><span class="capability-number">0{index + 1}</span><div><h3>{itemTitle}</h3><p>{body}</p></div></article>)}</div>
+          <blockquote>“茉莉，新版本发布进展如何？帮我汇总卡点并向相关负责人发送提醒。”</blockquote>
         </div>
         <div class="comparison-panel" id="comparison" aria-label="同类产品对比">
           <p class="panel-intro">即应更专注于让 AI 以明确身份进入团队并持续推进工作。</p>
@@ -103,19 +104,22 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
           <p class="compare-note">对比基于各产品公开定位与常见使用方式整理；“私有化部署”指可部署到企业自有基础设施。具体能力可能随版本、套餐和企业配置变化。</p>
         </div>
       </div>
-      <section class="dual-faq" aria-labelledby="faq-title">
-        <div class="dual-faq-inner">
-          <div class="dual-faq-heading"><span class="scene-eyebrow">FAQ</span><h2 id="faq-title">常见问题</h2></div>
-          <div class="faq-list">{faqs.map(([question, answer]) => <details><summary>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></summary><p>{answer}</p></details>)}</div>
-        </div>
-      </section>
     </section>
 
-    <section class="scene scene-download" id="download" aria-labelledby="download-title"><img class="scene-image" src={asset('download-meeting.jpg')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div><div class="scene-content scene-content-center"><span class="scene-eyebrow">开始使用</span><h2 id="download-title">下载安装</h2><p>可以先用在线 Demo 体验，也可以免费安装到自己的设备或企业环境。</p><div class="download-links"><a class="download-link download-link-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer"><span><strong>在线体验</strong><small>直接进入即应工作空间</small></span><Icon name="tabler:arrow-right" size={20} aria-hidden="true" /></a><a class="download-link" href="https://github.com/chaitin/MagicChat/releases/latest" target="_blank" rel="noopener noreferrer"><span><strong>PC 端</strong><small>macOS / Windows / Linux</small></span><Icon name="tabler:download" size={20} aria-hidden="true" /></a><a class="download-link" href="#download"><span><strong>移动端</strong><small>iOS / Android · 即将支持</small></span><Icon name="tabler:device-mobile" size={20} aria-hidden="true" /></a><a class="download-link" href="https://github.com/chaitin/MagicChat" target="_blank" rel="noopener noreferrer"><span><strong>GitHub 源码</strong><small>AGPL-3.0 · 私有化部署</small></span><Icon name="tabler:brand-github-filled" size={20} aria-hidden="true" /></a></div></div></section>
+    <section class="scene scene-faq" id="faq" aria-labelledby="faq-title">
+      <img class="scene-image" src={asset('faq-collaboration.webp')} alt="" aria-hidden="true" loading="lazy" />
+      <div class="scene-shade scene-shade-heavy"></div>
+      <div class="faq-inner">
+        <div class="faq-heading"><span class="scene-eyebrow">FAQ</span><h2 id="faq-title">常见问题</h2><p class="faq-intro">从产品能力、部署方式到 AI 助理的使用边界，这里整理了团队最常关心的问题。</p></div>
+        <div class="faq-list">{faqs.map(([question, answer]) => <details><summary>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></summary><p>{answer}</p></details>)}</div>
+      </div>
+    </section>
+
+    <section class="scene scene-download" id="download" aria-labelledby="download-title"><img class="scene-image" src={asset('footer-meeting-room.webp')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div><div class="scene-content scene-content-center"><span class="scene-eyebrow">开始使用</span><h2 id="download-title">下载安装</h2><p class="download-intro">在线体验即刻进入工作空间，也可下载客户端或基于开源代码部署属于团队自己的即应。</p><div class="download-links"><a class="download-link download-link-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer"><span><strong>在线体验</strong><small>直接进入即应空间</small></span><Icon name="tabler:arrow-right" size={20} aria-hidden="true" /></a><a class="download-link" href="https://github.com/chaitin/MagicChat/releases/latest" target="_blank" rel="noopener noreferrer"><span><strong>PC 端</strong><small>macOS / Windows / Linux</small></span><Icon name="tabler:download" size={20} aria-hidden="true" /></a><a class="download-link" href="#download"><span><strong>移动端</strong><small>iOS / Android · 即将支持</small></span><Icon name="tabler:device-mobile" size={20} aria-hidden="true" /></a><a class="download-link" href="https://github.com/chaitin/MagicChat" target="_blank" rel="noopener noreferrer"><span><strong>GitHub 源码</strong><small>AGPL-3.0 · 私有化部署</small></span><Icon name="tabler:brand-github-filled" size={20} aria-hidden="true" /></a></div></div></section>
   </main>
   <SiteFooter />
   <script>
-    const revealItems = Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>('.scene-hero .scene-content > *, .scene-why .scene-text-block, .scene-why .scene-rail, .scene-solution .scene-text-block, .workflow-panel, .capability-panel > .scene-eyebrow, .capability-panel > h2, .capability-intro, .capability-cards, .capability-panel > blockquote, .comparison-panel, .dual-faq-inner, .scene-download .scene-content > *, .footer-grid > *'))));
+    const revealItems = Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>('.scene-hero .scene-content > *, .scene-why .scene-text-block, .scene-why .scene-rail, .scene-solution .scene-text-block, .workflow-panel, .capability-panel > .scene-eyebrow, .capability-panel > h2, .capability-intro, .capability-cards, .capability-panel > blockquote, .comparison-panel, .faq-inner, .scene-download .scene-content > *, .footer-grid > *'))));
     revealItems.forEach((item, index) => { item.classList.add('motion-reveal'); item.style.setProperty('--reveal-delay', `${(index % 5) * 70}ms`); });
     if ('IntersectionObserver' in window) { const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target); } }), { threshold: 0.16 }); revealItems.forEach((item) => observer.observe(item)); } else revealItems.forEach((item) => item.classList.add('is-visible'));
     const workflowTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-workflow-tab]'));

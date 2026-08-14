@@ -83,6 +83,7 @@ export function ConversationSidebar({
   currentUser,
   drafts,
   onCreateGroup,
+  onManageFriends,
   onDismissConversation,
   onOpenGlobalSearch,
   onSelectDirectoryItem = noopSelectDirectoryItem,
@@ -101,6 +102,7 @@ export function ConversationSidebar({
   currentUser: ClientUser
   drafts: ConversationDrafts
   onCreateGroup: () => void
+  onManageFriends?: () => void
   onDismissConversation?: (conversationId: string) => Promise<void>
   onOpenGlobalSearch?: () => void
   onSelectDirectoryItem?: (item: DirectorySearchItem) => void
@@ -268,6 +270,11 @@ export function ConversationSidebar({
                 <DropdownMenuItem onSelect={onCreateGroup}>
                   发起群聊
                 </DropdownMenuItem>
+                {onManageFriends && (
+                  <DropdownMenuItem onSelect={onManageFriends}>
+                    添加好友
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -670,7 +677,7 @@ function ConversationListAvatar({
           {conversation.notificationMuted ? (
             <span
               aria-label="有未读消息"
-              className="block size-2 rounded-full bg-rose-700"
+              className="block size-2 rounded-full bg-red-500"
             />
           ) : (
             <ConversationUnreadBadge count={conversation.unreadCount} />
@@ -689,7 +696,7 @@ function ConversationUnreadBadge({ count }: { count: number }) {
   return (
     <Badge
       aria-label={`${count} 条未读消息`}
-      className="h-4 bg-rose-700 px-1 py-0 text-[10px] leading-4 font-normal text-white dark:bg-rose-700"
+      className="h-4 bg-red-500 px-1 py-0 text-[10px] leading-4 font-normal text-white hover:bg-red-500 dark:bg-red-500"
       variant="destructive"
     >
       {formatUnreadCount(count)}

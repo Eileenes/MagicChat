@@ -12,12 +12,14 @@ import (
 	"time"
 
 	fileapp "app/internal/application/file"
+	projectapp "app/internal/application/project"
 	"app/internal/auth"
 	"app/internal/media"
 	"app/internal/store"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -111,13 +113,15 @@ func (s *Service) CanLoginWithEmail(ctx context.Context, rawEmail string) (bool,
 	if err != nil {
 		return false, nil
 	}
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&store.User{}).
-		Where("email = ? AND status = ?", email, store.UserStatusActive).
-		Count(&count).Error; err != nil {
+	var user store.User
+	err = s.db.WithContext(ctx).Where("email = ?", email).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true, nil
+	}
+	if err != nil {
 		return false, internalError(err)
 	}
-	return count > 0, nil
+	return user.Status == store.UserStatusActive, nil
 }
 
 func (s *Service) LoginWithVerifiedEmail(ctx context.Context, cmd VerifiedEmailLoginCommand) (LoginResult, error) {
@@ -126,16 +130,66 @@ func (s *Service) LoginWithVerifiedEmail(ctx context.Context, cmd VerifiedEmailL
 		return LoginResult{}, invalidCredentials()
 	}
 	var user store.User
-	err = s.db.WithContext(ctx).
-		Where("email = ? AND status = ?", email, store.UserStatusActive).
-		First(&user).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return LoginResult{}, invalidCredentials()
-	}
-	if err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing store.User
+		err := tx.Where("email = ?", email).First(&existing).Error
+		if err == nil {
+			if existing.Status != store.UserStatusActive {
+				return invalidCredentials()
+			}
+			user = existing
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		password, err := auth.GenerateSessionToken()
+		if err != nil {
+			return err
+		}
+		passwordHash, err := auth.HashPassword(password)
+		if err != nil {
+			return err
+		}
+		now := s.now().UTC()
+		candidate := store.User{
+			ID: uuid.NewString(), Email: email, Name: emailName(email), Avatar: store.DefaultUserAvatar,
+			PasswordHash: passwordHash, Status: store.UserStatusActive, CreatedAt: now, UpdatedAt: now,
+		}
+		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate)
+		if created.Error != nil {
+			return created.Error
+		}
+		if created.RowsAffected == 0 {
+			if err := tx.Where("email = ?", email).First(&existing).Error; err != nil {
+				return err
+			}
+			if existing.Status != store.UserStatusActive {
+				return invalidCredentials()
+			}
+			user = existing
+			return nil
+		}
+		if err := projectapp.ProvisionPersonalWorkspace(tx, candidate.ID, now); err != nil {
+			return err
+		}
+		user = candidate
+		return nil
+	}); err != nil {
+		if ErrorCodeOf(err) == CodeInvalidCredentials {
+			return LoginResult{}, err
+		}
 		return LoginResult{}, internalError(err)
 	}
 	return s.createLoginSession(ctx, user, cmd.UserAgent, cmd.IP)
+}
+
+func emailName(email string) string {
+	if local, _, ok := strings.Cut(email, "@"); ok && strings.TrimSpace(local) != "" {
+		return local
+	}
+	return email
 }
 
 func (s *Service) createLoginSession(ctx context.Context, user store.User, userAgent string, ip string) (LoginResult, error) {

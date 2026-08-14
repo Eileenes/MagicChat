@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 
-const paths = ['', 'privacy/'];
+const paths = ['', 'privacy-policy/', 'user-agreement/'];
 
 export const GET: APIRoute = ({ site }) => {
   const baseUrl = new URL(import.meta.env.BASE_URL, site ?? 'http://localhost');

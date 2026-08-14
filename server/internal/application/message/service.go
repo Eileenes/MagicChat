@@ -1,6 +1,7 @@
 package message
 
 import (
+	"app/internal/application/directmessagepolicy"
 	"app/internal/config"
 
 	"gorm.io/gorm"
@@ -20,6 +21,7 @@ type Dependencies struct {
 	AppEventLocker         AppEventLocker
 	BeforeAppEventLock     func(Message)
 	AfterUserMessageCommit func(Message)
+	DirectMessaging        *directmessagepolicy.Policy
 }
 
 type Service struct {
@@ -36,6 +38,7 @@ type Service struct {
 	appEventLocker         AppEventLocker
 	beforeAppEventLock     func(Message)
 	afterUserMessageCommit func(Message)
+	directMessaging        *directmessagepolicy.Policy
 }
 
 func NewService(deps Dependencies) *Service {
@@ -47,6 +50,7 @@ func NewService(deps Dependencies) *Service {
 		appEvents: deps.AppEvents, appEventLocker: deps.AppEventLocker,
 		beforeAppEventLock:     deps.BeforeAppEventLock,
 		afterUserMessageCommit: deps.AfterUserMessageCommit,
+		directMessaging:        deps.DirectMessaging,
 	}
 }
 

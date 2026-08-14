@@ -67,7 +67,10 @@ const themeItems = [
 type ThemeValue = (typeof themeItems)[number]["value"]
 
 export function AppLayout() {
-  const { conversations, me, refreshMe } = useClientData()
+  const { conversations, incomingFriendRequests, me, refreshMe } = useClientData()
+  const hasPendingFriendRequests = incomingFriendRequests.some(
+    (request) => request.status === "pending"
+  )
   const totalUnreadCount = conversations.reduce(
     (total, conversation) =>
       total + (conversation.notificationMuted ? 0 : conversation.unreadCount),
@@ -108,7 +111,10 @@ export function AppLayout() {
             <MainNavItem
               key={item.to}
               item={item}
-              showNotification={item.to === "/chat" && hasUnreadMessages}
+              showNotification={
+                (item.to === "/chat" && hasUnreadMessages) ||
+                (item.to === "/contacts" && hasPendingFriendRequests)
+              }
               notificationAnimationActive={
                 item.to === "/chat" && notificationAnimation.active
               }
@@ -340,7 +346,9 @@ function MainNavItem({
   const active = Boolean(useMatch({ path: item.to, end: false }))
   const Icon = item.icon
   const accessibleLabel = showNotification
-    ? `${item.label}，有未读消息`
+    ? item.to === "/contacts"
+      ? `${item.label}，有新的好友申请`
+      : `${item.label}，有未读消息`
     : item.label
 
   return (

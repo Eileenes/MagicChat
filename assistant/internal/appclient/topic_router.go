@@ -24,7 +24,7 @@ const topicRouterSystemPrompt = `你是 MagicChat AI 助手的会话路由器。
 
 默认在当前会话直接回复。如果请求能够通过一次简洁回答完成，则不创建话题；如果请求需要深度思考或实际执行，任一条件满足就创建独立话题。不确定时必须选择 needs_topic=false。
 
-必须且只能调用一次 decide_topic 工具：
+优先且只能调用一次 decide_topic 工具。如果当前 Thinking 模式未调用工具，则只能输出等价的严格 JSON：{"needs_topic":true} 或 {"needs_topic":false}，不得包含解释、Markdown 或其他字段。
 - needs_topic=false：问候、闲聊、简单事实问答、简短解释、普通建议、轻量讨论或头脑风暴、澄清问题，以及不依赖外部数据、工具、实际操作或复杂推理就能当场简洁回答的请求。
 - needs_topic=true：满足以下任一条件：
   1. 深度思考：需要多阶段推理、系统分析、综合多个因素、比较并论证多种方案、研究、规划、诊断、设计，或者产出较长的结构化报告或方案。
@@ -97,8 +97,7 @@ func (r *modelTopicRouter) NeedsTopic(ctx context.Context, request agent.Request
 	defer cancel()
 
 	response, err := r.model.CreateMessage(routerCtx, llm.Request{
-		System:        topicRouterSystemPrompt,
-		ForceToolName: decideTopicToolName,
+		System: topicRouterSystemPrompt,
 		Messages: []llm.Message{{
 			Role:    llm.RoleUser,
 			Content: string(payload),
@@ -156,27 +155,45 @@ func buildTopicRoutingPayload(request agent.Request, historyLimit int) ([]byte, 
 func parseTopicDecision(response llm.Response) (bool, error) {
 	toolCalls := 0
 	var decision *bool
+	var textResponses []string
 	for _, block := range response.Blocks {
-		if block.Type != llm.BlockTypeToolUse {
-			continue
+		switch block.Type {
+		case llm.BlockTypeToolUse:
+			toolCalls++
+			if block.ToolName != decideTopicToolName {
+				return false, fmt.Errorf("topic router called unexpected tool %q", block.ToolName)
+			}
+			input, err := decodeTopicDecisionInput(block.ToolInput)
+			if err != nil {
+				return false, err
+			}
+			decision = input.NeedsTopic
+		case llm.BlockTypeText:
+			if text := strings.TrimSpace(block.Text); text != "" {
+				textResponses = append(textResponses, text)
+			}
 		}
-		toolCalls++
-		if block.ToolName != decideTopicToolName {
-			return false, fmt.Errorf("topic router called unexpected tool %q", block.ToolName)
-		}
-		input, err := decodeTopicDecisionInput(block.ToolInput)
-		if err != nil {
-			return false, err
-		}
-		decision = input.NeedsTopic
 	}
-	if toolCalls != 1 {
-		return false, fmt.Errorf("topic router returned %d tool calls, want exactly one", toolCalls)
+	if toolCalls > 0 {
+		if toolCalls != 1 {
+			return false, fmt.Errorf("topic router returned %d tool calls, want exactly one", toolCalls)
+		}
+		if decision == nil {
+			return false, fmt.Errorf("topic router omitted needs_topic")
+		}
+		return *decision, nil
 	}
-	if decision == nil {
+	if len(textResponses) != 1 {
+		return false, fmt.Errorf("topic router returned %d text responses without a tool call, want exactly one", len(textResponses))
+	}
+	input, err := decodeTopicDecisionInput(json.RawMessage(textResponses[0]))
+	if err != nil {
+		return false, err
+	}
+	if input.NeedsTopic == nil {
 		return false, fmt.Errorf("topic router omitted needs_topic")
 	}
-	return *decision, nil
+	return *input.NeedsTopic, nil
 }
 
 func decodeTopicDecisionInput(raw json.RawMessage) (topicDecisionInput, error) {

@@ -127,7 +127,7 @@ func (s *Service) CreateDelegated(ctx context.Context, cmd CreateDelegatedComman
 			return err
 		}
 		conversation := access.Context.Conversation
-		if err := ensureUserConversationSendable(tx, access, cmd.AccountID, 0, time.Now().UTC()); err != nil {
+		if err := s.ensureUserConversationSendable(tx, access, cmd.AccountID, 0, time.Now().UTC()); err != nil {
 			return err
 		}
 		existing, ok, err := findExistingMessageByClientMessageID(
@@ -204,6 +204,8 @@ func mapAppCreateError(err error) error {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return NotFoundError("会话不存在", err)
+	case errors.Is(err, errDirectFriendshipRequired):
+		return &Error{Code: CodeDirectFriendshipRequired, Message: "仅好友之间可以发送私聊消息", Cause: err}
 	case errors.Is(err, errConversationAccessDenied):
 		return forbidden("无权访问会话", err)
 	case errors.Is(err, errConversationNotSendable):

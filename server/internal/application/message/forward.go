@@ -499,7 +499,7 @@ func (s *Service) createForwardedMessagesForTarget(ctx context.Context, user sto
 			return err
 		}
 		conversation := access.Context.Conversation
-		if err := ensureUserConversationSendable(tx, access, user.ID, 0, time.Now().UTC()); err != nil {
+		if err := s.ensureUserConversationSendable(tx, access, user.ID, 0, time.Now().UTC()); err != nil {
 			return err
 		}
 
@@ -631,6 +631,9 @@ func newForwardTargetFailure(conversationID string, err error) ForwardTargetResu
 	code := "internal_error"
 	message := "转发失败"
 	switch {
+	case errors.Is(err, errDirectFriendshipRequired):
+		code = string(CodeDirectFriendshipRequired)
+		message = "仅好友之间可以发送私聊消息"
 	case errors.Is(err, gorm.ErrRecordNotFound), errors.Is(err, errConversationAccessDenied):
 		code = "forbidden"
 		message = "无权向该会话发送消息"

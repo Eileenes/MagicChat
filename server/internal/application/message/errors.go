@@ -6,7 +6,8 @@ type ErrorCode string
 
 const (
 	CodeInvalidRequest     ErrorCode = "invalid_request"
-	CodeForbidden          ErrorCode = "forbidden"
+	CodeForbidden                 ErrorCode = "forbidden"
+	CodeDirectFriendshipRequired ErrorCode = "direct_friendship_required"
 	CodeNotFound           ErrorCode = "not_found"
 	CodeConflict           ErrorCode = "conflict"
 	CodeRequestTooLarge    ErrorCode = "request_too_large"
@@ -80,6 +81,7 @@ var (
 	errConversationAccessDenied  = errors.New("conversation access denied")
 	errConversationNotSendable   = errors.New("conversation not sendable")
 	errAppDirectAccessDenied     = errors.New("app direct access denied")
+	errDirectFriendshipRequired = errors.New("direct friendship required")
 	errReplyToMessageInvalid     = errors.New("reply_to_message_id invalid")
 	ErrForwardUnsupportedMessage = errors.New("forward unsupported message")
 )

@@ -12,7 +12,7 @@ describe("ClientDataProvider", () => {
     vi.useRealTimers()
   })
 
-  it("refreshes active workspace data without loading the full directory", async () => {
+  it("refreshes workspace data including the directory", async () => {
     vi.useFakeTimers()
 
     let meRequestCount = 0
@@ -73,7 +73,7 @@ describe("ClientDataProvider", () => {
 
     expect(screen.getByTestId("conversation-count")).toHaveTextContent("1")
     expect(meRequestCount).toBe(1)
-    expect(contactsRequestCount).toBe(0)
+    expect(contactsRequestCount).toBe(1)
     expect(conversationRequestCount).toBe(1)
 
     await act(async () => {
@@ -82,7 +82,7 @@ describe("ClientDataProvider", () => {
 
     expect(screen.getByTestId("conversation-count")).toHaveTextContent("2")
     expect(meRequestCount).toBe(2)
-    expect(contactsRequestCount).toBe(0)
+    expect(contactsRequestCount).toBe(2)
     expect(conversationRequestCount).toBe(2)
   })
 
@@ -166,6 +166,81 @@ describe("ClientDataProvider", () => {
     expect(screen.getByTestId("friend-name")).toHaveTextContent("Bob")
   })
 
+  it("does not expose pending request users as contacts", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(jsonResponse(createConversationsResponse([])))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(
+          jsonResponse({
+            data: { apps: [], directory_mode: "friends", groups: [], user_ids: [] },
+            success: true,
+          })
+        )
+      }
+      if (url === "/api/client/friend-requests?direction=incoming") {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              requests: [createFriendRequestResponse("request-1", "user-2", "user-1")],
+            },
+            success: true,
+          })
+        )
+      }
+      if (url === "/api/client/friend-requests?direction=outgoing") {
+        return Promise.resolve(jsonResponse({ data: { requests: [] }, success: true }))
+      }
+      if (url === "/api/client/users/resolve") {
+        const body = JSON.parse(String(init?.body)) as { user_ids: string[] }
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              users: body.user_ids.map((id) => ({
+                avatar: "",
+                email: `${id}@example.com`,
+                id,
+                name: "Pending Bob",
+                nickname: "",
+                online: false,
+                phone: "",
+                type: "user",
+                updated_at: "2026-08-11T00:00:00Z",
+              })),
+            },
+            success: true,
+          })
+        )
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <ClientDataProvider>
+          <FriendDirectoryProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    expect(screen.getByTestId("directory-mode")).toHaveTextContent("friends")
+    expect(screen.getByTestId("incoming-count")).toHaveTextContent("1")
+    expect(screen.getByTestId("friend-name")).toBeEmptyDOMElement()
+  })
+
   it("batches and caches user profile resolution", async () => {
     vi.useFakeTimers()
     const resolveRequests: string[][] = []
@@ -173,6 +248,9 @@ describe("ClientDataProvider", () => {
       const url = String(input)
       if (url === "/api/client/me") {
         return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
       }
       if (url === "/api/client/projects?limit=100") {
         return Promise.resolve(jsonResponse(createProjectsResponse()))
@@ -234,6 +312,9 @@ describe("ClientDataProvider", () => {
       if (url === "/api/client/me") {
         return Promise.resolve(jsonResponse(createCurrentUserResponse()))
       }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      }
       if (url === "/api/client/projects?limit=100") {
         return Promise.resolve(jsonResponse(createProjectsResponse()))
       }
@@ -271,6 +352,9 @@ describe("ClientDataProvider", () => {
       const url = String(input)
       if (url === "/api/client/me") {
         return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
       }
       if (url === "/api/client/projects?limit=100") {
         return Promise.resolve(jsonResponse(createProjectsResponse()))

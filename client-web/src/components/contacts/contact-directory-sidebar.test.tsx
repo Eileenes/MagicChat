@@ -71,12 +71,13 @@ describe("ContactDirectorySidebar", () => {
           appGrantUsers={contacts}
           apps={[]}
           contacts={contacts}
-          contactsRefreshing={false}
           currentUserId="current-user"
           groups={[]}
+          pendingFriendRequestCount={2}
           organizationName="测试组织"
           onActiveTabChange={vi.fn()}
           onKeywordChange={vi.fn()}
+          onManageFriends={vi.fn()}
           onRefresh={vi.fn()}
           onSelect={vi.fn()}
           onStartAppConversation={vi.fn()}
@@ -90,6 +91,7 @@ describe("ContactDirectorySidebar", () => {
     const organizationTrigger = screen.getByRole("button", {
       name: "测试组织",
     })
+    expect(screen.getByLabelText("2 个新的好友申请")).toHaveTextContent("2")
     expect(organizationTrigger).toHaveTextContent("测试组织2")
     expect(screen.getByRole("option", { name: "Alice" })).toBeInTheDocument()
     expect(
@@ -306,7 +308,6 @@ function createSidebarProps(
     appGrantUsers: [],
     apps: [],
     contacts: [],
-    contactsRefreshing: false,
     currentUserId: "current-user",
     groups: [],
     organizationName: "测试组织",
