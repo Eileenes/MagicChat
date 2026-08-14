@@ -390,6 +390,7 @@ function asString(value: unknown, max: number): string {
     throw new Error("参数格式无效")
   return value
 }
+
 function optionalString(value: unknown, max: number): string | undefined {
   return value === undefined ? undefined : asString(value, max)
 }

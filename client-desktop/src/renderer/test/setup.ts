@@ -73,6 +73,35 @@ if (typeof window !== "undefined") {
       value: ResizeObserverMock,
     })
   }
+
+  const elementCompatibility: PropertyDescriptorMap = {}
+  if (!HTMLElement.prototype.hasPointerCapture) {
+    elementCompatibility.hasPointerCapture = {
+      configurable: true,
+      value: () => false,
+      writable: true,
+    }
+    elementCompatibility.releasePointerCapture = {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    }
+    elementCompatibility.setPointerCapture = {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    }
+  }
+  if (!HTMLElement.prototype.scrollIntoView) {
+    elementCompatibility.scrollIntoView = {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    }
+  }
+  if (Object.keys(elementCompatibility).length > 0) {
+    Object.defineProperties(HTMLElement.prototype, elementCompatibility)
+  }
 }
 
 afterEach(() => {

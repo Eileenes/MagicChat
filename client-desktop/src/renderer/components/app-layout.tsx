@@ -6,6 +6,7 @@ import {
   LogOut,
   MessageCircleMore,
   Moon,
+  Palette,
   Settings,
   Sun,
   SunMoon,
@@ -62,6 +63,11 @@ const themeItems = [
   { value: "system", label: "nav.theme.system", icon: SunMoon },
   { value: "light", label: "nav.theme.light", icon: Sun },
   { value: "dark", label: "nav.theme.dark", icon: Moon },
+  { value: "blue", label: "nav.theme.blue", icon: Palette },
+  { value: "violet", label: "nav.theme.violet", icon: Palette },
+  { value: "rose", label: "nav.theme.rose", icon: Palette },
+  { value: "amber", label: "nav.theme.amber", icon: Palette },
+  { value: "emerald", label: "nav.theme.emerald", icon: Palette },
 ] as const
 
 type ThemeValue = (typeof themeItems)[number]["value"]
@@ -106,8 +112,8 @@ export function AppLayout({ footerAction }: { footerAction?: ReactNode }) {
   }
 
   return (
-    <div className="flex h-svh min-h-0 bg-background pt-10 text-foreground">
-      <aside className="flex w-12 shrink-0 flex-col items-center border-r bg-sidebar py-3">
+    <div className="app-layout-shell flex h-svh min-h-0 bg-background text-foreground">
+      <aside className="app-navigation-rail flex w-12 shrink-0 flex-col items-center border-r bg-sidebar py-3">
         <UserAvatarMenu clearMessageScope={clearMessageScope} user={me} refreshMe={refreshMe} />
         <nav aria-label={t("nav.main")} className="flex flex-1 flex-col gap-2">
           {navItems.map((item) => (
@@ -139,7 +145,7 @@ function ProductWebsiteLink() {
   return (
     <Button
       asChild
-      className="rounded-md hover:bg-transparent hover:text-teal-500 dark:hover:bg-transparent"
+      className="rounded-md hover:bg-transparent hover:text-primary dark:hover:bg-transparent"
       size="icon-sm"
       variant="ghost"
     >
@@ -150,7 +156,7 @@ function ProductWebsiteLink() {
         target="_blank"
         title={t("nav.website.short")}
       >
-        <House aria-hidden="true" className="size-4" />
+        <House aria-hidden="true" className="size-5" />
       </a>
     </Button>
   )
@@ -230,16 +236,16 @@ function UserAvatarMenu({
           <Button
             aria-label={t("user.menu")}
             className="group/avatar-trigger mb-6 rounded-sm bg-muted transition-colors outline-none hover:bg-background focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-background"
-            size="icon-sm"
+            size="icon"
             title={displayName}
             type="button"
             variant="ghost"
           >
-            <Avatar className="size-8 rounded-sm bg-muted group-hover/avatar-trigger:bg-background group-data-[state=open]/avatar-trigger:bg-background after:rounded-sm after:transition-colors group-hover/avatar-trigger:after:border-ring group-data-[state=open]/avatar-trigger:after:border-ring">
+            <Avatar className="size-9 rounded-sm bg-muted group-hover/avatar-trigger:bg-background group-data-[state=open]/avatar-trigger:bg-background after:rounded-sm after:transition-colors group-hover/avatar-trigger:after:border-ring group-data-[state=open]/avatar-trigger:after:border-ring">
               {user.avatar && (
                 <AvatarImage alt={displayName} className="rounded-sm" src={user.avatar} />
               )}
-              <AvatarFallback className="rounded-sm text-xs">
+              <AvatarFallback className="rounded-sm text-sm">
                 {getAvatarInitial(displayName)}
               </AvatarFallback>
             </Avatar>
@@ -309,14 +315,14 @@ function SidebarSettingsButton() {
     <>
       <Button
         aria-label={t("user.settings")}
-        className="rounded-md hover:bg-transparent hover:text-teal-500 aria-expanded:bg-transparent aria-expanded:text-teal-500 dark:hover:bg-transparent"
+        className="rounded-md hover:bg-transparent hover:text-primary aria-expanded:bg-transparent aria-expanded:text-primary dark:hover:bg-transparent"
         onClick={handleSettingsOpen}
         size="icon-sm"
         title={t("user.settings")}
         type="button"
         variant="ghost"
       >
-        <Settings className="size-4" />
+        <Settings className="size-5" />
       </Button>
       <UserSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </>
@@ -378,9 +384,8 @@ function MainNavItem({
   const { t } = useLocale()
   const active = Boolean(useMatch({ path: item.to, end: false }))
   const Icon = item.icon
-  const accessibleLabel = showNotification
-    ? t("nav.unread", { label: t(item.label) })
-    : t(item.label)
+  const label = t(item.label)
+  const accessibleLabel = showNotification ? t("nav.unread", { label }) : label
 
   return (
     <Button
@@ -390,12 +395,12 @@ function MainNavItem({
       className={
         active
           ? "relative rounded-full"
-          : "relative rounded-full text-teal-500 hover:bg-teal-50 hover:text-teal-500 dark:hover:bg-teal-950 dark:hover:text-teal-500"
+          : "relative rounded-full text-primary hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/15 dark:hover:text-primary"
       }
     >
-      <NavLink to={item.to} aria-label={accessibleLabel} title={item.label}>
+      <NavLink to={item.to} aria-label={accessibleLabel} title={label}>
         <Icon
-          className="size-4 [stroke-width:2] transition-[stroke-width] group-hover/button:[stroke-width:2.5]"
+          className="size-5 [stroke-width:2] transition-[stroke-width] group-hover/button:[stroke-width:2.5]"
           strokeWidth={2}
         />
         {showNotification && (
@@ -418,7 +423,7 @@ function GithubLink() {
   return (
     <Button
       asChild
-      className="rounded-md hover:bg-transparent hover:text-teal-500 dark:hover:bg-transparent"
+      className="rounded-md hover:bg-transparent hover:text-primary dark:hover:bg-transparent"
       size="icon-sm"
       variant="ghost"
     >
@@ -429,7 +434,7 @@ function GithubLink() {
         target="_blank"
         title="GitHub"
       >
-        <GithubIcon className="size-4" />
+        <GithubIcon className="size-5" />
       </a>
     </Button>
   )
@@ -462,14 +467,14 @@ function ThemeSwitcher() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="rounded-md hover:bg-transparent hover:text-teal-500 aria-expanded:bg-transparent aria-expanded:text-teal-500 data-[state=open]:bg-transparent data-[state=open]:text-teal-500 dark:hover:bg-transparent"
+          className="rounded-md hover:bg-transparent hover:text-primary aria-expanded:bg-transparent aria-expanded:text-primary data-[state=open]:bg-transparent data-[state=open]:text-primary dark:hover:bg-transparent"
           aria-label={t("nav.theme", { label: t(currentTheme.label) })}
           title={t("nav.theme", { label: t(currentTheme.label) })}
         >
-          <CurrentIcon className="size-4" />
+          <CurrentIcon className="size-5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="end" className="w-36">
+      <DropdownMenuContent side="right" align="end" className="w-40">
         <DropdownMenuRadioGroup value={theme} onValueChange={handleThemeChange}>
           {themeItems.map((item) => {
             const Icon = item.icon

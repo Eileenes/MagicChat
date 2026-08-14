@@ -61,7 +61,7 @@ export function DesktopRoot() {
       <LocaleProvider>
         <ScreenshotStartFailedBridge />
         <TooltipProvider>
-          <div className="desktop-frame">
+          <div className="desktop-frame" data-platform={platform}>
             <DesktopTitlebar platform={platform} />
             <div className="desktop-content">
               <DesktopRootContent platform={platform} />
@@ -195,7 +195,7 @@ function DesktopRootContent({ platform }: { platform?: string }) {
   return (
     <>
       {loading ? (
-        <StatusPage text={t("startup.starting")} />
+        <StatusPage />
       ) : documentWindowRoute.kind === "invalid" ? (
         <DocumentWindowStartupError message={t(documentWindowRoute.messageKey)} />
       ) : selected ? (
@@ -429,7 +429,7 @@ function DesktopUpdatePrompt({
                   ? "motion-safe:animate-spin"
                   : ""
               }
-              size={16}
+              size={20}
             />
             <span className="sr-only">{label}</span>
           </button>
@@ -762,7 +762,7 @@ function ServerSetup({ onAdded }: { onAdded(profile: ServerProfile): void }) {
   )
 }
 
-function StatusPage({ detail, text }: { detail?: string; text: string }) {
+function StatusPage({ detail, text }: { detail?: string; text?: string }) {
   const { t } = useLocale()
   return <BrandLoadingScreen detail={detail ?? t("setup.preparingWorkspace")} message={text} />
 }

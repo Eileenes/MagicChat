@@ -115,6 +115,10 @@ vi.mock("./desktop-transport", () => ({
 
 describe("桌面设置服务器管理", () => {
   beforeEach(() => {
+    window.localStorage.clear()
+    document.documentElement.classList.remove("dark", "light")
+    document.documentElement.removeAttribute("data-color-theme")
+    document.documentElement.style.fontSize = ""
     mocks.externalLinkHandler = undefined
     mocks.desktopHostOptions = undefined
     mocks.hostOpenExternal = undefined
@@ -185,6 +189,20 @@ describe("桌面设置服务器管理", () => {
     expect(screen.queryByText("即应")).not.toBeInTheDocument()
   })
 
+  it("启动加载页只展示即应空间文案", async () => {
+    const bridge = createDesktopBridge()
+    const profiles = deferred<ReadonlyArray<ServerProfile>>()
+    bridge.servers.list = vi.fn(() => profiles.promise)
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+
+    render(<DesktopRoot />)
+
+    expect(await screen.findByText("正在准备你的即应空间")).toBeVisible()
+    expect(screen.queryByText("正在启动即应")).not.toBeInTheDocument()
+
+    await act(async () => profiles.resolve([profile]))
+  })
+
   it("macOS 顶栏为原生交通灯保留左侧空间", async () => {
     const bridge = createDesktopBridge()
     Object.defineProperty(window, "desktop", {
@@ -196,6 +214,25 @@ describe("桌面设置服务器管理", () => {
 
     await waitFor(() => expect(bridge.app.info).toHaveBeenCalled())
     expect(screen.queryByRole("img", { name: "即应" })).not.toBeInTheDocument()
+  })
+
+  it("macOS 工作区页面统一将顶部区域作为窗口拖拽区", async () => {
+    const source = await readFile(path.resolve(process.cwd(), "src/renderer/styles.css"), "utf8")
+
+    expect(source).toContain(
+      '.desktop-frame[data-platform="darwin"]:has(.app-layout-shell) .desktop-titlebar-drag-region',
+    )
+    expect(source).toContain("--desktop-macos-navigation-rail-width: 72px")
+    expect(source).toMatch(
+      /\.desktop-frame\[data-platform="darwin"\]:has\(\.app-layout-shell\) \.desktop-titlebar-drag-region\s*\{[^}]*width:\s*var\(--desktop-macos-navigation-rail-width\)/,
+    )
+    expect(source).toMatch(
+      /\.desktop-frame\[data-platform="darwin"\] \.(?:app-navigation-rail)\s*\{[^}]*-webkit-app-region:\s*drag[^}]*margin-top:\s*var\(--desktop-titlebar-height\)[^}]*width:\s*var\(--desktop-macos-navigation-rail-width\)/,
+    )
+    expect(source).toMatch(
+      /\.app-layout-shell\s+\[data-desktop-drag-region\]\s*\{\s*-webkit-app-region: drag/,
+    )
+    expect(source).toContain(".desktop-workspace-drag-region")
   })
 
   it("文档子窗口优先使用 URL 中的 serverId，不受全局服务器选择影响", async () => {
@@ -534,7 +571,7 @@ describe("桌面设置服务器管理", () => {
     const hostInstallCount = mocks.installDesktopFetch.mock.calls.length
     expect(hostInstallCount).toBeGreaterThan(0)
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "语言" }), "en")
+    await chooseSelectOption(user, "语言", "English")
 
     await waitFor(() => expect(bridge.settings.set).toHaveBeenCalledWith({ language: "en" }))
     expect(await screen.findByRole("button", { name: "Notifications" })).toBeInTheDocument()
@@ -553,7 +590,7 @@ describe("桌面设置服务器管理", () => {
       render(<DesktopRoot />)
 
       await user.click(await screen.findByRole("button", { name: "打开设置" }))
-      await user.selectOptions(screen.getByRole("combobox", { name: "语言" }), "en")
+      await chooseSelectOption(user, "语言", "English")
       await waitFor(() => expect(screen.getByRole("button", { name: "Shortcuts" })).toBeVisible())
       await user.click(screen.getByRole("button", { name: "Shortcuts" }))
 
@@ -569,13 +606,31 @@ describe("桌面设置服务器管理", () => {
     render(<DesktopRoot />)
 
     await user.click(await screen.findByRole("button", { name: "打开设置" }))
-    await user.selectOptions(screen.getByRole("combobox", { name: "字体大小" }), "medium")
+    await chooseSelectOption(user, "字体大小", "中等 120%")
 
     await waitFor(() => expect(bridge.settings.set).toHaveBeenCalledWith({ fontScale: "medium" }))
     await waitFor(() => expect(document.documentElement.style.fontSize).toBe("19.2px"))
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "字体大小" }), "large")
+    await chooseSelectOption(user, "字体大小", "较大 130%")
     await waitFor(() => expect(document.documentElement.style.fontSize).toBe("20.8px"))
+  })
+
+  it("桌面端可在原有配色中选择额外色调", async () => {
+    const bridge = createDesktopBridge()
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await user.click(screen.getByRole("button", { name: "外观" }))
+
+    await chooseSelectOption(user, "外观", "蓝色")
+
+    await waitFor(() =>
+      expect(document.documentElement).toHaveAttribute("data-color-theme", "blue"),
+    )
+    expect(window.localStorage.getItem("theme")).toBe("blue")
+    expect(bridge.appearance.setThemeSource).toHaveBeenLastCalledWith("light")
   })
 
   it("八个分类完整保留全部现有设置能力", async () => {
@@ -594,11 +649,17 @@ describe("桌面设置服务器管理", () => {
     await user.click(screen.getByRole("button", { name: "外观" }))
     const appearanceSelect = screen.getByRole("combobox", { name: "外观" })
     expect(screen.getByText("配色")).toBeInTheDocument()
-    expect(appearanceSelect).toHaveValue("system")
+    expect(appearanceSelect).toHaveTextContent("跟随系统")
+    await user.click(appearanceSelect)
     expect(screen.getByRole("option", { name: "跟随系统" })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: "浅色" })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: "深色" })).toBeInTheDocument()
-    await user.selectOptions(appearanceSelect, "dark")
+    expect(screen.getByRole("option", { name: "蓝色" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "紫色" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "玫红" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "琥珀" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "翠绿" })).toBeInTheDocument()
+    await user.click(screen.getByRole("option", { name: "深色" }))
     await waitFor(() => expect(document.documentElement).toHaveClass("dark"))
 
     await user.click(screen.getByRole("button", { name: "存储空间" }))
@@ -1507,6 +1568,15 @@ describe("发布通道显示", () => {
     expect(releaseChannelLabel(channel, (key) => key)).toBe(`settings.release.${channel}`)
   })
 })
+
+async function chooseSelectOption(
+  user: { click(element: Element): Promise<void> },
+  label: string,
+  option: string,
+) {
+  await user.click(screen.getByRole("combobox", { name: label }))
+  await user.click(await screen.findByRole("option", { name: option }))
+}
 
 function createDesktopBridge(
   updaterState?: UpdaterState,

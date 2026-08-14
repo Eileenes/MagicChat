@@ -218,7 +218,7 @@ export function ConversationSidebar({
           <SidebarMenuButton
             aria-selected={selected}
             className={cn(
-              "h-16 gap-3 py-2 data-active:bg-teal-100 data-active:hover:bg-teal-100 dark:data-active:bg-teal-900 dark:data-active:hover:bg-teal-900",
+              "h-16 gap-3 py-2 data-active:bg-primary/10 data-active:hover:bg-primary/10 dark:data-active:bg-primary/15 dark:data-active:hover:bg-primary/15",
               nested && "ml-4 h-14 w-[calc(100%-1rem)] py-1.5",
               !nested &&
                 conversation.pinned &&
@@ -278,7 +278,7 @@ export function ConversationSidebar({
 
   return (
     <Sidebar className="border-r bg-background" collapsible="none">
-      <SidebarHeader className="gap-0 p-0">
+      <SidebarHeader className="conversation-sidebar-header-surface gap-0 p-0">
         <div className="flex h-14 items-center justify-between px-4">
           <h1 className="text-base font-medium">{t("sidebar.title")}</h1>
           <div className="flex items-center gap-1">
