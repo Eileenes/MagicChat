@@ -97,9 +97,10 @@ import { cn } from "@/lib/utils"
 import "./document-editor.css"
 
 const activeTableCellPluginKey = new PluginKey("activeTableCell")
+const activeBlockPluginKey = new PluginKey<number | null>("activeBlock")
 
-const ActiveTableCell = Extension.create({
-  name: "activeTableCell",
+const DocumentDecorations = Extension.create({
+  name: "documentDecorations",
   addProseMirrorPlugins() {
     return [
       new Plugin({
@@ -127,6 +128,35 @@ const ActiveTableCell = Extension.create({
               ])
             }
             return DecorationSet.empty
+          },
+        },
+      }),
+      new Plugin({
+        key: activeBlockPluginKey,
+        state: {
+          init: () => null,
+          apply(transaction, activeBlockPos) {
+            const nextActiveBlockPos = transaction.getMeta(
+              activeBlockPluginKey
+            ) as number | null | undefined
+            if (nextActiveBlockPos !== undefined) return nextActiveBlockPos
+            if (activeBlockPos === null) return null
+
+            const mapped = transaction.mapping.mapResult(activeBlockPos)
+            return mapped.deleted ? null : mapped.pos
+          },
+        },
+        props: {
+          decorations(state) {
+            const pos = activeBlockPluginKey.getState(state)
+            if (pos === null || pos === undefined) return DecorationSet.empty
+            const node = state.doc.nodeAt(pos)
+            if (!node) return DecorationSet.empty
+            return DecorationSet.create(state.doc, [
+              Decoration.node(pos, pos + node.nodeSize, {
+                class: "document-block-active",
+              }),
+            ])
           },
         },
       }),
@@ -189,14 +219,19 @@ export function DocumentEditor({
         TaskList,
         DocumentTaskItem,
         TableKit.configure({ table: { resizable: true } }),
-        ActiveTableCell,
+        DocumentDecorations,
         Placeholder.configure({
           placeholder: "开始撰写文档…",
         }),
       ],
       shouldRerenderOnTransaction: true,
     },
-    [collaborationDocument, collaborationProvider, collaborationUser]
+    [
+      collaborationDocument,
+      collaborationProvider,
+      collaborationUser,
+      DocumentDecorations,
+    ]
   )
 
   const imageResolutions = useDocumentImageResolutions(editor)
@@ -259,9 +294,8 @@ const blockHandleButtonClassName =
   "cursor-grab bg-transparent text-muted-foreground/60 shadow-none hover:bg-secondary hover:text-foreground active:cursor-grabbing aria-expanded:bg-secondary aria-expanded:text-foreground"
 
 function DocumentBlockHandle({ editor }: { editor: Editor }) {
+  const [handleHovered, setHandleHovered] = React.useState(false)
   const [menuOpen, setMenuOpen] = React.useState(false)
-  const activeBlockElementRef = React.useRef<Element | null>(null)
-  const handleHoveredRef = React.useRef(false)
   const [activeBlock, setActiveBlock] = React.useState<{
     nodeSize: number
     pos: number
@@ -269,29 +303,21 @@ function DocumentBlockHandle({ editor }: { editor: Editor }) {
 
   const handleNodeChange = React.useCallback(
     ({ node, pos }: { node: { nodeSize: number } | null; pos: number }) => {
-      activeBlockElementRef.current?.classList.remove("document-block-active")
-      const nodeDOM = node ? editor.view.nodeDOM(pos) : null
-      activeBlockElementRef.current =
-        nodeDOM instanceof Element
-          ? nodeDOM
-          : nodeDOM?.parentElement instanceof Element
-            ? nodeDOM.parentElement
-            : null
-      if (handleHoveredRef.current) {
-        activeBlockElementRef.current?.classList.add("document-block-active")
-      }
       if (node) setActiveBlock({ nodeSize: node.nodeSize, pos })
     },
-    [editor]
+    []
   )
 
-  function setBlockHighlight(highlighted: boolean) {
-    handleHoveredRef.current = highlighted
-    activeBlockElementRef.current?.classList.toggle(
-      "document-block-active",
-      highlighted
+  React.useLayoutEffect(() => {
+    const highlighted = handleHovered || menuOpen
+    const nextActiveBlockPos =
+      highlighted && activeBlock ? activeBlock.pos : null
+    if (activeBlockPluginKey.getState(editor.state) === nextActiveBlockPos) return
+
+    editor.view.dispatch(
+      editor.state.tr.setMeta(activeBlockPluginKey, nextActiveBlockPos)
     )
-  }
+  }, [activeBlock, editor, handleHovered, menuOpen])
 
   function handleMenuOpenChange(open: boolean) {
     setMenuOpen(open)
@@ -415,8 +441,8 @@ function DocumentBlockHandle({ editor }: { editor: Editor }) {
           <Button
             aria-label="块操作"
             className={blockHandleButtonClassName}
-            onMouseEnter={() => setBlockHighlight(true)}
-            onMouseLeave={() => setBlockHighlight(false)}
+            onMouseEnter={() => setHandleHovered(true)}
+            onMouseLeave={() => setHandleHovered(false)}
             size="icon-xs"
             title="点击打开菜单，拖动调整位置"
             type="button"
