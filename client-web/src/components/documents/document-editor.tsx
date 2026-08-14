@@ -131,7 +131,7 @@ const DocumentDecorations = Extension.create({
           },
         },
       }),
-      new Plugin({
+      new Plugin<number | null>({
         key: activeBlockPluginKey,
         state: {
           init: () => null,
