@@ -678,8 +678,10 @@ export function ChatPage() {
     () =>
       activeConversation?.type === "topic" ? (
         <TopicSourceBanner
+          appsById={contactAppsByLookup}
           conversationId={activeConversation.id}
           currentUserId={me.id}
+          currentUser={me}
           mentionLabelResolver={activeMentionLabelResolver}
           onForward={forwardTopicSourceMessage}
           onMultiSelect={startTopicSourceSelection}
@@ -697,17 +699,20 @@ export function ChatPage() {
             activeConversation.topic?.parentConversationType === "group"
           }
           sourceMessage={activeTopicSource ?? undefined}
+          usersById={usersById}
         />
       ) : undefined,
     [
       activeConversation,
       activeMentionLabelResolver,
       activeTopicSource,
+      contactAppsByLookup,
       forwardTopicSourceMessage,
-      me.id,
+      me,
       recordTopicSourceMessage,
       startTopicSourceSelection,
       toggleTopicSourceSelection,
+      usersById,
       visibleMessageSelection,
     ]
   )

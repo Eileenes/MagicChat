@@ -557,8 +557,10 @@ function TopicDrawerContent({
             historyNavigation={historyNavigation}
             historyHeader={
               <TopicSourceBanner
+                appsById={appsById}
                 reactionConversationId={sourceConversationId}
                 currentUserId={me.id}
+                currentUser={me}
                 mentionLabelResolver={mentionLabelResolver}
                 onSetReaction={
                   conversation.canSend === false ? undefined : setSourceReaction
@@ -582,6 +584,7 @@ function TopicDrawerContent({
                 sourceChoice={sourceChoiceSnapshot?.choice}
                 sourceChoiceStatus={sourceChoiceSnapshot?.status}
                 sourceMessage={detail?.sourceMessage}
+                usersById={usersById}
               />
             }
             mentionLabelResolver={mentionLabelResolver}
