@@ -4,8 +4,8 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 
-const title = '即应｜AI时代下的团队协作入口';
-const description = '即应（MagicChat）将团队沟通、个人 AI 助理茉莉、项目与任务协作深度集成在同一个空间，帮助团队达成闭环交付。';
+const title = '即应｜AI 时代的团队协作入口';
+const description = '即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。';
 const siteOrigin = Astro.site ?? Astro.url.origin;
 const pageUrl = new URL(import.meta.env.BASE_URL, siteOrigin).href;
 const logoUrl = new URL(`${import.meta.env.BASE_URL}favicon.webp`, siteOrigin).href;
@@ -74,7 +74,7 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
     <section class="scene scene-hero" aria-labelledby="hero-title">
       <img class="scene-image" src={asset('team-collaboration.webp')} alt="" aria-hidden="true" />
       <div class="scene-shade"></div>
-      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title">有事即应</h1><p class="scene-subtitle title-accent">AI 时代下的团队协作入口</p><p class="scene-lead">即应将团队沟通、个人 AI 助理茉莉、项目与任务协作深度集成在同一个空间。AI 不再只是被动打字回答问题，而是在明确授权下感知全局上下文、跨部门协同并主动推进复杂工作，帮助团队达成闭环交付。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理茉莉</span><span>支持免费私有化部署</span></div></div>
+      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span>即应</span><span class="hero-title-accent">--AI时代的团队协作入口</span></h1><p class="scene-lead">即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持免费私有化部署</span></div></div>
     </section>
 
     <section class="scene scene-why" id="why" aria-labelledby="why-title">
@@ -84,7 +84,7 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
 
     <section class="scene scene-solution" id="solution" aria-labelledby="solution-title">
       <img class="scene-image" src={asset('team-meeting.webp')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-top"><div class="scene-text-block"><span class="scene-eyebrow">即应的解决方案</span><h2 id="solution-title"><span class="title-line">一句话说出目标，</span><span class="title-line title-accent">剩下的交给茉莉</span></h2><p>茉莉将背景查询、跨角色沟通与任务执行连贯为同一段工作流。每一步的操作依据与下一步推进计划，在工作空间中一目了然。</p></div><div class="workflow-panel"><div class="scene-flow-head"><span>真实工作流</span></div><div class="workflow-tabs" role="tablist" aria-label="真实工作流步骤">{workflow.map(([number, stepTitle], index) => <button class:list={['workflow-tab', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`workflow-panel-${number}`} data-workflow-tab={number}><span>{number}</span><strong>{stepTitle}</strong></button>)}</div><div class="workflow-cards">{workflow.map(([number, stepTitle, body], index) => <article class:list={['workflow-card', index === 0 && 'is-active']} id={`workflow-panel-${number}`} role="tabpanel" data-workflow-panel={number} hidden={index !== 0}><span class="workflow-card-number">{number}</span><div><p class="workflow-card-kicker">茉莉正在做什么</p><h3>{stepTitle}</h3><p>{body}</p></div><Icon name="tabler:arrow-right" size={22} aria-hidden="true" /></article>)}</div></div></div>
+      <div class="scene-content scene-content-top"><div class="scene-text-block"><span class="scene-eyebrow">即应的解决方案</span><h2 id="solution-title"><span class="title-line">一句话说出目标，</span><span class="title-line title-accent">剩下的交给茉莉</span></h2><p>即应提供群组聊天、项目推进、任务分配、目标跟踪与实时协作文档，让沟通与执行在同一个空间完成。内置 AI 智能体茉莉可以自然接入这些流程，自动整理上下文、跟进项目进展、提炼任务并沉淀知识；开放的扩展能力，让每个人都能定义专属智能体，完成更多定制化工作。</p></div><div class="workflow-panel"><div class="scene-flow-head"><span>真实工作流</span></div><div class="workflow-tabs" role="tablist" aria-label="真实工作流步骤">{workflow.map(([number, stepTitle], index) => <button class:list={['workflow-tab', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`workflow-panel-${number}`} data-workflow-tab={number}><span>{number}</span><strong>{stepTitle}</strong></button>)}</div><div class="workflow-cards">{workflow.map(([number, stepTitle, body], index) => <article class:list={['workflow-card', index === 0 && 'is-active']} id={`workflow-panel-${number}`} role="tabpanel" data-workflow-panel={number} hidden={index !== 0}><span class="workflow-card-number">{number}</span><div><p class="workflow-card-kicker">茉莉正在做什么</p><h3>{stepTitle}</h3><p>{body}</p></div><Icon name="tabler:arrow-right" size={22} aria-hidden="true" /></article>)}</div></div></div>
     </section>
 
     <section class="dual-section" id="capabilities" aria-labelledby="capability-title">
@@ -94,7 +94,7 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
         <div class="capability-panel">
           <span class="scene-eyebrow">核心能力</span>
           <h2 id="capability-title"><span class="title-line">茉莉不是工具栏，</span><span class="title-line title-accent">是团队里多了一位同事</span></h2>
-          <p class="capability-intro">她读得懂持续演进的团队上下文，清楚谁在负责什么，并且始终在执行关键动作前把计划提交给你确认。</p>
+          <p class="capability-intro">即应希望让 AI 不再是与工作割裂的聊天机器人，而是能够真正接手流程、持续推进结果的数字员工。从沟通、项目、时间到文档，AI 在每个关键环节分担重复工作；团队进展清晰可见，人的精力回到更重要的判断、决策与创造。</p>
           <div class="capability-cards">{capabilities.map(([itemTitle, body], index) => <article class="capability-card"><span class="capability-number">0{index + 1}</span><div><h3>{itemTitle}</h3><p>{body}</p></div></article>)}</div>
           <blockquote>“茉莉，新版本发布进展如何？帮我汇总卡点并向相关负责人发送提醒。”</blockquote>
         </div>
