@@ -13,7 +13,7 @@ export function ProjectAvatar({
 }: {
   avatarOverride?: string
   className?: string
-  project: ClientProjectSummary
+  project: Pick<ClientProjectSummary, "avatar" | "isPersonal" | "name">
   user?: ClientUser
 }) {
   const displayName = project.isPersonal

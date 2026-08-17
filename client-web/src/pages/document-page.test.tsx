@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -6,7 +7,7 @@ import {
   within,
 } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MemoryRouter, Route, Routes } from "react-router"
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DocumentPage } from "./document-page"
@@ -16,8 +17,9 @@ const getClientDocument = vi.fn()
 const getCurrentClientUser = vi.fn()
 const updateCollaborativeDocumentTitle = vi.fn()
 const getClientProject = vi.fn()
-const { awarenessPeers } = vi.hoisted(() => ({
+const { awarenessPeers, sidebarInstances } = vi.hoisted(() => ({
   awarenessPeers: [] as Record<string, unknown>[],
+  sidebarInstances: { count: 0 },
 }))
 
 vi.mock("@hocuspocus/provider", () => ({
@@ -82,9 +84,15 @@ vi.mock("@/components/conversation/send-card-dialog", () => ({
     ) : null,
 }))
 
-vi.mock("@/components/documents/document-workspace-sidebar", () => ({
-  DocumentWorkspaceSidebar: () => <aside>文档侧栏</aside>,
-}))
+vi.mock("@/components/documents/document-workspace-sidebar", async () => {
+  const React = await import("react")
+  return {
+    DocumentWorkspaceSidebar: () => {
+      const [instance] = React.useState(() => ++sidebarInstances.count)
+      return <aside data-instance={instance}>文档侧栏</aside>
+    },
+  }
+})
 
 vi.mock("@/components/documents/document-editor", () => ({
   DocumentEditor: () => <div>正文编辑器</div>,
@@ -123,6 +131,7 @@ const document = {
 
 beforeEach(() => {
   awarenessPeers.length = 0
+  sidebarInstances.count = 0
   deleteClientDocument.mockReset().mockResolvedValue({
     deletedCount: 1,
     documentId: document.id,
@@ -222,6 +231,52 @@ describe("DocumentPage", () => {
     expect(cardTitle).toMatch(/^文档 - .+…$/)
   })
 
+  it("keeps the sidebar mounted while switching documents in one project", async () => {
+    const user = userEvent.setup()
+    const nextDocument = {
+      ...document,
+      id: "550e8400-e29b-41d4-a716-446655440099",
+      title: "第二篇文档",
+    }
+    let resolveNextDocument!: (value: typeof nextDocument) => void
+    const nextDocumentRequest = new Promise<typeof nextDocument>((resolve) => {
+      resolveNextDocument = resolve
+    })
+    getClientDocument.mockImplementation((documentId: string) =>
+      documentId === nextDocument.id
+        ? nextDocumentRequest
+        : Promise.resolve(document)
+    )
+
+    render(
+      <MemoryRouter initialEntries={[`/documents/document/${document.id}`]}>
+        <SwitchDocumentButton documentId={nextDocument.id} />
+        <Routes>
+          <Route
+            path="/documents/document/:documentId"
+            element={<DocumentPage />}
+          />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    const sidebar = await screen.findByText("文档侧栏")
+    expect(sidebar).toHaveAttribute("data-instance", "1")
+
+    await user.click(screen.getByRole("button", { name: "切换测试文档" }))
+
+    expect(await screen.findByText("正在加载文档")).toBeInTheDocument()
+    expect(screen.getByText("文档侧栏")).toHaveAttribute("data-instance", "1")
+
+    await act(async () => resolveNextDocument(nextDocument))
+
+    expect(await screen.findByLabelText("顶部文档标题")).toHaveValue(
+      "第二篇文档"
+    )
+    expect(screen.getByText("文档侧栏")).toHaveAttribute("data-instance", "1")
+    expect(sidebarInstances.count).toBe(1)
+  })
+
   it("confirms deletion and returns to the project document list", async () => {
     const user = userEvent.setup()
     renderDocumentPage()
@@ -243,6 +298,17 @@ describe("DocumentPage", () => {
     expect(await screen.findByText("项目文档列表")).toBeInTheDocument()
   })
 })
+
+function SwitchDocumentButton({ documentId }: { documentId: string }) {
+  const navigate = useNavigate()
+  return (
+    <button
+      aria-label="切换测试文档"
+      onClick={() => navigate(`/documents/document/${documentId}`)}
+      type="button"
+    />
+  )
+}
 
 function renderDocumentPage() {
   return render(
