@@ -108,6 +108,7 @@ func TestServiceVerifiedEmailLoginCreatesMissingAccountAndPersonalWorkspace(t *t
 	service := NewService(Dependencies{
 		DB: db, Now: func() time.Time { return now },
 		GenerateSessionToken: func() (string, error) { return "new-user-session-token", nil },
+		RandomAvatar:         func() string { return "/assets/avatars/builtin/07.webp" },
 	})
 
 	allowed, err := service.CanLoginWithEmail(context.Background(), " New.User@Example.com ")
@@ -123,7 +124,7 @@ func TestServiceVerifiedEmailLoginCreatesMissingAccountAndPersonalWorkspace(t *t
 	if result.Account.Email != "new.user@example.com" || result.Account.Name != "new.user" || result.Session.Token != "new-user-session-token" {
 		t.Fatalf("verified registration result = %#v", result)
 	}
-	if result.Account.Status != store.UserStatusActive || result.Account.Avatar != store.DefaultUserAvatar {
+	if result.Account.Status != store.UserStatusActive || result.Account.Avatar != "/assets/avatars/builtin/07.webp" {
 		t.Fatalf("registered account = %#v", result.Account)
 	}
 	var project store.Project

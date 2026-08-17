@@ -1,5 +1,6 @@
 export class SharedTaskPool<T> {
   private readonly tasks = new Map<string, Promise<T>>()
+  private exclusiveBarrier: Promise<void> | null = null
 
   run(
     key: string,
@@ -7,6 +8,13 @@ export class SharedTaskPool<T> {
     signal?: AbortSignal
   ): Promise<T> {
     if (signal?.aborted) return Promise.reject(getAbortReason(signal))
+    if (this.exclusiveBarrier) {
+      const barrier = this.exclusiveBarrier
+      return waitForSharedTask(
+        barrier.then(() => this.run(key, operation, signal)),
+        signal
+      )
+    }
 
     let task = this.tasks.get(key)
     if (!task) {
@@ -20,6 +28,29 @@ export class SharedTaskPool<T> {
     }
 
     return waitForSharedTask(task, signal)
+  }
+
+  async runExclusive<R>(operation: () => Promise<R>): Promise<R> {
+    while (this.exclusiveBarrier) await this.exclusiveBarrier
+
+    let releaseBarrier: () => void = () => undefined
+    const barrier = new Promise<void>((resolve) => {
+      releaseBarrier = resolve
+    })
+    this.exclusiveBarrier = barrier
+    const activeTasks = this.listAll()
+
+    try {
+      await Promise.allSettled(activeTasks)
+      return await operation()
+    } finally {
+      if (this.exclusiveBarrier === barrier) this.exclusiveBarrier = null
+      releaseBarrier()
+    }
+  }
+
+  listAll() {
+    return Array.from(this.tasks.values())
   }
 
   listByPrefix(prefix: string) {

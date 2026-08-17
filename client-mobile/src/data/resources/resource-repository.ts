@@ -2,8 +2,10 @@ import { Platform } from "react-native"
 
 import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
 import {
+  clearResourceCache as clearResourceCacheStore,
   commitResourceCacheTarget,
   createResourceCacheTarget,
+  getResourceCacheSize as getResourceCacheSizeStore,
   getCachedResource,
   removeCachedResource,
   removeServerResourceCache as removeServerResourceCacheStore,
@@ -190,6 +192,14 @@ export function invalidateImageUrlResource(
   } catch {
     return Promise.resolve()
   }
+}
+
+export function getResourceCacheSize() {
+  return getResourceCacheSizeStore()
+}
+
+export function clearResourceCache() {
+  return downloadTasks.runExclusive(clearResourceCacheStore)
 }
 
 export async function removeServerResourceCache(server: ServerTarget) {

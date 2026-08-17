@@ -106,6 +106,7 @@ function TopicDrawerContent({
     sendConversationVoice,
     setMessageReaction,
     updateMessageTopic,
+    usersById,
   } = useClientData()
   const [detail, setDetail] = React.useState<ClientTopicDetail | null>(null)
   const [error, setError] = React.useState("")
@@ -312,7 +313,7 @@ function TopicDrawerContent({
               message,
               conversation,
               me,
-              contactsById,
+              usersById,
               appsById,
               messagesById,
               mentionLabelResolver
@@ -322,11 +323,11 @@ function TopicDrawerContent({
     [
       appsById,
       clientMessages,
-      contactsById,
       conversation,
       me,
       mentionLabelResolver,
       messagesById,
+      usersById,
     ]
   )
 
@@ -556,8 +557,10 @@ function TopicDrawerContent({
             historyNavigation={historyNavigation}
             historyHeader={
               <TopicSourceBanner
+                appsById={appsById}
                 reactionConversationId={sourceConversationId}
                 currentUserId={me.id}
+                currentUser={me}
                 mentionLabelResolver={mentionLabelResolver}
                 onSetReaction={
                   conversation.canSend === false ? undefined : setSourceReaction
@@ -581,6 +584,7 @@ function TopicDrawerContent({
                 sourceChoice={sourceChoiceSnapshot?.choice}
                 sourceChoiceStatus={sourceChoiceSnapshot?.status}
                 sourceMessage={detail?.sourceMessage}
+                usersById={usersById}
               />
             }
             mentionLabelResolver={mentionLabelResolver}
