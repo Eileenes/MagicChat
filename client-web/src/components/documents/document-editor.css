@@ -40,7 +40,9 @@
   content: "";
 }
 
-.document-editor .tiptap > * + * {
+.document-editor .tiptap > * + *,
+.document-editor .tiptap th > * + *,
+.document-editor .tiptap td > * + * {
   margin-top: 0.8em;
 }
 
