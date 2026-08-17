@@ -68,6 +68,7 @@ import { DocumentImage } from "@/components/documents/document-image-extension"
 import { DocumentImageResolutionContext } from "@/components/documents/document-image-resolution"
 import { DocumentStarterKit } from "@/components/documents/document-inline-code-extension"
 import { DocumentTaskItem } from "@/components/documents/document-task-item-extension"
+import { PreserveTableCellTypeOnPaste } from "@/components/documents/document-table-paste-extension"
 import { sanitizeDocumentPasteHTML } from "@/components/documents/document-paste-sanitizer"
 import { useDocumentImageResolutions } from "@/components/documents/use-document-image-resolutions"
 import { Button } from "@/components/ui/button"
@@ -218,6 +219,7 @@ export function DocumentEditor({
         }),
         TaskList,
         DocumentTaskItem,
+        PreserveTableCellTypeOnPaste,
         TableKit.configure({ table: { resizable: true } }),
         DocumentDecorations,
         Placeholder.configure({
@@ -231,6 +233,7 @@ export function DocumentEditor({
       collaborationProvider,
       collaborationUser,
       DocumentDecorations,
+      PreserveTableCellTypeOnPaste,
     ]
   )
 
