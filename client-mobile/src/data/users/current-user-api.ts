@@ -1,5 +1,8 @@
+import { File } from "expo-file-system"
+
 import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-client"
 import type { ClientUser } from "@/core/models"
+import { createNicknameRequest } from "@/domain/users/profile-edit"
 
 type CurrentUserResponse = {
   user?: {
@@ -13,6 +16,30 @@ type CurrentUserResponse = {
     phone?: string
     status?: string
   }
+}
+
+export async function updateCurrentUserNickname(
+  serverUrl: string,
+  nickname: string,
+  options: { fetcher?: ApiFetch } = {}
+) {
+  await createApiClient(serverUrl, options.fetcher).request("/api/client/me", {
+    ...createNicknameRequest(nickname),
+    errorMessage: "修改昵称失败",
+  })
+}
+
+export async function uploadCurrentUserAvatar(
+  serverUrl: string,
+  uri: string,
+  options: { fetcher?: ApiFetch } = {}
+) {
+  const formData = new FormData()
+  formData.set("file", new File(uri), "avatar.webp")
+  await createApiClient(serverUrl, options.fetcher).request(
+    "/api/client/me/avatar",
+    { body: formData, errorMessage: "上传头像失败", method: "POST" }
+  )
 }
 
 export async function fetchCurrentUser(

@@ -35,6 +35,26 @@ let cacheIndexPromise: Promise<CacheIndex> | null = null
 let cachePreparationPromise: Promise<void> | null = null
 let mutationQueue: Promise<void> = Promise.resolve()
 
+export async function getResourceCacheSize(): Promise<number> {
+  if (Platform.OS === "web") return 0
+  await prepareResourceCache()
+  const index = await loadCacheIndex()
+  return Object.values(index.entries).reduce((sum, entry) => sum + entry.sizeBytes, 0)
+}
+
+export async function clearResourceCache(): Promise<void> {
+  if (Platform.OS === "web") return
+  await prepareResourceCache()
+  await mutateCacheIndex(async (index) => {
+    const root = getCacheRoot()
+    // Only remove the dedicated resource root, never the system cache directory.
+    if (root.exists) root.delete()
+    root.create({ idempotent: true, intermediates: true })
+    index.entries = {}
+    await persistCacheIndex(index)
+  })
+}
+
 export async function getCachedResource(
   server: ServerTarget,
   identity: string

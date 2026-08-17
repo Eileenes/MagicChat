@@ -31,8 +31,8 @@ type PreviewSize = {
   width: number
 }
 
-const minPreviewZoom = 0.5
-const maxPreviewZoom = 2
+const minPreviewZoom = 0.25
+const maxPreviewZoom = 4
 const previewZoomStep = 0.1
 export function MessageImage({ image }: MessageImageProps) {
   const previewDragRef = React.useRef<{

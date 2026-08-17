@@ -1,6 +1,6 @@
 import { focusManager, QueryClientProvider } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
-import { AppState, useColorScheme } from "react-native"
+import { AppState } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import {
   initialWindowMetrics,
@@ -13,7 +13,7 @@ import {
   AppToastViewport,
   CurrentAppToast,
 } from "@/components/feedback/app-toast"
-import { resolveAppTheme } from "@/config/app-theme"
+import { AppThemeProvider } from "@/providers/app-theme-provider"
 import { createClientQueryClient } from "@/data/query"
 import { AuthProvider } from "@/providers/auth-provider"
 import { ServerProvider } from "@/providers/server-provider"
@@ -22,8 +22,6 @@ import { AppBlurTargetProvider } from "@/providers/app-blur-target"
 import { RealtimeProvider } from "@/providers/realtime-provider"
 
 export function AppProviders({ children }: React.PropsWithChildren) {
-  const colorScheme = useColorScheme()
-  const theme = resolveAppTheme(colorScheme)
   const [queryClient] = useState(createClientQueryClient)
 
   useEffect(() => {
@@ -35,12 +33,14 @@ export function AppProviders({ children }: React.PropsWithChildren) {
   }, [])
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <AppThemeProvider>
+      {(tamaguiTheme) => (
+      <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <TamaguiProvider
             config={tamaguiConfig}
-            defaultTheme={theme.tamaguiTheme}
+            defaultTheme={tamaguiTheme}
           >
             <ToastProvider duration={3000} label="通知">
               <AppBlurTargetProvider>
@@ -60,6 +60,8 @@ export function AppProviders({ children }: React.PropsWithChildren) {
           </TamaguiProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
-    </QueryClientProvider>
+      </QueryClientProvider>
+      )}
+    </AppThemeProvider>
   )
 }
