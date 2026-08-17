@@ -15,10 +15,13 @@ const targetMock = vi.hoisted(() => ({
     userId: "user-1",
   },
 }))
+const toastMock = vi.hoisted(() => ({ error: vi.fn() }))
 
 vi.mock("@/hooks/use-desktop-target", () => ({
   useDesktopTarget: () => targetMock.current,
 }))
+
+vi.mock("sonner", () => ({ toast: { error: toastMock.error } }))
 
 vi.mock("@/lib/realtime-context", () => ({
   useRealtime: () => ({
@@ -36,6 +39,7 @@ describe("ClientDataProvider", () => {
     }
     vi.unstubAllGlobals()
     vi.useRealTimers()
+    toastMock.error.mockClear()
   })
 
   it("refreshes client data on the 15 second refresh interval", async () => {
@@ -1670,6 +1674,262 @@ describe("ClientDataProvider", () => {
     })
     expect(screen.getByTestId("conversation-ids")).toHaveTextContent("newest")
   })
+
+  it("会话列表发现持久游标缺口时自动从 after_seq 追赶", async () => {
+    vi.useFakeTimers()
+    const messageCache = createMessageCacheMock()
+    const generation = { conversation: 0, global: 0, server: 0, user: 0 }
+    messageCache.getSyncState.mockResolvedValue({
+      conversationId: "conversation-1",
+      generation,
+      hasMoreBefore: true,
+      httpSyncedThroughSeq: 299,
+      lastAccessedAt: 0,
+    })
+    messageCache.listSyncStates.mockResolvedValue([
+      {
+        conversationId: "conversation-1",
+        generation,
+        hasMoreBefore: true,
+        httpSyncedThroughSeq: 299,
+        lastAccessedAt: 0,
+      },
+    ])
+    messageCache.commitAfter.mockResolvedValue({ committed: true, committedSeq: 325, generation })
+    vi.stubGlobal("desktop", { messageCache })
+    const restoreTarget = configureMessageCacheTarget({
+      id: "server-1",
+      normalizedUrl: "https://chat.example.com",
+      userId: "user-1",
+    })
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me")
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      if (url === "/api/client/contacts")
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      if (url === "/api/client/conversations")
+        return Promise.resolve(
+          jsonResponse(
+            createConversationsResponse([
+              { ...createConversationResponse("conversation-1"), last_message_seq: 325 },
+            ]),
+          ),
+        )
+      if (url === "/api/client/projects?limit=100")
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      if (url === "/api/client/conversations/conversation-1/messages?limit=20&after_seq=299")
+        return Promise.resolve(jsonResponse(createMessagesResponse(325)))
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <ConversationRefreshRaceProbe />
+        </ClientDataProvider>
+      </MemoryRouter>,
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    vi.useRealTimers()
+    act(() => screen.getByRole("button", { name: "refresh conversations" }).click())
+
+    await waitFor(() => expect(messageCache.listSyncStates).toHaveBeenCalled())
+    await waitFor(() => expect(messageCache.commitAfter).toHaveBeenCalledOnce())
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain(
+      "/api/client/conversations/conversation-1/messages?limit=20&after_seq=299",
+    )
+    messageCache.listSyncStates.mockClear()
+    act(() => screen.getByRole("button", { name: "sync loaded messages without gaps" }).click())
+    expect(messageCache.listSyncStates).not.toHaveBeenCalled()
+    restoreTarget()
+  })
+
+  it("切换 target 后丢弃延迟返回的会话游标缺口", async () => {
+    vi.useFakeTimers()
+    const messageCache = createMessageCacheMock()
+    const generation = { conversation: 0, global: 0, server: 0, user: 0 }
+    const delayedSyncStates = createDeferred<
+      ReadonlyArray<{
+        conversationId: string
+        generation: typeof generation
+        hasMoreBefore: boolean
+        httpSyncedThroughSeq: number
+        lastAccessedAt: number
+      }>
+    >()
+    messageCache.getSyncState.mockResolvedValue({
+      conversationId: "conversation-1",
+      generation,
+      hasMoreBefore: true,
+      httpSyncedThroughSeq: 299,
+      lastAccessedAt: 0,
+    })
+    messageCache.listSyncStates.mockResolvedValue([])
+    vi.stubGlobal("desktop", { messageCache })
+    const restoreOldTarget = configureMessageCacheTarget({
+      id: "server-1",
+      normalizedUrl: "https://chat.example.com",
+      userId: "user-1",
+    })
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me")
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      if (url === "/api/client/contacts")
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(
+          jsonResponse(
+            createConversationsResponse([
+              { ...createConversationResponse("conversation-1"), last_message_seq: 325 },
+            ]),
+          ),
+        )
+      }
+      if (url === "/api/client/projects?limit=100")
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const view = render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <ConversationRefreshRaceProbe />
+        </ClientDataProvider>
+      </MemoryRouter>,
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    vi.useRealTimers()
+    messageCache.listSyncStates.mockImplementationOnce(() => delayedSyncStates.promise)
+
+    act(() => screen.getByRole("button", { name: "refresh conversations" }).click())
+    await waitFor(() => expect(messageCache.listSyncStates).toHaveBeenCalledOnce())
+
+    restoreOldTarget()
+    const restoreNewTarget = configureMessageCacheTarget({
+      id: "server-2",
+      normalizedUrl: "https://chat-2.example.com",
+      userId: "user-2",
+    })
+    targetMock.current = {
+      id: "server-2",
+      normalizedUrl: "https://chat-2.example.com",
+      userId: "user-2",
+    }
+    view.rerender(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <ConversationRefreshRaceProbe />
+        </ClientDataProvider>
+      </MemoryRouter>,
+    )
+
+    await act(async () => {
+      delayedSyncStates.resolve([
+        {
+          conversationId: "conversation-1",
+          generation,
+          hasMoreBefore: true,
+          httpSyncedThroughSeq: 299,
+          lastAccessedAt: 0,
+        },
+      ])
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/messages?"))).toBe(false)
+    expect(messageCache.commitAfter).not.toHaveBeenCalled()
+    restoreNewTarget()
+  })
+
+  it("列表恢复中多个消息同步失败时仅提示一次", async () => {
+    vi.useFakeTimers()
+    const messageCache = createMessageCacheMock()
+    const generation = { conversation: 0, global: 0, server: 0, user: 0 }
+    messageCache.getSyncState.mockResolvedValue({
+      conversationId: "conversation-1",
+      generation,
+      hasMoreBefore: true,
+      httpSyncedThroughSeq: 0,
+      lastAccessedAt: 0,
+    })
+    messageCache.listSyncStates.mockResolvedValue([])
+    vi.stubGlobal("desktop", { messageCache })
+    const restoreTarget = configureMessageCacheTarget({
+      id: "server-1",
+      normalizedUrl: "https://chat.example.com",
+      userId: "user-1",
+    })
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me")
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      if (url === "/api/client/contacts")
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(
+          jsonResponse(
+            createConversationsResponse([
+              { ...createConversationResponse("conversation-1"), last_message_seq: 10 },
+              { ...createConversationResponse("conversation-2"), last_message_seq: 10 },
+            ]),
+          ),
+        )
+      }
+      if (url === "/api/client/projects?limit=100")
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      if (url.includes("/messages?limit=20")) {
+        return Promise.resolve(jsonErrorResponse("消息同步服务暂不可用"))
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <ConversationRefreshRaceProbe />
+        </ClientDataProvider>
+      </MemoryRouter>,
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    vi.useRealTimers()
+    messageCache.listSyncStates.mockResolvedValueOnce([
+      {
+        conversationId: "conversation-1",
+        generation,
+        hasMoreBefore: true,
+        httpSyncedThroughSeq: 0,
+        lastAccessedAt: 0,
+      },
+      {
+        conversationId: "conversation-2",
+        generation,
+        hasMoreBefore: true,
+        httpSyncedThroughSeq: 0,
+        lastAccessedAt: 0,
+      },
+    ])
+
+    act(() => screen.getByRole("button", { name: "refresh conversations" }).click())
+
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledTimes(1))
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input).includes("/messages?limit=20")),
+    ).toHaveLength(2)
+    restoreTarget()
+  })
 })
 
 function ConversationCount() {
@@ -1679,13 +1939,23 @@ function ConversationCount() {
 }
 
 function ConversationRefreshRaceProbe() {
-  const { conversations, dismissConversation, refreshConversations } = useClientData()
+  const {
+    conversations,
+    dismissConversation,
+    refreshConversations,
+    syncLoadedConversationMessages,
+  } = useClientData()
 
   return (
     <>
       <button
         aria-label="refresh conversations"
         onClick={() => void refreshConversations()}
+        type="button"
+      />
+      <button
+        aria-label="sync loaded messages without gaps"
+        onClick={() => syncLoadedConversationMessages({ includeConversationGapSync: false })}
         type="button"
       />
       <button
@@ -1762,7 +2032,7 @@ function ReactionSyncProbe() {
       />
       <button
         aria-label="sync loaded messages"
-        onClick={syncLoadedConversationMessages}
+        onClick={() => syncLoadedConversationMessages()}
         type="button"
       />
       <div data-testid="reaction-state">
@@ -2085,6 +2355,7 @@ function createMessageCacheMock() {
   return {
     clearUser: vi.fn().mockResolvedValue(undefined),
     clearConversation: vi.fn().mockResolvedValue({ ...generation, conversation: 1 }),
+    commitAfter: vi.fn().mockResolvedValue({ committed: true, committedSeq: 0, generation }),
     commitBefore: vi.fn(),
     commitLatest: vi.fn().mockResolvedValue({
       committed: true,
@@ -2098,6 +2369,7 @@ function createMessageCacheMock() {
       httpSyncedThroughSeq: 0,
       lastAccessedAt: 0,
     }),
+    listSyncStates: vi.fn().mockResolvedValue([]),
     readRecent: vi.fn().mockResolvedValue({
       complete: true,
       hasMoreBefore: true,

@@ -47,6 +47,10 @@ export type SendConversationImageOptions = SendConversationMessageOptions & {
   captionType?: ImageCaptionType
 }
 
+export type SyncLoadedConversationMessagesOptions = Readonly<{
+  includeConversationGapSync?: boolean
+}>
+
 export type ClientDataContextValue = {
   contactApps: ContactApp[]
   contactDirectoryMode?: ContactDirectoryMode
@@ -208,7 +212,7 @@ export type ClientDataContextValue = {
     options?: SendConversationMessageOptions,
   ) => Promise<ClientMessage | null>
   setForegroundConversationId?: (conversationId: string) => void
-  syncLoadedConversationMessages: () => void
+  syncLoadedConversationMessages: (options?: SyncLoadedConversationMessagesOptions) => void
   updateConversationLastMessage: (message: ClientMessage) => void
   updateConversationPinned: (conversationId: string, pinned: boolean) => void
   updateConversationMuted: (conversationId: string, muted: boolean) => void

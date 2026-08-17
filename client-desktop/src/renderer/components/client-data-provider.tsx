@@ -51,6 +51,7 @@ import {
   ClientDataContext,
   type ClientConversationMessageState,
   type ClientDataContextValue,
+  type SyncLoadedConversationMessagesOptions,
 } from "@/lib/client-data-context"
 import {
   createConversationMessageState,
@@ -111,6 +112,12 @@ const reactionSnapshotBatchSize = 100
 const choiceSnapshotBatchSize = 100
 const maxReactionSnapshotCatchUpAttempts = 3
 const messageCacheFallbackNotice = "本地消息缓存暂时不可用，已从服务器加载"
+
+type ConversationMessageSyncOptions = Readonly<{
+  isCurrent?: () => boolean
+  onFailure?: (error: unknown) => void
+  suppressFailureToast?: boolean
+}>
 
 export function ClientDataProvider({
   children,
@@ -181,13 +188,16 @@ function ClientDataProviderForTarget({
   const loadingConversationOperationsRef = useRef<Map<string, symbol>>(new Map())
   const conversationsNeedingServerRefreshRef = useRef<Set<string>>(new Set())
   const syncingAfterConversationOperationsRef = useRef<Map<string, symbol>>(new Map())
-  const listRefreshIdsByConversationRef = useRef<Map<string, string>>(new Map())
+  const scheduleConversationGapSyncRef = useRef<
+    (conversations: readonly ClientConversation[], listRefreshId?: string) => void
+  >(() => undefined)
   const historyRequestVersionsRef = useRef<Map<string, number>>(new Map())
   const historyRequestControllersRef = useRef<Map<string, AbortController>>(new Map())
   const historyFocusRequestKeyRef = useRef(0)
   const refreshingReactionSnapshotKeysRef = useRef<Set<string>>(new Set())
   const reactionSnapshotMinimumVersionsRef = useRef<Map<string, number>>(new Map())
   const messageManagerRef = useRef<{ key: string; manager: MessageManager } | null>(null)
+  const conversationGapSyncEpochRef = useRef(0)
   const includedConversationIdRef = useRef(includedConversationId)
   const contactsRefreshEpochRef = useRef(0)
   const friendRequestsRefreshEpochRef = useRef(0)
@@ -315,10 +325,14 @@ function ClientDataProviderForTarget({
 
   useEffect(() => {
     mountedRef.current = true
+    const gapSyncEpoch = ++conversationGapSyncEpochRef.current
     const historyRequestControllers = historyRequestControllersRef.current
 
     return () => {
       mountedRef.current = false
+      if (conversationGapSyncEpochRef.current === gapSyncEpoch) {
+        conversationGapSyncEpochRef.current += 1
+      }
       contactsRefreshEpochRef.current += 1
       friendRequestsRefreshEpochRef.current += 1
       for (const controller of historyRequestControllers.values()) controller.abort()
@@ -606,34 +620,7 @@ function ClientDataProviderForTarget({
             responseStatus: 200,
             returnedCount: nextConversations.length,
           })
-          if (messageManager)
-            void messageManager
-              .listSyncStates()
-              .then((syncStates) => {
-                if (conversationRefreshEpochRef.current !== requestEpoch) return
-                const statesByConversationId = new Map(
-                  syncStates.map((state) => [state.conversationId, state]),
-                )
-                for (const conversation of nextConversations) {
-                  const state = statesByConversationId.get(conversation.id)
-                  if (!state || conversation.lastMessageSeq <= state.httpSyncedThroughSeq) continue
-                  listRefreshIdsByConversationRef.current.set(conversation.id, listRefreshId)
-                  void recordRendererDiagnostic(
-                    "conversation-list.seq-diverged",
-                    { ...context, conversationId: conversation.id },
-                    {
-                      httpSyncedThroughSeq: state.httpSyncedThroughSeq,
-                      lastMessageSeq: conversation.lastMessageSeq,
-                      seqDelta: conversation.lastMessageSeq - state.httpSyncedThroughSeq,
-                    },
-                  )
-                }
-              })
-              .catch(() => {
-                void recordRendererDiagnostic("message-cache.state-changed", context, {
-                  error: { category: "cache", phase: "cache" },
-                })
-              })
+          scheduleConversationGapSyncRef.current(nextConversations, listRefreshId)
         } catch (error) {
           if (conversationRefreshEpochRef.current !== requestEpoch) return
           void recordRendererDiagnostic("conversation-list.failed", context, {
@@ -644,7 +631,7 @@ function ClientDataProviderForTarget({
           throw handleError(error, "加载会话列表失败")
         }
       }),
-    [diagnosticTargetScope, handleError, messageManager, userDirectory],
+    [diagnosticTargetScope, handleError, userDirectory],
   )
 
   const refreshProjects = useCallback(
@@ -2050,7 +2037,13 @@ function ClientDataProviderForTarget({
       afterSeq: number,
       trigger: "list-divergence" | "loaded-conversation" | "ready-edge" = "ready-edge",
       listRefreshId?: string,
+      options?: ConversationMessageSyncOptions,
     ): Promise<void> => {
+      const syncEpoch = conversationGapSyncEpochRef.current
+      const isCurrent =
+        options?.isCurrent ??
+        (() => mountedRef.current && conversationGapSyncEpochRef.current === syncEpoch)
+      if (!isCurrent()) return Promise.resolve()
       const syncOperationId = createDiagnosticId()
       const context = {
         ...(diagnosticTargetScope ? { targetScope: diagnosticTargetScope } : {}),
@@ -2062,6 +2055,15 @@ function ClientDataProviderForTarget({
         afterSeq,
         trigger,
       })
+      const reportFailure = (error: unknown) => {
+        options?.onFailure?.(error)
+        if (!options?.suppressFailureToast) {
+          toast.error(getClientDataErrorMessage(error, "同步新消息失败"))
+        }
+      }
+      const throwIfStale = () => {
+        if (!isCurrent()) throw new DOMException("消息同步任务已失效", "AbortError")
+      }
       if (syncingAfterConversationOperationsRef.current.has(conversationId)) {
         void recordRendererDiagnostic("message-sync.skipped", context, {
           afterSeq,
@@ -2072,9 +2074,10 @@ function ClientDataProviderForTarget({
 
       let operation: MessageOperationToken | undefined
       try {
+        throwIfStale()
         operation = messageManager?.beginConversationOperation(conversationId)
       } catch (error) {
-        if (isMessageOperationCancelled(error)) {
+        if (!isCurrent() || isMessageOperationCancelled(error)) {
           void recordRendererDiagnostic("message-sync.cancelled", context, {
             error: { category: "stale", phase: "cache" },
           })
@@ -2083,7 +2086,8 @@ function ClientDataProviderForTarget({
         void recordRendererDiagnostic("message-sync.failed", context, {
           error: { category: classifyDiagnosticError(error), phase: "cache" },
         })
-        return Promise.reject(error)
+        reportFailure(error)
+        return Promise.resolve()
       }
 
       const syncingOperation = Symbol(conversationId)
@@ -2093,6 +2097,7 @@ function ClientDataProviderForTarget({
         const requestIds = new Map<number, string>()
         let pageCount = 0
         const fetchPage = async (cursor: number) => {
+          throwIfStale()
           const requestId = createDiagnosticId()
           const requestedAt = performance.now()
           requestIds.set(cursor, requestId)
@@ -2108,6 +2113,7 @@ function ClientDataProviderForTarget({
             afterSeq: cursor,
             limit: messagePageLimit,
           })
+          throwIfStale()
           pageCount += 1
           void recordRendererDiagnostic(
             "message-sync.page-received",
@@ -2128,6 +2134,7 @@ function ClientDataProviderForTarget({
           const initialCursor = messageManager
             ? await messageManager.getSyncCursor(operation!, afterSeq)
             : afterSeq
+          throwIfStale()
           void recordRendererDiagnostic("message-sync.started", context, {
             afterSeq,
             initialCursor,
@@ -2166,6 +2173,7 @@ function ClientDataProviderForTarget({
               },
             })
             messageManager.assertOperationCurrent(operation!)
+            throwIfStale()
             const messages = messageManager.getMessages(conversationId)
             updateConversationMessageState(conversationId, (currentState) => ({
               ...currentState,
@@ -2191,6 +2199,7 @@ function ClientDataProviderForTarget({
               conversationId,
               fetchPage,
               commit: async (result, cursor) => {
+                throwIfStale()
                 accumulatedMessages = mergeConversationMessages(
                   accumulatedMessages,
                   result.messages,
@@ -2225,6 +2234,7 @@ function ClientDataProviderForTarget({
               },
             })
           }
+          throwIfStale()
           const lastMessage = conversationMessageStatesRef.current[conversationId]?.messages.at(-1)
           if (lastMessage) rememberConversationMessage(lastMessage)
           const observed = conversationMessageStatesRef.current[conversationId]
@@ -2247,7 +2257,7 @@ function ClientDataProviderForTarget({
             viewMode: observed?.viewMode ?? "latest",
           })
         } catch (error) {
-          if (isMessageOperationCancelled(error)) {
+          if (!isCurrent() || isMessageOperationCancelled(error)) {
             void recordRendererDiagnostic("message-sync.cancelled", context, {
               error: { category: "stale", phase: "cache" },
             })
@@ -2264,14 +2274,13 @@ function ClientDataProviderForTarget({
           void recordRendererDiagnostic("message-sync.failed", context, {
             error: { category: classifyDiagnosticError(error), phase: "request" },
           })
-          toast.error(getClientDataErrorMessage(error, "同步新消息失败"))
+          reportFailure(error)
         } finally {
           if (
             syncingAfterConversationOperationsRef.current.get(conversationId) === syncingOperation
           ) {
             syncingAfterConversationOperationsRef.current.delete(conversationId)
           }
-          listRefreshIdsByConversationRef.current.delete(conversationId)
         }
       })()
     },
@@ -2283,16 +2292,26 @@ function ClientDataProviderForTarget({
     ],
   )
 
-  const syncLoadedConversationMessages = useCallback(() => {
-    if (messageManager) {
+  const syncConversationGaps = useCallback(
+    (nextConversations: readonly ClientConversation[], listRefreshId?: string) => {
+      if (!messageManager) return
+      const gapSyncEpoch = conversationGapSyncEpochRef.current
+      const isCurrent = () =>
+        mountedRef.current && conversationGapSyncEpochRef.current === gapSyncEpoch
+      if (!isCurrent()) return
+      const context = {
+        ...(diagnosticTargetScope ? { targetScope: diagnosticTargetScope } : {}),
+        ...(listRefreshId ? { listRefreshId } : {}),
+      }
       void messageManager
         .listSyncStates()
         .then(async (syncStates) => {
+          if (!isCurrent()) return
           const statesByConversationId = new Map(
             syncStates.map((state) => [state.conversationId, state]),
           )
           const candidates = prioritizeConversationSyncs(
-            conversationsRef.current.filter((conversation) => {
+            nextConversations.filter((conversation) => {
               const syncState = statesByConversationId.get(conversation.id)
               return (
                 syncState !== undefined &&
@@ -2301,9 +2320,26 @@ function ClientDataProviderForTarget({
             }),
             includedConversationIdRef.current,
           )
+          for (const conversation of candidates) {
+            const state = statesByConversationId.get(conversation.id)
+            if (!state) continue
+            if (listRefreshId) {
+              void recordRendererDiagnostic(
+                "conversation-list.seq-diverged",
+                { ...context, conversationId: conversation.id },
+                {
+                  httpSyncedThroughSeq: state.httpSyncedThroughSeq,
+                  lastMessageSeq: conversation.lastMessageSeq,
+                  seqDelta: conversation.lastMessageSeq - state.httpSyncedThroughSeq,
+                },
+              )
+            }
+          }
           let nextIndex = 0
+          let firstFailure: unknown
           const runNext = async () => {
             for (;;) {
+              if (!isCurrent()) return
               const conversation = candidates[nextIndex]
               nextIndex += 1
               if (!conversation) return
@@ -2313,40 +2349,71 @@ function ClientDataProviderForTarget({
                 conversation.id,
                 state.httpSyncedThroughSeq,
                 "list-divergence",
-                listRefreshIdsByConversationRef.current.get(conversation.id),
+                listRefreshId,
+                {
+                  isCurrent,
+                  onFailure: (error) => {
+                    firstFailure ??= error
+                  },
+                  suppressFailureToast: true,
+                },
               )
             }
           }
           await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, runNext))
+          if (firstFailure && isCurrent()) {
+            toast.error(getClientDataErrorMessage(firstFailure, "同步新消息失败"))
+          }
         })
-        .catch(() => undefined)
-    }
-    for (const [conversationId, state] of Object.entries(conversationMessageStatesRef.current)) {
-      if (!state.loaded) {
-        continue
-      }
+        .catch(() => {
+          if (!isCurrent()) return
+          void recordRendererDiagnostic("message-cache.state-changed", context, {
+            error: { category: "cache", phase: "cache" },
+          })
+        })
+    },
+    [diagnosticTargetScope, messageManager, syncAfterConversationMessages],
+  )
+  scheduleConversationGapSyncRef.current = syncConversationGaps
 
-      const newestSeq = getNewestMessageSeq(state)
-      if (newestSeq > 0) {
-        void syncAfterConversationMessages(conversationId, newestSeq, "loaded-conversation")
+  const syncLoadedConversationMessages = useCallback(
+    (options?: SyncLoadedConversationMessagesOptions) => {
+      if (options?.includeConversationGapSync !== false) {
+        syncConversationGaps(conversationsRef.current)
       }
-      void refreshMessageReactions(
-        conversationId,
-        state.messages.map((message) => message.id),
-      ).catch(() => undefined)
-      const choiceMessages = state.messages.filter((message) => message.body.type === "choice")
-      for (let index = 0; index < choiceMessages.length; index += choiceSnapshotBatchSize) {
-        const batch = choiceMessages.slice(index, index + choiceSnapshotBatchSize)
-        const expectedChoices = new Map(batch.map((message) => [message.id, message.choice]))
-        void listConversationMessageChoiceSnapshots(
+      for (const [conversationId, state] of Object.entries(conversationMessageStatesRef.current)) {
+        if (!state.loaded) {
+          continue
+        }
+
+        const newestSeq = getNewestMessageSeq(state)
+        if (newestSeq > 0) {
+          void syncAfterConversationMessages(conversationId, newestSeq, "loaded-conversation")
+        }
+        void refreshMessageReactions(
           conversationId,
-          batch.map((message) => message.id),
-        )
-          .then((snapshots) => applyChoiceSnapshots(snapshots, expectedChoices))
-          .catch(() => undefined)
+          state.messages.map((message) => message.id),
+        ).catch(() => undefined)
+        const choiceMessages = state.messages.filter((message) => message.body.type === "choice")
+        for (let index = 0; index < choiceMessages.length; index += choiceSnapshotBatchSize) {
+          const batch = choiceMessages.slice(index, index + choiceSnapshotBatchSize)
+          const expectedChoices = new Map(batch.map((message) => [message.id, message.choice]))
+          void listConversationMessageChoiceSnapshots(
+            conversationId,
+            batch.map((message) => message.id),
+          )
+            .then((snapshots) => applyChoiceSnapshots(snapshots, expectedChoices))
+            .catch(() => undefined)
+        }
       }
-    }
-  }, [applyChoiceSnapshots, messageManager, refreshMessageReactions, syncAfterConversationMessages])
+    },
+    [
+      applyChoiceSnapshots,
+      refreshMessageReactions,
+      syncAfterConversationMessages,
+      syncConversationGaps,
+    ],
+  )
 
   const setForegroundConversationId = useCallback((conversationId: string) => {
     setForegroundConversationIdState(conversationId)
