@@ -224,7 +224,7 @@ function DocumentTree({
               if (!onBeforeNavigate()) event.preventDefault()
             }}
             role="treeitem"
-            style={{ paddingLeft: depth * 16 + 26 }}
+            style={{ paddingLeft: depth * 16 + 8 }}
             to={`/documents/document/${encodeURIComponent(node.id)}`}
           >
             <FileText className="size-4 shrink-0 text-sky-600 dark:text-sky-300" />
