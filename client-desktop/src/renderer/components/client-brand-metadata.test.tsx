@@ -43,12 +43,8 @@ describe("ClientBrandMetadata", () => {
     await waitFor(() => {
       expect(getMetaContent('meta[name="application-name"]')).toBe("星环协作")
       expect(getMetaContent('meta[property="og:site_name"]')).toBe("星环协作")
-      expect(getMetaContent('meta[property="og:title"]')).toBe(
-        "星环协作 AI时代的团队协作入口",
-      )
-      expect(getMetaContent('meta[name="twitter:title"]')).toBe(
-        "星环协作 AI时代的团队协作入口",
-      )
+      expect(getMetaContent('meta[property="og:title"]')).toBe("星环协作 AI时代的团队协作入口")
+      expect(getMetaContent('meta[name="twitter:title"]')).toBe("星环协作 AI时代的团队协作入口")
       expect(getMetaContent('meta[name="description"]')).toBe(
         "即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。",
       )
