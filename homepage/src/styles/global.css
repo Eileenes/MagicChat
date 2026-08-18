@@ -160,6 +160,9 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
 .product-app { display: grid; grid-template-columns: 38px 120px minmax(0, 1fr); min-height: 382px; }
 .app-dock { display: grid; align-content: start; justify-items: center; gap: 20px; padding-top: 14px; color: #4e7970; background: #eef4f2; }
 .app-dock-logo { display: grid; width: 22px; height: 22px; place-items: center; color: #fff; border-radius: 6px; background: var(--green); font-size: 11px; font-weight: 800; }
+.app-dock-item { display: grid; width: 24px; height: 24px; place-items: center; color: #5f8179; border-radius: 6px; transition: color 180ms var(--ease), background 180ms var(--ease), transform 180ms var(--ease); }
+.app-dock-item.is-current { color: #fff; background: var(--green); box-shadow: 0 4px 10px rgb(20 142 126 / 24%); transform: translateX(2px); }
+.app-dock-item:not(.is-current):hover { color: var(--green-dark); background: #dcece8; }
 .app-inbox { overflow: hidden; background: #fff; box-shadow: inset -1px 0 #e2ebe8; }
 .app-inbox > header { display: flex; min-height: 47px; align-items: center; justify-content: space-between; padding: 0 11px; color: #182522; }
 .app-inbox > header strong { font-size: 13px; font-weight: 800; }
@@ -175,6 +178,8 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
 .app-avatar-molly { background: #13a99c; }
 .app-avatar-team { background: #7e9d55; }
 .app-avatar-doc { background: #708eb1; }
+.app-avatar-permission { background: #7777ad; }
+.app-avatar-connect { background: #c98758; }
 .app-avatar-user { background: #d5965c; }
 .app-chat { display: grid; grid-template-rows: 50px minmax(0, 1fr) 49px; min-width: 0; background: #fbfcfb; }
 .app-chat > header { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 0 13px; background: #fff; box-shadow: inset 0 -1px #e8efed; }
