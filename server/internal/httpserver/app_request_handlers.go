@@ -31,6 +31,7 @@ const (
 	appMethodContactsAppsList           = "contacts.apps.list"
 	appMethodContactsGroupsList         = "contacts.groups.list"
 	appMethodConversationsList          = "conversations.list"
+	appMethodConversationStatus         = "conversation.status"
 	appMethodConversationMessagesList   = "conversation.messages.list"
 	appMethodConversationHistoryRead    = "conversation.history.read"
 	appMethodConversationTopicCreate    = "conversation.topic.create"
@@ -305,6 +306,8 @@ func (s *Server) handleAppRequest(appID string, request realtime.Envelope) realt
 	}
 
 	switch method {
+	case appMethodConversationStatus:
+		return s.handleConversationStatus(appID, "app", request)
 	case appMethodMessageSend:
 		response, err := s.handleAppSendMessage(appID, request)
 		if err != nil {
@@ -493,6 +496,7 @@ func (s *Server) handleAppRequest(appID string, request realtime.Envelope) realt
 func isThirdPartyAppMethod(method string) bool {
 	switch method {
 	case appMethodMessageSend,
+		appMethodConversationStatus,
 		appMethodUsersGet,
 		appMethodAppsGet,
 		appMethodConversationsList,

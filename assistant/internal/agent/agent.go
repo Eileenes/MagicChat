@@ -307,6 +307,20 @@ type OutputSink interface {
 
 type OutputSinkFunc func(context.Context, string) error
 
+// Phase identifies the current kind of work in an active agent cycle.
+// It deliberately carries no generated content.
+type Phase string
+
+const (
+	PhaseThinking Phase = "thinking"
+	PhaseTool     Phase = "tool"
+	PhaseText     Phase = "text"
+)
+
+// ProgressObserver receives best-effort phase transitions. Implementations must
+// return quickly; model execution never fails because of an observer.
+type ProgressObserver func(Phase)
+
 func (f OutputSinkFunc) SendMarkdown(ctx context.Context, content string) error {
 	return f(ctx, content)
 }
@@ -430,6 +444,11 @@ func (a *Agent) Reply(ctx context.Context, request Request) (string, error) {
 }
 
 func (a *Agent) Run(ctx context.Context, request Request, sink OutputSink) error {
+	return a.RunWithProgress(ctx, request, sink, nil)
+}
+
+// RunWithProgress is the direct-run compatibility entry point for per-run progress.
+func (a *Agent) RunWithProgress(ctx context.Context, request Request, sink OutputSink, observer ProgressObserver) error {
 	if a.model == nil {
 		return fmt.Errorf("agent model is required")
 	}
@@ -442,7 +461,7 @@ func (a *Agent) Run(ctx context.Context, request Request, sink OutputSink) error
 		return err
 	}
 
-	return session.RunCycle(ctx, sink)
+	return session.RunCycleWithProgress(ctx, sink, observer)
 }
 
 func (a *Agent) NewSession(request Request) (*Session, error) {
@@ -507,6 +526,13 @@ func (s *Session) ClearYield() {
 }
 
 func (s *Session) RunCycle(ctx context.Context, sink OutputSink) error {
+	return s.RunCycleWithProgress(ctx, sink, nil)
+}
+
+// RunCycleWithProgress runs one cycle and reports phase transitions to observer.
+// The observer belongs to this invocation, so persisted sessions can safely be
+// used by different runs without retaining or sharing observer state.
+func (s *Session) RunCycleWithProgress(ctx context.Context, sink OutputSink, observer ProgressObserver) error {
 	if s == nil || s.agent == nil {
 		return fmt.Errorf("agent session is not configured")
 	}
@@ -521,11 +547,14 @@ func (s *Session) RunCycle(ctx context.Context, sink OutputSink) error {
 		if s.shouldYieldWithoutPending() {
 			return nil
 		}
+		reportPhase(observer, PhaseThinking)
 		request, _ := s.prepareModelRequest(ctx, false)
-		response, err := s.agent.model.CreateMessage(ctx, request)
+		response, err := s.createMessage(ctx, request, observer)
 		if err != nil && isContextWindowError(err) {
+			reportPhase(observer, PhaseThinking)
 			if retryRequest, compacted := s.prepareModelRequest(ctx, true); compacted {
-				response, err = s.agent.model.CreateMessage(ctx, retryRequest)
+				reportPhase(observer, PhaseThinking)
+				response, err = s.createMessage(ctx, retryRequest, observer)
 			}
 		}
 		if err != nil {
@@ -547,6 +576,7 @@ func (s *Session) RunCycle(ctx context.Context, sink OutputSink) error {
 			return err
 		}
 		if len(handled.toolUses) > 0 {
+			reportPhase(observer, PhaseTool)
 			toolResults, hasFinalOutput, interrupted := s.callTools(ctx, handled.toolUses)
 			s.appendMessage(llm.Message{
 				Role:   llm.RoleUser,
@@ -574,6 +604,57 @@ func (s *Session) RunCycle(ctx context.Context, sink OutputSink) error {
 	}
 
 	return sink.SendMarkdown(ctx, LoopLimitFallback)
+}
+
+func reportPhase(observer ProgressObserver, phase Phase) {
+	if observer != nil {
+		observer(phase)
+	}
+}
+
+func (s *Session) createMessage(ctx context.Context, request llm.Request, observer ProgressObserver) (llm.Response, error) {
+	streaming, ok := s.agent.model.(llm.StreamingModel)
+	if !ok {
+		response, err := s.agent.model.CreateMessage(ctx, request)
+		if err == nil {
+			reportResponsePhases(observer, response)
+		}
+		return response, err
+	}
+	response, err := streaming.StreamMessage(ctx, request, func(event llm.StreamEvent) error {
+		if event.Type != llm.StreamEventBlockStart {
+			return nil
+		}
+		switch event.BlockType {
+		case llm.BlockTypeThinking:
+			reportPhase(observer, PhaseThinking)
+		case llm.BlockTypeToolUse:
+			reportPhase(observer, PhaseTool)
+		case llm.BlockTypeText:
+			reportPhase(observer, PhaseText)
+		}
+		return nil
+	})
+	if errors.Is(err, llm.ErrStreamingUnsupported) {
+		response, err = s.agent.model.CreateMessage(ctx, request)
+		if err == nil {
+			reportResponsePhases(observer, response)
+		}
+	}
+	return response, err
+}
+
+func reportResponsePhases(observer ProgressObserver, response llm.Response) {
+	for _, block := range response.Blocks {
+		switch block.Type {
+		case llm.BlockTypeThinking:
+			reportPhase(observer, PhaseThinking)
+		case llm.BlockTypeToolUse:
+			reportPhase(observer, PhaseTool)
+		case llm.BlockTypeText:
+			reportPhase(observer, PhaseText)
+		}
+	}
 }
 
 func (s *Session) shouldYieldWithoutPending() bool {

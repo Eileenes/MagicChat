@@ -109,6 +109,26 @@ describe("ClientProfileProvider", () => {
     expect(screen.getByText("Bobby")).toBeInTheDocument()
   })
 
+  it("exposes resolved users outside the contact list", () => {
+    const nonFriend = createContact("user-3", "Carol")
+    const profileData = createProfileData({
+      contacts: [],
+      usersById: { [nonFriend.id]: nonFriend },
+    })
+
+    function ProfileProbe() {
+      return <span>{useClientUserProfile(nonFriend.id)?.name}</span>
+    }
+
+    render(
+      <ClientProfileProvider {...profileData}>
+        <ProfileProbe />
+      </ClientProfileProvider>
+    )
+
+    expect(screen.getByText("Carol")).toBeInTheDocument()
+  })
+
   it("notifies only the app whose profile changed", () => {
     const assistant = createApp("app-1", "茉莉")
     const calendar = createApp("app-2", "日历")
@@ -157,8 +177,12 @@ function createProfileData(
   overrides: Partial<ClientProfileData> = {}
 ): ClientProfileData {
   return {
+    acceptFriendRequest: vi.fn(async () => undefined),
     contactApps: [],
+    contactDirectoryMode: "organization",
     contacts: [],
+    createFriendRequest: vi.fn(async () => undefined),
+    incomingFriendRequests: [],
     me: {
       avatar: "",
       createdAt: "2026-07-22T00:00:00Z",
@@ -176,6 +200,8 @@ function createProfileData(
     openDirectConversation: vi.fn(async () => {
       throw new Error("not implemented")
     }),
+    outgoingFriendRequests: [],
+    usersById: {},
     ...overrides,
   }
 }

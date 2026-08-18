@@ -15,6 +15,7 @@ import {
   MessageBubble,
   SystemMessageBadge,
 } from "@/components/conversation/conversation-message"
+import { ConversationStatusIndicator } from "@/components/conversation/conversation-status-indicator"
 import { formatConversationMessageTime } from "@/lib/conversation-message-presenter"
 import { conversationMessageRetentionLimit } from "@/lib/client-data-state"
 import type { ClientConversationMessageFocus } from "@/lib/client-data-context"
@@ -36,6 +37,7 @@ export const ConversationPanelHistory = React.memo(
     header,
     mentionLabelResolver,
     messages,
+    status,
     messageSelection,
     onCompactMessages = noop,
     onRegisterMessageView = noopRegistration,
@@ -62,6 +64,7 @@ export const ConversationPanelHistory = React.memo(
     header?: React.ReactNode
     mentionLabelResolver: MentionLabelResolver
     messages: ConversationPanelMessage[]
+    status?: string
     messageSelection?: ConversationPanelMessageSelection
     onCompactMessages?: () => void
     onRegisterMessageView?: (conversationId: string) => () => void
@@ -554,6 +557,14 @@ export const ConversationPanelHistory = React.memo(
                 </div>
               </React.Fragment>
             ))}
+            {status && (
+              <div
+                className="w-fit max-w-[75%] rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground"
+                data-testid="conversation-status-bubble"
+              >
+                <ConversationStatusIndicator status={status} />
+              </div>
+            )}
             {navigation?.loadingAfter && (
               <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
                 <LoaderCircle className="size-3.5 animate-spin" />

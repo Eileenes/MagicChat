@@ -7,27 +7,67 @@ import {
 import { ClientProfileStore } from "@/lib/client-profile-store"
 
 export function ClientProfileProvider({
+  acceptFriendRequest,
   children,
   contactApps,
+  contactDirectoryMode,
   contacts,
+  createFriendRequest,
+  incomingFriendRequests,
   me,
   openAppConversation,
   openDirectConversation,
+  outgoingFriendRequests,
+  usersById,
 }: ClientProfileData & { children: React.ReactNode }) {
   const [store] = React.useState(
-    () => new ClientProfileStore({ contactApps, contacts, me })
+    () =>
+      new ClientProfileStore({
+        contactApps,
+        contactDirectoryMode,
+        contacts,
+        incomingFriendRequests,
+        me,
+        outgoingFriendRequests,
+        usersById,
+      })
   )
   React.useLayoutEffect(() => {
-    store.replace({ contactApps, contacts, me })
-  }, [contactApps, contacts, me, store])
+    store.replace({
+      contactApps,
+      contactDirectoryMode,
+      contacts,
+      incomingFriendRequests,
+      me,
+      outgoingFriendRequests,
+      usersById,
+    })
+  }, [
+    contactApps,
+    contactDirectoryMode,
+    contacts,
+    incomingFriendRequests,
+    me,
+    outgoingFriendRequests,
+    store,
+    usersById,
+  ])
 
   const value = React.useMemo(
     () => ({
+      acceptFriendRequest,
+      createFriendRequest,
       openAppConversation,
       openDirectConversation,
       store,
     }),
-    [openAppConversation, openDirectConversation, store]
+    [
+      acceptFriendRequest,
+      createFriendRequest,
+      openAppConversation,
+      openDirectConversation,
+      store,
+    ]
   )
 
   return (

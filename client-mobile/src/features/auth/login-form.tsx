@@ -1,19 +1,19 @@
+// Tabler exposes per-icon runtime entry points without per-icon declarations.
+// eslint-disable-next-line import/no-unresolved
+import IconEye from "@tabler/icons-react-native/IconEye"
+// eslint-disable-next-line import/no-unresolved
+import IconEyeOff from "@tabler/icons-react-native/IconEyeOff"
+// eslint-disable-next-line import/no-unresolved
+import IconRefresh from "@tabler/icons-react-native/IconRefresh"
 import { useEffect, useRef, useState } from "react"
 import {
-  AlertDialog,
-  Button,
-  Card,
-  Spinner,
-  type TamaguiElement,
-  useToastController,
-  XStack,
-  YStack,
-} from "tamagui"
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native"
+import { YStack } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
-import { AppButton } from "@/components/forms/app-button"
-import { AppInput } from "@/components/forms/app-input"
-import { PasswordInput } from "@/components/forms/password-input"
 import { ApiRequestError } from "@/data/api-client"
 import {
   loadLoginCredentials,
@@ -25,14 +25,20 @@ import {
   useLoginMutation,
   useRequestEmailCodeMutation,
 } from "@/data/auth/auth-hooks"
+import type { AuthenticatedUser } from "@/core/models"
 import type { ServerTarget } from "@/core/server-target"
-import { EmailCodeInput } from "@/features/auth/email-code-input"
 import {
   LoginMethodTabs,
   resolveLoginMethod,
   type LoginMethod,
 } from "@/features/auth/login-method-tabs"
-import { SelectedServerButton } from "@/features/servers/selected-server-button"
+import {
+  XGUIButton,
+  XGUIInformationBar,
+  XGUIInput,
+  useXGUITheme,
+  useXGUIToast,
+} from "@/xgui"
 
 const ACCOUNT_INPUT_ID = "login-account"
 const EMAIL_CODE_INPUT_ID = "login-email-code"
@@ -47,35 +53,36 @@ type LoginFormState = {
   serverKey: string
 }
 
-type LoginFeedback = {
-  message: string
-  serverKey: string
-  title: string
-}
-
 type RetryCodeState = {
   seconds: number
   serverKey: string
 }
 
 export function LoginForm({
+  connectionFailed,
+  connectionReady,
   emailCodeLoginEnabled,
   onLoginSuccess,
+  onRetryConnection,
   passwordLoginEnabled,
   server,
 }: {
+  connectionFailed: boolean
+  connectionReady: boolean
   emailCodeLoginEnabled: boolean
-  onLoginSuccess: () => void
+  onLoginSuccess: (user: AuthenticatedUser) => Promise<void>
+  onRetryConnection: () => void
   passwordLoginEnabled: boolean
   server: ServerTarget
 }) {
   const passwordLoginMutation = useLoginMutation(server)
   const emailCodeLoginMutation = useEmailCodeLoginMutation(server)
   const requestEmailCodeMutation = useRequestEmailCodeMutation(server)
-  const toast = useToastController()
-  const accountInputRef = useRef<TamaguiElement>(null)
-  const emailCodeInputRef = useRef<TamaguiElement>(null)
-  const passwordInputRef = useRef<TamaguiElement>(null)
+  const toast = useXGUIToast()
+  const { colors } = useXGUITheme()
+  const accountInputRef = useRef<TextInput>(null)
+  const emailCodeInputRef = useRef<TextInput>(null)
+  const passwordInputRef = useRef<TextInput>(null)
   const serverKey = `${server.id}\n${server.url}`
   const [formState, setFormState] = useState<LoginFormState>({
     account: "",
@@ -90,13 +97,12 @@ export function LoginForm({
     seconds: 0,
     serverKey: "",
   })
-  const [feedback, setFeedback] = useState<LoginFeedback | null>(null)
+  const [passwordVisible, setPasswordVisible] = useState(false)
   const isCurrentServer = formState.serverKey === serverKey
   const account = isCurrentServer ? formState.account : ""
   const emailCode = isCurrentServer ? formState.emailCode : ""
   const password = isCurrentServer ? formState.password : ""
   const isCredentialsLoading = !isCurrentServer || formState.isLoading
-  const visibleFeedback = feedback?.serverKey === serverKey ? feedback : null
   const retryCodeAfter =
     retryCodeState.serverKey === serverKey ? retryCodeState.seconds : 0
   const activeLoginMethod = resolveLoginMethod({
@@ -108,6 +114,7 @@ export function LoginForm({
     passwordLoginMutation.isPending ||
     emailCodeLoginMutation.isPending ||
     requestEmailCodeMutation.isPending
+  const isFormUnavailable = isCredentialsLoading || isPending
   const canSignIn =
     !isCredentialsLoading &&
     account.trim().length > 0 &&
@@ -116,7 +123,7 @@ export function LoginForm({
       : activeLoginMethod === "password"
         ? password.length > 0
         : false)
-  const isSignInDisabled = !canSignIn || isPending
+  const isSignInDisabled = !canSignIn || isPending || !connectionReady
 
   useEffect(() => {
     let isCancelled = false
@@ -195,21 +202,24 @@ export function LoginForm({
     }))
   }
 
-  function showFeedback(title: string, message: string) {
-    setFeedback({ message, serverKey, title })
+  function showError(message: string) {
+    toast.show({
+      message,
+      type: "error",
+    })
   }
 
   async function handleRequestEmailCode() {
-    if (isCredentialsLoading || isPending || retryCodeAfter > 0) return
+    if (isFormUnavailable || retryCodeAfter > 0) return
 
     const email = account.trim()
     if (!email) {
-      showFeedback("无法获取验证码", "请输入邮箱地址")
+      showError("请输入邮箱地址")
       accountInputRef.current?.focus()
       return
     }
 
-    setFeedback(null)
+    toast.hide()
 
     try {
       await requestEmailCodeMutation.mutateAsync(email)
@@ -217,33 +227,40 @@ export function LoginForm({
         seconds: EMAIL_CODE_RETRY_SECONDS,
         serverKey,
       })
-      toast.show("验证码已发送", {
-        customData: { tone: "success" satisfies AppToastTone },
-        message: "请查收邮箱中的验证码",
+      toast.show({
+        message: "验证码已发送",
+        type: "success",
       })
     } catch (error: unknown) {
-      toast.show("验证码发送失败", {
-        customData: { tone: "error" satisfies AppToastTone },
-        duration: 4000,
+      toast.show({
         message:
-          error instanceof ApiRequestError ? error.message : "请稍后重试",
+          error instanceof ApiRequestError ? error.message : "验证码发送失败",
+        type: "error",
       })
     }
   }
 
   async function handleSignIn(method: LoginMethod) {
-    if (!canSignIn || isPending || activeLoginMethod !== method) return
+    if (
+      !connectionReady ||
+      !canSignIn ||
+      isPending ||
+      activeLoginMethod !== method
+    ) {
+      return
+    }
 
-    setFeedback(null)
+    toast.hide()
 
     try {
+      let user: AuthenticatedUser
       if (method === "password") {
-        await passwordLoginMutation.mutateAsync({ account, password })
+        user = await passwordLoginMutation.mutateAsync({ account, password })
         await saveLoginCredentials(server, { account, password }).catch(() => {
           // A successful login must not be blocked by local credential storage.
         })
       } else {
-        await emailCodeLoginMutation.mutateAsync({
+        user = await emailCodeLoginMutation.mutateAsync({
           code: emailCode,
           email: account,
         })
@@ -251,80 +268,96 @@ export function LoginForm({
           // A successful login must not be blocked by local credential storage.
         })
       }
-      onLoginSuccess()
+      await onLoginSuccess(user)
     } catch (error: unknown) {
-      showFeedback(
-        "登录失败",
+      const message =
         error instanceof ApiRequestError ? error.message : "登录失败"
+      showError(
+        method === "password"
+          ? message.replace("邮箱或密码错误", "账号或密码错误")
+          : message
       )
     }
   }
 
   return (
-    <>
-      <Card size="$5">
-        <YStack gap="$4" p="$4">
-          <SelectedServerButton disabled={isPending} />
-
+    <View style={[styles.formSurface, { backgroundColor: colors.background0 }]}>
+        <YStack gap="$2">
           <LoginMethodTabs
             activeMethod={activeLoginMethod}
-            disabled={isPending}
+            disabled={isFormUnavailable}
             emailCodeContent={
               <YStack gap="$4">
-                <AppInput
-                  accessibilityLabel="邮箱"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  autoCorrect={false}
-                  bg="$color1"
-                  color="$gray12"
-                  disabled={isCredentialsLoading || isPending}
-                  id={ACCOUNT_INPUT_ID}
-                  keyboardType="email-address"
-                  onChangeText={handleAccountChange}
-                  onSubmitEditing={() => emailCodeInputRef.current?.focus()}
-                  placeholder="输入邮箱"
-                  placeholderTextColor="$gray9"
-                  ref={accountInputRef}
-                  returnKeyType="next"
-                  spellCheck={false}
-                  value={account}
-                />
+                <View style={styles.fieldGroup}>
+                  <XGUIInput
+                    accessibilityLabel="邮箱"
+                    clearable
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    autoCorrect={false}
+                    disabled={isFormUnavailable}
+                    id={ACCOUNT_INPUT_ID}
+                    keyboardType="email-address"
+                    label="邮箱"
+                    onChangeText={handleAccountChange}
+                    onSubmitEditing={() => emailCodeInputRef.current?.focus()}
+                    placeholder="输入邮箱"
+                    ref={accountInputRef}
+                    returnKeyType="next"
+                    separator
+                    spellCheck={false}
+                    value={account}
+                  />
+                  <XGUIInput
+                    accessibilityLabel="邮箱验证码"
+                    autoCapitalize="none"
+                    autoComplete="one-time-code"
+                    disabled={isFormUnavailable}
+                    id={EMAIL_CODE_INPUT_ID}
+                    keyboardType="number-pad"
+                    label="验证码"
+                    onChangeText={handleEmailCodeChange}
+                    onSubmitEditing={() => void handleSignIn("email-code")}
+                    placeholder="输入验证码"
+                    ref={emailCodeInputRef}
+                    returnKeyType="done"
+                    textContentType="oneTimeCode"
+                    trailing={
+                      <EmailCodeAction
+                        disabled={
+                          isFormUnavailable ||
+                          passwordLoginMutation.isPending ||
+                          emailCodeLoginMutation.isPending ||
+                          retryCodeAfter > 0 ||
+                          account.trim().length === 0
+                        }
+                        label={
+                          requestEmailCodeMutation.isPending
+                            ? "发送中"
+                            : retryCodeAfter > 0
+                              ? `${retryCodeAfter} 秒`
+                              : "获取验证码"
+                        }
+                        loading={requestEmailCodeMutation.isPending}
+                        onPress={() => void handleRequestEmailCode()}
+                      />
+                    }
+                    value={emailCode}
+                  />
+                </View>
 
-                <EmailCodeInput
-                  accessibilityLabel="邮箱验证码"
-                  actionDisabled={
-                    isCredentialsLoading ||
-                    isPending ||
-                    retryCodeAfter > 0 ||
-                    account.trim().length === 0
-                  }
-                  actionLabel={
-                    requestEmailCodeMutation.isPending
-                      ? "发送中"
-                      : retryCodeAfter > 0
-                        ? `${retryCodeAfter} 秒`
-                        : "获取验证码"
-                  }
-                  actionLoading={requestEmailCodeMutation.isPending}
-                  autoCapitalize="none"
-                  autoComplete="one-time-code"
-                  bg="$color1"
-                  color="$gray12"
-                  disabled={isCredentialsLoading || isPending}
-                  id={EMAIL_CODE_INPUT_ID}
-                  keyboardType="number-pad"
-                  onActionPress={() => void handleRequestEmailCode()}
-                  onChangeText={handleEmailCodeChange}
-                  onSubmitEditing={() => void handleSignIn("email-code")}
-                  placeholder="邮箱验证码"
-                  placeholderTextColor="$gray9"
-                  ref={emailCodeInputRef}
-                  returnKeyType="done"
-                  textContentType="oneTimeCode"
-                  value={emailCode}
-                />
-
+                {connectionFailed ? (
+                  <XGUIInformationBar
+                    actionAccessibilityLabel="重新连接服务器"
+                    actionIcon={(color) => (
+                      <IconRefresh color={color} size={24} strokeWidth={1} />
+                    )}
+                    floating={false}
+                    message="服务器无法连接"
+                    onActionPress={onRetryConnection}
+                    variant="warn-strong"
+                  />
+                ) : null}
                 <LoginButton
                   disabled={isSignInDisabled}
                   isLoading={emailCodeLoginMutation.isPending}
@@ -336,47 +369,66 @@ export function LoginForm({
             emailCodeLoginEnabled={emailCodeLoginEnabled}
             onMethodChange={(method) => {
               setPreferredLoginMethod(method)
-              setFeedback(null)
+              toast.hide()
             }}
             passwordContent={
               <YStack gap="$4">
-                <AppInput
-                  accessibilityLabel="账号"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  autoCorrect={false}
-                  bg="$color1"
-                  color="$gray12"
-                  disabled={isCredentialsLoading || isPending}
-                  id={ACCOUNT_INPUT_ID}
-                  keyboardType="email-address"
-                  onChangeText={handleAccountChange}
-                  onSubmitEditing={() => passwordInputRef.current?.focus()}
-                  placeholder="输入邮箱"
-                  placeholderTextColor="$gray9"
-                  ref={accountInputRef}
-                  returnKeyType="next"
-                  spellCheck={false}
-                  value={account}
-                />
+                <View style={styles.fieldGroup}>
+                  <XGUIInput
+                    accessibilityLabel="账号"
+                    clearable
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    autoCorrect={false}
+                    disabled={isFormUnavailable}
+                    id={ACCOUNT_INPUT_ID}
+                    keyboardType="email-address"
+                    label="账号"
+                    onChangeText={handleAccountChange}
+                    onSubmitEditing={() => passwordInputRef.current?.focus()}
+                    placeholder="输入邮箱或手机号"
+                    ref={accountInputRef}
+                    returnKeyType="next"
+                    separator
+                    spellCheck={false}
+                    value={account}
+                  />
+                  <XGUIInput
+                    accessibilityLabel="密码"
+                    autoCapitalize="none"
+                    autoComplete="password"
+                    disabled={isFormUnavailable}
+                    id={PASSWORD_INPUT_ID}
+                    label="密码"
+                    onChangeText={handlePasswordChange}
+                    onSubmitEditing={() => void handleSignIn("password")}
+                    placeholder="输入密码"
+                    ref={passwordInputRef}
+                    returnKeyType="done"
+                    secureTextEntry={!passwordVisible}
+                    trailing={
+                      <PasswordVisibilityAction
+                        disabled={isFormUnavailable}
+                        onPress={() => setPasswordVisible((visible) => !visible)}
+                        visible={passwordVisible}
+                      />
+                    }
+                    value={password}
+                  />
+                </View>
 
-                <PasswordInput
-                  accessibilityLabel="密码"
-                  autoCapitalize="none"
-                  autoComplete="password"
-                  bg="$color1"
-                  color="$gray12"
-                  disabled={isCredentialsLoading || isPending}
-                  id={PASSWORD_INPUT_ID}
-                  onChangeText={handlePasswordChange}
-                  onSubmitEditing={() => void handleSignIn("password")}
-                  placeholder="输入密码"
-                  placeholderTextColor="$gray9"
-                  ref={passwordInputRef}
-                  returnKeyType="done"
-                  value={password}
-                />
-
+                {connectionFailed ? (
+                  <XGUIInformationBar
+                    actionAccessibilityLabel="重新连接服务器"
+                    actionIcon={(color) => (
+                      <IconRefresh color={color} size={24} strokeWidth={1} />
+                    )}
+                    floating={false}
+                    message="服务器无法连接"
+                    onActionPress={onRetryConnection}
+                    variant="warn-strong"
+                  />
+                ) : null}
                 <LoginButton
                   disabled={isSignInDisabled}
                   isLoading={passwordLoginMutation.isPending}
@@ -388,34 +440,67 @@ export function LoginForm({
             passwordLoginEnabled={passwordLoginEnabled}
           />
         </YStack>
-      </Card>
+    </View>
+  )
+}
 
-      <AlertDialog
-        onOpenChange={(open) => {
-          if (!open) setFeedback(null)
-        }}
-        open={visibleFeedback !== null}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay bg="$shadow6" opacity={0.5} />
-          <AlertDialog.Content bordered elevate gap="$4" maxW={440} width="90%">
-            <AlertDialog.Title fontSize="$5" lineHeight="$6">
-              {visibleFeedback?.title ?? "操作失败"}
-            </AlertDialog.Title>
-            <AlertDialog.Description>
-              {visibleFeedback?.message}
-            </AlertDialog.Description>
-            <XStack gap="$3" width="100%">
-              <AlertDialog.Action asChild>
-                <Button grow={1} theme="teal">
-                  知道了
-                </Button>
-              </AlertDialog.Action>
-            </XStack>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog>
-    </>
+function EmailCodeAction({
+  disabled,
+  label,
+  loading,
+  onPress,
+}: {
+  disabled: boolean
+  label: string
+  loading: boolean
+  onPress: () => void
+}) {
+  return (
+    <XGUIButton
+      accessibilityLabel={label}
+      disabled={disabled}
+      loading={loading}
+      onPress={onPress}
+      size="mini"
+      style={styles.inputAction}
+      variant="secondary"
+    >
+      {loading ? null : label}
+    </XGUIButton>
+  )
+}
+
+function PasswordVisibilityAction({
+  disabled,
+  onPress,
+  visible,
+}: {
+  disabled: boolean
+  onPress: () => void
+  visible: boolean
+}) {
+  const { colors } = useXGUITheme()
+  const Icon = visible ? IconEye : IconEyeOff
+
+  return (
+    <Pressable
+      accessibilityLabel={visible ? "隐藏密码" : "显示密码"}
+      accessibilityRole="button"
+      disabled={disabled}
+      hitSlop={8}
+      onPress={onPress}
+      style={styles.passwordAction}
+    >
+      {({ pressed }) => {
+        const color = disabled
+          ? colors.foreground4
+          : pressed
+            ? colors.textSecondary
+            : colors.textPlaceholder
+
+        return <Icon color={color} size={18} />
+      }}
+    </Pressable>
   )
 }
 
@@ -431,18 +516,39 @@ function LoginButton({
   testID: string
 }) {
   return (
-    <AppButton
+    <XGUIButton
       accessibilityLabel="登录"
       disabled={disabled}
-      disabledStyle={{ opacity: 0.5 }}
-      icon={isLoading ? <Spinner /> : undefined}
+      loading={isLoading}
       onPress={onPress}
-      size="$4"
       testID={testID}
-      theme="accent"
-      width="100%"
     >
       {isLoading ? "登录中…" : "登录"}
-    </AppButton>
+    </XGUIButton>
   )
 }
+
+const styles = StyleSheet.create({
+  fieldGroup: {
+    borderRadius: 8,
+    overflow: "hidden",
+    width: "100%",
+  },
+  formSurface: {
+    borderRadius: 12,
+    overflow: "hidden",
+    width: "100%",
+  },
+  inputAction: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    width: 92,
+  },
+  passwordAction: {
+    alignItems: "center",
+    height: 40,
+    justifyContent: "center",
+    marginLeft: 8,
+    width: 28,
+  },
+})

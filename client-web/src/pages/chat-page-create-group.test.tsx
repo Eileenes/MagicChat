@@ -17,6 +17,10 @@ import {
   readLastConversationId,
   writeLastConversationId,
 } from "@/lib/last-conversation"
+import {
+  RealtimeContext,
+  type RealtimeContextValue,
+} from "@/lib/realtime-context"
 import { createConversationMessageState } from "@/lib/client-data-state"
 
 const mocks = vi.hoisted(() => ({
@@ -324,21 +328,32 @@ function renderChatPage(
 ) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <ClientDataContext.Provider value={createClientDataValue(overrides)}>
-        <Routes>
-          <Route
-            path="/chat/:conversationId?"
-            element={
-              <>
-                <ChatPage />
-                <LocationProbe />
-              </>
-            }
-          />
-        </Routes>
-      </ClientDataContext.Provider>
+      <RealtimeContext.Provider value={createRealtimeValue()}>
+        <ClientDataContext.Provider value={createClientDataValue(overrides)}>
+          <Routes>
+            <Route
+              path="/chat/:conversationId?"
+              element={
+                <>
+                  <ChatPage />
+                  <LocationProbe />
+                </>
+              }
+            />
+          </Routes>
+        </ClientDataContext.Provider>
+      </RealtimeContext.Provider>
     </MemoryRouter>
   )
+}
+
+function createRealtimeValue(): RealtimeContextValue {
+  return {
+    ready: true,
+    status: "connected",
+    sendRealtimeRequest: vi.fn().mockResolvedValue(undefined),
+    subscribeRealtimeEvent: vi.fn(() => () => undefined),
+  }
 }
 
 function LocationProbe() {

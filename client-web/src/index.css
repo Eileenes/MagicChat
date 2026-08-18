@@ -54,6 +54,59 @@
 }
 
 :root {
+    /* WeUI palette: neutral surfaces, typography, states, and brand colors. */
+    --weui-bg-0: #ededed;
+    --weui-bg-1: #f7f7f7;
+    --weui-bg-2: #ffffff;
+    --weui-bg-3: #f7f7f7;
+    --weui-bg-4: #4c4c4c;
+    --weui-bg-5: #ffffff;
+    --weui-fg-0: rgba(0, 0, 0, 0.9);
+    --weui-fg-0-5: rgba(0, 0, 0, 0.9);
+    --weui-fg-1: rgba(0, 0, 0, 0.55);
+    --weui-fg-2: rgba(0, 0, 0, 0.3);
+    --weui-fg-3: rgba(0, 0, 0, 0.1);
+    --weui-fg-4: rgba(0, 0, 0, 0.15);
+    --weui-fg-half: rgba(0, 0, 0, 0.9);
+    --weui-glyph-0: rgba(0, 0, 0, 0.9);
+    --weui-glyph-1: rgba(0, 0, 0, 0.55);
+    --weui-glyph-2: rgba(0, 0, 0, 0.3);
+    --weui-brand-1: #b4ecce;
+    --weui-brand-2: #38cd7f;
+    --weui-brand-3: #07c160;
+    --weui-brand-4: #06ae56;
+    --weui-brand-5: #059a4c;
+    --weui-brand: var(--weui-brand-3);
+    --weui-text-green: #06ae56;
+    --weui-blue: #10aeff;
+    --weui-indigo: #1485ee;
+    --weui-purple: #6467f0;
+    --weui-green: #91d300;
+    --weui-lightgreen: #95ec69;
+    --weui-orange: #fa9d3b;
+    --weui-yellow: #ffc300;
+    --weui-red: #fa5151;
+    --weui-orangered: #ff6146;
+    --weui-link: #576b95;
+    --weui-secondary-bg: rgba(0, 0, 0, 0.05);
+    --weui-separator-0: rgba(0, 0, 0, 0.1);
+    --weui-separator-1: rgba(0, 0, 0, 0.15);
+    --weui-state-hovered: rgba(0, 0, 0, 0.02);
+    --weui-state-pressed: rgba(0, 0, 0, 0.1);
+    --weui-state-pressed-strengthened: rgba(0, 0, 0, 0.2);
+    --weui-overlay: rgba(0, 0, 0, 0.5);
+    --weui-overlay-white: rgba(242, 242, 242, 0.8);
+    --weui-tag-text-black: rgba(0, 0, 0, 0.5);
+    --weui-tag-background-black: rgba(0, 0, 0, 0.05);
+    --weui-tag-text-orange: #fa9d3b;
+    --weui-tag-background-orange: rgba(250, 157, 59, 0.1);
+    --weui-tag-text-green: #06ae56;
+    --weui-tag-background-green: rgba(6, 174, 86, 0.1);
+    --weui-tag-text-blue: #10aeff;
+    --weui-tag-background-blue: rgba(16, 174, 255, 0.1);
+    --weui-tag-text-red: rgba(250, 81, 81, 0.6);
+    --weui-tag-background-red: rgba(250, 81, 81, 0.1);
+
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -89,6 +142,59 @@
 }
 
 .dark {
+    /* WeUI dark palette. Keep the brand green stable and deepen surfaces. */
+    --weui-bg-0: #111111;
+    --weui-bg-1: #1e1e1e;
+    --weui-bg-2: #191919;
+    --weui-bg-3: #202020;
+    --weui-bg-4: #404040;
+    --weui-bg-5: #2c2c2c;
+    --weui-fg-0: rgba(255, 255, 255, 0.8);
+    --weui-fg-0-5: rgba(255, 255, 255, 0.6);
+    --weui-fg-1: rgba(255, 255, 255, 0.5);
+    --weui-fg-2: rgba(255, 255, 255, 0.3);
+    --weui-fg-3: rgba(255, 255, 255, 0.1);
+    --weui-fg-4: rgba(255, 255, 255, 0.15);
+    --weui-fg-half: rgba(255, 255, 255, 0.6);
+    --weui-glyph-0: rgba(255, 255, 255, 0.8);
+    --weui-glyph-1: rgba(255, 255, 255, 0.5);
+    --weui-glyph-2: rgba(255, 255, 255, 0.3);
+    --weui-brand-1: #023a1c;
+    --weui-brand-2: #059a4c;
+    --weui-brand-3: #07c160;
+    --weui-brand-4: #20c770;
+    --weui-brand-5: #38cd7f;
+    --weui-brand: var(--weui-brand-3);
+    --weui-text-green: #259c5c;
+    --weui-blue: #10aeff;
+    --weui-indigo: #1196ff;
+    --weui-purple: #8183ff;
+    --weui-green: #74a800;
+    --weui-lightgreen: #3eb575;
+    --weui-orange: #c87d2f;
+    --weui-yellow: #cc9c00;
+    --weui-red: #fa5151;
+    --weui-orangered: #ff6146;
+    --weui-link: #7d90a9;
+    --weui-secondary-bg: rgba(255, 255, 255, 0.1);
+    --weui-separator-0: rgba(255, 255, 255, 0.05);
+    --weui-separator-1: rgba(255, 255, 255, 0.15);
+    --weui-state-hovered: rgba(0, 0, 0, 0.02);
+    --weui-state-pressed: rgba(255, 255, 255, 0.1);
+    --weui-state-pressed-strengthened: rgba(255, 255, 255, 0.2);
+    --weui-overlay: rgba(0, 0, 0, 0.8);
+    --weui-overlay-white: rgba(242, 242, 242, 0.8);
+    --weui-tag-text-black: rgba(255, 255, 255, 0.5);
+    --weui-tag-background-black: rgba(255, 255, 255, 0.05);
+    --weui-tag-text-orange: rgba(250, 157, 59, 0.6);
+    --weui-tag-background-orange: rgba(250, 157, 59, 0.1);
+    --weui-tag-text-green: rgba(6, 174, 86, 0.6);
+    --weui-tag-background-green: rgba(6, 174, 86, 0.1);
+    --weui-tag-text-blue: rgba(16, 174, 255, 0.6);
+    --weui-tag-background-blue: rgba(16, 174, 255, 0.1);
+    --weui-tag-text-red: rgba(250, 81, 81, 0.6);
+    --weui-tag-background-red: rgba(250, 81, 81, 0.1);
+
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);

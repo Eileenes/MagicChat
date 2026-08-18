@@ -3,10 +3,12 @@ import { Redirect, Stack } from "expo-router"
 import { useAuth } from "@/providers/auth-provider"
 
 export default function AppStackLayout() {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, isHydrated } = useAuth()
+
+  if (!isHydrated) return null
 
   if (!isAuthenticated) {
-    return <Redirect href="/init" />
+    return <Redirect href="/server-management" />
   }
 
   return (

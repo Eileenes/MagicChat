@@ -15,8 +15,12 @@ describe("ClientProfileStore", () => {
 
     store.replace({
       contactApps: snapshot.contactApps.map((app) => ({ ...app })),
+      contactDirectoryMode: snapshot.contactDirectoryMode,
       contacts: snapshot.contacts.map((contact) => ({ ...contact })),
+      incomingFriendRequests: snapshot.incomingFriendRequests,
       me: { ...snapshot.me },
+      outgoingFriendRequests: snapshot.outgoingFriendRequests,
+      usersById: snapshot.usersById,
     })
 
     expect(store.getUser("user-2")).toBe(originalUser)
@@ -35,13 +39,28 @@ describe("ClientProfileStore", () => {
 
     store.replace({
       contactApps: [],
+      contactDirectoryMode: snapshot.contactDirectoryMode,
       contacts: [{ ...snapshot.contacts[0], online: true }],
+      incomingFriendRequests: [],
       me: snapshot.me,
+      outgoingFriendRequests: [],
+      usersById: {},
     })
 
     expect(userListener).toHaveBeenCalledOnce()
     expect(appListener).toHaveBeenCalledOnce()
     expect(store.getApp("app-1")).toBeUndefined()
+  })
+
+  it("indexes resolved users outside the contact list", () => {
+    const snapshot = createSnapshot()
+    const nonFriend = createContact("user-3", "Carol")
+    const store = new ClientProfileStore({
+      ...snapshot,
+      usersById: { [nonFriend.id]: nonFriend },
+    })
+
+    expect(store.getUser(nonFriend.id)).toBe(nonFriend)
   })
 })
 
@@ -58,6 +77,7 @@ function createSnapshot() {
         type: "app" as const,
       },
     ],
+    contactDirectoryMode: "organization" as const,
     contacts: [
       {
         avatar: "",
@@ -71,6 +91,7 @@ function createSnapshot() {
         type: "user" as const,
       },
     ],
+    incomingFriendRequests: [],
     me: {
       avatar: "",
       createdAt: "2026-07-22T00:00:00Z",
@@ -82,5 +103,21 @@ function createSnapshot() {
       phone: "",
       status: "active" as const,
     },
+    outgoingFriendRequests: [],
+    usersById: {},
+  }
+}
+
+function createContact(id: string, name: string) {
+  return {
+    avatar: "",
+    email: `${name.toLowerCase()}@example.com`,
+    id,
+    lastOnlineAt: null,
+    name,
+    nickname: "",
+    online: false,
+    phone: "",
+    type: "user" as const,
   }
 }

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react"
 import { Paragraph, SizableText, Tabs, YStack } from "tamagui"
 
+import { useXGUITheme } from "@/xgui"
+
 export type LoginMethod = "email-code" | "password"
 
 export function resolveLoginMethod({
@@ -35,6 +37,8 @@ export function LoginMethodTabs({
   passwordContent: ReactNode
   passwordLoginEnabled: boolean
 }) {
+  const { colors } = useXGUITheme()
+
   if (!activeMethod) {
     return (
       <YStack items="center" py="$4">
@@ -59,7 +63,7 @@ export function LoginMethodTabs({
       width="100%"
     >
       <Tabs.List
-        bg="$color1"
+        bg={colors.background1}
         borderWidth={0}
         gap="$0.5"
         height="$4"
@@ -69,13 +73,12 @@ export function LoginMethodTabs({
       >
         {emailCodeLoginEnabled ? (
           <Tabs.Tab
-            bg={activeMethod === "email-code" ? "$color9" : "transparent"}
-            borderWidth={0}
-            boxShadow={
+            bg={
               activeMethod === "email-code"
-                ? "0 1px 2px $shadowColor"
-                : undefined
+                ? colors.background2
+                : "transparent"
             }
+            borderWidth={0}
             disabled={disabled}
             flex={1}
             height="100%"
@@ -86,7 +89,11 @@ export function LoginMethodTabs({
             value="email-code"
           >
             <SizableText
-              color={activeMethod === "email-code" ? "$color1" : "$gray10"}
+              color={
+                activeMethod === "email-code"
+                  ? colors.brand
+                  : colors.textSecondary
+              }
               fontWeight={activeMethod === "email-code" ? "600" : "500"}
               size="$3"
             >
@@ -96,13 +103,10 @@ export function LoginMethodTabs({
         ) : null}
         {passwordLoginEnabled ? (
           <Tabs.Tab
-            bg={activeMethod === "password" ? "$color9" : "transparent"}
-            borderWidth={0}
-            boxShadow={
-              activeMethod === "password"
-                ? "0 1px 2px $shadowColor"
-                : undefined
+            bg={
+              activeMethod === "password" ? colors.background2 : "transparent"
             }
+            borderWidth={0}
             disabled={disabled}
             flex={1}
             height="100%"
@@ -113,7 +117,11 @@ export function LoginMethodTabs({
             value="password"
           >
             <SizableText
-              color={activeMethod === "password" ? "$color1" : "$gray10"}
+              color={
+                activeMethod === "password"
+                  ? colors.brand
+                  : colors.textSecondary
+              }
               fontWeight={activeMethod === "password" ? "600" : "500"}
               size="$3"
             >

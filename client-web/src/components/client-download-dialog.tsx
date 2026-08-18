@@ -62,7 +62,7 @@ export function ClientDownloadDialog() {
       <DialogTrigger asChild>
         <Button
           aria-label="下载客户端"
-          className="rounded-md hover:bg-transparent hover:text-teal-500 aria-expanded:bg-transparent aria-expanded:text-teal-500 data-[state=open]:bg-transparent data-[state=open]:text-teal-500 dark:hover:bg-transparent"
+          className="rounded-md hover:bg-transparent hover:text-(--weui-brand-3) aria-expanded:bg-transparent aria-expanded:text-(--weui-brand-3) data-[state=open]:bg-transparent data-[state=open]:text-(--weui-brand-3) dark:hover:bg-transparent"
           size="icon-sm"
           title="下载客户端"
           type="button"

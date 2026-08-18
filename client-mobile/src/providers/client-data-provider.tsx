@@ -78,6 +78,7 @@ type ClientDataContextValue = {
   currentUserError: Error | null
   error: Error | null
   hasMoreProjects: boolean
+  isBootstrapRefreshing: boolean
   isContactsRefreshing: boolean
   isConversationsRefreshing: boolean
   isProjectsLoading: boolean
@@ -90,6 +91,7 @@ type ClientDataContextValue = {
   projects: ClientProjectSummary[]
   projectsError: Error | null
   refresh: () => Promise<void>
+  refreshBootstrap: () => Promise<void>
   refreshContacts: () => Promise<void>
   refreshConversations: () => Promise<void>
   refreshProjects: () => Promise<void>
@@ -154,6 +156,7 @@ function TargetClientDataProvider({
     }),
     enabled,
   })
+  const [isBootstrapRefreshing, setIsBootstrapRefreshing] = useState(false)
   const [manualRefresh, setManualRefresh] = useState({
     contacts: false,
     conversations: false,
@@ -364,6 +367,20 @@ function TargetClientDataProvider({
     }
   }, [conversationsQuery, ensureUsers])
 
+  const refreshBootstrap = useCallback(async () => {
+    setIsBootstrapRefreshing(true)
+    try {
+      const [currentUserResult] = await Promise.all([
+        currentUserQuery.refetch(),
+        refreshContacts(),
+        refreshConversations(),
+      ])
+      if (currentUserResult.error) throw currentUserResult.error
+    } finally {
+      setIsBootstrapRefreshing(false)
+    }
+  }, [currentUserQuery, refreshContacts, refreshConversations])
+
   const refreshProjects = useCallback(async () => {
     setManualRefresh((current) => ({ ...current, projects: true }))
     try {
@@ -406,6 +423,7 @@ function TargetClientDataProvider({
       currentUserError: enabled ? currentUserQuery.error : null,
       error: enabled ? error : null,
       hasMoreProjects: enabled && projectsQuery.hasNextPage,
+      isBootstrapRefreshing: enabled && isBootstrapRefreshing,
       isContactsRefreshing: enabled && manualRefresh.contacts,
       isConversationsRefreshing: enabled && manualRefresh.conversations,
       isProjectsLoading: enabled && projectsQuery.isLoading,
@@ -427,6 +445,7 @@ function TargetClientDataProvider({
       projects,
       projectsError: enabled ? projectsQuery.error : null,
       refresh,
+      refreshBootstrap,
       refreshContacts,
       refreshConversations,
       refreshProjects,
@@ -444,6 +463,7 @@ function TargetClientDataProvider({
       currentUserQuery.error,
       enabled,
       error,
+      isBootstrapRefreshing,
       loadMoreProjects,
       manualRefresh.contacts,
       manualRefresh.conversations,
@@ -455,6 +475,7 @@ function TargetClientDataProvider({
       projectsQuery.isFetchingNextPage,
       projectsQuery.isLoading,
       refresh,
+      refreshBootstrap,
       refreshContacts,
       refreshConversations,
       refreshProjects,

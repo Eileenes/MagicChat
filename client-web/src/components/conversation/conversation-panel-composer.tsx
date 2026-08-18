@@ -1,13 +1,5 @@
 import * as React from "react"
-import {
-  ImageIcon,
-  LoaderCircle,
-  Mic,
-  Paperclip,
-  Send,
-  Smile,
-  X,
-} from "lucide-react"
+import { ImageIcon, LoaderCircle, Mic, Paperclip, Smile, X } from "lucide-react"
 import { toast } from "sonner"
 import {
   type ClientConversation,
@@ -44,7 +36,12 @@ import { MarkdownIcon } from "@/components/icons/markdown-icon"
 import { Button } from "@/components/ui/button"
 import { SendFileMessageDialog } from "@/components/send-file-message-dialog"
 import { SendImageMessageDialog } from "@/components/send-image-message-dialog"
-import { Textarea } from "@/components/ui/textarea"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from "@/components/ui/input-group"
 import { Toggle } from "@/components/ui/toggle"
 import type {
   ConversationPanelComposerHandle,
@@ -61,6 +58,7 @@ export const ConversationPanelComposer = React.forwardRef<
     replyTarget: ConversationPanelReplyTarget | null
     onCancelReply: () => void
     onDraftBlur?: () => void
+    onDraftFocus?: () => void
     onDraftChange: (draft: string, mentions: ConversationDraftMention[]) => void
     onSendFile: (file: File) => Promise<ClientMessage | null>
     onSendImage: (
@@ -82,6 +80,7 @@ export const ConversationPanelComposer = React.forwardRef<
     replyTarget,
     onCancelReply,
     onDraftBlur,
+    onDraftFocus,
     onDraftChange,
     onSendFile,
     onSendImage,
@@ -555,24 +554,107 @@ export const ConversationPanelComposer = React.forwardRef<
           </div>
         )}
         <div className="relative" data-testid="conversation-panel-editor-row">
-          <Textarea
-            ref={textareaRef}
-            value={draft}
-            aria-disabled={sending}
-            onBlur={onDraftBlur}
-            onChange={handleDraftChange}
-            onKeyDown={handleComposerKeyDown}
-            onSelect={(event) =>
-              updateMentionTrigger(
-                event.currentTarget.value,
-                event.currentTarget.selectionStart
-              )
-            }
-            onPaste={handleComposerPaste}
-            placeholder={richTextMode ? "输入 Markdown 消息" : "输入消息"}
-            readOnly={sending}
-            className="max-h-48 min-h-24 resize-none"
-          />
+          <InputGroup>
+            <InputGroupTextarea
+              ref={textareaRef}
+              value={draft}
+              aria-disabled={sending}
+              onBlur={onDraftBlur}
+              onFocus={onDraftFocus}
+              onChange={handleDraftChange}
+              onKeyDown={handleComposerKeyDown}
+              onSelect={(event) =>
+                updateMentionTrigger(
+                  event.currentTarget.value,
+                  event.currentTarget.selectionStart
+                )
+              }
+              onPaste={handleComposerPaste}
+              placeholder={richTextMode ? "输入 Markdown 消息" : "输入消息"}
+              readOnly={sending}
+              className="max-h-48 min-h-24"
+            />
+            <InputGroupAddon
+              align="block-end"
+              className="justify-between gap-2"
+              data-testid="conversation-panel-toolbar-row"
+            >
+              <div className="flex items-center gap-1">
+                <ExpressionPickerPopover
+                  align="start"
+                  onSelect={handleExpressionSelect}
+                  open={expressionPickerOpen}
+                  onOpenChange={setExpressionPickerOpen}
+                >
+                  <InputGroupButton
+                    aria-label="选择表情"
+                    disabled={sending}
+                    size="icon-sm"
+                    title="选择表情"
+                  >
+                    <Smile className="size-4" />
+                  </InputGroupButton>
+                </ExpressionPickerPopover>
+                <InputGroupButton
+                  aria-label="上传文件"
+                  disabled={sending}
+                  onClick={handleFileButtonClick}
+                  size="icon-sm"
+                  title="上传文件"
+                >
+                  <Paperclip className="size-4" />
+                </InputGroupButton>
+                <InputGroupButton
+                  aria-label="插入图片"
+                  disabled={sending || imagePreparing}
+                  onClick={handleImageButtonClick}
+                  size="icon-sm"
+                  title="插入图片"
+                >
+                  {imagePreparing ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <ImageIcon className="size-4" />
+                  )}
+                </InputGroupButton>
+                <Toggle
+                  aria-label="支持 markdown"
+                  className="size-8 p-0"
+                  disabled={sending}
+                  onPressedChange={onRichTextModeChange}
+                  pressed={richTextMode}
+                  size="sm"
+                  title="支持 markdown"
+                  type="button"
+                >
+                  <MarkdownIcon className="size-4" />
+                </Toggle>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <InputGroupButton
+                  aria-label="语音输入"
+                  disabled={sending}
+                  onClick={() => setVoiceInputDialogOpen(true)}
+                  size="icon-sm"
+                  title="语音输入"
+                  variant="ghost"
+                >
+                  <Mic className="size-4" />
+                </InputGroupButton>
+                <InputGroupButton
+                  aria-label="发送消息"
+                  className="bg-(--weui-brand-3) text-white hover:bg-(--weui-brand-4) dark:text-white"
+                  disabled={sending}
+                  onClick={handleSendMessage}
+                  size="sm"
+                  variant="default"
+                >
+                  {sending && <LoaderCircle className="size-4 animate-spin" />}
+                  <span aria-hidden="true">发送</span>
+                </InputGroupButton>
+              </div>
+            </InputGroupAddon>
+          </InputGroup>
           {mentionTrigger && filteredMentionCandidates.length > 0 && (
             <MentionCandidateMenu
               candidates={filteredMentionCandidates}
@@ -580,94 +662,6 @@ export const ConversationPanelComposer = React.forwardRef<
               selectedIndex={selectedMentionIndex}
             />
           )}
-        </div>
-        <div
-          className="flex items-center justify-between gap-2"
-          data-testid="conversation-panel-toolbar-row"
-        >
-          <div className="flex items-center gap-1">
-            <ExpressionPickerPopover
-              align="start"
-              onSelect={handleExpressionSelect}
-              open={expressionPickerOpen}
-              onOpenChange={setExpressionPickerOpen}
-            >
-              <Button
-                aria-label="选择表情"
-                disabled={sending}
-                size="icon-sm"
-                title="选择表情"
-                type="button"
-                variant="ghost"
-              >
-                <Smile className="size-4" />
-              </Button>
-            </ExpressionPickerPopover>
-            <Button
-              aria-label="上传文件"
-              disabled={sending}
-              onClick={handleFileButtonClick}
-              size="icon-sm"
-              title="上传文件"
-              type="button"
-              variant="ghost"
-            >
-              <Paperclip className="size-4" />
-            </Button>
-            <Button
-              aria-label="插入图片"
-              disabled={sending || imagePreparing}
-              onClick={handleImageButtonClick}
-              size="icon-sm"
-              title="插入图片"
-              type="button"
-              variant="ghost"
-            >
-              {imagePreparing ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                <ImageIcon className="size-4" />
-              )}
-            </Button>
-            <Toggle
-              aria-label="支持 markdown"
-              className="size-8 p-0"
-              disabled={sending}
-              onPressedChange={onRichTextModeChange}
-              pressed={richTextMode}
-              size="sm"
-              title="支持 markdown"
-              type="button"
-            >
-              <MarkdownIcon className="size-4" />
-            </Toggle>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              aria-label="语音输入"
-              disabled={sending}
-              onClick={() => setVoiceInputDialogOpen(true)}
-              size="icon"
-              title="语音输入"
-              type="button"
-              variant="outline"
-            >
-              <Mic className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              aria-label="发送消息"
-              disabled={sending}
-              onClick={handleSendMessage}
-            >
-              {sending ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
-              <span aria-hidden="true">发送</span>
-            </Button>
-          </div>
         </div>
       </div>
       <SendFileMessageDialog

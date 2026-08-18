@@ -10,9 +10,10 @@ import {
 } from "lucide-react-native"
 import type { ComponentProps } from "react"
 import { useState } from "react"
-import { SizableText, Tabs, useTheme, YStack } from "tamagui"
+import { SizableText, Tabs, YStack } from "tamagui"
 
 import { AppHeader } from "@/components/navigation/app-header"
+import { useXGUITheme } from "@/xgui"
 
 const TAB_ITEMS: Record<string, { icon: LucideIcon; label: string }> = {
   contacts: { icon: ContactRound, label: "通讯录" },
@@ -27,7 +28,7 @@ type AppTabBarProps = Parameters<
 
 export default function AppTabsLayout() {
   const router = useRouter()
-  const theme = useTheme()
+  const { colors } = useXGUITheme()
 
   return (
     <RouterTabs
@@ -35,7 +36,7 @@ export default function AppTabsLayout() {
       screenOptions={{
         headerShown: true,
         sceneStyle: {
-          backgroundColor: String(theme.background.val),
+          backgroundColor: colors.background0,
         },
         tabBarHideOnKeyboard: true,
       }}
@@ -85,6 +86,7 @@ export default function AppTabsLayout() {
 
 function AppTabBar({ insets, navigation, state }: AppTabBarProps) {
   const activeRouteName = state.routes[state.index]?.name ?? "messages"
+  const { colors } = useXGUITheme()
 
   function handleValueChange(routeName: string) {
     const route = state.routes.find((item) => item.name === routeName)
@@ -102,7 +104,7 @@ function AppTabBar({ insets, navigation, state }: AppTabBarProps) {
   }
 
   return (
-    <YStack bg="$background" pb={insets.bottom}>
+    <YStack bg={colors.background2} pb={insets.bottom}>
       <Tabs
         onValueChange={handleValueChange}
         size="$5"
@@ -146,14 +148,13 @@ function AppTabItem({
   item: { icon: LucideIcon; label: string }
   routeName: string
 }) {
-  const theme = useTheme()
+  const { colors } = useXGUITheme()
   const [pressed, setPressed] = useState(false)
-  const colorToken = pressed ? "$color8" : focused ? "$color10" : "$gray9"
-  const iconColor = pressed
-    ? String(theme.color8.val)
+  const color = pressed
+    ? colors.textSecondary
     : focused
-      ? String(theme.color10.val)
-      : String(theme.gray9.val)
+      ? colors.brand
+      : colors.textSecondary
   const Icon = item.icon
 
   return (
@@ -170,8 +171,8 @@ function AppTabItem({
       value={routeName}
     >
       <YStack gap="$0.5" items="center">
-        <Icon color={iconColor} size={20} />
-        <SizableText color={colorToken} size="$2">
+        <Icon color={color} size={20} />
+        <SizableText color={color} size="$2">
           {item.label}
         </SizableText>
       </YStack>

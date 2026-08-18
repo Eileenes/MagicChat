@@ -1,4 +1,4 @@
-const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
+const DEFAULT_REQUEST_TIMEOUT_MS = 5_000
 
 export type ApiFetch = (
   input: string,
@@ -55,21 +55,32 @@ export function createApiClient(
       const controller = new AbortController()
       let didTimeout = false
 
-      const handleParentAbort = () => controller.abort()
-      if (parentSignal?.aborted) {
+      let rejectParentAbort: ((error: Error) => void) | undefined
+      const parentAbortFailure = new Promise<never>((_, reject) => {
+        rejectParentAbort = reject
+      })
+      const handleParentAbort = () => {
         controller.abort()
+        rejectParentAbort?.(createAbortError())
+      }
+      if (parentSignal?.aborted) {
+        handleParentAbort()
       } else {
         parentSignal?.addEventListener("abort", handleParentAbort, {
           once: true,
         })
       }
 
-      const timeout = setTimeout(() => {
-        didTimeout = true
-        controller.abort()
-      }, timeoutMs)
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      const timeoutFailure = new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          didTimeout = true
+          reject(new ApiRequestError(`${errorMessage}：请求超时`))
+          controller.abort()
+        }, timeoutMs)
+      })
 
-      try {
+      const requestResult = (async () => {
         const endpoint = new URL(path.replace(/^\/+/, ""), baseUrl).toString()
         const response = await fetcher(endpoint, {
           ...requestInit,
@@ -93,6 +104,14 @@ export function createApiClient(
         }
 
         return (payload as ApiSuccessEnvelope<T> | undefined)?.data
+      })()
+
+      try {
+        return await Promise.race([
+          requestResult,
+          timeoutFailure,
+          parentAbortFailure,
+        ])
       } catch (error: unknown) {
         if (error instanceof ApiRequestError || parentSignal?.aborted) {
           throw error
@@ -109,6 +128,12 @@ export function createApiClient(
       }
     },
   }
+}
+
+function createAbortError() {
+  const error = new Error("请求已取消")
+  error.name = "AbortError"
+  return error
 }
 
 export function isUnauthorizedError(error: unknown) {

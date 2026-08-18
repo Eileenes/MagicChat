@@ -40,7 +40,9 @@
   content: "";
 }
 
-.document-editor .tiptap > * + * {
+.document-editor .tiptap > * + *,
+.document-editor .tiptap th > * + *,
+.document-editor .tiptap td > * + * {
   margin-top: 0.8em;
 }
 
@@ -241,7 +243,6 @@
 }
 
 .document-editor .tiptap .document-image-node__body {
-  padding: 0.5rem;
   border-radius: 0.5rem;
   outline: none;
   cursor: pointer;
@@ -379,13 +380,13 @@
 }
 
 .document-table-handle[data-orientation="horizontal"]::before {
-  width: 12px;
+  width: 16px;
   height: 2px;
 }
 
 .document-table-handle[data-orientation="vertical"]::before {
   width: 2px;
-  height: 12px;
+  height: 16px;
 }
 
 .document-table-handle svg {

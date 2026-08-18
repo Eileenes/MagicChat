@@ -146,6 +146,7 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 		t.Fatalf("marshal envelope: %v", err)
 	}
 
+	var sentMu sync.Mutex
 	var sent []envelope
 	var agentRequests []agent.Request
 	var historyMethod string
@@ -210,9 +211,15 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 	})
 
 	handleServerMessage(context.Background(), websocket.TextMessage, raw, requester, replyAgent, func(_ context.Context, message envelope) error {
+		sentMu.Lock()
 		sent = append(sent, message)
+		sentMu.Unlock()
 		return nil
 	})
+	sentMu.Lock()
+	sentSnapshot := append([]envelope(nil), sent...)
+	sentMu.Unlock()
+	sent = sentSnapshot
 
 	if historyMethod != methodConversationMessagesList {
 		t.Fatalf("history method = %q, want %s", historyMethod, methodConversationMessagesList)
@@ -275,10 +282,41 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 	if agentRequest.History[1].SenderName != "茉莉" {
 		t.Fatalf("second history sender = %q, want 茉莉", agentRequest.History[1].SenderName)
 	}
-	if len(sent) != 1 {
-		t.Fatalf("sent count = %d, want 1", len(sent))
+	if len(sent) < 2 || len(sent) > 3 {
+		t.Fatalf("sent count = %d, want recognition status, optional fast thinking status, and reply", len(sent))
 	}
-	request := sent[0]
+	var request envelope
+	var statuses []struct {
+		ConversationID string `json:"conversation_id"`
+		Status         string `json:"status"`
+	}
+	for _, candidate := range sent {
+		switch candidate.Method {
+		case methodMessageSend:
+			request = candidate
+		case methodConversationStatus:
+			var payload struct {
+				ConversationID string `json:"conversation_id"`
+				Status         string `json:"status"`
+			}
+			if err := json.Unmarshal(candidate.Payload, &payload); err != nil {
+				t.Fatalf("decode conversation.status payload: %v", err)
+			}
+			statuses = append(statuses, payload)
+		}
+	}
+	if request.Method == "" {
+		t.Fatal("message.send request was not sent")
+	}
+	if len(statuses) < 1 || len(statuses) > 2 {
+		t.Fatalf("conversation.status count = %d, want recognition and optional fast thinking", len(statuses))
+	}
+	if statuses[0].ConversationID != "conversation-1" || statuses[0].Status != "正在识别用户意图" {
+		t.Fatalf("first conversation.status payload = %#v", statuses[0])
+	}
+	if len(statuses) == 2 && (statuses[1].ConversationID != "conversation-1" || statuses[1].Status != "正在思考") {
+		t.Fatalf("second conversation.status payload = %#v", statuses[1])
+	}
 	if request.V != protocolVersion {
 		t.Fatalf("request version = %d, want %d", request.V, protocolVersion)
 	}
@@ -383,14 +421,42 @@ func TestChoiceResponseCreatedContinuesTheOriginalSessionAsTrustedUserTrigger(t 
 		})
 	})
 	runner := &capturingAgentRunner{}
+	var choiceMu sync.Mutex
+	var choiceStatuses []string
+	writeChoice := func(_ context.Context, request envelope) error {
+		if request.Method == methodConversationStatus {
+			var status struct {
+				Status string `json:"status"`
+			}
+			if err := json.Unmarshal(request.Payload, &status); err != nil {
+				return err
+			}
+			choiceMu.Lock()
+			choiceStatuses = append(choiceStatuses, status.Status)
+			choiceMu.Unlock()
+		}
+		return nil
+	}
 	handled := handleParsedServerMessage(
 		context.Background(),
 		envelope{V: protocolVersion, Kind: kindEvent, Event: eventChoiceResponseCreated, Payload: payload},
 		"assistant-app", requester,
 		replyAgentFunc(func(context.Context, agent.Request, agent.OutputSink) error { return nil }),
 		runner,
-		func(context.Context, envelope) error { return nil },
+		writeChoice,
 	)
+	if runner.prepared.StatusSender == nil {
+		t.Fatal("choice app missing dynamic status sender")
+	}
+	if err := runner.prepared.StatusSender(context.Background(), "正在思考"); err != nil {
+		t.Fatal(err)
+	}
+	choiceMu.Lock()
+	choiceSnapshot := append([]string(nil), choiceStatuses...)
+	choiceMu.Unlock()
+	if !slices.Equal(choiceSnapshot, []string{"正在识别用户意图", "正在思考"}) {
+		t.Fatalf("choice statuses=%#v", choiceSnapshot)
+	}
 	if !handled || !runner.started {
 		t.Fatalf("handled = %t, runner started = %t", handled, runner.started)
 	}
@@ -732,6 +798,131 @@ func TestHandleParsedServerMessageRecoversAgentSessionFromTopic(t *testing.T) {
 	}
 	if reply.Target.Type != "topic" || reply.Target.ConversationID != "topic-1" {
 		t.Fatalf("reply target = %#v", reply.Target)
+	}
+}
+
+func TestAppProcessingStatusContinuesThroughTopicRoutingAndStopsBeforeTopicRun(t *testing.T) {
+	oldInterval := processingStatusInterval
+	processingStatusInterval = 10 * time.Millisecond
+	defer func() { processingStatusInterval = oldInterval }()
+
+	routerEntered, releaseRouter := make(chan struct{}), make(chan struct{})
+	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
+		switch method {
+		case methodConversationMessagesList:
+			return json.Marshal(appListConversationMessagesResponsePayload{})
+		case methodMessageSend:
+			return json.Marshal(sendMessageResponsePayload{Message: messagePayload{ID: "notice-1", Seq: 2}})
+		case methodConversationTopicCreate:
+			return testTopicMutationResponse("topic-1", "deep work")
+		default:
+			return nil, fmt.Errorf("unexpected method %q", method)
+		}
+	})
+	router := topicRouterFunc(func(context.Context, agent.Request) (bool, error) {
+		close(routerEntered)
+		<-releaseRouter
+		return true, nil
+	})
+	var mu sync.Mutex
+	var statuses []string
+	firstStatus := make(chan struct{}, 1)
+	writeJSON := func(_ context.Context, outgoing envelope) error {
+		if outgoing.Method == methodConversationStatus {
+			var payload struct {
+				Status string `json:"status"`
+			}
+			if err := json.Unmarshal(outgoing.Payload, &payload); err != nil {
+				return err
+			}
+			mu.Lock()
+			statuses = append(statuses, payload.Status)
+			mu.Unlock()
+			select {
+			case firstStatus <- struct{}{}:
+			default:
+			}
+		}
+		return nil
+	}
+	done := make(chan bool, 1)
+	go func() {
+		done <- handleParsedServerMessageWithTopicRouter(context.Background(), testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "请深入处理"), "app-1", requester, replyAgentFunc(func(context.Context, agent.Request, agent.OutputSink) error { return nil }), router, directAgentRunner{}, writeJSON)
+	}()
+	waitForSignal(t, routerEntered, "topic router")
+	waitForSignal(t, firstStatus, "initial processing status")
+	time.Sleep(25 * time.Millisecond)
+	mu.Lock()
+	callsDuringRouting := len(statuses)
+	mu.Unlock()
+	if callsDuringRouting < 2 {
+		t.Fatalf("processing calls during routing = %d, want heartbeat", callsDuringRouting)
+	}
+	close(releaseRouter)
+	if !<-done {
+		t.Fatal("message was not handled")
+	}
+	mu.Lock()
+	stoppedAt := len(statuses)
+	got := append([]string(nil), statuses...)
+	mu.Unlock()
+	time.Sleep(25 * time.Millisecond)
+	mu.Lock()
+	finalCalls := len(statuses)
+	mu.Unlock()
+	if finalCalls != stoppedAt {
+		t.Fatalf("processing continued after topic creation: before=%d after=%d", stoppedAt, finalCalls)
+	}
+	for _, status := range got {
+		if status != "正在识别用户意图" {
+			t.Fatalf("topic flow emitted %q, want only processing", status)
+		}
+	}
+}
+
+func TestAppProcessingStatusStopsAfterPreparationError(t *testing.T) {
+	oldInterval := processingStatusInterval
+	processingStatusInterval = 10 * time.Millisecond
+	defer func() { processingStatusInterval = oldInterval }()
+	var mu sync.Mutex
+	var statuses []string
+	writeJSON := func(_ context.Context, outgoing envelope) error {
+		if outgoing.Method == methodConversationStatus {
+			var payload struct {
+				Status string `json:"status"`
+			}
+			if err := json.Unmarshal(outgoing.Payload, &payload); err != nil {
+				return err
+			}
+			mu.Lock()
+			statuses = append(statuses, payload.Status)
+			mu.Unlock()
+		}
+		return nil
+	}
+	handled := handleParsedServerMessage(context.Background(), testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "hello"), "app-1", appRequestFunc(func(context.Context, string, any) (json.RawMessage, error) {
+		return nil, errors.New("history unavailable")
+	}), replyAgentFunc(func(context.Context, agent.Request, agent.OutputSink) error { return nil }), directAgentRunner{}, writeJSON)
+	if !handled {
+		t.Fatal("preparation error was not handled")
+	}
+	mu.Lock()
+	stoppedAt := len(statuses)
+	got := append([]string(nil), statuses...)
+	mu.Unlock()
+	if stoppedAt == 0 || got[0] != "正在识别用户意图" {
+		t.Fatalf("statuses = %#v, want processing", got)
+	}
+	time.Sleep(25 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) != stoppedAt {
+		t.Fatalf("processing continued after error: before=%d after=%d", stoppedAt, len(statuses))
+	}
+	for _, status := range statuses {
+		if status == "正在思考" {
+			t.Fatalf("error emitted thinking: %#v", statuses)
+		}
 	}
 }
 
