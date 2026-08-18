@@ -104,20 +104,19 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
 
 <BaseLayout title={title} description={description} schema={schema}>
   <SiteHeader />
-  <main id="main-content" class="scene-page">
+  <main id="main-content" class="scene-page" style={`--scene-background: url('${asset('footer-meeting-room.webp')}')`}>
     <section class="scene scene-hero" aria-labelledby="hero-title">
-      <img class="scene-image" src={asset('team-collaboration.webp')} alt="" aria-hidden="true" />
       <div class="scene-shade"></div>
       <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span>即应</span><span class="hero-title-accent">--AI时代的团队协作入口</span></h1><p class="scene-lead">即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持私有化部署</span></div></div>
     </section>
 
     <section class="scene scene-why" id="why" aria-labelledby="why-title">
-      <img class="scene-image" src={asset('workspace-detail.webp')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div>
+      <div class="scene-shade scene-shade-heavy"></div>
       <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow">为什么需要即应</span><h2 id="why-title"><span class="title-line">AI 会回答问题，但</span><span class="title-line title-accent">工作仍由人来解决。</span></h2><p>在即应中不仅可以提供完整的团队协作能力，让沟通与执行在同一个空间完成。同时也内置了 AI 智能体能自然接入相关流程，让每个人都能轻松定义专属智能体，完成更多定制化工作。</p></div><section class="pain-carousel" data-pain-carousel aria-label="团队协作痛点轮播" aria-roledescription="carousel"><div class="pain-carousel-viewport"><div class="pain-carousel-track" data-pain-track>{painPoints.map(([number, itemTitle, body], index) => <article class="pain-banner" id={`pain-slide-${number}`} data-pain-slide role="group" aria-roledescription="slide" aria-label={`${index + 1} / ${painPoints.length}`} aria-hidden={index === 0 ? 'false' : 'true'}><div class="pain-banner-content"><p class="pain-banner-meta"><span>{number}</span><i></i><span>需求与痛点</span></p><h3>{itemTitle}</h3><p>{body}</p></div><span class="pain-banner-ordinal" aria-hidden="true">{number}</span></article>)}</div></div><div class="pain-carousel-controls"><div class="pain-carousel-pagination" role="tablist" aria-label="选择协作痛点">{painPoints.map(([number, itemTitle], index) => <button class:list={['pain-carousel-page', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`pain-slide-${number}`} data-pain-pagination={index} aria-label={`查看第 ${number} 项：${itemTitle}`} title={itemTitle}><span class="sr-only">{itemTitle}</span></button>)}</div><div class="pain-carousel-nav"><button class="pain-carousel-arrow pain-carousel-previous" type="button" data-pain-previous aria-label="查看上一项协作痛点" title="上一项"><Icon name="tabler:arrow-left" size={16} aria-hidden="true" /></button><button class="pain-carousel-arrow pain-carousel-next" type="button" data-pain-next aria-label="查看下一项协作痛点" title="下一项"><Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></button></div></div></section></div>
     </section>
 
     <section class="scene scene-solution" id="solution" aria-labelledby="solution-title">
-      <img class="scene-image" src={asset('team-meeting.webp')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div>
+      <div class="scene-shade scene-shade-heavy"></div>
       <div class="scene-content scene-content-top scene-solution-content">
         <div class="scene-text-block"><span class="scene-eyebrow">功能介绍</span><h2 id="solution-title"><span class="title-line">一句话说出目标，</span><span class="title-line title-accent">剩下的交给 AI 助理</span></h2><p>即应希望 AI 不是与工作割裂的聊天机器人，而是能接手实际流程的数字员工——沟通、项目、时间、文档，处处替你分担；团队进展一目了然，人的精力回归真正重要的判断与创造。</p></div>
         <section class="feature-explorer" aria-label="即应核心能力">
@@ -131,7 +130,6 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
     </section>
 
     <section class="dual-section dual-section-comparison" id="capabilities" aria-labelledby="capability-title">
-      <img class="dual-image" src={asset('download-workspace.webp')} alt="" aria-hidden="true" loading="lazy" />
       <div class="scene-shade scene-shade-heavy"></div>
       <div class="comparison-inner" id="comparison">
         <div class="comparison-heading"><span class="scene-eyebrow">竞品对比</span><h2 id="capability-title">产品能力，一目了然</h2><p>围绕团队协作、部署方式与 AI 接入能力，快速了解即应与常见协作产品的覆盖范围。</p></div>
@@ -143,7 +141,6 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
     </section>
 
     <section class="scene scene-faq" id="faq" aria-labelledby="faq-title">
-      <img class="scene-image" src={asset('faq-collaboration.webp')} alt="" aria-hidden="true" loading="lazy" />
       <div class="scene-shade scene-shade-heavy"></div>
       <div class="faq-inner">
         <div class="faq-heading"><span class="scene-eyebrow">FAQ</span><h2 id="faq-title">常见问题</h2><p class="faq-intro">从产品能力、部署方式到 AI 助理的使用边界，这里整理了团队最常关心的问题。</p></div>
@@ -152,7 +149,6 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
     </section>
 
     <section class="scene scene-download" id="download" aria-labelledby="download-title">
-      <img class="scene-image" src={asset('footer-meeting-room.webp')} alt="" aria-hidden="true" loading="lazy" />
       <div class="scene-shade scene-shade-heavy"></div>
       <div class="scene-content scene-content-center">
         <span class="scene-eyebrow">开始使用</span>
