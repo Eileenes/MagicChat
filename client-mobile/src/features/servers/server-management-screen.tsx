@@ -1,36 +1,45 @@
-import { useRouter } from "expo-router"
-import { Plus } from "lucide-react-native"
+import { useQueryClient } from "@tanstack/react-query"
+import { type Href, useRouter } from "expo-router"
 import { useRef, useState } from "react"
-import { ScrollView, StyleSheet } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
 import {
-  AlertDialog,
-  Card,
-  Dialog,
-  VisuallyHidden,
-  XStack,
-  YStack,
-} from "tamagui"
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+} from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
+import { YStack } from "tamagui"
 
-import { AppButton } from "@/components/forms/app-button"
-import { ThemedIcon } from "@/components/icons/themed-icon"
-import { PageHeader } from "@/components/navigation/page-header"
-import { useAuth } from "@/providers/auth-provider"
-import { AddServerDialog } from "@/features/servers/add-server-dialog"
-import { useServers } from "@/providers/server-provider"
-import { ServerListItem } from "@/features/servers/server-list-item"
 import type { ServerConfig } from "@/core/server-model"
+import { queryKeys } from "@/data/query"
+import { ServerListItem } from "@/features/servers/server-list-item"
+import { useAuth } from "@/providers/auth-provider"
+import { useServers } from "@/providers/server-provider"
+import {
+  XGUIActionSheet,
+  XGUIButton,
+  XGUIFooter,
+  XGUIList,
+  useXGUITheme,
+} from "@/xgui"
 
 export function ServerManagementScreen() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { invalidateSession, session } = useAuth()
-  const { removeServer, selectedServer, selectServer, servers } = useServers()
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const {
+    recentServerId,
+    removeServer,
+    selectServer,
+    servers,
+  } = useServers()
+  const { colors } = useXGUITheme()
+  const { height: windowHeight } = useWindowDimensions()
   const [serverForActions, setServerForActions] =
     useState<ServerConfig | null>(null)
-  const [serverToEdit, setServerToEdit] = useState<ServerConfig | null>(null)
   const [serverToDelete, setServerToDelete] = useState<ServerConfig | null>(null)
   const closeOpenSwipeableRef = useRef<(() => void) | null>(null)
+  const selectionAttemptRef = useRef(0)
 
   function closeOpenSwipeable() {
     closeOpenSwipeableRef.current?.()
@@ -50,22 +59,18 @@ export function ServerManagementScreen() {
     }
   }
 
-  function handleOpenAddDialog() {
+  function handleOpenEditor(server?: ServerConfig) {
     closeOpenSwipeable()
-    setServerToEdit(null)
-    setIsAddDialogOpen(true)
+    setServerForActions(null)
+    const href = server
+      ? `/server-editor?serverId=${encodeURIComponent(server.id)}`
+      : "/server-editor"
+    router.push(href as Href)
   }
 
   function handleRequestActions(server: ServerConfig) {
     closeOpenSwipeable()
     setServerForActions(server)
-  }
-
-  function handleRequestEdit() {
-    if (!serverForActions) return
-
-    setServerToEdit(serverForActions)
-    setServerForActions(null)
   }
 
   function handleRequestDelete(server: ServerConfig) {
@@ -74,191 +79,142 @@ export function ServerManagementScreen() {
     setServerToDelete(server)
   }
 
-  function handleServerDialogOpenChange(open: boolean) {
-    if (open) return
-
-    setIsAddDialogOpen(false)
-    setServerToEdit(null)
-  }
-
-  function handleServerSaved(
-    server: ServerConfig,
-    previousServer: ServerConfig | null
-  ) {
-    if (
-      previousServer &&
-      previousServer.url !== server.url &&
-      session?.id === server.id
-    ) {
-      void invalidateSession().then(() => router.replace("/init"))
-    }
-  }
-
-  function returnToLogin() {
-    if (router.canGoBack()) {
-      router.back()
-      return
-    }
-
-    router.replace("/login")
-  }
-
   async function handleSelect(server: ServerConfig) {
+    const attempt = ++selectionAttemptRef.current
     closeOpenSwipeable()
     await invalidateSession()
+    if (attempt !== selectionAttemptRef.current) return
+
+    await queryClient.cancelQueries({
+      exact: true,
+      queryKey: queryKeys.appInfo(server),
+    })
+    if (attempt !== selectionAttemptRef.current) return
+
+    queryClient.removeQueries({
+      exact: true,
+      queryKey: queryKeys.appInfo(server),
+    })
     selectServer(server.id)
-    router.replace("/init")
+    router.push("/login")
   }
 
-  async function handleDelete() {
-    if (!serverToDelete) {
-      return
-    }
-
-    const deletesSessionServer = session?.id === serverToDelete.id
+  async function handleDelete(server: ServerConfig) {
+    const deletesSessionServer = session?.id === server.id
     if (deletesSessionServer) {
       await invalidateSession()
     }
 
-    removeServer(serverToDelete.id)
+    removeServer(server.id)
     setServerToDelete(null)
-
-    if (deletesSessionServer) {
-      router.replace("/init")
-    }
   }
 
   return (
-    <YStack bg="$background" flex={1}>
-      <PageHeader
-        actionIcon={<ThemedIcon icon={Plus} size={22} />}
-        actionLabel="添加服务器"
-        compactTitle
-        onActionPress={handleOpenAddDialog}
-        onBackPress={returnToLogin}
-        subtleButtonPress
-        title="服务器管理"
-      />
-
-      <SafeAreaView edges={["bottom"]} style={styles.fill}>
+    <YStack bg={colors.background0} flex={1}>
+      <SafeAreaView
+        edges={["top", "bottom"]}
+        style={[styles.fill, { backgroundColor: colors.background0 }]}
+      >
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <YStack
-            grow={1}
-            items="center"
-            onPress={closeOpenSwipeable}
-            px="$4"
-            py="$4"
-          >
-            <Card maxW={440} size="$5" width="100%">
-              <YStack gap="$3" p="$3">
-                <YStack gap="$3">
-                  {servers.map((server) => (
-                    <ServerListItem
-                      isSelected={server.id === selectedServer.id}
-                      key={server.id}
-                      onDelete={() => handleRequestDelete(server)}
-                      onRequestActions={() => handleRequestActions(server)}
-                      onSelect={() => void handleSelect(server)}
-                      onSwipeableClose={handleSwipeableClose}
-                      onSwipeableOpen={handleSwipeableOpen}
-                      server={server}
-                    />
-                  ))}
-                </YStack>
-
+          <YStack grow={1} items="center" onPress={closeOpenSwipeable}>
+            <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>
+              选择服务器
+            </Text>
+            <YStack maxW={440} mt={48} px="$4" width="100%">
+              <ScrollView
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                style={{ maxHeight: windowHeight * 0.5 }}
+              >
+                <XGUIList variant="form-radio">
+                {servers.map((server, index) => (
+                  <ServerListItem
+                    isRecentlyUsed={server.id === recentServerId}
+                    key={server.id}
+                    onDelete={() => handleRequestDelete(server)}
+                    onEdit={() => handleOpenEditor(server)}
+                    onRequestActions={() => handleRequestActions(server)}
+                    onSelect={() => void handleSelect(server)}
+                    onSwipeableClose={handleSwipeableClose}
+                    onSwipeableOpen={handleSwipeableOpen}
+                    separator={index > 0}
+                    server={server}
+                  />
+                ))}
+                </XGUIList>
+              </ScrollView>
+              <YStack pt="$4">
+                <XGUIButton
+                  accessibilityLabel="添加服务器"
+                  onPress={() => handleOpenEditor()}
+                  variant="secondary"
+                >
+                  添加服务器
+                </XGUIButton>
               </YStack>
-            </Card>
+            </YStack>
+            <YStack mt="auto" pb="$4" pt="$8">
+              <XGUIFooter
+                links={[
+                  { label: "即应", url: "https://jiying.chat/" },
+                  { label: "长亭科技", url: "https://chaitin.cn/" },
+                ]}
+                text="© 2026 北京长亭科技有限公司 版权所有"
+              />
+            </YStack>
           </YStack>
         </ScrollView>
       </SafeAreaView>
 
-      <AddServerDialog
-        onOpenChange={handleServerDialogOpenChange}
-        onSaved={handleServerSaved}
-        open={isAddDialogOpen || serverToEdit !== null}
-        server={serverToEdit}
-      />
-
-      <Dialog
-        modal
+      <XGUIActionSheet
+        actions={
+          serverForActions
+            ? [
+                {
+                  accessibilityLabel: `修改${serverForActions.name}`,
+                  label: "修改",
+                  onPress: () => handleOpenEditor(serverForActions),
+                },
+                {
+                  accessibilityLabel: `删除${serverForActions.name}`,
+                  destructive: true,
+                  label: "删除",
+                  onPress: () => handleRequestDelete(serverForActions),
+                },
+              ]
+            : []
+        }
         onOpenChange={(open) => {
           if (!open) setServerForActions(null)
         }}
         open={serverForActions !== null}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay bg="$shadow6" opacity={0.5} />
-          <Dialog.Content bordered elevate gap="$4" maxW={440} width="90%">
-            <Dialog.Title fontSize="$5" lineHeight="$6">
-              服务器操作
-            </Dialog.Title>
-            <VisuallyHidden>
-              <Dialog.Description>
-                修改或删除“{serverForActions?.name}”。
-              </Dialog.Description>
-            </VisuallyHidden>
-            <YStack gap="$3" width="100%">
-              <AppButton
-                accessibilityLabel={`修改${serverForActions?.name ?? "服务器"}`}
-                onPress={handleRequestEdit}
-                theme="gray"
-                width="100%"
-              >
-                修改
-              </AppButton>
-              <AppButton
-                accessibilityLabel={`删除${serverForActions?.name ?? "服务器"}`}
-                onPress={() => {
-                  if (serverForActions) handleRequestDelete(serverForActions)
-                }}
-                theme="red"
-                width="100%"
-              >
-                删除
-              </AppButton>
-            </YStack>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog>
+        title={serverForActions?.name}
+      />
 
-      <AlertDialog
+      <XGUIActionSheet
+        actions={
+          serverToDelete
+            ? [
+                {
+                  accessibilityLabel: `确认删除${serverToDelete.name}`,
+                  destructive: true,
+                  label: "删除",
+                  onPress: () => void handleDelete(serverToDelete),
+                },
+              ]
+            : []
+        }
+        description={
+          serverToDelete
+            ? `确定删除“${serverToDelete.name}”吗？此操作无法撤销。`
+            : undefined
+        }
         onOpenChange={(open) => {
-          if (!open) {
-            setServerToDelete(null)
-          }
+          if (!open) setServerToDelete(null)
         }}
         open={serverToDelete !== null}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay bg="$shadow6" opacity={0.5} />
-          <AlertDialog.Content bordered elevate gap="$4" maxW={440} width="90%">
-            <AlertDialog.Title fontSize="$5" lineHeight="$6">
-              删除服务器
-            </AlertDialog.Title>
-            <AlertDialog.Description color="$gray9">
-              确定删除“{serverToDelete?.name}”吗？此操作无法撤销。
-            </AlertDialog.Description>
-            <XStack gap="$3" width="100%">
-              <AppButton
-                accessibilityLabel="取消删除服务器"
-                grow={1}
-                onPress={() => setServerToDelete(null)}
-                theme="gray"
-              >
-                取消
-              </AppButton>
-              <AppButton
-                accessibilityLabel="确认删除服务器"
-                grow={1}
-                onPress={() => void handleDelete()}
-                theme="red"
-              >
-                删除
-              </AppButton>
-            </XStack>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog>
+        title="删除服务器"
+      />
     </YStack>
   )
 }
@@ -266,6 +222,14 @@ export function ServerManagementScreen() {
 const styles = StyleSheet.create({
   fill: {
     flex: 1,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: "500",
+    lineHeight: 30,
+    marginTop: 56,
+    paddingHorizontal: 32,
+    textAlign: "center",
   },
   scrollContent: {
     flexGrow: 1,

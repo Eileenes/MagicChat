@@ -10,6 +10,7 @@ export function CompactIconButton({
   buttonSize = DEFAULT_BUTTON_SIZE,
   disabled = false,
   icon,
+  iconColor,
   iconSize = 20,
   loading = false,
   onPress,
@@ -19,6 +20,7 @@ export function CompactIconButton({
   buttonSize?: number
   disabled?: boolean
   icon: LucideIcon
+  iconColor?: string
   iconSize?: number
   loading?: boolean
   onPress: () => void
@@ -54,10 +56,10 @@ export function CompactIconButton({
                 color={String(
                   disabled
                     ? theme.gray8.val
-                    : pressed
-                      ? theme.color7.val
-                      : theme.color10.val
+                    : iconColor ??
+                      (pressed ? theme.color7.val : theme.color10.val)
                 )}
+                opacity={iconColor && pressed ? 0.5 : 1}
                 size={iconSize}
                 strokeWidth={strokeWidth}
               />

@@ -234,12 +234,11 @@ export const MessageBubble = React.memo(function MessageBubble({
             : "max-w-full",
         flushImageBubble ? "overflow-hidden p-0" : "p-3",
         fromMe
-          ? "bg-teal-100/60 text-foreground dark:bg-teal-950/80"
+          ? "bg-(--weui-brand-1) text-foreground hover:bg-(--weui-brand-1) data-[state=open]:bg-(--weui-brand-1)"
           : "bg-zinc-100 text-foreground dark:bg-zinc-800",
         !selectionMode &&
-          (fromMe
-            ? "hover:bg-teal-100/80 data-[state=open]:bg-teal-100/80 hover:dark:bg-teal-950 dark:data-[state=open]:bg-teal-950"
-            : "hover:bg-zinc-200/60 data-[state=open]:bg-zinc-200 hover:dark:bg-zinc-700/60 dark:data-[state=open]:bg-zinc-700")
+          !fromMe &&
+          "hover:bg-zinc-200/60 data-[state=open]:bg-zinc-200 hover:dark:bg-zinc-700/60 dark:data-[state=open]:bg-zinc-700"
       )}
       data-message-action-trigger={
         !selectionMode && !unavailable ? "" : undefined
@@ -1386,7 +1385,7 @@ function MentionTextPart({
 function getMentionTextClassName(isCurrentUserMention: boolean) {
   return isCurrentUserMention
     ? "mx-0.5 font-medium text-amber-600 hover:text-amber-700"
-    : "mx-0.5 font-medium text-sky-500 hover:text-sky-600"
+    : "mx-0.5 font-medium text-(--weui-link)"
 }
 
 function isSameUserId(userId: string | undefined, currentUserId: string) {

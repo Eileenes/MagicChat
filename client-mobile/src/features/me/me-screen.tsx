@@ -90,7 +90,7 @@ export function MeScreen() {
   async function handleLogout() {
     try {
       await signOut()
-      router.replace("/init")
+      router.replace("/server-management")
     } catch (error: unknown) {
       Alert.alert(
         "退出登录失败",

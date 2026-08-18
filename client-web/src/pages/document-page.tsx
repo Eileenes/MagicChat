@@ -117,35 +117,119 @@ export function DocumentPage() {
   }, [requestedDocumentId])
 
   if (!requestedDocumentId) return <DocumentNotFound message="文档 ID 不存在" />
-  if (error?.documentId === requestedDocumentId) {
-    return <DocumentNotFound message={error.message} />
-  }
-  if (!loaded || loaded.documentId !== requestedDocumentId) {
-    return <DocumentLoading />
-  }
+  const currentError =
+    error?.documentId === requestedDocumentId ? error.message : null
+  if (!loaded && currentError) return <DocumentNotFound message={currentError} />
+  if (!loaded) return <DocumentLoading />
 
   return (
     <DocumentWorkspace
+      contentError={currentError}
       currentUser={loaded.currentUser}
       documentId={loaded.document.id}
       initialTitle={loaded.document.title}
-      key={loaded.document.id}
+      key={loaded.document.projectId}
+      loading={loaded.documentId !== requestedDocumentId && !currentError}
+      projectAvatar={loaded.project.avatar}
       projectId={loaded.document.projectId}
+      projectIsPersonal={loaded.project.isPersonal}
       projectName={loaded.project.name}
     />
   )
 }
 
 function DocumentWorkspace({
+  contentError,
   currentUser,
   documentId,
   initialTitle,
+  loading,
+  projectAvatar,
+  projectId,
+  projectIsPersonal,
+  projectName,
+}: {
+  contentError: string | null
+  currentUser: ClientUser
+  documentId: string
+  initialTitle: string
+  loading: boolean
+  projectAvatar: string
+  projectId: string
+  projectIsPersonal: boolean
+  projectName: string
+}) {
+  const leaveGuardRef = React.useRef<() => boolean>(() => true)
+  const [titlesByDocumentId, setTitlesByDocumentId] = React.useState<
+    Record<string, string>
+  >({})
+  const activeTitle = titlesByDocumentId[documentId] ?? initialTitle
+  const handleBeforeNavigate = React.useCallback(
+    () => leaveGuardRef.current(),
+    []
+  )
+  const handleLeaveGuardChange = React.useCallback(
+    (guard: (() => boolean) | null) => {
+      leaveGuardRef.current = guard ?? (() => true)
+    },
+    []
+  )
+  const handleSidebarTitleChange = React.useCallback(
+    (nextTitle: string) => {
+      setTitlesByDocumentId((current) =>
+        current[documentId] === nextTitle
+          ? current
+          : { ...current, [documentId]: nextTitle }
+      )
+    },
+    [documentId]
+  )
+
+  return (
+    <main className="flex h-svh min-w-0 gap-3 overflow-hidden bg-muted p-3">
+      <DocumentWorkspaceSidebar
+        activeDocumentId={documentId}
+        activeTitle={activeTitle}
+        onBeforeNavigate={handleBeforeNavigate}
+        projectAvatar={projectAvatar}
+        projectId={projectId}
+        projectIsPersonal={projectIsPersonal}
+        projectName={projectName}
+      />
+      {contentError ? (
+        <DocumentContentError message={contentError} />
+      ) : loading ? (
+        <DocumentContentLoading />
+      ) : (
+        <DocumentSession
+          currentUser={currentUser}
+          documentId={documentId}
+          initialTitle={initialTitle}
+          key={documentId}
+          onLeaveGuardChange={handleLeaveGuardChange}
+          onSidebarTitleChange={handleSidebarTitleChange}
+          projectId={projectId}
+          projectName={projectName}
+        />
+      )}
+    </main>
+  )
+}
+
+function DocumentSession({
+  currentUser,
+  documentId,
+  initialTitle,
+  onLeaveGuardChange,
+  onSidebarTitleChange,
   projectId,
   projectName,
 }: {
   currentUser: ClientUser
   documentId: string
   initialTitle: string
+  onLeaveGuardChange: (guard: (() => boolean) | null) => void
+  onSidebarTitleChange: (title: string) => void
   projectId: string
   projectName: string
 }) {
@@ -223,6 +307,7 @@ function DocumentWorkspace({
         if ((titleRef.current.trim() || "无标题文档") === nextTitle) {
           titleRef.current = storedTitle
           setTitle(storedTitle)
+          onSidebarTitleChange(storedTitle)
         }
       }
     } catch (error) {
@@ -323,17 +408,23 @@ function DocumentWorkspace({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload)
   }, [])
 
-  function confirmLeaveWithUnsavedTitle() {
+  const confirmLeaveWithUnsavedTitle = React.useCallback(() => {
     const dirty =
       savingRef.current ||
       saveFailedRef.current ||
       bodyUnsyncedChangesRef.current > 0 ||
       (titleRef.current.trim() || "无标题文档") !== savedTitleRef.current
     return !dirty || window.confirm("文档尚未同步完成，确定要离开吗？")
-  }
+  }, [])
+
+  React.useEffect(() => {
+    onLeaveGuardChange(confirmLeaveWithUnsavedTitle)
+    return () => onLeaveGuardChange(null)
+  }, [confirmLeaveWithUnsavedTitle, onLeaveGuardChange])
 
   function handleTitleChange(nextTitle: string) {
     titleRef.current = nextTitle
+    onSidebarTitleChange(nextTitle)
     saveFailedRef.current = false
     setTitle(nextTitle)
     setTitleSaveState("pending")
@@ -361,15 +452,8 @@ function DocumentWorkspace({
   }
 
   return (
-    <main className="flex h-svh min-w-0 gap-3 overflow-hidden bg-muted p-3">
+    <>
       <ClientDocumentTitle title={pageTitle} disableMessageAlert />
-      <DocumentWorkspaceSidebar
-        activeDocumentId={documentId}
-        activeTitle={pageTitle}
-        onBeforeNavigate={confirmLeaveWithUnsavedTitle}
-        projectId={projectId}
-        projectName={projectName}
-      />
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-teal-50/30 shadow-xs dark:bg-background/30">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4 sm:px-6">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300">
@@ -485,7 +569,7 @@ function DocumentWorkspace({
           </div>
         )}
       </section>
-    </main>
+    </>
   )
 }
 
@@ -566,6 +650,32 @@ function createDocumentCardTitle(title: string) {
   const remaining = maxDocumentCardTitleLength - Array.from(prefix).length
   if (characters.length <= remaining) return prefix + characters.join("")
   return prefix + characters.slice(0, remaining - 1).join("") + "…"
+}
+
+function DocumentContentLoading() {
+  return (
+    <>
+      <ClientDocumentTitle title="正在加载文档" disableMessageAlert />
+      <section className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border bg-background text-sm text-muted-foreground shadow-xs">
+        <Loader2 className="size-4 animate-spin" />
+        正在加载文档
+      </section>
+    </>
+  )
+}
+
+function DocumentContentError({ message }: { message: string }) {
+  return (
+    <>
+      <ClientDocumentTitle title="文档不存在" disableMessageAlert />
+      <section className="flex min-w-0 flex-1 items-center justify-center rounded-xl border bg-background p-6 shadow-xs">
+        <div className="max-w-sm text-center">
+          <h1 className="text-lg font-semibold">文档不存在</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{message}</p>
+        </div>
+      </section>
+    </>
+  )
 }
 
 function DocumentLoading() {

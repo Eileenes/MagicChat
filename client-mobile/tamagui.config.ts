@@ -2,6 +2,8 @@ import { createV5Theme, defaultConfig } from "@tamagui/config/v5"
 import { animationsReactNative } from "@tamagui/config/v5-rn"
 import { createTamagui } from "tamagui"
 
+import { xguiColors } from "./src/xgui/theme/colors"
+
 const themes = createV5Theme({
   getTheme: ({ scheme }) => ({
     backgroundLight:
@@ -34,18 +36,21 @@ export const tamaguiConfig = createTamagui({
     dark_teal: {
       ...themes.dark_teal,
       ...darkTealHalfStepColors,
-      background: "hsla(175, 24%, 10%, 1)",
-      backgroundLight: "hsla(174, 55%, 3%, 1)",
-      backgroundPress: darkTealHalfStepColors.color2,
-      borderColor: "hsla(174, 62%, 14%, 1)",
+      background: xguiColors.dark.background2,
+      backgroundLight: xguiColors.dark.background0,
+      backgroundPress: xguiColors.dark.background5,
+      borderColor: xguiColors.dark.separator,
+      color1: xguiColors.dark.background1,
       gray9: themes.dark_gray.color9,
       gray12: themes.dark_gray.color12,
     },
     light_teal: {
       ...themes.light_teal,
-      background: "hsla(165, 50%, 92%, 1)",
-      backgroundLight: "hsla(165, 50%, 95%, 1)",
-      borderColor: "hsla(166, 62%, 86%, 1)",
+      background: xguiColors.light.background2,
+      backgroundLight: xguiColors.light.background0,
+      backgroundPress: xguiColors.light.background1,
+      borderColor: xguiColors.light.separator,
+      color1: xguiColors.light.background1,
       gray9: themes.light_gray.color9,
       gray12: themes.light_gray.color12,
     },

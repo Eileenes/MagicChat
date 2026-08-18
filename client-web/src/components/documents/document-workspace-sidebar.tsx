@@ -1,6 +1,6 @@
 import * as React from "react"
 import {
-  Building2,
+  ChevronDown,
   FileText,
   Folder,
   FolderOpen,
@@ -11,6 +11,16 @@ import { Link, useNavigate } from "react-router"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { ProjectAvatar } from "@/components/projects/project-avatar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { useClientData } from "@/lib/client-data-context"
 import {
   createClientDocument,
   listClientDocuments,
@@ -24,26 +34,66 @@ export function DocumentWorkspaceSidebar({
   activeDocumentId,
   activeTitle,
   onBeforeNavigate,
+  projectAvatar,
   projectId,
+  projectIsPersonal,
   projectName,
 }: {
   activeDocumentId: string
   activeTitle: string
   onBeforeNavigate: () => boolean
+  projectAvatar: string
   projectId: string
+  projectIsPersonal: boolean
   projectName: string
 }) {
   const navigate = useNavigate()
+  const {
+    loadMoreProjects,
+    me,
+    personalProject,
+    projects,
+    projectsLoadingMore,
+    projectsNextCursor,
+  } = useClientData()
+  const [selectedProjectId, setSelectedProjectId] = React.useState(projectId)
   const [creating, setCreating] = React.useState(false)
   const [documents, setDocuments] = React.useState<SidebarDocumentNode[]>([])
   const [expandedFolderIds, setExpandedFolderIds] = React.useState<Set<string>>(
     () => new Set()
   )
   const [loading, setLoading] = React.useState(true)
+  const projectOptions = React.useMemo(() => {
+    const values = [
+      {
+        avatar: projectAvatar,
+        id: projectId,
+        isPersonal: projectIsPersonal,
+        name: projectName,
+      },
+      ...(personalProject ? [personalProject] : []),
+      ...projects,
+    ]
+    return values.filter(
+      (project, index) =>
+        values.findIndex((value) => value.id === project.id) === index
+    )
+  }, [
+    personalProject,
+    projectAvatar,
+    projectId,
+    projectIsPersonal,
+    projectName,
+    projects,
+  ])
+
+  const selectedProject =
+    projectOptions.find((project) => project.id === selectedProjectId) ??
+    projectOptions[0]!
 
   React.useEffect(() => {
     let cancelled = false
-    void listClientDocuments(projectId)
+    void listClientDocuments(selectedProjectId)
       .then((values) => {
         if (!cancelled) {
           setDocuments(buildSidebarTree(values))
@@ -69,13 +119,13 @@ export function DocumentWorkspaceSidebar({
     return () => {
       cancelled = true
     }
-  }, [projectId])
+  }, [selectedProjectId])
 
   async function createDocument() {
     if (!onBeforeNavigate()) return
     setCreating(true)
     try {
-      const created = await createClientDocument(projectId, {
+      const created = await createClientDocument(selectedProjectId, {
         kind: "document",
         title: "无标题文档",
       })
@@ -85,6 +135,19 @@ export function DocumentWorkspaceSidebar({
     } finally {
       setCreating(false)
     }
+  }
+
+  function selectProject(nextProjectId: string) {
+    setDocuments([])
+    setExpandedFolderIds(new Set())
+    setLoading(true)
+    setSelectedProjectId(nextProjectId)
+  }
+
+  function loadMoreProjectOptions() {
+    void loadMoreProjects().catch((error: unknown) => {
+      toast.error(error instanceof Error ? error.message : "加载更多项目失败")
+    })
   }
 
   function toggleFolder(folderId: string) {
@@ -98,20 +161,56 @@ export function DocumentWorkspaceSidebar({
 
   return (
     <aside className="hidden h-full w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-background text-foreground shadow-xs md:flex">
-      <Link
-        className="mx-2 mt-2 flex h-10 items-center gap-2 rounded-md px-2 outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-        onClick={(event) => {
-          if (!onBeforeNavigate()) event.preventDefault()
-        }}
-        to={`/projects/${encodeURIComponent(projectId)}/documents`}
-      >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300">
-          <Building2 className="size-4" />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {projectName}
-        </span>
-      </Link>
+      <div className="mx-2 mt-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label="切换项目"
+              className="h-10 w-full justify-start gap-2 px-2 font-semibold"
+              type="button"
+              variant="ghost"
+            >
+              <ProjectAvatar
+                className="size-7"
+                project={selectedProject}
+                user={me}
+              />
+              <span className="min-w-0 flex-1 truncate text-left">
+                {selectedProject.name}
+              </span>
+              <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuRadioGroup
+              onValueChange={selectProject}
+              value={selectedProjectId}
+            >
+              {projectOptions.map((project) => (
+                <DropdownMenuRadioItem key={project.id} value={project.id}>
+                  <ProjectAvatar
+                    className="size-5"
+                    project={project}
+                    user={me}
+                  />
+                  <span className="truncate">{project.name}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            {projectsNextCursor && (
+              <DropdownMenuItem
+                disabled={projectsLoadingMore}
+                onSelect={(event) => {
+                  event.preventDefault()
+                  loadMoreProjectOptions()
+                }}
+              >
+                {projectsLoadingMore ? "正在加载更多项目" : "加载更多项目…"}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       <div className="shrink-0 px-3 py-2">
         <Button
@@ -224,7 +323,7 @@ function DocumentTree({
               if (!onBeforeNavigate()) event.preventDefault()
             }}
             role="treeitem"
-            style={{ paddingLeft: depth * 16 + 26 }}
+            style={{ paddingLeft: depth * 16 + 8 }}
             to={`/documents/document/${encodeURIComponent(node.id)}`}
           >
             <FileText className="size-4 shrink-0 text-sky-600 dark:text-sky-300" />

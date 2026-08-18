@@ -3,6 +3,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { SizableText, XStack, YStack } from "tamagui"
 
 import { CompactIconButton } from "@/components/buttons/compact-icon-button"
+import { useXGUITheme } from "@/xgui"
 
 export type HeaderAction = {
   icon: LucideIcon
@@ -20,9 +21,10 @@ export function AppHeader({
   title: string
 }) {
   const insets = useSafeAreaInsets()
+  const { colors } = useXGUITheme()
 
   return (
-    <YStack bg="$background" pt={insets.top}>
+    <YStack bg={colors.background2} pt={insets.top}>
       <XStack height={56} items="center" px="$3">
         <XStack width={72}>
           {onMenuPress ? (
@@ -36,7 +38,13 @@ export function AppHeader({
           ) : null}
         </XStack>
 
-        <SizableText flex={1} numberOfLines={1} size="$4" text="center">
+        <SizableText
+          color={colors.textPrimary}
+          flex={1}
+          numberOfLines={1}
+          size="$4"
+          text="center"
+        >
           {title}
         </SizableText>
 

@@ -116,7 +116,7 @@ export function useMessageSelectionActions({
         .catch((error: unknown) => {
           if (isUnauthorizedError(error)) {
             void invalidateSession()
-            router.replace("/init")
+            router.replace("/server-management")
             return
           }
           toast.show(

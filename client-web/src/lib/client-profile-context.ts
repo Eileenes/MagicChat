@@ -5,16 +5,25 @@ import type { ClientProfileStore } from "@/lib/client-profile-store"
 
 export type ClientProfileData = Pick<
   ClientDataContextValue,
+  | "acceptFriendRequest"
   | "contactApps"
+  | "contactDirectoryMode"
   | "contacts"
-  | "me"
+  | "createFriendRequest"
+  | "incomingFriendRequests"
   | "openAppConversation"
   | "openDirectConversation"
+  | "outgoingFriendRequests"
+  | "me"
+  | "usersById"
 >
 
 export type ClientProfileContextValue = Pick<
   ClientProfileData,
-  "openAppConversation" | "openDirectConversation"
+  | "acceptFriendRequest"
+  | "createFriendRequest"
+  | "openAppConversation"
+  | "openDirectConversation"
 > & { store: ClientProfileStore }
 
 export const ClientProfileContext =
@@ -59,6 +68,20 @@ export function useClientUserProfile(userId: string | null | undefined) {
   )
   const getSnapshot = React.useCallback(
     () => store.getUser(userId),
+    [store, userId]
+  )
+
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+export function useClientUserRelationship(userId: string | null | undefined) {
+  const store = useClientProfileStore()
+  const subscribe = React.useCallback(
+    (listener: () => void) => store.subscribeUserRelationship(userId, listener),
+    [store, userId]
+  )
+  const getSnapshot = React.useCallback(
+    () => store.getUserRelationship(userId),
     [store, userId]
   )
 

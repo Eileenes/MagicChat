@@ -149,7 +149,7 @@ export function useConversationMessageActions({
     } catch (error: unknown) {
       if (isUnauthorizedError(error)) {
         void invalidateSession()
-        router.replace("/init")
+        router.replace("/server-management")
       } else {
         toast.show(
           error instanceof ApiRequestError
@@ -168,7 +168,7 @@ export function useConversationMessageActions({
     } catch (error: unknown) {
       if (isUnauthorizedError(error)) {
         void invalidateSession()
-        router.replace("/init")
+        router.replace("/server-management")
       }
       throw error
     }
@@ -212,7 +212,7 @@ export function useConversationMessageActions({
     } catch (error: unknown) {
       if (isUnauthorizedError(error)) {
         void invalidateSession()
-        router.replace("/init")
+        router.replace("/server-management")
       } else {
         toast.show(
           error instanceof ApiRequestError

@@ -20,6 +20,7 @@ import { ServerProvider } from "@/providers/server-provider"
 import { ClientDataProvider } from "@/providers/client-data-provider"
 import { AppBlurTargetProvider } from "@/providers/app-blur-target"
 import { RealtimeProvider } from "@/providers/realtime-provider"
+import { XGUIToastProvider } from "@/xgui"
 
 export function AppProviders({ children }: React.PropsWithChildren) {
   const [queryClient] = useState(createClientQueryClient)
@@ -35,32 +36,36 @@ export function AppProviders({ children }: React.PropsWithChildren) {
   return (
     <AppThemeProvider>
       {(tamaguiTheme) => (
-      <QueryClientProvider client={queryClient}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-          <TamaguiProvider
-            config={tamaguiConfig}
-            defaultTheme={tamaguiTheme}
-          >
-            <ToastProvider duration={3000} label="通知">
-              <AppBlurTargetProvider>
-                <YStack bg="$background" flex={1}>
-                  <ServerProvider>
-                    <AuthProvider>
-                      <RealtimeProvider>
-                        <ClientDataProvider>{children}</ClientDataProvider>
-                      </RealtimeProvider>
-                    </AuthProvider>
-                  </ServerProvider>
-                </YStack>
-              </AppBlurTargetProvider>
-              <CurrentAppToast />
-              <AppToastViewport />
-            </ToastProvider>
-          </TamaguiProvider>
-        </SafeAreaProvider>
-      </GestureHandlerRootView>
-      </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+              <TamaguiProvider
+                config={tamaguiConfig}
+                defaultTheme={tamaguiTheme}
+              >
+                <XGUIToastProvider>
+                  <ToastProvider duration={3000} label="通知">
+                    <AppBlurTargetProvider>
+                      <YStack bg="$background" flex={1}>
+                        <ServerProvider>
+                          <AuthProvider>
+                            <RealtimeProvider>
+                              <ClientDataProvider>
+                                {children}
+                              </ClientDataProvider>
+                            </RealtimeProvider>
+                          </AuthProvider>
+                        </ServerProvider>
+                      </YStack>
+                    </AppBlurTargetProvider>
+                    <CurrentAppToast />
+                    <AppToastViewport />
+                  </ToastProvider>
+                </XGUIToastProvider>
+              </TamaguiProvider>
+            </SafeAreaProvider>
+          </GestureHandlerRootView>
+        </QueryClientProvider>
       )}
     </AppThemeProvider>
   )

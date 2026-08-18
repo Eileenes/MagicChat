@@ -95,6 +95,7 @@ function InputGroupButton({
   }) {
   return (
     <Button
+      size={size}
       type={type}
       data-size={size}
       variant={variant}

@@ -22,11 +22,33 @@ const (
 	DefaultMaxTokens = 4096
 )
 
-var ErrTokenCountUnsupported = errors.New("anthropic token counting is unsupported")
+var (
+	ErrTokenCountUnsupported = errors.New("anthropic token counting is unsupported")
+	ErrStreamingUnsupported  = errors.New("anthropic streaming is unsupported")
+)
 
 type Model interface {
 	CreateMessage(ctx context.Context, request Request) (Response, error)
 }
+
+// StreamingModel is optionally implemented by models that can report content
+// block lifecycle events while assembling a complete response.
+type StreamingModel interface {
+	StreamMessage(ctx context.Context, request Request, observer func(StreamEvent) error) (Response, error)
+}
+
+// StreamEvent intentionally contains no generated content. In particular,
+// thinking text is never exposed to observers.
+type StreamEvent struct {
+	Type      string `json:"type"`
+	BlockType string `json:"block_type"`
+	Index     int    `json:"index"`
+}
+
+const (
+	StreamEventBlockStart = "block_start"
+	StreamEventBlockStop  = "block_stop"
+)
 
 type TokenCounter interface {
 	CountTokens(ctx context.Context, request Request) (int, error)
@@ -119,11 +141,26 @@ func (c *AnthropicClient) Generate(ctx context.Context, request Request) (string
 }
 
 func (c *AnthropicClient) CreateMessage(ctx context.Context, request Request) (Response, error) {
+	params, err := c.messageParams(request)
+	if err != nil {
+		return Response{}, err
+	}
+
+	client := c.sdkClient()
+	response, err := client.Messages.New(ctx, params)
+	if err != nil {
+		return Response{}, err
+	}
+
+	return parseAnthropicResponse(response), nil
+}
+
+func (c *AnthropicClient) messageParams(request Request) (anthropic.MessageNewParams, error) {
 	if strings.TrimSpace(c.BaseURL) == "" || strings.TrimSpace(c.APIKey) == "" || strings.TrimSpace(c.ModelName) == "" {
-		return Response{}, fmt.Errorf("llm.base_url, llm.api_key, and llm.model_name are required")
+		return anthropic.MessageNewParams{}, fmt.Errorf("llm.base_url, llm.api_key, and llm.model_name are required")
 	}
 	if len(request.Messages) == 0 {
-		return Response{}, fmt.Errorf("llm request messages are required")
+		return anthropic.MessageNewParams{}, fmt.Errorf("llm request messages are required")
 	}
 
 	params := anthropic.MessageNewParams{
@@ -138,18 +175,86 @@ func (c *AnthropicClient) CreateMessage(ctx context.Context, request Request) (R
 	for _, message := range request.Messages {
 		paramMessage, err := makeAnthropicMessage(message)
 		if err != nil {
-			return Response{}, err
+			return anthropic.MessageNewParams{}, err
 		}
 		params.Messages = append(params.Messages, paramMessage)
 	}
 
-	client := c.sdkClient()
-	response, err := client.Messages.New(ctx, params)
+	return params, nil
+}
+
+// StreamMessage uses the SDK stream and its Message accumulator so that the
+// returned value has the same shape as a non-streaming Messages response.
+func (c *AnthropicClient) StreamMessage(ctx context.Context, request Request, observer func(StreamEvent) error) (Response, error) {
+	params, err := c.messageParams(request)
 	if err != nil {
 		return Response{}, err
 	}
 
-	return parseAnthropicResponse(response), nil
+	client := c.sdkClient()
+	stream := client.Messages.NewStreaming(ctx, params)
+	defer stream.Close()
+
+	var message anthropic.Message
+	blockTypes := make(map[int]string)
+	receivedEvent := false
+	for stream.Next() {
+		receivedEvent = true
+		event := stream.Current()
+		switch current := event.AsAny().(type) {
+		case anthropic.ContentBlockStartEvent:
+			index := int(current.Index)
+			blockTypes[index] = current.ContentBlock.Type
+			if observer != nil && observedBlockType(current.ContentBlock.Type) {
+				if err := observer(StreamEvent{Type: StreamEventBlockStart, BlockType: current.ContentBlock.Type, Index: index}); err != nil {
+					return Response{}, err
+				}
+			}
+		case anthropic.ContentBlockStopEvent:
+			index := int(current.Index)
+			blockType := blockTypes[index]
+			if observer != nil && observedBlockType(blockType) {
+				if err := observer(StreamEvent{Type: StreamEventBlockStop, BlockType: blockType, Index: index}); err != nil {
+					return Response{}, err
+				}
+			}
+		}
+		if err := message.Accumulate(event); err != nil {
+			return Response{}, err
+		}
+	}
+	if err := stream.Err(); err != nil {
+		if !receivedEvent && ctx.Err() == nil && streamingUnsupportedError(err) {
+			return Response{}, fmt.Errorf("%w: %v", ErrStreamingUnsupported, err)
+		}
+		return Response{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Response{}, err
+	}
+	return parseAnthropicResponse(&message), nil
+}
+
+func streamingUnsupportedError(err error) bool {
+	var apiErr *anthropic.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	switch apiErr.StatusCode {
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity, http.StatusNotImplemented:
+	default:
+		return false
+	}
+	message := strings.ToLower(apiErr.Error())
+	mentionsStreaming := strings.Contains(message, "stream") || strings.Contains(message, "sse")
+	unsupported := strings.Contains(message, "not support") || strings.Contains(message, "unsupported") ||
+		strings.Contains(message, "not implemented") || strings.Contains(message, "unknown") ||
+		strings.Contains(message, "unrecognized") || strings.Contains(message, "invalid")
+	return mentionsStreaming && unsupported
+}
+
+func observedBlockType(blockType string) bool {
+	return blockType == BlockTypeThinking || blockType == BlockTypeToolUse || blockType == BlockTypeText
 }
 
 func (c *AnthropicClient) CountTokens(ctx context.Context, request Request) (int, error) {

@@ -42,6 +42,7 @@ const (
 	eventChoiceResponseCreated = "choice.response_created"
 	eventTopicClosed           = "topic.closed"
 	methodMessageSend          = "message.send"
+	methodConversationStatus   = "conversation.status"
 	methodMessageSendAsUser    = "message.send_as_user"
 
 	methodConversationMessagesList = "conversation.messages.list"
@@ -52,6 +53,8 @@ const (
 	defaultConversationContextLimit = 30
 	deepWorkTopicNotice             = "这个请求需要进一步处理，我会创建一个独立的话题来跟进。"
 )
+
+var processingStatusInterval = 2 * time.Second
 
 var appMentionTokenPattern = regexp.MustCompile(`\{\(@app/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)\}`)
 var errAppEventQueueFull = errors.New("app event queue full")
@@ -680,8 +683,21 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 		body.Content,
 	)
 
+	stopProcessingStatus := func() {}
+	if payload.Conversation.Type == "app" {
+		stopProcessingStatus = startConversationStatusHeartbeat(
+			ctx,
+			func(statusCtx context.Context) error {
+				return conversationStatusSender(writeJSON, payload.Conversation.ID)(statusCtx, "正在识别用户意图")
+			},
+			processingStatusInterval,
+		)
+	}
+	defer stopProcessingStatus()
+
 	prepared, err := prepareAgentRun(ctx, requester, payload, body, senderName)
 	if err != nil {
+		stopProcessingStatus()
 		if errors.Is(err, context.Canceled) {
 			return false
 		}
@@ -741,6 +757,10 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 		return sendMarkdownReply(ctx, writeJSON, replyConversation, content)
 	})
 	prepared.ErrorSink = sink
+	stopProcessingStatus()
+	if replyConversation.Type == "app" {
+		prepared.StatusSender = conversationStatusSender(writeJSON, replyConversation.ID)
+	}
 	prepared.Scope.CurrentAppID = strings.TrimSpace(appID)
 	return runner.Start(ctx, replyConversation.ID, sink, assistantAgent, prepared)
 }
@@ -759,6 +779,13 @@ func handleChoiceResponseCreated(
 		log.Printf("ignore invalid choice.response_created payload: %v", err)
 		return true
 	}
+	stopRecognition := func() {}
+	if payload.Conversation.Type == "app" {
+		stopRecognition = startConversationStatusHeartbeat(ctx, func(statusCtx context.Context) error {
+			return conversationStatusSender(writeJSON, payload.Conversation.ID)(statusCtx, "正在识别用户意图")
+		}, processingStatusInterval)
+	}
+	defer stopRecognition()
 	prepared, err := prepareChoiceResponseAgentRun(ctx, requester, payload)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -774,6 +801,10 @@ func handleChoiceResponseCreated(
 		return sendMarkdownReply(ctx, writeJSON, payload.Conversation, content)
 	})
 	prepared.ErrorSink = sink
+	stopRecognition()
+	if payload.Conversation.Type == "app" {
+		prepared.StatusSender = conversationStatusSender(writeJSON, payload.Conversation.ID)
+	}
 	prepared.Scope.CurrentAppID = strings.TrimSpace(appID)
 	return runner.Start(ctx, payload.Conversation.ID, sink, assistantAgent, prepared)
 }
@@ -1377,6 +1408,22 @@ func buildHistoryMessageBody(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, err
 	}
 	return body, nil
+}
+
+func conversationStatusSender(writeJSON func(context.Context, envelope) error, conversationID string) func(context.Context, string) error {
+	return func(ctx context.Context, status string) error {
+		payload, err := json.Marshal(struct {
+			ConversationID string `json:"conversation_id"`
+			Status         string `json:"status"`
+		}{ConversationID: conversationID, Status: status})
+		if err != nil {
+			return err
+		}
+		return writeJSON(ctx, envelope{
+			V: protocolVersion, Kind: kindRequest, ID: newRequestID(),
+			Method: methodConversationStatus, Payload: payload,
+		})
+	}
 }
 
 func sendMarkdownReply(ctx context.Context, writeJSON func(context.Context, envelope) error, conversation conversationPayload, content string) error {

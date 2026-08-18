@@ -441,7 +441,7 @@ function MarkdownMention({
 function getMentionTextClassName(isCurrentUserMention: boolean) {
   return isCurrentUserMention
     ? "mx-0.5 font-medium text-amber-600 hover:text-amber-700"
-    : "mx-0.5 font-medium text-sky-500 hover:text-sky-600"
+    : "mx-0.5 font-medium text-(--weui-link)"
 }
 
 function isSameUserId(userId: string | undefined, currentUserId?: string) {

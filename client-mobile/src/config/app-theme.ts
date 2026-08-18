@@ -1,19 +1,16 @@
 import type { ColorSchemeName } from "react-native"
-import { getVariableValue } from "tamagui"
 
-import { tamaguiConfig } from "../../tamagui.config"
+import { xguiColors } from "@/xgui/theme/colors"
 
 const appThemes = {
   dark: {
-    background: String(
-      getVariableValue(tamaguiConfig.themes.dark_teal.background)
-    ),
+    background: xguiColors.dark.background0,
+    card: xguiColors.dark.background2,
     tamaguiTheme: "dark_teal",
   },
   light: {
-    background: String(
-      getVariableValue(tamaguiConfig.themes.light_teal.background)
-    ),
+    background: xguiColors.light.background0,
+    card: xguiColors.light.background2,
     tamaguiTheme: "light_teal",
   },
 } as const

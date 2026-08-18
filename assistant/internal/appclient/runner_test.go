@@ -16,6 +16,229 @@ import (
 	"assistant/internal/mcpclient"
 )
 
+func TestDirectAgentRunnerStatusFailureDoesNotAffectOutputAndStopsBeforeOutput(t *testing.T) {
+	var mu sync.Mutex
+	statusCalls := 0
+	outputCallsAtStatus := -1
+	output := make(chan string, 1)
+	prepared := preparedAgentRun{
+		StatusSender: func(context.Context, string) error {
+			mu.Lock()
+			statusCalls++
+			mu.Unlock()
+			return errors.New("status unavailable")
+		},
+	}
+	sink := agent.OutputSinkFunc(func(_ context.Context, content string) error {
+		mu.Lock()
+		outputCallsAtStatus = statusCalls
+		mu.Unlock()
+		output <- content
+		return nil
+	})
+	replier := replyAgentFunc(func(ctx context.Context, _ agent.Request, sink agent.OutputSink) error {
+		return sink.SendMarkdown(ctx, "final reply")
+	})
+	if !(directAgentRunner{}).Start(context.Background(), "direct", sink, replier, prepared) {
+		t.Fatal("direct run was not accepted")
+	}
+	if got := <-output; got != "final reply" {
+		t.Fatalf("output = %q", got)
+	}
+	mu.Lock()
+	stoppedAt := statusCalls
+	atOutput := outputCallsAtStatus
+	mu.Unlock()
+	_ = stoppedAt
+	_ = atOutput
+	time.Sleep(20 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if statusCalls != stoppedAt {
+		t.Fatalf("status continued after output: before=%d after=%d", stoppedAt, statusCalls)
+	}
+}
+
+func TestDirectAgentRunnerContextCancelStopsStatus(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	firstStatus := make(chan struct{})
+	var once sync.Once
+	var mu sync.Mutex
+	calls := 0
+	prepared := preparedAgentRun{StatusSender: func(context.Context, string) error {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		once.Do(func() { close(firstStatus) })
+		return nil
+	}}
+	replier := replyAgentFunc(func(ctx context.Context, _ agent.Request, _ agent.OutputSink) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	result := make(chan bool, 1)
+	go func() {
+		result <- directAgentRunner{}.Start(ctx, "direct", agent.OutputSinkFunc(func(context.Context, string) error { return nil }), replier, prepared)
+	}()
+	waitForSignal(t, firstStatus, "initial direct status")
+	cancel()
+	if accepted := <-result; accepted {
+		t.Fatal("canceled direct run reported accepted")
+	}
+	mu.Lock()
+	stoppedAt := calls
+	mu.Unlock()
+	time.Sleep(20 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != stoppedAt {
+		t.Fatalf("status continued after cancel: before=%d after=%d", stoppedAt, calls)
+	}
+}
+func TestConversationStatusHeartbeatSendsImmediatelyPeriodicallyAndStops(t *testing.T) {
+	var mu sync.Mutex
+	calls := 0
+	first := make(chan struct{})
+	sender := func(context.Context) error {
+		mu.Lock()
+		calls++
+		if calls == 1 {
+			close(first)
+		}
+		mu.Unlock()
+		return errors.New("best effort failure")
+	}
+	stop := startConversationStatusHeartbeat(context.Background(), sender, 10*time.Millisecond)
+	waitForSignal(t, first, "immediate status")
+	time.Sleep(25 * time.Millisecond)
+	stop()
+	mu.Lock()
+	stoppedAt := calls
+	mu.Unlock()
+	if stoppedAt < 2 {
+		t.Fatalf("status calls = %d, want immediate and periodic calls", stoppedAt)
+	}
+	time.Sleep(20 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != stoppedAt {
+		t.Fatalf("status continued after stop: before=%d after=%d", stoppedAt, calls)
+	}
+}
+
+func TestDirectAgentRunnerMapsProgressPhasesInOrderAndSurvivesOutputBeforeTool(t *testing.T) {
+	statuses := make(chan string, 8)
+	waitStatus := func(want string) {
+		t.Helper()
+		select {
+		case got := <-statuses:
+			if got != want {
+				t.Fatalf("status=%q want=%q", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %q", want)
+		}
+	}
+	progress := &progressReplyAgent{run: func(ctx context.Context, sink agent.OutputSink, observe agent.ProgressObserver) error {
+		observe(agent.PhaseThinking)
+		waitStatus("正在思考")
+		observe(agent.PhaseTool)
+		waitStatus("正在调用外部工具")
+		observe(agent.PhaseText)
+		waitStatus("正在生成回复内容")
+		if err := sink.SendMarkdown(ctx, "partial text"); err != nil {
+			return err
+		}
+		observe(agent.PhaseTool)
+		waitStatus("正在调用外部工具")
+		return nil
+	}}
+	prepared := preparedAgentRun{StatusSender: func(_ context.Context, status string) error { statuses <- status; return nil }}
+	if !(directAgentRunner{}).Start(context.Background(), "direct", agent.OutputSinkFunc(func(context.Context, string) error { return nil }), progress, prepared) {
+		t.Fatal("run rejected")
+	}
+}
+
+func TestStatusControllerSamePhaseDoesNotRestartAndBlockedSendDoesNotBlockSwitch(t *testing.T) {
+	started := make(chan string, 4)
+	canceled := make(chan string, 4)
+	controller := newConversationStatusController(context.Background(), func(ctx context.Context, status string) error {
+		started <- status
+		if status == "正在思考" {
+			<-ctx.Done()
+			canceled <- status
+		}
+		return nil
+	}, time.Hour)
+	controller.Switch("正在思考")
+	if got := waitForString(t, started, "thinking send"); got != "正在思考" {
+		t.Fatalf("got %q", got)
+	}
+
+	begin := time.Now()
+	controller.Switch("正在思考")
+	controller.Switch("正在调用外部工具")
+	if time.Since(begin) > 100*time.Millisecond {
+		t.Fatal("Switch blocked on sender")
+	}
+	if got := waitForString(t, canceled, "canceled thinking send"); got != "正在思考" {
+		t.Fatalf("got %q", got)
+	}
+	if got := waitForString(t, started, "tool send"); got != "正在调用外部工具" {
+		t.Fatalf("got %q", got)
+	}
+	select {
+	case extra := <-started:
+		t.Fatalf("same phase restarted immediately: %q", extra)
+	case <-time.After(30 * time.Millisecond):
+	}
+	controller.Stop()
+}
+
+type progressReplyAgent struct {
+	run func(context.Context, agent.OutputSink, agent.ProgressObserver) error
+}
+
+func (p *progressReplyAgent) Run(ctx context.Context, _ agent.Request, sink agent.OutputSink) error {
+	return p.run(ctx, sink, nil)
+}
+func (p *progressReplyAgent) RunWithProgress(ctx context.Context, _ agent.Request, sink agent.OutputSink, observer agent.ProgressObserver) error {
+	return p.run(ctx, sink, observer)
+}
+
+func TestFastTextReplyDoesNotSendStatusAfterReplyOrStop(t *testing.T) {
+	var mu sync.Mutex
+	replied := false
+	stale := make(chan string, 1)
+	progress := &progressReplyAgent{run: func(ctx context.Context, sink agent.OutputSink, observe agent.ProgressObserver) error {
+		observe(agent.PhaseText)
+		return sink.SendMarkdown(ctx, "fast reply")
+	}}
+	prepared := preparedAgentRun{StatusSender: func(_ context.Context, status string) error {
+		mu.Lock()
+		afterReply := replied
+		mu.Unlock()
+		if afterReply {
+			stale <- status
+		}
+		return nil
+	}}
+	sink := agent.OutputSinkFunc(func(context.Context, string) error {
+		mu.Lock()
+		replied = true
+		mu.Unlock()
+		return nil
+	})
+	if !(directAgentRunner{}).Start(context.Background(), "fast", sink, progress, prepared) {
+		t.Fatal("run rejected")
+	}
+	select {
+	case status := <-stale:
+		t.Fatalf("status %q sent after reply", status)
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
 func TestConversationAgentRunnerSessionOutlivesTriggerContext(t *testing.T) {
 	rootCtx, cancelRoot := context.WithCancel(context.Background())
 	defer cancelRoot()
@@ -832,4 +1055,61 @@ func waitForString(t *testing.T, ch <-chan string, label string) string {
 		t.Fatalf("timed out waiting for %s", label)
 		return ""
 	}
+}
+
+func TestStatusControllerCadenceIncludesSlowSenderTime(t *testing.T) {
+	starts := make(chan time.Time, 8)
+	controller := newConversationStatusController(context.Background(), func(ctx context.Context, _ string) error {
+		starts <- time.Now()
+		timer := time.NewTimer(30 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}, 20*time.Millisecond)
+	controller.Switch("working")
+	times := collectStatusStarts(t, starts, 3)
+	controller.Stop()
+	for i := 1; i < len(times); i++ {
+		delta := times[i].Sub(times[i-1])
+		if delta < 25*time.Millisecond || delta >= 47*time.Millisecond {
+			t.Fatalf("slow sender start interval %d = %v, want near 30ms and below additive 50ms", i, delta)
+		}
+	}
+}
+
+func TestStatusControllerCadenceForFastSenderUsesInterval(t *testing.T) {
+	starts := make(chan time.Time, 8)
+	controller := newConversationStatusController(context.Background(), func(context.Context, string) error {
+		starts <- time.Now()
+		return nil
+	}, 20*time.Millisecond)
+	controller.Switch("working")
+	times := collectStatusStarts(t, starts, 3)
+	controller.Stop()
+	for i := 1; i < len(times); i++ {
+		delta := times[i].Sub(times[i-1])
+		if delta < 14*time.Millisecond || delta >= 40*time.Millisecond {
+			t.Fatalf("fast sender start interval %d = %v, want near 20ms", i, delta)
+		}
+	}
+}
+
+func collectStatusStarts(t *testing.T, starts <-chan time.Time, count int) []time.Time {
+	t.Helper()
+	result := make([]time.Time, 0, count)
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+	for len(result) < count {
+		select {
+		case started := <-starts:
+			result = append(result, started)
+		case <-timeout.C:
+			t.Fatalf("timed out after %d/%d sends", len(result), count)
+		}
+	}
+	return result
 }

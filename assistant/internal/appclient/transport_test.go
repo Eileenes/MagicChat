@@ -266,6 +266,23 @@ func TestWebSocketManagerBacksOffAfterConnectedGenerationDrops(t *testing.T) {
 	}
 }
 
+func readFakeServerRequest(conn *websocket.Conn, request *envelope) error {
+	for {
+		if err := conn.ReadJSON(request); err != nil {
+			return err
+		}
+		if request.Method != methodConversationStatus {
+			return nil
+		}
+		ok := true
+		if err := conn.WriteJSON(envelope{
+			V: protocolVersion, Kind: kindResponse, ReplyTo: request.ID, OK: &ok, Payload: json.RawMessage(`{}`),
+		}); err != nil {
+			return err
+		}
+	}
+}
+
 func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 	var connections atomic.Int32
 	historyRequestIDs := make(chan string, 2)
@@ -283,7 +300,7 @@ func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 				return
 			}
 			var historyRequest envelope
-			if err := conn.ReadJSON(&historyRequest); err != nil {
+			if err := readFakeServerRequest(conn, &historyRequest); err != nil {
 				return
 			}
 			historyRequestIDs <- historyRequest.ID
@@ -291,7 +308,7 @@ func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 		}
 
 		var historyRequest envelope
-		if err := conn.ReadJSON(&historyRequest); err != nil {
+		if err := readFakeServerRequest(conn, &historyRequest); err != nil {
 			return
 		}
 		historyRequestIDs <- historyRequest.ID
@@ -302,7 +319,7 @@ func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 		}
 
 		var noticeRequest envelope
-		if err := conn.ReadJSON(&noticeRequest); err != nil {
+		if err := readFakeServerRequest(conn, &noticeRequest); err != nil {
 			return
 		}
 		if noticeRequest.Method != methodMessageSend {
@@ -313,7 +330,7 @@ func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 		}
 
 		var topicRequest envelope
-		if err := conn.ReadJSON(&topicRequest); err != nil {
+		if err := readFakeServerRequest(conn, &topicRequest); err != nil {
 			return
 		}
 		if topicRequest.Method != methodConversationTopicCreate {
@@ -325,7 +342,7 @@ func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 		}
 
 		var replyRequest envelope
-		if err := conn.ReadJSON(&replyRequest); err != nil {
+		if err := readFakeServerRequest(conn, &replyRequest); err != nil {
 			return
 		}
 		if replyRequest.Method != methodMessageSend {
@@ -462,7 +479,7 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 				return
 			}
 			var historyRequest envelope
-			if err := conn.ReadJSON(&historyRequest); err != nil {
+			if err := readFakeServerRequest(conn, &historyRequest); err != nil {
 				reportServerError(fmt.Errorf("read first history request: %w", err))
 				return
 			}
@@ -491,7 +508,7 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 			return
 		}
 		var replayedHistoryRequest envelope
-		if err := conn.ReadJSON(&replayedHistoryRequest); err != nil {
+		if err := readFakeServerRequest(conn, &replayedHistoryRequest); err != nil {
 			reportServerError(fmt.Errorf("read replayed history request: %w", err))
 			return
 		}
@@ -506,7 +523,7 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 		}
 
 		var noticeRequest envelope
-		if err := conn.ReadJSON(&noticeRequest); err != nil {
+		if err := readFakeServerRequest(conn, &noticeRequest); err != nil {
 			reportServerError(fmt.Errorf("read replayed topic notice: %w", err))
 			return
 		}
@@ -520,7 +537,7 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 		}
 
 		var topicRequest envelope
-		if err := conn.ReadJSON(&topicRequest); err != nil {
+		if err := readFakeServerRequest(conn, &topicRequest); err != nil {
 			reportServerError(fmt.Errorf("read replayed topic request: %w", err))
 			return
 		}
@@ -534,7 +551,7 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 		}
 
 		var firstAckRequest envelope
-		if err := conn.ReadJSON(&firstAckRequest); err != nil {
+		if err := readFakeServerRequest(conn, &firstAckRequest); err != nil {
 			reportServerError(fmt.Errorf("read first event ack: %w", err))
 			return
 		}
@@ -557,7 +574,7 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 		}
 		for {
 			var request envelope
-			if err := conn.ReadJSON(&request); err != nil {
+			if err := readFakeServerRequest(conn, &request); err != nil {
 				if !finished.Load() {
 					reportServerError(fmt.Errorf("read replay request: %w", err))
 				}
@@ -931,7 +948,7 @@ func TestWebSocketManagerSendsAndRoutesEnvelope(t *testing.T) {
 		}
 		defer conn.Close()
 		var request envelope
-		if err := conn.ReadJSON(&request); err != nil {
+		if err := readFakeServerRequest(conn, &request); err != nil {
 			return
 		}
 		ok := true

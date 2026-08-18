@@ -67,7 +67,7 @@ export function ImagePreviewScreen() {
     [conversationId, messageId]
   )
 
-  if (!session) return <Redirect href="/init" />
+  if (!session) return <Redirect href="/server-management" />
 
   if (source?.type === "attachment" && gallery) {
     return (

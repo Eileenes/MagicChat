@@ -47,7 +47,10 @@ func (s *Server) clientWebSocket(c echo.Context) error {
 	return nil
 }
 
-func (s *Server) handleRealtimeRequest(_ string, request realtime.Envelope) realtime.Envelope {
+func (s *Server) handleRealtimeRequest(userID string, request realtime.Envelope) realtime.Envelope {
+	if strings.TrimSpace(request.Method) == methodConversationStatus {
+		return s.handleConversationStatus(userID, "user", request)
+	}
 	return realtime.NewErrorResponse(request.ID, "unknown_method", "未知实时方法")
 }
 

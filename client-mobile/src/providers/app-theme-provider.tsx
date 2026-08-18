@@ -24,11 +24,19 @@ import {
 
 const lightNavigationTheme = {
   ...DefaultTheme,
-  colors: { ...DefaultTheme.colors, background: lightAppTheme.background, card: lightAppTheme.background },
+  colors: {
+    ...DefaultTheme.colors,
+    background: lightAppTheme.background,
+    card: lightAppTheme.card,
+  },
 }
 const darkNavigationTheme = {
   ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: darkAppTheme.background, card: darkAppTheme.background },
+  colors: {
+    ...DarkTheme.colors,
+    background: darkAppTheme.background,
+    card: darkAppTheme.card,
+  },
 }
 
 type AppThemeContextValue = {

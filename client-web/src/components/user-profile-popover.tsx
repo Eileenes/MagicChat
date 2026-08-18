@@ -9,8 +9,14 @@ import {
   type ClientProfileContextValue,
   useClientCurrentUserId,
   useClientUserProfile,
+  useClientUserRelationship,
   useOptionalClientProfileContext,
 } from "@/lib/client-profile-context"
+import {
+  resolveClientUserRelationship,
+  type ClientUserRelationship,
+  type ClientUserRelationshipSource,
+} from "@/lib/client-profile-store"
 import { cn } from "@/lib/utils"
 import { AvatarPreviewDialog } from "@/components/avatar-preview-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -37,6 +43,13 @@ export type UserProfile = {
   nickname: string
   phone: string
 }
+
+type ProfileRelationshipActions = Pick<
+  ClientProfileContextValue,
+  "acceptFriendRequest" | "createFriendRequest"
+>
+
+type ProfileRelationshipSource = ClientUserRelationshipSource
 
 export function UserProfilePopoverLink({
   profile,
@@ -69,6 +82,7 @@ export function UserProfilePopover(props: UserProfilePopoverProps) {
     <StoredUserProfilePopover
       {...props}
       openDirectConversation={profileContext.openDirectConversation}
+      profileRelationshipActions={profileContext}
     />
   ) : (
     <LegacyUserProfilePopover {...props} />
@@ -78,13 +92,16 @@ export function UserProfilePopover(props: UserProfilePopoverProps) {
 function StoredUserProfilePopover({
   fallbackProfile = null,
   openDirectConversation,
+  profileRelationshipActions,
   userId,
   ...props
 }: UserProfilePopoverProps & {
   openDirectConversation: ClientProfileContextValue["openDirectConversation"]
+  profileRelationshipActions: ProfileRelationshipActions
 }) {
   const currentUserId = useClientCurrentUserId()
   const storedProfile = useClientUserProfile(userId)
+  const relationship = useClientUserRelationship(userId)
   const profile =
     storedProfile ?? (fallbackProfile?.id === userId ? fallbackProfile : null)
 
@@ -94,17 +111,42 @@ function StoredUserProfilePopover({
       currentUserId={currentUserId}
       openDirectConversation={openDirectConversation}
       profile={profile}
+      profileRelationshipActions={profileRelationshipActions}
+      relationship={relationship}
     />
   )
 }
 
 function LegacyUserProfilePopover(props: UserProfilePopoverProps) {
-  const { contacts, me, openDirectConversation } = useClientData()
+  const {
+    acceptFriendRequest,
+    contactDirectoryMode,
+    contacts,
+    createFriendRequest,
+    incomingFriendRequests,
+    me,
+    openDirectConversation,
+    outgoingFriendRequests,
+  } = useClientData()
   const profile = resolveUserProfile(
     props.userId,
     me,
     contacts,
     props.fallbackProfile ?? null
+  )
+  const profileRelationshipActions = {
+    acceptFriendRequest,
+    createFriendRequest,
+  }
+  const relationship = getProfileRelationship(
+    {
+      contactDirectoryMode,
+      contacts,
+      incomingFriendRequests,
+      outgoingFriendRequests,
+    },
+    props.userId ?? "",
+    me.id
   )
 
   return (
@@ -113,6 +155,8 @@ function LegacyUserProfilePopover(props: UserProfilePopoverProps) {
       currentUserId={me.id}
       openDirectConversation={openDirectConversation}
       profile={profile}
+      profileRelationshipActions={profileRelationshipActions}
+      relationship={relationship}
     />
   )
 }
@@ -122,17 +166,22 @@ function UserProfilePopoverContent({
   currentUserId,
   openDirectConversation,
   profile,
+  profileRelationshipActions,
+  relationship,
   triggerAriaLabel,
   triggerClassName,
 }: Omit<UserProfilePopoverProps, "fallbackProfile" | "userId"> & {
   currentUserId: string
   openDirectConversation: ClientProfileContextValue["openDirectConversation"]
   profile: UserProfile | null
+  profileRelationshipActions: ProfileRelationshipActions
+  relationship: ClientUserRelationship
 }) {
   const navigate = useNavigate()
   const [open, setOpen] = React.useState(false)
   const [avatarPreviewOpen, setAvatarPreviewOpen] = React.useState(false)
   const [openingConversation, setOpeningConversation] = React.useState(false)
+  const [friendRequestPending, setFriendRequestPending] = React.useState(false)
 
   if (!profile) {
     return <>{children}</>
@@ -140,7 +189,9 @@ function UserProfilePopoverContent({
 
   const currentProfile = profile
   const displayName = getUserDisplayName(currentProfile)
-  const canStartConversation = currentProfile.id !== currentUserId
+  const currentRelationship = relationship
+  const canStartConversation =
+    currentProfile.id !== currentUserId && currentRelationship.isFriend
 
   async function handleStartConversation() {
     if (!canStartConversation || openingConversation) {
@@ -159,6 +210,67 @@ function UserProfilePopoverContent({
       setOpeningConversation(false)
     }
   }
+
+  async function handleAddFriend() {
+    if (friendRequestPending) {
+      return
+    }
+
+    setFriendRequestPending(true)
+    try {
+      await profileRelationshipActions.createFriendRequest(currentProfile.id)
+      toast.success("好友申请已发送")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "发送好友申请失败")
+    } finally {
+      setFriendRequestPending(false)
+    }
+  }
+
+  async function handleAcceptFriend() {
+    const request = currentRelationship.incomingRequest
+    if (!request || friendRequestPending) {
+      return
+    }
+
+    setFriendRequestPending(true)
+    try {
+      await profileRelationshipActions.acceptFriendRequest(request.id)
+      toast.success("已添加好友")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "接受好友申请失败")
+    } finally {
+      setFriendRequestPending(false)
+    }
+  }
+
+  function handleProfileAction() {
+    if (currentRelationship.incomingRequest) {
+      void handleAcceptFriend()
+      return
+    }
+    if (!currentRelationship.isFriend) {
+      void handleAddFriend()
+      return
+    }
+    void handleStartConversation()
+  }
+
+  const profileActionLabel =
+    currentProfile.id === currentUserId
+      ? "发消息"
+      : currentRelationship.incomingRequest
+        ? "接受好友申请"
+        : currentRelationship.outgoingRequest
+          ? "已发送好友申请"
+          : currentRelationship.isFriend
+            ? "发消息"
+            : "加好友"
+  const profileActionDisabled =
+    currentProfile.id === currentUserId ||
+    Boolean(currentRelationship.outgoingRequest) ||
+    openingConversation ||
+    friendRequestPending
 
   function handleAvatarPreview() {
     setOpen(false)
@@ -248,14 +360,14 @@ function UserProfilePopoverContent({
 
             <Button
               className="w-full"
-              disabled={!canStartConversation || openingConversation}
-              onClick={() => void handleStartConversation()}
+              disabled={profileActionDisabled}
+              onClick={handleProfileAction}
               type="button"
             >
-              {openingConversation && (
+              {(openingConversation || friendRequestPending) && (
                 <Loader2Icon aria-hidden="true" className="animate-spin" />
               )}
-              发消息
+              {profileActionLabel}
             </Button>
           </div>
         </PopoverContent>
@@ -280,6 +392,14 @@ function UserProfilePopoverContent({
       </AvatarPreviewDialog>
     </>
   )
+}
+
+function getProfileRelationship(
+  data: ProfileRelationshipSource,
+  userId: string,
+  currentUserId: string
+): ClientUserRelationship {
+  return resolveClientUserRelationship(data, userId, currentUserId)
 }
 
 function resolveUserProfile(

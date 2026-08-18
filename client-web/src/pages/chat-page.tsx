@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { createConversationMentionLabelResolver } from "@/lib/conversation-mention-labels"
 import { useClientData } from "@/lib/client-data-context"
 import { useConversationDrafts } from "@/hooks/use-conversation-drafts"
+import { useConversationStatus } from "@/hooks/use-conversation-status"
 import { useMessageSelection } from "@/hooks/use-message-selection"
 import {
   createConversationTopic,
@@ -229,6 +230,11 @@ export function ChatPage() {
 
   const activeConversationId = activeConversation?.id ?? ""
   const activeConversationType = activeConversation?.type
+  const conversationStatus = useConversationStatus({
+    conversationId: activeConversationId,
+    supported:
+      activeConversationType === "direct" || activeConversationType === "app",
+  })
   const compactActiveConversationMessages = React.useCallback(() => {
     compactConversationMessages(activeConversationId)
   }, [activeConversationId, compactConversationMessages])
@@ -1009,12 +1015,17 @@ export function ChatPage() {
         }
         mentionLabelResolver={activeMentionLabelResolver}
         messages={activeMessages}
+        conversationStatus={conversationStatus.status}
         messageSelection={visibleMessageSelection}
         onCancelMessageSelection={messageSelection.cancel}
         onCancelReply={clearReplyTarget}
         onCompactMessages={compactActiveConversationMessages}
         onRegisterMessageView={registerConversationMessageView}
-        onDraftBlur={flushDrafts}
+        onDraftBlur={() => {
+          conversationStatus.onBlur()
+          flushDrafts()
+        }}
+        onDraftFocus={conversationStatus.onFocus}
         onDraftChange={setDraft}
         onCreateTopic={
           activeConversation?.type === "topic" ||

@@ -1,6 +1,6 @@
-import { Check } from "lucide-react-native"
+import * as Haptics from "expo-haptics"
 import { useCallback, useRef } from "react"
-import { StyleSheet } from "react-native"
+import { Platform, Pressable, StyleSheet, Text } from "react-native"
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable"
@@ -10,28 +10,30 @@ import Animated, {
   type SharedValue,
   useAnimatedStyle,
 } from "react-native-reanimated"
-import { Button, ListItem, SizableText, useTheme, YStack } from "tamagui"
-
 import type { ServerConfig } from "@/core/server-model"
+import { XGUIListItem, useXGUITheme } from "@/xgui"
 
 export function ServerListItem({
-  isSelected,
+  isRecentlyUsed,
   onDelete,
+  onEdit,
   onRequestActions,
   onSelect,
   onSwipeableClose,
   onSwipeableOpen,
+  separator,
   server,
 }: {
-  isSelected: boolean
+  isRecentlyUsed: boolean
   onDelete: () => void
+  onEdit: () => void
   onRequestActions: () => void
   onSelect: () => void
   onSwipeableClose: (close: () => void) => void
   onSwipeableOpen: (close: () => void) => void
+  separator: boolean
   server: ServerConfig
 }) {
-  const theme = useTheme()
   const swipeableRef = useRef<SwipeableMethods | null>(null)
   const didLongPressRef = useRef(false)
   const closeSwipeable = useCallback(() => {
@@ -48,116 +50,80 @@ export function ServerListItem({
   }
 
   function handleLongPress() {
-    if (server.isBuiltIn) {
-      return
-    }
+    if (server.isBuiltIn) return
 
     didLongPressRef.current = true
     closeSwipeable()
+    void performLongPressHaptic()
     onRequestActions()
   }
 
   const content = (
-    <ListItem
-      bg="transparent"
-      borderWidth={0}
-      iconAfter={
-        isSelected ? (
-          <Check color={String(theme.color10.val)} size={20} />
-        ) : undefined
-      }
+    <XGUIListItem
+      accessibilityLabel={`选择${server.name}`}
+      description={server.url}
       onLongPress={server.isBuiltIn ? undefined : handleLongPress}
       onPress={handlePress}
       onPressIn={() => {
         didLongPressRef.current = false
       }}
-      pressStyle={{
-        background: "transparent",
-      }}
-      rounded="$0"
-      size="$4"
-      subTitle={
-        <SizableText color="$gray9" numberOfLines={1} size="$2">
-          {server.url}
-        </SizableText>
-      }
-      title={
-        <SizableText
-          color={isSelected ? "$color10" : "$gray12"}
-          fontWeight="500"
-          numberOfLines={1}
-          size="$4"
-        >
-          {server.name}
-        </SizableText>
-      }
+      radio
+      separator={separator}
+      title={server.name}
+      value={isRecentlyUsed ? "最近使用" : undefined}
     />
   )
 
-  if (server.isBuiltIn) {
-    return (
-      <YStack
-        bg="transparent"
-        borderColor={isSelected ? "$color10" : "$gray9"}
-        borderWidth={1}
-        overflow="hidden"
-        rounded="$4"
-      >
-        {content}
-      </YStack>
-    )
-  }
+  if (server.isBuiltIn) return content
 
   return (
-    <YStack
-      bg="transparent"
-      borderColor={isSelected ? "$color10" : "$gray9"}
-      borderWidth={1}
-      overflow="hidden"
-      rounded="$4"
+    <ReanimatedSwipeable
+      friction={1}
+      onSwipeableClose={() => onSwipeableClose(closeSwipeable)}
+      onSwipeableWillOpen={() => onSwipeableOpen(closeSwipeable)}
+      overshootRight={false}
+      ref={swipeableRef}
+      renderRightActions={(
+        progress,
+        _translation,
+        swipeableMethods: SwipeableMethods
+      ) => (
+        <ServerSwipeActions
+          onDelete={onDelete}
+          onEdit={onEdit}
+          progress={progress}
+          swipeableMethods={swipeableMethods}
+        />
+      )}
+      rightThreshold={34}
     >
-      <ReanimatedSwipeable
-        friction={2}
-        onSwipeableClose={() => onSwipeableClose(closeSwipeable)}
-        onSwipeableWillOpen={() => onSwipeableOpen(closeSwipeable)}
-        ref={swipeableRef}
-        renderRightActions={(
-          progress,
-          _translation,
-          swipeableMethods: SwipeableMethods
-        ) => (
-          <DeleteSwipeAction
-            onDelete={onDelete}
-            progress={progress}
-            swipeableMethods={swipeableMethods}
-          />
-        )}
-        rightThreshold={40}
-      >
-        {content}
-      </ReanimatedSwipeable>
-    </YStack>
+      {content}
+    </ReanimatedSwipeable>
   )
 }
 
-const DELETE_ACTION_WIDTH = 88
+const SWIPE_ACTION_WIDTH = 68
+const SWIPE_ACTIONS_WIDTH = SWIPE_ACTION_WIDTH * 2
 
-function DeleteSwipeAction({
+function ServerSwipeActions({
   onDelete,
+  onEdit,
   progress,
   swipeableMethods,
 }: {
   onDelete: () => void
+  onEdit: () => void
   progress: SharedValue<number>
   swipeableMethods: SwipeableMethods
 }) {
+  const { colors } = useXGUITheme()
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       {
         translateX: interpolate(
           progress.value,
           [0, 1],
-          [DELETE_ACTION_WIDTH, 0],
+          [SWIPE_ACTIONS_WIDTH, 0],
           Extrapolation.CLAMP
         ),
       },
@@ -165,26 +131,86 @@ function DeleteSwipeAction({
   }))
 
   return (
-    <Animated.View style={[styles.deleteAction, animatedStyle]}>
-      <Button
-        height="100%"
+    <Animated.View style={[styles.swipeActions, animatedStyle]}>
+      <SwipeAction
+        accessibilityLabel="修改服务器"
+        backgroundColor={colors.indigo}
+        label="修改"
+        onPress={() => {
+          swipeableMethods.close()
+          onEdit()
+        }}
+      />
+      <SwipeAction
+        accessibilityLabel="删除服务器"
+        backgroundColor={colors.destructive}
+        label="删除"
         onPress={() => {
           swipeableMethods.close()
           onDelete()
         }}
-        rounded="$0"
-        theme="red"
-        width="100%"
-      >
-        删除
-      </Button>
+      />
     </Animated.View>
   )
 }
 
+function SwipeAction({
+  accessibilityLabel,
+  backgroundColor,
+  label,
+  onPress,
+}: {
+  accessibilityLabel: string
+  backgroundColor: string
+  label: string
+  onPress: () => void
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[styles.swipeAction, { backgroundColor }]}
+    >
+      <Text style={styles.swipeActionText}>{label}</Text>
+    </Pressable>
+  )
+}
+
+async function performLongPressHaptic() {
+  if (Platform.OS === "web") return
+
+  try {
+    if (Platform.OS === "android") {
+      await Haptics.performAndroidHapticsAsync(
+        Haptics.AndroidHaptics.Long_Press
+      )
+      return
+    }
+
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+  } catch {
+    // Haptics are optional feedback and must not block the action sheet.
+  }
+}
+
 const styles = StyleSheet.create({
-  deleteAction: {
+  swipeAction: {
+    alignItems: "center",
     height: "100%",
-    width: DELETE_ACTION_WIDTH,
+    justifyContent: "center",
+    paddingHorizontal: 17,
+    paddingVertical: 16,
+    width: SWIPE_ACTION_WIDTH,
+  },
+  swipeActions: {
+    flexDirection: "row",
+    height: "100%",
+    width: SWIPE_ACTIONS_WIDTH,
+  },
+  swipeActionText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    lineHeight: 24,
   },
 })
