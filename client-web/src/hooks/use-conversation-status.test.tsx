@@ -46,7 +46,7 @@ function setup(supported = true) {
       wrapper,
     }
   )
-  return { ...hook, handlers, sendRealtimeRequest }
+  return { ...hook, handlers, realtime: value, sendRealtimeRequest }
 }
 
 function emitStatus(handlers: Map<string, Handler>, status = "正在输入") {
@@ -127,6 +127,20 @@ describe("useConversationStatus", () => {
         sender: { id: "user-2", type: "user" },
       })
     })
+    expect(result.current.status).toBeUndefined()
+  })
+
+  it("clears received statuses across a disconnect and reconnect", () => {
+    const { handlers, realtime, rerender, result } = setup()
+    emitStatus(handlers)
+    expect(result.current.status).toBe("正在输入")
+
+    realtime.ready = false
+    rerender({ enabled: true, conversationId: "conversation-1" })
+    expect(result.current.status).toBeUndefined()
+
+    realtime.ready = true
+    rerender({ enabled: true, conversationId: "conversation-1" })
     expect(result.current.status).toBeUndefined()
   })
 

@@ -8,6 +8,24 @@ const STATUS_HEARTBEAT_MS = 3_000
 
 type StatusSender = { id: string; type: string }
 type ConversationStatus = { status: string; sender: StatusSender }
+type ConversationStatuses = Record<string, ConversationStatus>
+
+function createConversationStatusStore() {
+  let snapshot: ConversationStatuses = {}
+  const listeners = new Set<() => void>()
+
+  return {
+    getSnapshot: () => snapshot,
+    replace(next: ConversationStatuses) {
+      snapshot = next
+      for (const listener of listeners) listener()
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
 
 function readStatus(payload: unknown) {
   if (!payload || typeof payload !== "object") return null
@@ -37,24 +55,29 @@ export function useConversationStatus({
   supported: boolean
 }) {
   const { ready, sendRealtimeRequest, subscribeRealtimeEvent } = useRealtime()
-  const [statuses, setStatuses] = React.useState<
-    Record<string, ConversationStatus>
-  >({})
-  const statusesRef = React.useRef(statuses)
+  const [statusStore] = React.useState(createConversationStatusStore)
+  const statuses = React.useSyncExternalStore(
+    statusStore.subscribe,
+    statusStore.getSnapshot,
+    statusStore.getSnapshot
+  )
   const expiryTimersRef = React.useRef(new Map<string, number>())
   const focusedRef = React.useRef(false)
   const heartbeatRef = React.useRef<number | null>(null)
 
-  const clearStatus = React.useCallback((id: string) => {
-    const timer = expiryTimersRef.current.get(id)
-    if (timer !== undefined) window.clearTimeout(timer)
-    expiryTimersRef.current.delete(id)
-    if (!(id in statusesRef.current)) return
-    const next = { ...statusesRef.current }
-    delete next[id]
-    statusesRef.current = next
-    setStatuses(next)
-  }, [])
+  const clearStatus = React.useCallback(
+    (id: string) => {
+      const timer = expiryTimersRef.current.get(id)
+      if (timer !== undefined) window.clearTimeout(timer)
+      expiryTimersRef.current.delete(id)
+      const current = statusStore.getSnapshot()
+      if (!(id in current)) return
+      const next = { ...current }
+      delete next[id]
+      statusStore.replace(next)
+    },
+    [statusStore]
+  )
 
   React.useEffect(() => {
     const unsubscribeStatus = subscribeRealtimeEvent(
@@ -65,14 +88,13 @@ export function useConversationStatus({
         const oldTimer = expiryTimersRef.current.get(event.conversationId)
         if (oldTimer !== undefined) window.clearTimeout(oldTimer)
         const next = {
-          ...statusesRef.current,
+          ...statusStore.getSnapshot(),
           [event.conversationId]: {
             status: event.status,
             sender: event.sender,
           },
         }
-        statusesRef.current = next
-        setStatuses(next)
+        statusStore.replace(next)
         expiryTimersRef.current.set(
           event.conversationId,
           window.setTimeout(
@@ -87,7 +109,7 @@ export function useConversationStatus({
       (payload) => {
         try {
           const message = normalizeMessageCreatedEventPayload(payload)
-          const current = statusesRef.current[message.conversationId]
+          const current = statusStore.getSnapshot()[message.conversationId]
           if (
             current &&
             current.sender.id === message.sender.id &&
@@ -104,7 +126,7 @@ export function useConversationStatus({
       unsubscribeStatus()
       unsubscribeMessage()
     }
-  }, [clearStatus, subscribeRealtimeEvent])
+  }, [clearStatus, statusStore, subscribeRealtimeEvent])
 
   const stopHeartbeat = React.useCallback(() => {
     if (heartbeatRef.current !== null)
@@ -162,13 +184,12 @@ export function useConversationStatus({
 
   React.useEffect(() => {
     if (!ready) {
-      statusesRef.current = {}
-      setStatuses({})
+      statusStore.replace({})
       expiryTimersRef.current.forEach((timer) => window.clearTimeout(timer))
       expiryTimersRef.current.clear()
       stopHeartbeat()
     } else if (focusedRef.current) startHeartbeat()
-  }, [ready, startHeartbeat, stopHeartbeat])
+  }, [ready, startHeartbeat, statusStore, stopHeartbeat])
 
   React.useEffect(
     () => () => {
@@ -180,7 +201,7 @@ export function useConversationStatus({
   )
 
   return {
-    status: supported ? statuses[conversationId]?.status : undefined,
+    status: supported && ready ? statuses[conversationId]?.status : undefined,
     onFocus: React.useCallback(() => {
       focusedRef.current = true
       startHeartbeat()
