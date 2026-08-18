@@ -3,7 +3,7 @@ import * as React from "react"
 import { linkifyMessageText } from "@/lib/message-links"
 
 const messageInlineLinkClassName =
-  "mx-0.5 break-all font-medium text-sky-500 underline-offset-4 hover:text-sky-600"
+  "mx-0.5 break-all font-medium text-(--weui-link) underline-offset-4"
 
 export function MessageInlineLink({
   children,

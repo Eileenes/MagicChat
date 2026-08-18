@@ -1,13 +1,5 @@
 import * as React from "react"
-import {
-  ImageIcon,
-  LoaderCircle,
-  Mic,
-  Paperclip,
-  Send,
-  Smile,
-  X,
-} from "lucide-react"
+import { ImageIcon, LoaderCircle, Mic, Paperclip, Smile, X } from "lucide-react"
 import { toast } from "sonner"
 import {
   type ClientConversation,
@@ -645,23 +637,19 @@ export const ConversationPanelComposer = React.forwardRef<
                   onClick={() => setVoiceInputDialogOpen(true)}
                   size="icon-sm"
                   title="语音输入"
-                  variant="outline"
+                  variant="ghost"
                 >
                   <Mic className="size-4" />
                 </InputGroupButton>
                 <InputGroupButton
                   aria-label="发送消息"
-                  className="h-8 px-3"
+                  className="bg-(--weui-brand-3) text-white hover:bg-(--weui-brand-4) dark:text-white"
                   disabled={sending}
                   onClick={handleSendMessage}
                   size="sm"
                   variant="default"
                 >
-                  {sending ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
-                  )}
+                  {sending && <LoaderCircle className="size-4 animate-spin" />}
                   <span aria-hidden="true">发送</span>
                 </InputGroupButton>
               </div>

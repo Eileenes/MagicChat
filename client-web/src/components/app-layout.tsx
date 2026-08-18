@@ -67,7 +67,8 @@ const themeItems = [
 type ThemeValue = (typeof themeItems)[number]["value"]
 
 export function AppLayout() {
-  const { conversations, incomingFriendRequests, me, refreshMe } = useClientData()
+  const { conversations, incomingFriendRequests, me, refreshMe } =
+    useClientData()
   const hasPendingFriendRequests = incomingFriendRequests.some(
     (request) => request.status === "pending"
   )
@@ -358,8 +359,8 @@ function MainNavItem({
       size="icon-sm"
       className={
         active
-          ? "relative rounded-full"
-          : "relative rounded-full text-teal-500 hover:bg-teal-50 hover:text-teal-500 dark:hover:bg-teal-950 dark:hover:text-teal-500"
+          ? "relative rounded-full bg-(--weui-brand-3) text-white hover:bg-(--weui-brand-4) dark:text-white"
+          : "relative rounded-full text-(--weui-brand-3) hover:bg-(--weui-brand-1) hover:text-(--weui-brand-3)"
       }
     >
       <NavLink to={item.to} aria-label={accessibleLabel} title={item.label}>
@@ -386,7 +387,7 @@ function HomepageLink() {
   return (
     <Button
       asChild
-      className="rounded-md hover:bg-transparent dark:hover:bg-transparent"
+      className="rounded-md hover:bg-transparent hover:text-(--weui-brand-3) dark:hover:bg-transparent"
       size="icon-sm"
       variant="ghost"
     >
@@ -407,7 +408,7 @@ function GithubLink() {
   return (
     <Button
       asChild
-      className="rounded-md hover:bg-transparent hover:text-teal-500 dark:hover:bg-transparent"
+      className="rounded-md hover:bg-transparent hover:text-(--weui-brand-3) dark:hover:bg-transparent"
       size="icon-sm"
       variant="ghost"
     >
@@ -456,7 +457,7 @@ function ThemeSwitcher() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="rounded-md hover:bg-transparent hover:text-teal-500 aria-expanded:bg-transparent aria-expanded:text-teal-500 data-[state=open]:bg-transparent data-[state=open]:text-teal-500 dark:hover:bg-transparent"
+          className="rounded-md hover:bg-transparent hover:text-(--weui-brand-3) aria-expanded:bg-transparent aria-expanded:text-(--weui-brand-3) data-[state=open]:bg-transparent data-[state=open]:text-(--weui-brand-3) dark:hover:bg-transparent"
           aria-label={`配色：${currentTheme.label}`}
           title={`配色：${currentTheme.label}`}
         >

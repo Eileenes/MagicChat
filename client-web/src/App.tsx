@@ -13,6 +13,7 @@ import { GlobalBeforeUnloadGuard } from "@/components/global-before-unload-guard
 import { AppInfoProvider } from "@/components/app-info-provider"
 import { ChatPage } from "@/pages/chat-page"
 import { ContactsPage } from "@/pages/contacts-page"
+import { DebugColorsPage } from "@/pages/debug-colors-page"
 import { DocumentPage } from "@/pages/document-page"
 import { LoginPage } from "@/pages/login-page"
 import { ProjectDefaultRedirect } from "@/pages/projects/project-default-redirect"
@@ -39,6 +40,15 @@ export function App() {
             <>
               <ClientDocumentTitle title="登录" disableMessageAlert />
               <LoginPage />
+            </>
+          }
+        />
+        <Route
+          path="/debug/colors"
+          element={
+            <>
+              <ClientDocumentTitle title="WeUI 颜色变量" disableMessageAlert />
+              <DebugColorsPage />
             </>
           }
         />
