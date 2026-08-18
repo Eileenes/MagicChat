@@ -142,7 +142,7 @@ body:has(.scene-page) .brand img, body:has(.legal-page) .brand img { filter: sat
 @keyframes pain-carousel-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 /* Scene: feature explorer */
-.feature-explorer { display: grid; grid-template-columns: 1fr; align-items: start; gap: clamp(16px, 2vw, 28px); width: calc(100% - clamp(12px, 1.6vw, 26px)); margin-left: calc(clamp(12px, 1.6vw, 26px) + var(--banner-shift-x) + 15px); }
+.feature-explorer { position: relative; top: 20px; display: grid; grid-template-columns: 1fr; align-items: start; gap: clamp(16px, 2vw, 28px); width: calc(100% - clamp(12px, 1.6vw, 26px)); margin-left: calc(clamp(12px, 1.6vw, 26px) + var(--banner-shift-x) + 15px); }
 .feature-previews { min-width: 0; }
 .feature-preview-screen[hidden], .feature-preview-empty[hidden] { display: none; }
 .feature-preview-screen.is-active { animation: feature-preview-in 380ms var(--ease) both; }
