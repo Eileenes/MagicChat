@@ -23,24 +23,11 @@ const painPoints = [
   ['05', '数据隐私与风控隐患', '公共 AI 无法保障企业核心业务数据的私有可控，且缺乏对敏感数据读取隔离及高风险操作（如发公告、改状态）的人工审核屏障。'],
 ];
 
-const workflow = [
-  ['01', '提出自然语言目标', '用户只需输入：“茉莉，把近期客户群里关于导出功能报错的吐槽整理一下，帮我找研发跟进修复。” 茉莉自动识别主题、涉及角色与交付预期，无需填写复杂表单。'],
-  ['02', '智能定位关联上下文', '茉莉快速穿梭于“客户反馈群”、“产品体验组”及“Q3 迭代看板”，毫秒级锁死与导出故障相关的 5 个历史会话、关键干系人（产品小王、研发老张）及需求文档。'],
-  ['03', '跨会话查询背景与溯源', '自动调取客户上传的报错截图与日志附件，在对话框中直观标注引用来源（如“依据 8/10 客户群 L34 消息”），方便干系人随时一键回看原始凭证。'],
-  ['04', '深度提炼与事实对齐', '交叉比对多方反馈，自动区分已知事实（海量导出超时报错）、已定结论（产品经理已规划异步导出）与未决疑点（后端服务是否扩容），避免把调侃误当结论。'],
-  ['05', '结构化提取任务与卡点', '自动从零碎聊天中提炼出结构化待办：“1. 前端补充导出进度条（小张/周三前）；2. 后端优化流式传输（老李/周四前）”，并自动标注潜在依赖卡点。'],
-  ['06', '重复校验与合规风控', '准备创建任务前，茉莉自动检索系统现存任务库，发现老李上周已创建过类似优化任务并自动提示合并，同时核验操作者的写入权限，杜绝越权或重复建单。'],
-  ['07', '智能起草通知与方案', '自动为产品经理小王起草《导出功能优化方案草稿》，并为研发老李生成任务指派提醒与群公告卡片，呈送用户直观预览与微调。'],
-  ['08', '全透明变更确认', '涉及“创建项目任务”、“修改负责人”及“在研发群发送提醒”等写操作时，茉莉展示完整变更字段与受影响对象，经由用户明确点击确认后才真正执行。'],
-  ['09', '闭环执行与动态跟进', '确认后自动创建任务并 @研发老李，定时跟进进度。当老李回复“已提交 Hotfix 代码”时，茉莉自动感知并延续当前上下文，无需用户手动二次交代背景。'],
-  ['10', '沉淀结果与知识闭环', '自动汇总解决进度，把“客户问题-修复任务-发布记录”全链路卡片回写至原始客户群，并沉淀到团队知识库，让下一次类似问题处理可以直接继承经验。'],
-];
-
 const capabilities = [
-  ['全域感知·记得住', '上下文自动沉淀在会话、任务与项目日志中，跨会话长期记忆，告别每次对话重新交代背景的繁琐。'],
-  ['主动协同·会办事', '主动梳理待办、自动起草通知、智能催办跟进，将零散沟通自动转化为可执行、有反馈的闭环行动。'],
-  ['严密风控·守边界', '严格遵循企业级权限体系，敏感数据读取可控，所有重要写操作与外部通知均需经由人工明确确认。'],
-  ['自主可控·易扩展', '支持企业自建环境私有化部署，核心代码开源，可自由接入企业已有大模型、API 及业务系统。'],
+  ['全域感知·记得住', '上下文自动沉淀在会话、任务与项目日志中，跨会话长期记忆，告别每次对话重新交代背景的繁琐。', '上下文工作台', 'tabler:brain', '5 个关联会话'],
+  ['主动协同·会办事', '主动梳理待办、自动起草通知、智能催办跟进，将零散沟通自动转化为可执行、有反馈的闭环行动。', '项目推进面板', 'tabler:checkbox', '3 项待跟进'],
+  ['严密风控·守边界', '严格遵循企业级权限体系，敏感数据读取可控，所有重要写操作与外部通知均需经由人工明确确认。', '权限确认中心', 'tabler:shield-check', '需确认 2 项'],
+  ['自主可控·易扩展', '支持企业自建环境私有化部署，核心代码开源，可自由接入企业已有大模型、API 及业务系统。', '扩展连接中心', 'tabler:plug-connected', '6 个已连接'],
 ];
 
 const comparisonRows = [
@@ -74,32 +61,34 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
     <section class="scene scene-hero" aria-labelledby="hero-title">
       <img class="scene-image" src={asset('team-collaboration.webp')} alt="" aria-hidden="true" />
       <div class="scene-shade"></div>
-      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span>即应</span><span class="hero-title-accent">--AI时代的团队协作入口</span></h1><p class="scene-lead">即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持免费私有化部署</span></div></div>
+      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span>即应</span><span class="hero-title-accent">--AI时代的团队协作入口</span></h1><p class="scene-lead">即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持私有化部署</span></div></div>
     </section>
 
     <section class="scene scene-why" id="why" aria-labelledby="why-title">
       <img class="scene-image" src={asset('workspace-detail.webp')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow">为什么需要即应</span><h2 id="why-title"><span class="title-line">AI 已经会回答问题，</span><span class="title-line title-accent">工作却仍然由人来搬运</span></h2><p>真正的企业级办公协作远超一问一答。它需要持续理解团队演进的上下文，找到正确的人与会话，把复杂的沟通转化为可落地的结果。</p></div><div class="scene-rail">{painPoints.map(([number, itemTitle, body]) => <article class="scene-rail-item"><span>{number}</span><div><h3>{itemTitle}</h3><p>{body}</p></div><Icon name="tabler:arrow-right" size={18} aria-hidden="true" /></article>)}</div></div>
+      <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow">为什么需要即应</span><h2 id="why-title"><span class="title-line">AI 会回答问题，但</span><span class="title-line title-accent">工作仍由人来解决。</span></h2><p>在即应中不仅可以提供完整的团队协作能力，让沟通与执行在同一个空间完成。同时也内置了 AI 智能体能自然接入相关流程，让每个人都能轻松定义专属智能体，完成更多定制化工作。</p></div><section class="pain-carousel" data-pain-carousel aria-label="团队协作痛点轮播" aria-roledescription="carousel"><div class="pain-carousel-viewport"><div class="pain-carousel-track" data-pain-track>{painPoints.map(([number, itemTitle, body], index) => <article class="pain-banner" id={`pain-slide-${number}`} data-pain-slide role="group" aria-roledescription="slide" aria-label={`${index + 1} / ${painPoints.length}`} aria-hidden={index === 0 ? 'false' : 'true'}><div class="pain-banner-content"><p class="pain-banner-meta"><span>{number}</span><i></i><span>需求与痛点</span></p><h3>{itemTitle}</h3><p>{body}</p></div><span class="pain-banner-ordinal" aria-hidden="true">{number}</span></article>)}</div></div><div class="pain-carousel-controls"><div class="pain-carousel-pagination" role="tablist" aria-label="选择协作痛点">{painPoints.map(([number, itemTitle], index) => <button class:list={['pain-carousel-page', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`pain-slide-${number}`} data-pain-pagination={index} aria-label={`查看第 ${number} 项：${itemTitle}`} title={itemTitle}><span class="sr-only">{itemTitle}</span></button>)}</div><div class="pain-carousel-nav"><button class="pain-carousel-arrow pain-carousel-previous" type="button" data-pain-previous aria-label="查看上一项协作痛点" title="上一项"><Icon name="tabler:arrow-left" size={16} aria-hidden="true" /></button><button class="pain-carousel-arrow pain-carousel-next" type="button" data-pain-next aria-label="查看下一项协作痛点" title="下一项"><Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></button></div></div></section></div>
     </section>
 
     <section class="scene scene-solution" id="solution" aria-labelledby="solution-title">
       <img class="scene-image" src={asset('team-meeting.webp')} alt="" aria-hidden="true" loading="lazy" /><div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-top"><div class="scene-text-block"><span class="scene-eyebrow">即应的解决方案</span><h2 id="solution-title"><span class="title-line">一句话说出目标，</span><span class="title-line title-accent">剩下的交给茉莉</span></h2><p>即应提供群组聊天、项目推进、任务分配、目标跟踪与实时协作文档，让沟通与执行在同一个空间完成。内置 AI 智能体茉莉可以自然接入这些流程，自动整理上下文、跟进项目进展、提炼任务并沉淀知识；开放的扩展能力，让每个人都能定义专属智能体，完成更多定制化工作。</p></div><div class="workflow-panel"><div class="scene-flow-head"><span>真实工作流</span></div><div class="workflow-tabs" role="tablist" aria-label="真实工作流步骤">{workflow.map(([number, stepTitle], index) => <button class:list={['workflow-tab', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`workflow-panel-${number}`} data-workflow-tab={number}><span>{number}</span><strong>{stepTitle}</strong></button>)}</div><div class="workflow-cards">{workflow.map(([number, stepTitle, body], index) => <article class:list={['workflow-card', index === 0 && 'is-active']} id={`workflow-panel-${number}`} role="tabpanel" data-workflow-panel={number} hidden={index !== 0}><span class="workflow-card-number">{number}</span><div><p class="workflow-card-kicker">茉莉正在做什么</p><h3>{stepTitle}</h3><p>{body}</p></div><Icon name="tabler:arrow-right" size={22} aria-hidden="true" /></article>)}</div></div></div>
+      <div class="scene-content scene-content-top scene-solution-content">
+        <div class="scene-text-block"><span class="scene-eyebrow">功能介绍</span><h2 id="solution-title"><span class="title-line">一句话说出目标，</span><span class="title-line title-accent">剩下的交给 AI 助理</span></h2><p>即应希望 AI 不是与工作割裂的聊天机器人，而是能接手实际流程的数字员工——沟通、项目、时间、文档，处处替你分担；团队进展一目了然，人的精力回归真正重要的判断与创造。</p></div>
+        <section class="feature-explorer" aria-label="即应核心能力">
+          <div class="feature-list">{capabilities.map(([itemTitle, , label], index) => <button class:list={['feature-item', index === 0 && 'is-active']} type="button" aria-expanded={index === 0 ? 'true' : 'false'} aria-controls={`feature-preview-${index + 1}`} data-feature-tab={index}><span class="feature-item-title">{itemTitle}{index !== 0 && <Icon name="tabler:arrow-right" size={16} aria-hidden="true" />}</span><span class="sr-only">查看{label}界面</span></button>)}</div>
+          <div class="feature-previews">
+            <article class="feature-preview-empty" data-feature-empty aria-label="即应团队工作台预览" hidden><div class="product-window"><div class="product-app"><aside class="app-dock" aria-hidden="true"><span class="app-dock-logo">即</span><Icon name="tabler:message-circle" size={14} /><Icon name="tabler:users" size={14} /><Icon name="tabler:checkbox" size={14} /></aside><aside class="app-inbox"><header><strong>消息</strong><Icon name="tabler:search" size={15} /></header><div class="app-inbox-tabs"><b>全部</b><span>未读</span><span>群聊</span></div><div class="app-thread"><i class="app-avatar app-avatar-molly">茉</i><span><strong>茉莉</strong><small>正在整理团队上下文</small></span></div><div class="app-thread"><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>项目讨论与任务动态</small></span></div></aside><section class="app-chat app-chat-empty"><header><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>15 人</small></span><Icon name="tabler:users" size={15} /></header><div class="app-chat-ghost" aria-hidden="true"><i></i><i></i><i></i></div><footer><span>输入消息</span><Icon name="tabler:send" size={14} /></footer></section></div></div></article>
+            {capabilities.map(([itemTitle, body, label, icon, status], index) => <article class:list={['feature-preview-screen', `feature-preview-${index + 1}`, index === 0 && 'is-active']} id={`feature-preview-${index + 1}`} data-feature-preview={index} aria-label={label} hidden={index !== 0}><div class="product-window"><div class="product-app"><aside class="app-dock" aria-hidden="true"><span class="app-dock-logo">即</span><Icon name="tabler:message-circle" size={14} /><Icon name="tabler:users" size={14} /><Icon name="tabler:checkbox" size={14} /></aside><aside class="app-inbox"><header><strong>消息</strong><Icon name="tabler:search" size={15} /></header><div class="app-inbox-tabs"><b>全部</b><span>未读</span><span>群聊</span></div><div class="app-thread"><i class="app-avatar app-avatar-molly">茉</i><span><strong>茉莉</strong><small>{label}</small></span></div><div class="app-thread is-current"><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>{status}</small></span></div><div class="app-thread"><i class="app-avatar app-avatar-doc">文</i><span><strong>项目资料</strong><small>已同步更新</small></span></div></aside><section class="app-chat"><header><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>15 人</small></span><Icon name="tabler:users" size={15} /></header><div class="app-chat-history"><time>今天 17:19</time><div class="app-message"><i class="app-avatar app-avatar-molly">茉</i><div><small>茉莉 AI 助理 · 刚刚</small><article><div class="app-message-heading"><Icon name={icon} size={14} /><strong>{label}</strong><b>{status}</b></div><p>{index === 0 ? '已关联客户反馈、项目看板与历史讨论，可直接回看上下文来源。' : index === 1 ? '已将讨论转成可跟进事项，并同步负责人与截止时间。' : index === 2 ? '涉及重要操作时，系统会展示影响范围并等待人工确认。' : '已接入团队服务与模型能力，可按工作流组合调用。'}</p>{index === 0 && <div class="app-context-sources"><span>客户反馈</span><span>项目看板</span><span>历史会话</span></div>}{index === 1 && <div class="app-task-list"><span><i></i>整理客户反馈 <b>进行中</b></span><span><i></i>同步研发负责人 <b>已完成</b></span></div>}{index === 2 && <div class="app-permission-list"><span><Icon name="tabler:eye" size={11} />读取上下文</span><span><Icon name="tabler:edit" size={11} />创建任务待确认</span></div>}{index === 3 && <div class="app-integration-list"><span><i></i>团队知识库 <b>已连接</b></span><span><i></i>模型服务 API <b>已连接</b></span></div>}</article></div></div><div class="app-message app-message-brief"><i class="app-avatar app-avatar-user">你</i><div><small>你 · 刚刚</small><span>{itemTitle}</span></div></div><div class="app-typing" aria-label="茉莉正在输入"><span>茉莉正在输入</span><i></i><i></i><i></i></div></div><footer><span class="app-typing-text">请继续处理{itemTitle}</span><Icon name="tabler:send" size={14} /></footer></section></div></div><div class="feature-preview-copy"><span>{label}</span><p>{body}</p></div></article>)}
+          </div>
+        </section>
+      </div>
     </section>
 
-    <section class="dual-section" id="capabilities" aria-labelledby="capability-title">
+    <section class="dual-section dual-section-comparison" id="capabilities" aria-labelledby="capability-title">
       <img class="dual-image" src={asset('download-workspace.webp')} alt="" aria-hidden="true" loading="lazy" />
       <div class="scene-shade scene-shade-heavy"></div>
-      <div class="dual-inner">
-        <div class="capability-panel">
-          <span class="scene-eyebrow">核心能力</span>
-          <h2 id="capability-title"><span class="title-line">茉莉不是工具栏，</span><span class="title-line title-accent">是团队里多了一位同事</span></h2>
-          <p class="capability-intro">即应希望让 AI 不再是与工作割裂的聊天机器人，而是能够真正接手流程、持续推进结果的数字员工。从沟通、项目、时间到文档，AI 在每个关键环节分担重复工作；团队进展清晰可见，人的精力回到更重要的判断、决策与创造。</p>
-          <div class="capability-cards">{capabilities.map(([itemTitle, body], index) => <article class="capability-card"><span class="capability-number">0{index + 1}</span><div><h3>{itemTitle}</h3><p>{body}</p></div></article>)}</div>
-          <blockquote>“茉莉，新版本发布进展如何？帮我汇总卡点并向相关负责人发送提醒。”</blockquote>
-        </div>
-        <div class="comparison-panel" id="comparison" aria-label="同类产品对比">
-          <p class="panel-intro">即应更专注于让 AI 以明确身份进入团队并持续推进工作。</p>
+      <div class="comparison-inner" id="comparison">
+        <div class="comparison-heading"><span class="scene-eyebrow">竞品对比</span><h2 id="capability-title">产品能力，一目了然</h2><p>围绕团队协作、部署方式与 AI 接入能力，快速了解即应与常见协作产品的覆盖范围。</p></div>
+        <div class="comparison-panel comparison-panel-full" aria-label="同类产品对比">
           <div class="compare-wrap"><table class="compare-table"><thead><tr><th>比较维度</th><th class="jiying">即应</th><th>飞书</th><th>钉钉</th><th>企业微信</th><th>Slack</th><th>Mattermost</th><th>Rocket.Chat</th></tr></thead><tbody>{comparisonRows.map(([dimension, ...support]) => <tr><th>{dimension}</th>{support.map((supported, index) => <td class:list={[index === 0 && 'jiying']}><span class="sr-only">{supported ? '支持' : '不支持'}</span><Icon name={supported ? 'tabler:check' : 'tabler:x'} size={15} aria-hidden="true" /></td>)}</tr>)}</tbody></table></div>
           <p class="compare-note">对比基于各产品公开定位与常见使用方式整理；“私有化部署”指可部署到企业自有基础设施。具体能力可能随版本、套餐和企业配置变化。</p>
         </div>
@@ -169,21 +158,76 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
   </main>
   <SiteFooter />
   <script>
-    const revealItems = Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>('.scene-hero .scene-content > *, .scene-why .scene-text-block, .scene-why .scene-rail, .scene-solution .scene-text-block, .workflow-panel, .capability-panel > .scene-eyebrow, .capability-panel > h2, .capability-intro, .capability-cards, .capability-panel > blockquote, .comparison-panel, .faq-inner, .scene-download .scene-content > *, .footer-grid > *'))));
+    const revealItems = Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>('.scene-hero .scene-content > *, .scene-why .scene-text-block, .scene-why .pain-carousel, .scene-solution .scene-text-block, .feature-explorer, .comparison-heading, .comparison-panel, .faq-inner, .scene-download .scene-content > *, .footer-grid > *'))));
     revealItems.forEach((item, index) => { item.classList.add('motion-reveal'); item.style.setProperty('--reveal-delay', `${(index % 5) * 70}ms`); });
     if ('IntersectionObserver' in window) { const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target); } }), { threshold: 0.16 }); revealItems.forEach((item) => observer.observe(item)); } else revealItems.forEach((item) => item.classList.add('is-visible'));
-    const workflowTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-workflow-tab]'));
-    const workflowPanels = document.querySelectorAll<HTMLElement>('[data-workflow-panel]');
-    let activeWorkflowIndex = 0;
-    const showWorkflowStep = (index: number) => {
-      activeWorkflowIndex = (index + workflowTabs.length) % workflowTabs.length;
-      const activeTab = workflowTabs[activeWorkflowIndex];
-      const step = activeTab.dataset.workflowTab;
-      workflowTabs.forEach((item) => { const active = item === activeTab; item.classList.toggle('is-active', active); item.setAttribute('aria-selected', String(active)); });
-      workflowPanels.forEach((panel) => { const active = panel.dataset.workflowPanel === step; panel.classList.toggle('is-active', active); panel.hidden = !active; });
+    const featureTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-feature-tab]'));
+    const featurePreviews = Array.from(document.querySelectorAll<HTMLElement>('[data-feature-preview]'));
+    const featureEmpty = document.querySelector<HTMLElement>('[data-feature-empty]');
+    const showFeature = (index: number) => {
+      featureTabs.forEach((tab, tabIndex) => { const active = tabIndex === index; tab.classList.toggle('is-active', active); tab.setAttribute('aria-expanded', String(active)); });
+      featurePreviews.forEach((preview, previewIndex) => { const active = previewIndex === index; preview.classList.toggle('is-active', active); preview.hidden = !active; });
+      if (featureEmpty) featureEmpty.hidden = true;
     };
-    workflowTabs.forEach((tab, index) => tab.addEventListener('click', () => showWorkflowStep(index)));
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && workflowTabs.length > 1) window.setInterval(() => showWorkflowStep(activeWorkflowIndex + 1), 3000);
+    featureTabs.forEach((tab, index) => tab.addEventListener('click', () => showFeature(index)));
+    const painCarousel = document.querySelector<HTMLElement>('[data-pain-carousel]');
+    const painViewport = painCarousel?.querySelector<HTMLElement>('.pain-carousel-viewport');
+    const painTrack = painCarousel?.querySelector<HTMLElement>('[data-pain-track]');
+    const painSlides = Array.from(painCarousel?.querySelectorAll<HTMLElement>('[data-pain-slide]') ?? []);
+    const painPages = Array.from(painCarousel?.querySelectorAll<HTMLButtonElement>('[data-pain-pagination]') ?? []);
+    const painPrevious = painCarousel?.querySelector<HTMLButtonElement>('[data-pain-previous]');
+    const painNext = painCarousel?.querySelector<HTMLButtonElement>('[data-pain-next]');
+    if (painCarousel && painTrack && painSlides.length > 1) {
+      let activePainIndex = 0;
+      let painAutoplay: number | undefined;
+      let painPointerStart: number | undefined;
+      let painPointerControl = false;
+      let painCarouselVisible = !('IntersectionObserver' in window);
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const showPainSlide = (index: number) => {
+        activePainIndex = (index + painSlides.length) % painSlides.length;
+        painTrack.style.setProperty('--pain-slide-index', String(activePainIndex));
+        painSlides.forEach((slide, slideIndex) => { slide.setAttribute('aria-hidden', String(slideIndex !== activePainIndex)); });
+        painPages.forEach((page, pageIndex) => { const active = pageIndex === activePainIndex; page.classList.toggle('is-active', active); page.setAttribute('aria-selected', String(active)); });
+      };
+      const stopPainAutoplay = () => { if (painAutoplay) window.clearInterval(painAutoplay); painAutoplay = undefined; painCarousel.classList.remove('is-autoplaying'); };
+      const startPainAutoplay = () => {
+        stopPainAutoplay();
+        if (reduceMotion.matches || document.hidden || !painCarouselVisible || painCarousel.matches(':focus-within')) return;
+        void painCarousel.offsetWidth;
+        painCarousel.classList.add('is-autoplaying');
+        painAutoplay = window.setInterval(() => showPainSlide(activePainIndex + 1), 3000);
+      };
+      const selectPainSlide = (index: number) => {
+        if (painPointerControl && document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        painPointerControl = false;
+        showPainSlide(index);
+        startPainAutoplay();
+      };
+      const markPainPointerControl = () => { painPointerControl = true; };
+      painPrevious?.addEventListener('pointerdown', markPainPointerControl);
+      painNext?.addEventListener('pointerdown', markPainPointerControl);
+      painPages.forEach((page) => page.addEventListener('pointerdown', markPainPointerControl));
+      painPrevious?.addEventListener('click', () => selectPainSlide(activePainIndex - 1));
+      painNext?.addEventListener('click', () => selectPainSlide(activePainIndex + 1));
+      painPages.forEach((page, index) => page.addEventListener('click', () => selectPainSlide(index)));
+      painCarousel.addEventListener('focusin', stopPainAutoplay);
+      painCarousel.addEventListener('focusout', () => window.setTimeout(startPainAutoplay));
+      painViewport?.addEventListener('pointerdown', (event) => { if (!event.isPrimary) return; painPointerStart = event.clientX; stopPainAutoplay(); });
+      painViewport?.addEventListener('pointerup', (event) => {
+        if (painPointerStart === undefined || !event.isPrimary) return;
+        const distance = event.clientX - painPointerStart;
+        painPointerStart = undefined;
+        if (Math.abs(distance) >= 48) showPainSlide(activePainIndex + (distance < 0 ? 1 : -1));
+        startPainAutoplay();
+      });
+      painViewport?.addEventListener('pointercancel', () => { painPointerStart = undefined; startPainAutoplay(); });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) stopPainAutoplay(); else startPainAutoplay(); });
+      reduceMotion.addEventListener('change', startPainAutoplay);
+      if ('IntersectionObserver' in window) new IntersectionObserver((entries) => entries.forEach((entry) => { painCarouselVisible = entry.isIntersecting; if (painCarouselVisible) startPainAutoplay(); else stopPainAutoplay(); }), { threshold: 0.35 }).observe(painCarousel);
+      showPainSlide(0);
+      startPainAutoplay();
+    }
     if (window.matchMedia('(hover: hover)').matches) document.querySelectorAll<HTMLDetailsElement>('.faq-list details').forEach((item) => {
       item.addEventListener('mouseenter', () => { item.open = true; });
       item.addEventListener('mouseleave', () => { if (!item.matches(':focus-within')) item.open = false; });
