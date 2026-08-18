@@ -1864,11 +1864,17 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   return (
     <ClientDataContext.Provider value={value}>
       <ClientProfileProvider
+        acceptFriendRequest={acceptFriendRequest}
         contactApps={contactApps}
+        contactDirectoryMode={contactDirectoryMode}
         contacts={contacts}
+        createFriendRequest={createFriendRequest}
+        incomingFriendRequests={incomingFriendRequests}
         me={me}
         openAppConversation={openAppConversation}
         openDirectConversation={openDirectConversation}
+        outgoingFriendRequests={outgoingFriendRequests}
+        usersById={usersById}
       >
         {children}
       </ClientProfileProvider>

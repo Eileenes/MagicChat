@@ -297,7 +297,7 @@ export function ConversationScreen() {
     const error = messagesQuery.error ?? topicQuery.error ?? currentUserError
     if (isUnauthorizedError(error)) {
       void invalidateSession()
-      router.replace("/init")
+      router.replace("/server-management")
     }
   }, [
     currentUserError,

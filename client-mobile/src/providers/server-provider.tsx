@@ -22,6 +22,7 @@ const SERVER_STORAGE_KEY = "@magicchat/servers/v1"
 
 type PersistedServerState = {
   customServers: ServerConfig[]
+  recentServerId: string | null
   selectedServerId: string
 }
 
@@ -35,7 +36,10 @@ type UpdateServerResult =
 
 type ServerContextValue = {
   addServer: (name: string, url: string) => AddServerResult
+  hasSelectedServerInSession: boolean
   isHydrated: boolean
+  markServerAsRecentlyUsed: (id: string) => void
+  recentServerId: string | null
   removeServer: (id: string) => void
   selectedServer: ServerConfig
   selectServer: (id: string) => void
@@ -48,6 +52,9 @@ const ServerContext = createContext<ServerContextValue | null>(null)
 export function ServerProvider({ children }: React.PropsWithChildren) {
   const [customServers, setCustomServers] = useState<ServerConfig[]>([])
   const [selectedServerId, setSelectedServerId] = useState(OFFICIAL_SERVER_ID)
+  const [hasSelectedServerInSession, setHasSelectedServerInSession] =
+    useState(false)
+  const [recentServerId, setRecentServerId] = useState<string | null>(null)
   const [isHydrated, setIsHydrated] = useState(false)
   const servers = useMemo(
     () => [officialServer, ...customServers],
@@ -66,6 +73,7 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
 
         if (!isCancelled && storedState) {
           setCustomServers(storedState.customServers)
+          setRecentServerId(storedState.recentServerId)
           setSelectedServerId(storedState.selectedServerId)
         }
       } catch {
@@ -91,6 +99,7 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
 
     const state: PersistedServerState = {
       customServers,
+      recentServerId,
       selectedServerId: selectedServer.id,
     }
 
@@ -99,7 +108,7 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
         // The in-memory list remains usable if local persistence is unavailable.
       }
     )
-  }, [customServers, isHydrated, selectedServer.id])
+  }, [customServers, isHydrated, recentServerId, selectedServer.id])
 
   const addServer = useCallback(
     (name: string, url: string): AddServerResult => {
@@ -136,6 +145,16 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
     (id: string) => {
       if (servers.some((server) => server.id === id)) {
         setSelectedServerId(id)
+        setHasSelectedServerInSession(true)
+      }
+    },
+    [servers]
+  )
+
+  const markServerAsRecentlyUsed = useCallback(
+    (id: string) => {
+      if (servers.some((server) => server.id === id)) {
+        setRecentServerId(id)
       }
     },
     [servers]
@@ -158,6 +177,7 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
       setCustomServers((current) =>
         current.filter((candidate) => candidate.id !== id)
       )
+      setRecentServerId((current) => (current === id ? null : current))
       setSelectedServerId((current) =>
         current === id ? OFFICIAL_SERVER_ID : current
       )
@@ -215,7 +235,10 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
   const value = useMemo(
     () => ({
       addServer,
+      hasSelectedServerInSession,
       isHydrated,
+      markServerAsRecentlyUsed,
+      recentServerId,
       removeServer,
       selectedServer,
       selectServer,
@@ -224,7 +247,10 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
     }),
     [
       addServer,
+      hasSelectedServerInSession,
       isHydrated,
+      markServerAsRecentlyUsed,
+      recentServerId,
       removeServer,
       selectedServer,
       selectServer,
@@ -301,7 +327,14 @@ function parsePersistedState(value: string | null): PersistedServerState | null 
         ? parsed.selectedServerId
         : OFFICIAL_SERVER_ID
 
-    return { customServers, selectedServerId }
+    const recentServerId =
+      typeof parsed.recentServerId === "string" &&
+      (parsed.recentServerId === OFFICIAL_SERVER_ID ||
+        customServers.some((server) => server.id === parsed.recentServerId))
+        ? parsed.recentServerId
+        : null
+
+    return { customServers, recentServerId, selectedServerId }
   } catch {
     return null
   }

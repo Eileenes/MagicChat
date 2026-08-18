@@ -11,6 +11,13 @@ import {
 } from "@/data/query"
 import type { ServerTarget } from "@/core/server-target"
 
+export function useAppInfoQuery(server: ServerTarget, enabled = true) {
+  return useQuery({
+    ...appInfoQueryOptions(server),
+    enabled,
+  })
+}
+
 export function useCachedAppInfo(server: ServerTarget) {
   return useQuery({
     ...appInfoQueryOptions(server),

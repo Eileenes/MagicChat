@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useToastController } from "tamagui"
 
 import type { AppToastTone } from "@/components/feedback/app-toast"
+import { isUnauthorizedError } from "@/data/api-client"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import {
   useDismissConversation,
@@ -23,6 +24,7 @@ import {
   type ConversationListItemModel,
 } from "@/features/messages/conversation-list-model"
 import { DismissConversationDialog } from "@/features/messages/dismiss-conversation-dialog"
+import { NetworkFailureDialog } from "@/features/messages/network-failure-dialog"
 import { useClientData } from "@/providers/client-data-provider"
 import { buildConversationHref } from "@/navigation/conversations"
 
@@ -74,12 +76,20 @@ export function MessagesScreen() {
   const [listNow, setListNow] = useState(() => new Date())
   const {
     contacts,
+    contactsError,
     conversations,
     conversationsError,
     currentUser,
+    currentUserError,
+    isBootstrapRefreshing,
     isConversationsRefreshing,
+    refreshBootstrap,
     refreshConversations,
   } = useClientData()
+  const bootstrapError =
+    currentUserError ?? contactsError ?? conversationsError
+  const networkFailure =
+    bootstrapError !== null && !isUnauthorizedError(bootstrapError)
   const items = useMemo(
     () =>
       buildConversationListItems({
@@ -219,7 +229,6 @@ export function MessagesScreen() {
         scrollable={false}
       >
         <ConversationList
-          errorMessage={conversationsError?.message}
           hasKeyword={false}
           isRefreshing={isConversationsRefreshing}
           items={items}
@@ -241,6 +250,12 @@ export function MessagesScreen() {
         onPinnedChange={(pinned) => void handlePinnedChange(pinned)}
         open={actionSheetOpen}
         server={session}
+      />
+
+      <NetworkFailureDialog
+        onRetry={() => void refreshBootstrap().catch(() => undefined)}
+        open={networkFailure}
+        retrying={isBootstrapRefreshing}
       />
 
       <DismissConversationDialog
