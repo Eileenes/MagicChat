@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ConversationSidebar } from "@/components/conversation/conversation-sidebar"
@@ -46,6 +47,41 @@ describe("ConversationSidebar", () => {
     expect(screen.getByRole("button", { name: "全局搜索" })).toBeInTheDocument()
     expect(screen.getByRole("tablist", { name: "会话类型" })).toBeInTheDocument()
     expect(screen.queryByRole("combobox", { name: "搜索消息" })).not.toBeInTheDocument()
+    const header = screen
+      .getByRole("heading", { name: "消息" })
+      .closest("[data-slot='sidebar-header']")
+
+    expect(header).toHaveClass("conversation-sidebar-header-surface")
+    expect(header).toHaveAttribute("data-desktop-drag-region", "true")
+  })
+
+  it("从新建菜单触发添加好友", async () => {
+    const user = userEvent.setup()
+    const onAddFriend = vi.fn()
+    render(
+      <SidebarProvider>
+        <ConversationSidebar
+          activeConversationId=""
+          appsById={new Map()}
+          contactsById={new Map()}
+          conversations={[]}
+          currentUser={createCurrentUser()}
+          drafts={{}}
+          onAddFriend={onAddFriend}
+          onCreateGroup={vi.fn()}
+          onSelectConversation={vi.fn()}
+          onSetConversationMuted={vi.fn()}
+          onSetConversationPinned={vi.fn()}
+        />
+      </SidebarProvider>,
+    )
+
+    await user.click(screen.getByRole("button", { name: "新建 Agent" }))
+    const addFriendMenuItem = await screen.findByRole("menuitem", { name: "添加好友" })
+    expect(addFriendMenuItem.querySelector("svg")).not.toBeInTheDocument()
+
+    await user.click(addFriendMenuItem)
+    expect(onAddFriend).toHaveBeenCalledOnce()
   })
 
   it("pins an ordinary conversation from its context menu", async () => {

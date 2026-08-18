@@ -5,6 +5,7 @@ body,
   margin: 0;
 }
 :root {
+  --desktop-macos-navigation-rail-width: 72px;
   --desktop-titlebar-height: 40px;
 }
 .desktop-frame {
@@ -137,6 +138,57 @@ body,
 .desktop-content > div,
 .desktop-content > div > div {
   min-height: 100%;
+}
+.app-layout-shell {
+  padding-top: var(--desktop-titlebar-height);
+}
+.desktop-frame[data-platform="darwin"]:has(.app-layout-shell) .desktop-titlebar-drag-region {
+  background: var(--sidebar);
+  box-shadow: none;
+  right: auto;
+  width: var(--desktop-macos-navigation-rail-width);
+}
+.desktop-frame[data-platform="darwin"] .app-layout-shell {
+  padding-top: 0;
+}
+.desktop-frame[data-platform="darwin"] .app-navigation-rail {
+  -webkit-app-region: drag;
+  margin-top: var(--desktop-titlebar-height);
+  padding-top: 12px;
+  width: var(--desktop-macos-navigation-rail-width);
+}
+.desktop-frame[data-platform="darwin"] .app-navigation-rail :is(a, button) {
+  -webkit-app-region: no-drag;
+}
+/* 工作区页面通过此属性显式声明顶端拖拽区。 */
+.desktop-frame[data-platform="darwin"] .app-layout-shell [data-desktop-drag-region] {
+  -webkit-app-region: drag;
+}
+.desktop-frame[data-platform="darwin"]
+  .app-layout-shell
+  [data-desktop-drag-region]
+  :is(
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    [contenteditable="true"],
+    [role="button"],
+    [role="combobox"],
+    [role="tab"]
+  ) {
+  -webkit-app-region: no-drag;
+}
+.desktop-workspace-drag-region {
+  display: none;
+}
+.desktop-frame[data-platform="darwin"] .desktop-workspace-drag-region {
+  display: block;
+  height: 3.5rem;
+  inset: 0 0 auto;
+  position: absolute;
+  z-index: 1;
 }
 ::view-transition-old(root),
 ::view-transition-new(root) {

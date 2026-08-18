@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ChatPage } from "@/pages/chat-page"
+import { ClientDataRequestError } from "@/lib/client-data-api"
 import type {
   ClientConversation,
   ClientMessage,
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   createConversationTopic: vi.fn(),
   getConversationTopic: vi.fn(),
   listConversationMessageReactionSnapshots: vi.fn(),
+  toastError: vi.fn(),
 }))
 
 vi.mock("@/lib/client-data-api", async (importOriginal) => {
@@ -29,6 +31,8 @@ vi.mock("@/lib/client-data-api", async (importOriginal) => {
     listConversationMessageReactionSnapshots: mocks.listConversationMessageReactionSnapshots,
   }
 })
+
+vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }))
 
 describe("ChatPage create group dialog", () => {
   it("creates groups with and without selected apps", async () => {
@@ -138,6 +142,56 @@ describe("ChatPage app direct access", () => {
 })
 
 describe("ChatPage topic source parity", () => {
+  it("uses the directory profile for source senders on the full topic page", async () => {
+    const parentConversation = createConversation("conversation-parent", "产品群")
+    const topicConversation = createTopicConversation(parentConversation.id)
+    const sourceMessage = {
+      ...createTopicSourceMessage(),
+      sender: {
+        avatar: "",
+        id: "user-2",
+        name: "过期名称",
+        type: "user" as const,
+      },
+    }
+    mocks.getConversationTopic.mockReset()
+    mocks.getConversationTopic.mockResolvedValue({
+      canArchive: false,
+      canParticipate: false,
+      conversation: topicConversation,
+      parentConversation: {
+        id: parentConversation.id,
+        name: parentConversation.name,
+        type: "group",
+      },
+      sourceMessage,
+    })
+    mocks.listConversationMessageReactionSnapshots.mockReset()
+    mocks.listConversationMessageReactionSnapshots.mockResolvedValue([])
+
+    renderChatPage(
+      {
+        ...createConversationOverrides([parentConversation, topicConversation]),
+        usersById: {
+          "user-2": {
+            avatar: "/avatars/member.webp",
+            email: "member@example.test",
+            id: "user-2",
+            lastOnlineAt: null,
+            name: "群成员姓名",
+            nickname: "群成员昵称",
+            online: false,
+            phone: "",
+            type: "user",
+          },
+        },
+      },
+      `/chat/${topicConversation.id}`,
+    )
+
+    expect(await screen.findByText("群成员昵称")).toBeVisible()
+  })
+
   it("wires reactions, forwarding, and multi-select on the full topic page", async () => {
     const parentConversation = createConversation("conversation-parent", "产品群")
     const topicConversation = createTopicConversation(parentConversation.id)
@@ -205,6 +259,58 @@ describe("ChatPage topic source parity", () => {
 })
 
 describe("ChatPage global search navigation", () => {
+  it("从当前聊天页打开新朋友对话框并刷新申请状态", async () => {
+    const user = userEvent.setup()
+    const refreshFriendData = vi.fn().mockResolvedValue(undefined)
+    renderChatPage({
+      acceptFriendRequest: vi.fn().mockResolvedValue(undefined),
+      cancelFriendRequest: vi.fn().mockResolvedValue(undefined),
+      createFriendRequest: vi.fn().mockResolvedValue(undefined),
+      ensureUsers: vi.fn().mockResolvedValue(undefined),
+      refreshFriendData,
+      rejectFriendRequest: vi.fn().mockResolvedValue(undefined),
+    })
+
+    await user.click(screen.getByRole("button", { name: "新建 Agent" }))
+    await user.click(await screen.findByRole("menuitem", { name: "添加好友" }))
+
+    expect(await screen.findByRole("dialog", { name: "新朋友" })).toBeVisible()
+    await waitFor(() => expect(refreshFriendData).toHaveBeenCalledWith({ includeContacts: false }))
+  })
+
+  it("保留好友授权失败的服务端文案并允许重新打开私信", async () => {
+    const user = userEvent.setup()
+    mocks.toastError.mockReset()
+    const existingConversation = createConversation("conversation-1", "产品群")
+    const error = new ClientDataRequestError("仅支持向好友发送私信", {
+      code: "direct_friendship_required",
+      status: 403,
+    })
+    const openDirectConversation = vi.fn().mockRejectedValue(error)
+    renderChatPage(
+      {
+        ...createConversationOverrides([existingConversation]),
+        openDirectConversation,
+      },
+      `/chat/${existingConversation.id}`,
+    )
+
+    await user.click(screen.getByRole("button", { name: "全局搜索" }))
+    await user.type(screen.getByRole("combobox", { name: "搜索所有内容" }), "Bob")
+    const bobOption = await screen.findByRole("option", { name: /Bob/ })
+    await user.click(bobOption)
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith(error.message))
+    expect(screen.getByTestId("chat-location")).toHaveTextContent(
+      `/chat/${existingConversation.id}`,
+    )
+
+    await user.click(screen.getByRole("button", { name: "全局搜索" }))
+    await user.type(screen.getByRole("combobox", { name: "搜索所有内容" }), "Bob")
+    await user.click(await screen.findByRole("option", { name: /Bob/ }))
+    await waitFor(() => expect(openDirectConversation).toHaveBeenCalledTimes(2))
+  })
+
   it("does not let a pending directory result override a later conversation selection", async () => {
     const user = userEvent.setup()
     const existingConversation = createConversation("conversation-1", "产品群")
@@ -419,6 +525,7 @@ function createClientDataValue(overrides: Partial<ClientDataContextValue>): Clie
     restoreConversation: vi.fn(),
     refreshContacts: vi.fn(),
     refreshConversations: vi.fn(),
+    refreshFriendData: vi.fn(),
     refreshMe: vi.fn(),
     refreshProjects: vi.fn(),
     removeConversation: vi.fn(),

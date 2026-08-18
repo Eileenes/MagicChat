@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   clientData: {
     clearMessageScope: vi.fn(),
     conversations: [] as Array<{ unreadCount: number }>,
+    incomingFriendRequests: [] as Array<{
+      status: "accepted" | "canceled" | "pending" | "rejected"
+    }>,
     me: {
       avatar: "",
       createdAt: "2026-07-09T00:00:00Z",
@@ -36,6 +39,7 @@ const mocks = vi.hoisted(() => ({
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.clientData.conversations = []
+  mocks.clientData.incomingFriendRequests = []
 })
 
 vi.mock("@/lib/client-data-context", () => ({
@@ -74,6 +78,72 @@ vi.mock("@/lib/client-data-api", () => ({
 }))
 
 describe("AppLayout", () => {
+  it("保留三列布局所需的应用导航栏锚点", () => {
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>,
+    )
+
+    const appRail = screen.getByRole("complementary")
+    const shell = appRail.parentElement
+
+    expect(shell).toHaveClass("app-layout-shell")
+    expect(shell).not.toHaveClass("pt-10")
+    expect(appRail).toHaveClass("app-navigation-rail")
+  })
+
+  it("导航图标使用与侧栏一致的原生中文提示", () => {
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole("link", { name: "聊天" })).toHaveAttribute("title", "聊天")
+    expect(screen.getByRole("link", { name: "通讯录" })).toHaveAttribute("title", "通讯录")
+    expect(screen.getByRole("link", { name: "项目" })).toHaveAttribute("title", "项目")
+  })
+
+  it("左栏以更大尺寸展示头像和功能图标", () => {
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByRole("button", { name: "用户菜单" }).querySelector("[data-slot='avatar']"),
+    ).toHaveClass("size-9")
+
+    const leftRailControls = [
+      screen.getByRole("link", { name: "聊天" }),
+      screen.getByRole("link", { name: "通讯录" }),
+      screen.getByRole("link", { name: "项目" }),
+      screen.getByRole("link", { name: "打开即应官网" }),
+      screen.getByRole("link", { name: "在 GitHub 查看 MagicChat" }),
+      screen.getByRole("button", { name: "配色：跟随系统" }),
+      screen.getByRole("button", { name: "设置" }),
+    ]
+
+    for (const control of leftRailControls) {
+      expect(control.querySelector("svg")).toHaveClass("size-5")
+    }
+  })
+
+  it("仅按入站 pending 申请显示通讯录提醒，不影响聊天未读标签", () => {
+    mocks.clientData.incomingFriendRequests = [{ status: "pending" }, { status: "accepted" }]
+
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole("link", { name: "通讯录，有待处理的新朋友申请" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "聊天" })).toBeInTheDocument()
+  })
+
   it("renders the desktop update action in the sidebar footer", () => {
     render(
       <MemoryRouter initialEntries={["/chat"]}>

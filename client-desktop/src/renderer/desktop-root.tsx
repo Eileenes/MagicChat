@@ -61,7 +61,7 @@ export function DesktopRoot() {
       <LocaleProvider>
         <ScreenshotStartFailedBridge />
         <TooltipProvider>
-          <div className="desktop-frame">
+          <div className="desktop-frame" data-platform={platform}>
             <DesktopTitlebar platform={platform} />
             <div className="desktop-content">
               <DesktopRootContent platform={platform} />
@@ -179,8 +179,12 @@ function DesktopRootContent({ platform }: { platform?: string }) {
     setSelectedId(id)
   }
 
-  async function added(profile: ServerProfile) {
+  async function added(profile: ServerProfile): Promise<void> {
     const items = await window.desktop.servers.list()
+    if (!profile.lastUserId) {
+      window.history.replaceState({}, "", "/login")
+      window.dispatchEvent(new PopStateEvent("popstate"))
+    }
     setProfiles(items)
     await select(profile.id)
   }
@@ -195,7 +199,7 @@ function DesktopRootContent({ platform }: { platform?: string }) {
   return (
     <>
       {loading ? (
-        <StatusPage text={t("startup.starting")} />
+        <StatusPage />
       ) : documentWindowRoute.kind === "invalid" ? (
         <DocumentWindowStartupError message={t(documentWindowRoute.messageKey)} />
       ) : selected ? (
@@ -429,7 +433,7 @@ function DesktopUpdatePrompt({
                   ? "motion-safe:animate-spin"
                   : ""
               }
-              size={16}
+              size={20}
             />
             <span className="sr-only">{label}</span>
           </button>
@@ -631,7 +635,7 @@ function updatePromptLabel(state: UpdaterState, t: ReturnType<typeof useLocale>[
   return t("settings.update.prompt.available")
 }
 
-function ServerSetup({ onAdded }: { onAdded(profile: ServerProfile): void }) {
+function ServerSetup({ onAdded }: { onAdded(profile: ServerProfile): Promise<void> }) {
   const { t } = useLocale()
   const [url, setUrl] = useState("")
   const [name, setName] = useState("")
@@ -643,7 +647,7 @@ function ServerSetup({ onAdded }: { onAdded(profile: ServerProfile): void }) {
     setBusy(true)
     setError("")
     try {
-      onAdded(await window.desktop.servers.add(url, name || undefined))
+      await onAdded(await window.desktop.servers.add(url, name || undefined))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("setup.addServerError"))
     } finally {
@@ -762,7 +766,7 @@ function ServerSetup({ onAdded }: { onAdded(profile: ServerProfile): void }) {
   )
 }
 
-function StatusPage({ detail, text }: { detail?: string; text: string }) {
+function StatusPage({ detail, text }: { detail?: string; text?: string }) {
   const { t } = useLocale()
   return <BrandLoadingScreen detail={detail ?? t("setup.preparingWorkspace")} message={text} />
 }
