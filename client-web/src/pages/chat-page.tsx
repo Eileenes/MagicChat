@@ -580,6 +580,11 @@ export function ChatPage() {
     },
     [activeConversationId, setMessageReaction]
   )
+  const respondToActiveChoice = React.useCallback(
+    (message: ConversationPanelMessage, optionIds: string[]) =>
+      respondToChoice(activeConversationId, message.id, optionIds),
+    [activeConversationId, respondToChoice]
+  )
 
   const openForwardOperation = React.useCallback(
     (messageIds: string[], mode: ConversationPanelForwardMode) => {
@@ -1038,9 +1043,7 @@ export function ChatPage() {
         onReplyToMessage={replyToMessage}
         onRevokeMessage={revokeMessage}
         onSetMessageReaction={updateMessageReaction}
-        onRespondToChoice={(message, optionIds) =>
-          respondToChoice(activeConversationId, message.id, optionIds)
-        }
+        onRespondToChoice={respondToActiveChoice}
         onRichTextModeChange={setRichTextMode}
         onSendFile={sendFileMessage}
         onSendImage={sendImageMessage}
