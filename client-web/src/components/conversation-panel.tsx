@@ -57,9 +57,11 @@ type ConversationPanelProps = {
   headerActions?: React.ReactNode
   mentionLabelResolver?: MentionLabelResolver
   messages: ConversationPanelMessage[]
+  conversationStatus?: string
   messageSelection?: ConversationPanelMessageSelection
   onCancelMessageSelection?: () => void
   onDraftBlur?: () => void
+  onDraftFocus?: () => void
   onDraftChange: (draft: string, mentions: ConversationDraftMention[]) => void
   onCreateTopic?: (message: ConversationPanelMessage) => void
   onForwardMessage?: (message: ConversationPanelMessage) => void
@@ -113,9 +115,11 @@ export function ConversationPanel({
   headerActions,
   mentionLabelResolver = fallbackMentionLabelResolver,
   messages,
+  conversationStatus,
   messageSelection,
   onCancelMessageSelection,
   onDraftBlur,
+  onDraftFocus,
   onDraftChange,
   onCreateTopic,
   onForwardMessage,
@@ -327,6 +331,7 @@ export function ConversationPanel({
             currentUserId={currentUserId}
             actions={headerActions}
             online={conversationOnline}
+            status={conversationStatus}
           />
           {conversation.type === "group" && (
             <ConversationAnnouncement
@@ -345,6 +350,7 @@ export function ConversationPanel({
             mentionLabelResolver={mentionLabelResolver}
             messageSelection={messageSelection}
             messages={messages}
+            status={conversationStatus}
             onCompactMessages={onCompactMessages}
             onRegisterMessageView={onRegisterMessageView}
             onForwardMessage={onForwardMessage}
@@ -385,6 +391,7 @@ export function ConversationPanel({
               replyTarget={replyTarget}
               onCancelReply={onCancelReply}
               onDraftBlur={onDraftBlur}
+              onDraftFocus={onDraftFocus}
               onDraftChange={onDraftChange}
               onSendFile={onSendFile}
               onSendImage={onSendImage}

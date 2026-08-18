@@ -66,6 +66,7 @@ export const ConversationPanelComposer = React.forwardRef<
     replyTarget: ConversationPanelReplyTarget | null
     onCancelReply: () => void
     onDraftBlur?: () => void
+    onDraftFocus?: () => void
     onDraftChange: (draft: string, mentions: ConversationDraftMention[]) => void
     onSendFile: (file: File) => Promise<ClientMessage | null>
     onSendImage: (
@@ -87,6 +88,7 @@ export const ConversationPanelComposer = React.forwardRef<
     replyTarget,
     onCancelReply,
     onDraftBlur,
+    onDraftFocus,
     onDraftChange,
     onSendFile,
     onSendImage,
@@ -566,6 +568,7 @@ export const ConversationPanelComposer = React.forwardRef<
               value={draft}
               aria-disabled={sending}
               onBlur={onDraftBlur}
+              onFocus={onDraftFocus}
               onChange={handleDraftChange}
               onKeyDown={handleComposerKeyDown}
               onSelect={(event) =>

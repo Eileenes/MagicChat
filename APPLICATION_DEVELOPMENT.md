@@ -328,15 +328,45 @@ ws.on("message", (raw) => {
 
 `resolvePendingRequest`、`enqueueSerially` 和 `request` 由应用自行实现；关键是按 cursor 串行处理，并在业务成功后 ACK。
 
+### 3.5 `conversation.status`
+
+用户客户端可以向一对一应用会话发送临时状态。应用在线时会收到：
+
+```json
+{
+  "v": 1,
+  "kind": "event",
+  "id": "event-id",
+  "event": "conversation.status",
+  "payload": {
+    "conversation_id": "应用会话 ID",
+    "status": "正在输入",
+    "sender": {
+      "id": "用户 ID",
+      "type": "user"
+    }
+  }
+}
+```
+
+这是瞬时、尽力投递的事件：
+
+- 不带 `cursor`，不调用 `events.ack`。
+- Server 不保存、不补发，断线重连后不会重放。
+- 同一个 App ID 的所有在线连接都会收到事件。
+- `sender` 由 Server 根据认证连接生成，不能由发送方伪造。
+- 应用如果不需要感知用户状态，可以直接忽略该事件。
+
 ## 4. 如何发起调用
 
 ### 4.1 能力列表
 
-普通第三方应用当前可以调用以下 18 个 RPC：
+普通第三方应用当前可以调用以下 19 个 RPC：
 
 | 分类 | 方法 | 能力 |
 | --- | --- | --- |
 | 消息 | `message.send` | 以应用身份发送消息。 |
+| 状态 | `conversation.status` | 向一对一会话中的在线用户同步临时状态。 |
 | 查询 | `users.get` | 查询应用可见用户。 |
 | 查询 | `apps.get` | 查询自己、公开或同群应用。 |
 | 查询 | `conversations.list` | 列出应用参与的会话。 |
@@ -771,3 +801,85 @@ Server 会校验应用会话权限、消息历史范围以及文件是否确实�
 ```
 
 成功响应同样返回 `cursor`。ACK 会同时确认不大于该 cursor 的所有事件，必须在业务处理和相关 RPC 全部成功后调用。
+
+### 4.21 `conversation.status`
+
+向当前应用的一对一会话中的在线用户同步临时状态，例如“正在处理消息”或“正在查询数据”。
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `conversation_id` | 是 | 当前应用参与的 `app` 类型一对一会话 UUID。 |
+| `status` | 是 | 状态文本；去除首尾空白后为 1～32 个 Unicode 字符。 |
+
+请求示例：
+
+```json
+{
+  "conversation_id": "应用会话 ID",
+  "status": "正在处理消息"
+}
+```
+
+成功响应：
+
+```json
+{}
+```
+
+即使用户当前不在线，Server 也返回成功；成功响应不表示用户已经收到状态。
+
+状态同步规则：
+
+- Server 只校验、查找会话另一方并实时转发，不保存状态，不创建定时器，也不离线补发。
+- 只支持当前应用参与的 `app` 类型一对一会话，不支持群聊和话题。
+- 状态内容由应用决定，Server 不维护状态枚举。
+- 官方客户端从收到状态起展示 5 秒；状态需要持续时，应用应在 5 秒内使用新的请求 ID 再次发送，建议每 2～3 秒续发。
+- 业务阶段结束后停止续发即可，不需要发送结束状态。
+- 状态是尽力投递信号。发送失败不应阻塞消息处理，也不应排队重试已经过期的状态。
+- 状态文本本身不需要添加省略号；官方客户端会在文本后显示三个跳动的加载点。
+
+Node.js 心跳示例：
+
+```js
+function startConversationStatus(conversationId, status, intervalMs = 3000) {
+  let stopped = false;
+
+  const send = () => {
+    if (stopped || ws.readyState !== WebSocket.OPEN) return;
+    request("conversation.status", {
+      conversation_id: conversationId,
+      status,
+    }).catch(() => {});
+  };
+
+  send();
+  const timer = setInterval(send, intervalMs);
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+const stopStatus = startConversationStatus(
+  conversationId,
+  "正在处理消息",
+  2000,
+);
+
+try {
+  await handleMessage();
+} finally {
+  stopStatus();
+}
+```
+
+常见错误：
+
+| 错误码 | 含义 |
+| --- | --- |
+| `invalid_request` | 会话 ID、JSON 结构或状态长度不合法。 |
+| `not_found` | 会话不存在。 |
+| `forbidden` | 当前应用不是该会话的有效成员。 |
+| `invalid_conversation` | 会话不是受支持的一对一应用会话。 |
+| `internal_error` | Server 暂时无法完成路由查询。 |

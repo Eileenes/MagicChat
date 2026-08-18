@@ -27,6 +27,7 @@ const (
 	EventTopicParticipated       = "topic.participated"
 	EventTopicArchived           = "topic.archived"
 	EventTopicClosed             = "topic.closed"
+	EventConversationStatus      = "conversation.status"
 	EventSystemReady             = "system.ready"
 )
 

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"assistant/internal/config"
 )
@@ -448,6 +451,115 @@ func TestAnthropicClientCreateMessageSendsToolUseAndToolResultBlocks(t *testing.
 	}
 }
 
+func TestAnthropicStreamMessageAggregatesAndObservesBlocks(t *testing.T) {
+	events := []string{
+		`{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-test","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":7,"output_tokens":0}}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"secret thought"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"signed"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"ping"}`,
+		`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tool_1","name":"lookup","input":{}}}`,
+		`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"city\":"}}`,
+		`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"Paris\"}"}}`,
+		`{"type":"content_block_stop","index":1}`,
+		`{"type":"content_block_start","index":2,"content_block":{"type":"text","text":"","citations":[]}}`,
+		`{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"hello "}}`,
+		`{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"world"}}`,
+		`{"type":"content_block_stop","index":2}`,
+		`{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":12}}`,
+		`{"type":"message_stop"}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range events {
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal([]byte(event), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", envelope.Type, event)
+		}
+	}))
+	defer server.Close()
+	client := &AnthropicClient{BaseURL: server.URL, APIKey: "key", ModelName: "claude-test", HTTPClient: server.Client()}
+	var observed []StreamEvent
+	response, err := client.StreamMessage(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "hi"}}}, func(event StreamEvent) error { observed = append(observed, event); return nil })
+	if err != nil {
+		t.Fatalf("StreamMessage: %v", err)
+	}
+	if len(response.Blocks) != 3 || response.Blocks[0].Type != BlockTypeThinking || response.Blocks[1].Type != BlockTypeToolUse || response.Blocks[2].Type != BlockTypeText {
+		t.Fatalf("blocks/order = %#v", response.Blocks)
+	}
+	if response.Blocks[0].Thinking != "secret thought" || response.Blocks[0].ThinkingSignature != "signed" {
+		t.Fatalf("thinking = %#v", response.Blocks[0])
+	}
+	if response.Blocks[1].ToolUseID != "tool_1" || response.Blocks[1].ToolName != "lookup" || string(response.Blocks[1].ToolInput) != `{"city":"Paris"}` {
+		t.Fatalf("tool = %#v", response.Blocks[1])
+	}
+	if response.Blocks[2].Text != "hello world" || response.InputTokens != 7 || response.OutputTokens != 12 || response.StopReason != "tool_use" {
+		t.Fatalf("response = %#v", response)
+	}
+	if len(observed) != 6 {
+		t.Fatalf("observed = %#v", observed)
+	}
+	for i, event := range observed {
+		want := StreamEventBlockStart
+		if i%2 == 1 {
+			want = StreamEventBlockStop
+		}
+		if event.Type != want || strings.Contains(fmt.Sprintf("%#v", event), "secret") {
+			t.Fatalf("observer event %d = %#v", i, event)
+		}
+	}
+}
+
+func TestAnthropicStreamMessageObserverError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"x\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\",\"citations\":[]}}\n\n")
+	}))
+	defer server.Close()
+	want := errors.New("observer stopped")
+	client := &AnthropicClient{BaseURL: server.URL, APIKey: "key", ModelName: "x", HTTPClient: server.Client()}
+	_, err := client.StreamMessage(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "hi"}}}, func(StreamEvent) error { return want })
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want %v", err, want)
+	}
+}
+
+func TestAnthropicStreamMessageErrorAndCancellation(t *testing.T) {
+	t.Run("API error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"bad request"}}`, http.StatusBadRequest)
+		}))
+		defer server.Close()
+		client := &AnthropicClient{BaseURL: server.URL, APIKey: "key", ModelName: "x", HTTPClient: server.Client()}
+		response, err := client.StreamMessage(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "hi"}}}, nil)
+		if err == nil || len(response.Blocks) != 0 {
+			t.Fatalf("response=%#v error=%v", response, err)
+		}
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"x\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n")
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+		}))
+		defer server.Close()
+		client := &AnthropicClient{BaseURL: server.URL, APIKey: "key", ModelName: "x", HTTPClient: server.Client()}
+		ctx, cancel := context.WithCancel(context.Background())
+		time.AfterFunc(10*time.Millisecond, cancel)
+		response, err := client.StreamMessage(ctx, Request{Messages: []Message{{Role: RoleUser, Content: "hi"}}}, nil)
+		if !errors.Is(err, context.Canceled) || len(response.Blocks) != 0 {
+			t.Fatalf("response=%#v error=%v", response, err)
+		}
+	})
+}
+
 func decodeTestToolResultContent(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 	var content string
@@ -466,4 +578,58 @@ func decodeTestToolResultContent(t *testing.T, raw json.RawMessage) string {
 		return ""
 	}
 	return blocks[0].Text
+}
+
+func TestAnthropicStreamMessageUnsupportedClassification(t *testing.T) {
+	tests := []struct {
+		name         string
+		status       int
+		body         string
+		wantSentinel bool
+	}{
+		{"explicit unsupported", http.StatusBadRequest, `{"type":"error","error":{"type":"invalid_request_error","message":"streaming is unsupported"}}`, true},
+		{"unauthorized", http.StatusUnauthorized, `{"type":"error","error":{"message":"streaming is unsupported"}}`, false},
+		{"rate limited", http.StatusTooManyRequests, `{"type":"error","error":{"message":"streaming is unsupported"}}`, false},
+		{"server error", http.StatusInternalServerError, `{"type":"error","error":{"message":"streaming is unsupported"}}`, false},
+		{"unrelated bad request", http.StatusBadRequest, `{"type":"error","error":{"message":"invalid model name"}}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Fatal(err)
+				}
+				if stream, _ := request["stream"].(bool); !stream {
+					t.Fatalf("stream = %v", request["stream"])
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+			client := NewAnthropicClient(config.LLMConfig{BaseURL: server.URL, APIKey: "test", ModelName: "test"})
+			_, err := client.StreamMessage(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "hi"}}}, nil)
+			if got := errors.Is(err, ErrStreamingUnsupported); got != tt.wantSentinel {
+				t.Fatalf("errors.Is(..., ErrStreamingUnsupported) = %v, err = %v", got, err)
+			}
+		})
+	}
+}
+
+func TestAnthropicStreamMessageDoesNotFallbackAfterSSEEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"test\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n")
+		_, _ = fmt.Fprint(w, "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"streaming is unsupported\"}}\n\n")
+	}))
+	defer server.Close()
+	client := NewAnthropicClient(config.LLMConfig{BaseURL: server.URL, APIKey: "test", ModelName: "test"})
+	_, err := client.StreamMessage(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "hi"}}}, nil)
+	if err == nil {
+		t.Fatal("StreamMessage() error = nil")
+	}
+	if errors.Is(err, ErrStreamingUnsupported) {
+		t.Fatalf("partial stream error unexpectedly matched sentinel: %v", err)
+	}
 }

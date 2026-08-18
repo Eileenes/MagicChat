@@ -15,6 +15,7 @@ import (
 
 const (
 	defaultConversationAgentIdleTimeout = 10 * time.Minute
+	conversationStatusInterval          = 3 * time.Second
 	maxConversationSequenceWatermarks   = 10_000
 )
 
@@ -30,6 +31,7 @@ type preparedAgentRun struct {
 	ReplySink           agent.OutputSink
 	Request             agent.Request
 	Scope               builtintools.Scope
+	StatusSender        func(context.Context, string) error
 }
 
 type preparedAuthorization struct {
@@ -44,16 +46,206 @@ type sessionReplyAgent interface {
 
 type directAgentRunner struct{}
 
+type progressAgentRunner interface {
+	RunWithProgress(context.Context, agent.Request, agent.OutputSink, agent.ProgressObserver) error
+}
+
+// conversationStatusController owns status sends on one background worker.
+// Switch only publishes the latest desired state and cancels an obsolete send.
+type conversationStatusController struct {
+	ctx      context.Context
+	cancel   context.CancelFunc
+	sender   func(context.Context, string) error
+	interval time.Duration
+	wake     chan struct{}
+	done     chan struct{}
+
+	mu           sync.Mutex
+	desired      string
+	stopped      bool
+	inFlightStop context.CancelFunc
+}
+
+func newConversationStatusController(ctx context.Context, sender func(context.Context, string) error, interval time.Duration) *conversationStatusController {
+	workerCtx, cancel := context.WithCancel(ctx)
+	c := &conversationStatusController{
+		ctx: workerCtx, cancel: cancel, sender: sender, interval: interval,
+		wake: make(chan struct{}, 1), done: make(chan struct{}),
+	}
+	go c.run()
+	return c
+}
+
+func (c *conversationStatusController) Switch(status string) {
+	if c == nil || c.sender == nil || status == "" {
+		return
+	}
+	c.mu.Lock()
+	if c.stopped || c.desired == status {
+		c.mu.Unlock()
+		return
+	}
+	c.desired = status
+	if c.inFlightStop != nil {
+		c.inFlightStop()
+	}
+	c.mu.Unlock()
+	select {
+	case c.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (c *conversationStatusController) run() {
+	defer close(c.done)
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.wake:
+		}
+		for {
+			c.mu.Lock()
+			if c.stopped {
+				c.mu.Unlock()
+				return
+			}
+			status := c.desired
+			sendCtx, cancel := context.WithCancel(c.ctx)
+			c.inFlightStop = cancel
+			c.mu.Unlock()
+
+			startedAt := time.Now()
+			_ = c.sender(sendCtx, status)
+			cancel()
+
+			c.mu.Lock()
+			c.inFlightStop = nil
+			changed := c.desired != status
+			stopped := c.stopped
+			c.mu.Unlock()
+			if stopped || c.ctx.Err() != nil {
+				return
+			}
+			if changed {
+				select {
+				case <-c.wake:
+				default:
+				}
+				continue
+			}
+
+			delay := c.interval - time.Since(startedAt)
+			if delay < 0 {
+				delay = 0
+			}
+			timer := time.NewTimer(delay)
+			select {
+			case <-c.ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return
+			case <-c.wake:
+				if !timer.Stop() {
+					<-timer.C
+				}
+				continue
+			case <-timer.C:
+				// Repeat the current status. There is only one in-flight send.
+			}
+		}
+	}
+}
+
+func (c *conversationStatusController) Stop() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	if c.stopped {
+		c.mu.Unlock()
+		<-c.done
+		return
+	}
+	c.stopped = true
+	if c.inFlightStop != nil {
+		c.inFlightStop()
+	}
+	c.mu.Unlock()
+	c.cancel()
+	select {
+	case c.wake <- struct{}{}:
+	default:
+	}
+	<-c.done
+}
+
+func phaseStatus(phase agent.Phase) string {
+	switch phase {
+	case agent.PhaseTool:
+		return "正在调用外部工具"
+	case agent.PhaseText:
+		return "正在生成回复内容"
+	default:
+		return "正在思考"
+	}
+}
+
+// startConversationStatusHeartbeat sends at most one status request at a time.
+// stop waits for an in-flight send, so no stale status can be emitted after it returns.
+func startConversationStatusHeartbeat(ctx context.Context, sender func(context.Context) error, interval time.Duration) func() {
+	if sender == nil {
+		return func() {}
+	}
+	heartbeatCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = sender(heartbeatCtx)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-ticker.C:
+				_ = sender(heartbeatCtx)
+			}
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			<-done
+		})
+	}
+}
+
 func (directAgentRunner) Start(ctx context.Context, key string, sink agent.OutputSink, assistantAgent replyAgent, prepared preparedAgentRun) bool {
 	store := newConversationAuthorizationStore()
 	prepared.Request.AuthorizationCandidates = store.Add(prepared.Authorization)
 	prepared.Scope.AuthorizationResolver = store
 	taskSink := &taskOutputSink{delegate: sink, errorSink: prepared.ErrorSink}
-	if err := assistantAgent.Run(builtintools.WithScope(ctx, prepared.Scope), prepared.Request, taskSink); err != nil {
-		if errors.Is(err, context.Canceled) {
+	controller := newConversationStatusController(ctx, prepared.StatusSender, conversationStatusInterval)
+	defer controller.Stop()
+	controller.Switch("正在思考")
+	runCtx := builtintools.WithScope(ctx, prepared.Scope)
+	var runErr error
+	if progressive, ok := assistantAgent.(progressAgentRunner); ok {
+		runErr = progressive.RunWithProgress(runCtx, prepared.Request, taskSink, func(phase agent.Phase) {
+			controller.Switch(phaseStatus(phase))
+		})
+	} else {
+		runErr = assistantAgent.Run(runCtx, prepared.Request, taskSink)
+	}
+	controller.Stop()
+	if runErr != nil {
+		if errors.Is(runErr, context.Canceled) {
 			return false
 		}
-		log.Printf("agent reply failed: %v", err)
+		log.Printf("agent reply failed: %v", runErr)
 		if taskSink.taskErrorSent {
 			return true
 		}
@@ -86,6 +278,7 @@ type conversationAgentJob struct {
 	session      *agent.Session
 	sink         agent.OutputSink
 	scopeStore   *conversationScopeStore
+	statusSender func(context.Context, string) error
 	timer        *time.Timer
 }
 
@@ -182,6 +375,7 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		job.lastActiveAt = time.Now().UTC()
 		job.sink = sink
 		job.errorSink = prepared.ErrorSink
+		job.statusSender = prepared.StatusSender
 		if eventKey == key && prepared.MessageSeq > job.lastSeenSeq {
 			job.lastSeenSeq = prepared.MessageSeq
 		}
@@ -229,6 +423,7 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		running:      true,
 		session:      session,
 		sink:         sink,
+		statusSender: prepared.StatusSender,
 		scopeStore:   scopeStore,
 	}
 	if eventKey == key {
@@ -368,6 +563,7 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 		}
 		replySink := job.sink
 		errorSink := job.errorSink
+		statusSender := job.statusSender
 		r.mu.Unlock()
 
 		taskSink := &conversationAgentSink{
@@ -377,10 +573,14 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 			key:       key,
 			runner:    r,
 		}
-		err := job.session.RunCycle(
+		controller := newConversationStatusController(job.ctx, statusSender, conversationStatusInterval)
+		controller.Switch("正在思考")
+		err := job.session.RunCycleWithProgress(
 			builtintools.WithScopeProvider(job.ctx, job.scopeStore),
 			taskSink,
+			func(phase agent.Phase) { controller.Switch(phaseStatus(phase)) },
 		)
+		controller.Stop()
 		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("agent reply failed: %v", err)
 			if !taskSink.taskErrorSent {
@@ -421,6 +621,7 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 				job.actorType, job.actorID = authorizationActor(next.Authorization)
 				job.sink = next.ReplySink
 				job.errorSink = next.ErrorSink
+				job.statusSender = next.StatusSender
 			}
 			if len(job.pending) > 0 {
 				job.session.RequestYield()
