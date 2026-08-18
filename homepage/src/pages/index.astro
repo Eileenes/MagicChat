@@ -35,23 +35,33 @@ const featureVisuals = [
     inboxTitle: '消息',
     inboxTabs: ['全部', '未读', '群聊'],
     threads: [
-      ['茉莉', 'molly', '茉', '已关联 5 个上下文', true],
+      ['AI 助理', 'assistant', 'AI', '已关联 5 个上下文', true],
       ['创新产品', 'team', '团', '项目讨论与任务动态', false],
       ['项目资料', 'doc', '文', '已同步更新', false],
     ],
-    chat: ['茉莉', 'molly', '茉', '跨会话上下文', 'tabler:brain'],
-    assistant: '茉莉 AI 助理',
+    chat: ['AI 助理', 'assistant', 'AI', '跨会话上下文', 'tabler:brain'],
+    assistant: 'AI 助理',
+    prompt: '@AI 助理，帮我把产品项目群的历史信息总结一下发给李XX',
+    processLabel: '正在整理中',
+    response: '已整理产品项目群的历史信息，并将摘要发给李XX。',
+    responseStatus: '已发送',
+    streamResponse: false,
   },
   {
     inboxTitle: '任务',
     inboxTabs: ['待办', '进行中', '已完成'],
     threads: [
       ['创新产品', 'team', '团', '3 项待跟进', true],
-      ['茉莉', 'molly', '茉', '正在推进任务', false],
+      ['AI 助理', 'assistant', 'AI', '正在推进任务', false],
       ['项目资料', 'doc', '文', '待同步 2 项', false],
     ],
     chat: ['创新产品', 'team', '团', '项目推进 · 8 人', 'tabler:checkbox'],
-    assistant: '项目助理 · 刚刚',
+    assistant: 'AI 助理',
+    prompt: '@AI 助理，给@xxx创建个任务，星期三前完成销售报表的制作',
+    processLabel: '正在创建中',
+    response: '任务创建成功',
+    responseStatus: '已创建',
+    streamResponse: true,
   },
   {
     inboxTitle: '权限',
@@ -59,10 +69,15 @@ const featureVisuals = [
     threads: [
       ['权限确认中心', 'permission', '权', '待人工确认', true],
       ['项目资料', 'doc', '文', '敏感资料 4 项', false],
-      ['茉莉', 'molly', '茉', '策略已同步', false],
+      ['AI 助理', 'assistant', 'AI', '策略已同步', false],
     ],
     chat: ['权限确认中心', 'permission', '权', '待人工确认', 'tabler:shield-check'],
-    assistant: '风控助理 · 刚刚',
+    assistant: 'AI 助理',
+    prompt: '@AI 助理，查看一下XXX项目的情况',
+    processLabel: '正在查找中',
+    response: '当前你不在项目中无法查看',
+    responseStatus: '已拦截',
+    streamResponse: true,
   },
   {
     inboxTitle: '连接',
@@ -70,10 +85,15 @@ const featureVisuals = [
     threads: [
       ['扩展服务', 'connect', '扩', '6 个已连接', true],
       ['模型服务', 'team', '模', 'API 运行正常', false],
-      ['茉莉', 'molly', '茉', '可调用工作流', false],
+      ['AI 助理', 'assistant', 'AI', '可调用工作流', false],
     ],
     chat: ['扩展连接中心', 'connect', '扩', '6 个已连接', 'tabler:plug-connected'],
-    assistant: '连接助理 · 刚刚',
+    assistant: 'AI 助理',
+    prompt: '@AI 助理，我想创建一个应用对接到即应怎么操作',
+    processLabel: '正在查找中',
+    response: '可以通过开放 API 创建应用并接入即应。',
+    responseStatus: '已找到',
+    streamResponse: false,
   },
 ];
 
@@ -107,7 +127,7 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
   <main id="main-content" class="scene-page" style={`--scene-background: url('${asset('footer-meeting-room.webp')}')`}>
     <section class="scene scene-hero" aria-labelledby="hero-title">
       <div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span>即应</span><span class="hero-title-accent">--AI时代的团队协作入口</span></h1><p class="scene-lead">即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持私有化部署</span></div></div>
+      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span>即应</span>{' '}<span class="hero-title-accent">AI时代的团队协作入口</span></h1><p class="scene-lead">即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持私有化部署</span></div></div>
     </section>
 
     <section class="scene scene-why" id="why" aria-labelledby="why-title">
@@ -121,8 +141,8 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
         <div class="scene-text-block"><span class="scene-eyebrow">功能介绍</span><h2 id="solution-title"><span class="title-line">一句话说出目标，</span><span class="title-line title-accent">剩下的交给 AI 助理</span></h2><p>即应希望 AI 不是与工作割裂的聊天机器人，而是能接手实际流程的数字员工——沟通、项目、时间、文档，处处替你分担；团队进展一目了然，人的精力回归真正重要的判断与创造。</p></div>
         <section class="feature-explorer" aria-label="即应核心能力">
           <div class="feature-previews">
-            <article class="feature-preview-empty" data-feature-empty aria-label="即应团队工作台预览" hidden><div class="product-window"><div class="product-app"><aside class="app-dock" aria-hidden="true"><span class="app-dock-logo">即</span><Icon name="tabler:message-circle" size={14} /><Icon name="tabler:users" size={14} /><Icon name="tabler:checkbox" size={14} /></aside><aside class="app-inbox"><header><strong>消息</strong><Icon name="tabler:search" size={15} /></header><div class="app-inbox-tabs"><b>全部</b><span>未读</span><span>群聊</span></div><div class="app-thread"><i class="app-avatar app-avatar-molly">茉</i><span><strong>茉莉</strong><small>正在整理团队上下文</small></span></div><div class="app-thread"><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>项目讨论与任务动态</small></span></div></aside><section class="app-chat app-chat-empty"><header><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>15 人</small></span><Icon name="tabler:users" size={15} /></header><div class="app-chat-ghost" aria-hidden="true"><i></i><i></i><i></i></div><footer><span>输入消息</span><Icon name="tabler:send" size={14} /></footer></section></div></div></article>
-            {capabilities.map(([itemTitle, body, label, icon, status], index) => <article class:list={['feature-preview-screen', `feature-preview-${index + 1}`, index === 0 && 'is-active']} id={`feature-preview-${index + 1}`} data-feature-preview={index} aria-label={label} hidden={index !== 0}><div class="product-window"><div class="product-app"><aside class="app-dock" aria-hidden="true"><span class="app-dock-logo">即</span><span class:list={['app-dock-item', index === 0 && 'is-current']}><Icon name="tabler:message-circle" size={14} /></span><span class:list={['app-dock-item', index === 1 && 'is-current']}><Icon name="tabler:checkbox" size={14} /></span><span class:list={['app-dock-item', index === 2 && 'is-current']}><Icon name="tabler:shield-check" size={14} /></span><span class:list={['app-dock-item', index === 3 && 'is-current']}><Icon name="tabler:plug-connected" size={14} /></span></aside><aside class="app-inbox"><header><strong>{featureVisuals[index].inboxTitle}</strong><Icon name="tabler:search" size={15} /></header><div class="app-inbox-tabs">{featureVisuals[index].inboxTabs.map((tab, tabIndex) => tabIndex === 0 ? <b>{tab}</b> : <span>{tab}</span>)}</div>{featureVisuals[index].threads.map(([threadName, avatar, avatarText, threadStatus, current]) => <div class:list={['app-thread', current && 'is-current']}><i class:list={['app-avatar', `app-avatar-${avatar}`]}>{avatarText}</i><span><strong>{threadName}</strong><small>{threadStatus}</small></span></div>)}</aside><section class="app-chat"><header><i class:list={['app-avatar', `app-avatar-${featureVisuals[index].chat[1]}`]}>{featureVisuals[index].chat[2]}</i><span><strong>{featureVisuals[index].chat[0]}</strong><small>{featureVisuals[index].chat[3]}</small></span><Icon name={featureVisuals[index].chat[4]} size={15} /></header><div class="app-chat-history"><time>今天 17:19</time><div class="app-message"><i class:list={['app-avatar', `app-avatar-${featureVisuals[index].chat[1]}`]}>{featureVisuals[index].chat[2]}</i><div><small>{featureVisuals[index].assistant}</small><article><div class="app-message-heading"><Icon name={icon} size={14} /><strong>{label}</strong><b>{status}</b></div><p>{index === 0 ? '已关联客户反馈、项目看板与历史讨论，可直接回看上下文来源。' : index === 1 ? '已将讨论转成可跟进事项，并同步负责人与截止时间。' : index === 2 ? '涉及重要操作时，系统会展示影响范围并等待人工确认。' : '已接入团队服务与模型能力，可按工作流组合调用。'}</p>{index === 0 && <div class="app-context-sources"><span>客户反馈</span><span>项目看板</span><span>历史会话</span></div>}{index === 1 && <div class="app-task-list"><span><i></i>整理客户反馈 <b>进行中</b></span><span><i></i>同步研发负责人 <b>已完成</b></span></div>}{index === 2 && <div class="app-permission-list"><span><Icon name="tabler:eye" size={11} />读取上下文</span><span><Icon name="tabler:edit" size={11} />创建任务待确认</span></div>}{index === 3 && <div class="app-integration-list"><span><i></i>团队知识库 <b>已连接</b></span><span><i></i>模型服务 API <b>已连接</b></span></div>}</article></div></div><div class="app-message app-message-brief"><i class="app-avatar app-avatar-user">你</i><div><small>你 · 刚刚</small><span>{itemTitle}</span></div></div><div class="app-typing" aria-label={`${featureVisuals[index].chat[0]}正在输入`}><span>{featureVisuals[index].chat[0]}正在输入</span><i></i><i></i><i></i></div></div><footer><span class="app-typing-text">请继续处理{itemTitle}</span><Icon name="tabler:send" size={14} /></footer></section></div></div><div class="feature-preview-copy"><h3 class="feature-preview-title">{itemTitle}</h3><p>{body}</p></div></article>)}
+            <article class="feature-preview-empty" data-feature-empty aria-label="即应团队工作台预览" hidden><div class="product-window"><div class="product-app"><aside class="app-dock" aria-hidden="true"><span class="app-dock-logo">即</span><Icon name="tabler:message-circle" size={14} /><Icon name="tabler:users" size={14} /><Icon name="tabler:checkbox" size={14} /></aside><aside class="app-inbox"><header><strong>消息</strong><Icon name="tabler:search" size={15} /></header><div class="app-inbox-tabs"><b>全部</b><span>未读</span><span>群聊</span></div><div class="app-thread"><i class="app-avatar app-avatar-assistant">AI</i><span><strong>AI 助理</strong><small>正在整理团队上下文</small></span></div><div class="app-thread"><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>项目讨论与任务动态</small></span></div></aside><section class="app-chat app-chat-empty"><header><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>15 人</small></span><Icon name="tabler:users" size={15} /></header><div class="app-chat-ghost" aria-hidden="true"><i></i><i></i><i></i></div><footer><span>输入消息</span><Icon name="tabler:send" size={14} /></footer></section></div></div></article>
+            {capabilities.map(([itemTitle, body, label, icon, status], index) => <article class:list={['feature-preview-screen', `feature-preview-${index + 1}`, index === 0 && 'is-active']} id={`feature-preview-${index + 1}`} data-feature-preview={index} data-feature-prompt={featureVisuals[index].prompt} data-feature-process={featureVisuals[index].processLabel} data-feature-response={featureVisuals[index].response} data-feature-result={featureVisuals[index].responseStatus} data-feature-stream={featureVisuals[index].streamResponse} aria-label={label} hidden={index !== 0}><div class="product-window"><div class="product-app"><aside class="app-dock" aria-hidden="true"><span class="app-dock-logo">即</span><span class:list={['app-dock-item', index === 0 && 'is-current']}><Icon name="tabler:message-circle" size={14} /></span><span class:list={['app-dock-item', index === 1 && 'is-current']}><Icon name="tabler:checkbox" size={14} /></span><span class:list={['app-dock-item', index === 2 && 'is-current']}><Icon name="tabler:shield-check" size={14} /></span><span class:list={['app-dock-item', index === 3 && 'is-current']}><Icon name="tabler:plug-connected" size={14} /></span></aside><aside class="app-inbox"><header><strong>{featureVisuals[index].inboxTitle}</strong><Icon name="tabler:search" size={15} /></header><div class="app-inbox-tabs">{featureVisuals[index].inboxTabs.map((tab, tabIndex) => tabIndex === 0 ? <b>{tab}</b> : <span>{tab}</span>)}</div>{featureVisuals[index].threads.map(([threadName, avatar, avatarText, threadStatus, current]) => <div class:list={['app-thread', current && 'is-current']}><i class:list={['app-avatar', `app-avatar-${avatar}`]}>{avatarText}</i><span><strong>{threadName}</strong><small>{threadStatus}</small></span></div>)}</aside><section class="app-chat"><header><i class:list={['app-avatar', `app-avatar-${featureVisuals[index].chat[1]}`]}>{featureVisuals[index].chat[2]}</i><span><strong>{featureVisuals[index].chat[0]}</strong><small>{featureVisuals[index].chat[3]}</small></span><Icon name={featureVisuals[index].chat[4]} size={15} /></header><div class="app-chat-history"><time>今天 17:19</time><div class="app-message app-message-assistant" data-assistant-message><i class="app-avatar app-avatar-assistant">AI</i><div><small data-assistant-label>{featureVisuals[index].assistant}</small><article data-assistant-card><div class="app-message-heading"><Icon name={icon} size={14} /><strong>{label}</strong><b data-assistant-result>{status}</b></div><p data-assistant-response>{featureVisuals[index].response}</p>{index === 0 && <div class="app-context-sources"><span>客户反馈</span><span>项目看板</span><span>历史会话</span></div>}{index === 1 && <div class="app-task-list"><span><i></i>销售报表制作 <b>进行中</b></span><span><i></i>任务创建成功 <b>已完成</b></span></div>}{index === 2 && <div class="app-permission-list"><span><Icon name="tabler:eye" size={11} />读取上下文</span><span><Icon name="tabler:edit" size={11} />创建任务待确认</span></div>}{index === 3 && <div class="app-integration-list"><span><i></i>团队知识库 <b>已连接</b></span><span><i></i>模型服务 API <b>已连接</b></span></div>}</article></div></div><div class="app-message app-message-brief" data-user-message><i class="app-avatar app-avatar-user">你</i><div><small>你 · 刚刚</small><span data-user-request>{featureVisuals[index].prompt}</span></div></div><div class="app-typing" data-assistant-typing aria-label={`${featureVisuals[index].assistant} ${featureVisuals[index].processLabel}`}><span data-assistant-status>{featureVisuals[index].assistant} {featureVisuals[index].processLabel}</span><i></i><i></i><i></i></div></div><footer class="app-composer" data-feature-composer><span class="app-typing-text" data-composer-text>{featureVisuals[index].prompt}</span><span class="app-composer-send" data-send-control aria-hidden="true"><Icon name="tabler:send" size={14} /></span><span class="app-mouse-pointer" data-mouse-pointer aria-hidden="true"><Icon name="tabler:pointer-2" size={17} /></span></footer></section></div></div><div class="feature-preview-copy"><h3 class="feature-preview-title">{itemTitle}</h3><p>{body}</p></div></article>)}
           </div>
           <div class="feature-pagination" role="tablist" aria-label="选择核心能力">{capabilities.map(([itemTitle], index) => <button class:list={['feature-page', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-label={`查看第 ${index + 1} 项：${itemTitle}`} title={itemTitle} data-feature-page={index}></button>)}</div>
         </section>
@@ -211,9 +231,83 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
     let activeFeatureIndex = 0;
     let featureAutoplay: number | undefined;
     let featureVisible = !('IntersectionObserver' in window);
+    const featureDemoTimers = new WeakMap<HTMLElement, number[]>();
+    const featureDemoStartDelay = 1000;
+    const featureDemoClasses = ['is-demo-clicking', 'is-demo-sent', 'is-demo-processing', 'is-demo-streaming', 'is-demo-complete'];
+    const stopFeatureDemo = (preview: HTMLElement) => {
+      featureDemoTimers.get(preview)?.forEach((timer) => window.clearTimeout(timer));
+      featureDemoTimers.delete(preview);
+      featureDemoClasses.forEach((className) => preview.classList.remove(className));
+    };
+    const runFeatureDemo = (preview: HTMLElement) => {
+      stopFeatureDemo(preview);
+      const prompt = preview.dataset.featurePrompt ?? '';
+      const processLabel = preview.dataset.featureProcess ?? '正在处理中';
+      const response = preview.dataset.featureResponse ?? '';
+      const resultLabel = preview.dataset.featureResult ?? '已完成';
+      const shouldStream = preview.dataset.featureStream === 'true' && response.length > 0;
+      const composerText = preview.querySelector<HTMLElement>('[data-composer-text]');
+      const userRequest = preview.querySelector<HTMLElement>('[data-user-request]');
+      const assistantStatus = preview.querySelector<HTMLElement>('[data-assistant-status]');
+      const assistantResponse = preview.querySelector<HTMLElement>('[data-assistant-response]');
+      const assistantResult = preview.querySelector<HTMLElement>('[data-assistant-result]');
+      const chatHistory = preview.querySelector<HTMLElement>('.app-chat-history');
+      if (!composerText || !userRequest || !assistantStatus || !assistantResponse || !assistantResult) return;
+      const timers: number[] = [];
+      featureDemoTimers.set(preview, timers);
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const later = (callback: () => void, delay: number) => { timers.push(window.setTimeout(callback, delay)); };
+      const scrollHistory = () => { if (chatHistory) chatHistory.scrollTop = chatHistory.scrollHeight; };
+      composerText.textContent = reducedMotion ? prompt : '';
+      userRequest.textContent = prompt;
+      assistantStatus.textContent = `AI 助理 ${processLabel}`;
+      assistantResponse.textContent = '';
+      assistantResult.textContent = '待处理';
+      if (reducedMotion) {
+        preview.classList.add('is-demo-sent', 'is-demo-processing');
+        if (shouldStream) {
+          preview.classList.add('is-demo-streaming', 'is-demo-complete');
+          assistantResponse.textContent = response;
+          assistantResult.textContent = resultLabel;
+        }
+        scrollHistory();
+        return;
+      }
+      const typePrompt = (position: number) => {
+        composerText.textContent = prompt.slice(0, position);
+        if (position < prompt.length) later(() => typePrompt(position + 1), 14);
+        else later(() => {
+          preview.classList.add('is-demo-clicking');
+          later(() => {
+            preview.classList.remove('is-demo-clicking');
+            preview.classList.add('is-demo-sent', 'is-demo-processing');
+            composerText.textContent = '已发送';
+            assistantStatus.textContent = `AI 助理 ${processLabel}`;
+            scrollHistory();
+          }, 460);
+        }, 120);
+      };
+      later(() => typePrompt(0), featureDemoStartDelay);
+      if (!shouldStream) return;
+      later(() => {
+        preview.classList.add('is-demo-streaming');
+        assistantResponse.textContent = '';
+        assistantResult.textContent = '处理中';
+        const streamResponse = (position: number) => {
+          assistantResponse.textContent = response.slice(0, position);
+          scrollHistory();
+          if (position < response.length) later(() => streamResponse(position + 1), 30);
+          else {
+            preview.classList.add('is-demo-complete');
+            assistantResult.textContent = resultLabel;
+          }
+        };
+        streamResponse(0);
+      }, featureDemoStartDelay + 1850);
+    };
     const showFeature = (index: number) => {
       activeFeatureIndex = (index + featurePreviews.length) % featurePreviews.length;
-      featurePreviews.forEach((preview, previewIndex) => { const active = previewIndex === activeFeatureIndex; preview.classList.toggle('is-active', active); preview.hidden = !active; });
+      featurePreviews.forEach((preview, previewIndex) => { const active = previewIndex === activeFeatureIndex; preview.classList.toggle('is-active', active); preview.hidden = !active; if (active) runFeatureDemo(preview); else stopFeatureDemo(preview); });
       featurePages.forEach((page, pageIndex) => { const active = pageIndex === activeFeatureIndex; page.classList.toggle('is-active', active); page.setAttribute('aria-selected', String(active)); });
       if (featureEmpty) featureEmpty.hidden = true;
     };
@@ -221,7 +315,7 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
     const startFeatureAutoplay = () => {
       stopFeatureAutoplay();
       if (!featureVisible || window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden || featureExplorer?.matches(':hover, :focus-within')) return;
-      featureAutoplay = window.setInterval(() => showFeature(activeFeatureIndex + 1), 4000);
+      featureAutoplay = window.setInterval(() => showFeature(activeFeatureIndex + 1), 5000);
     };
     featurePages.forEach((page, index) => page.addEventListener('click', () => { showFeature(index); startFeatureAutoplay(); }));
     featureExplorer?.addEventListener('mouseenter', stopFeatureAutoplay);
