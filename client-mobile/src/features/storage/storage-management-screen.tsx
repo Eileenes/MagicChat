@@ -47,7 +47,7 @@ export function StorageManagementScreen() {
     } finally { setBusy(false) }
   }
 
-  return <ScrollView bg="$color1" refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} />}>
+  return <ScrollView bg="$background" refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} />}>
     <YStack gap="$4" maxW={440} p="$4" self="center" width="100%">
       <SizableText fontWeight="700" size="$7">存储空间</SizableText>
       <Paragraph color="$gray10">以下为全局约值，不区分账号；清理只会删除本机离线副本。</Paragraph>

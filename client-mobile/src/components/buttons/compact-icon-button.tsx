@@ -1,3 +1,4 @@
+import type { Icon as TablerIcon } from "@tabler/icons-react-native"
 import type { LucideIcon } from "lucide-react-native"
 import { Pressable } from "react-native"
 import { Button, Spinner, useTheme } from "tamagui"
@@ -19,7 +20,7 @@ export function CompactIconButton({
   accessibilityLabel: string
   buttonSize?: number
   disabled?: boolean
-  icon: LucideIcon
+  icon: LucideIcon | TablerIcon
   iconColor?: string
   iconSize?: number
   loading?: boolean

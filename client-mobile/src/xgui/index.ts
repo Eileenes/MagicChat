@@ -3,12 +3,17 @@ export {
   type XGUIActionSheetAction,
   type XGUIActionSheetProps,
 } from "@/xgui/components/xgui-action-sheet"
+export { XGUIBadge, type XGUIBadgeProps } from "@/xgui/components/xgui-badge"
 export {
   XGUIButton,
   type XGUIButtonProps,
   type XGUIButtonSize,
   type XGUIButtonVariant,
 } from "@/xgui/components/xgui-button"
+export {
+  XGUIFilledSearchBar,
+  type XGUIFilledSearchBarProps,
+} from "@/xgui/components/xgui-filled-search-bar"
 export {
   XGUIFooter,
   type XGUIFooterLink,
@@ -27,6 +32,13 @@ export {
   type XGUIListProps,
   type XGUIListVariant,
 } from "@/xgui/components/xgui-list"
+export {
+  XGUI_TABBAR_CONTENT_HEIGHT,
+  XGUITabbar,
+  XGUITabbarItem,
+  type XGUITabbarItemProps,
+  type XGUITabbarProps,
+} from "@/xgui/components/xgui-tabbar"
 export {
   XGUIToastProvider,
   useXGUIToast,

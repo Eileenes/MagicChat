@@ -5,9 +5,11 @@ import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { useAuthenticatedSession } from "@/providers/auth-provider"
 import { ProjectList } from "@/features/projects/project-list"
 import { buildProjectListSections } from "@/features/projects/project-list-model"
+import { useXGUITheme } from "@/xgui"
 import { useClientData } from "@/providers/client-data-provider"
 
 export function ProjectsScreen() {
+  const { colors } = useXGUITheme()
   const session = useAuthenticatedSession()
   const {
     currentUser,
@@ -36,7 +38,7 @@ export function ProjectsScreen() {
 
   return (
     <KeyboardAwareScreen
-      contentBackground="$color1"
+      contentBackground={colors.background0}
       edges={[]}
       scrollable={false}
     >

@@ -98,6 +98,7 @@ export function LoginForm({
     serverKey: "",
   })
   const [passwordVisible, setPasswordVisible] = useState(false)
+  const [isLoginInitializing, setIsLoginInitializing] = useState(false)
   const isCurrentServer = formState.serverKey === serverKey
   const account = isCurrentServer ? formState.account : ""
   const emailCode = isCurrentServer ? formState.emailCode : ""
@@ -111,6 +112,7 @@ export function LoginForm({
     preferredMethod: preferredLoginMethod,
   })
   const isPending =
+    isLoginInitializing ||
     passwordLoginMutation.isPending ||
     emailCodeLoginMutation.isPending ||
     requestEmailCodeMutation.isPending
@@ -250,20 +252,29 @@ export function LoginForm({
       return
     }
 
-    toast.hide()
+    toast.show({
+      duration: 0,
+      message: "正在登录",
+      type: "loading",
+    })
+    setIsLoginInitializing(true)
 
     try {
       let user: AuthenticatedUser
       if (method === "password") {
-        user = await passwordLoginMutation.mutateAsync({ account, password })
+        user = await attemptLoginRequest(() =>
+          passwordLoginMutation.mutateAsync({ account, password })
+        )
         await saveLoginCredentials(server, { account, password }).catch(() => {
           // A successful login must not be blocked by local credential storage.
         })
       } else {
-        user = await emailCodeLoginMutation.mutateAsync({
-          code: emailCode,
-          email: account,
-        })
+        user = await attemptLoginRequest(() =>
+          emailCodeLoginMutation.mutateAsync({
+            code: emailCode,
+            email: account,
+          })
+        )
         await saveLoginAccount(server, account).catch(() => {
           // A successful login must not be blocked by local credential storage.
         })
@@ -277,6 +288,8 @@ export function LoginForm({
           ? message.replace("邮箱或密码错误", "账号或密码错误")
           : message
       )
+    } finally {
+      setIsLoginInitializing(false)
     }
   }
 
@@ -442,6 +455,28 @@ export function LoginForm({
         </YStack>
     </View>
   )
+}
+
+async function attemptLoginRequest<T>(operation: () => Promise<T>) {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error: unknown) {
+      lastError = error
+      if (
+        error instanceof ApiRequestError &&
+        error.status !== undefined &&
+        error.status < 500 &&
+        error.status !== 429
+      ) {
+        throw error
+      }
+    }
+  }
+
+  throw lastError
 }
 
 function EmailCodeAction({

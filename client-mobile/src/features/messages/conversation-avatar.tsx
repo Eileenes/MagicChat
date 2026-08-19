@@ -1,10 +1,10 @@
 import { Bot } from "lucide-react-native"
+import { StyleSheet } from "react-native"
 import {
   Avatar,
   type ColorTokens,
   SizableText,
   Text,
-  XStack,
   YStack,
 } from "tamagui"
 
@@ -18,7 +18,7 @@ import {
   getConversationAvatarType,
   type ConversationAvatarType,
 } from "@/domain/conversations/conversation-avatar"
-import { formatUnreadCount } from "@/features/messages/conversation-list-model"
+import { XGUIBadge } from "@/xgui"
 
 export function ConversationAvatar({
   conversation,
@@ -83,26 +83,11 @@ export function ConversationAvatar({
         </YStack>
       ) : null}
 
-      {conversation.unreadCount > 0 ? (
-        <XStack
-          accessibilityLabel={`${conversation.unreadCount} 条未读消息`}
-          bg="$red10"
-          height={18}
-          items="center"
-          justify="center"
-          minW={18}
-          position="absolute"
-          px="$1"
-          r={-7}
-          rounded="$10"
-          t={-7}
-          z={1}
-        >
-          <SizableText color="$white" size="$1">
-            {formatUnreadCount(conversation.unreadCount)}
-          </SizableText>
-        </XStack>
-      ) : null}
+      <XGUIBadge
+        accessibilityLabel={`${conversation.unreadCount} 条未读消息`}
+        count={conversation.unreadCount}
+        style={styles.unreadBadge}
+      />
     </YStack>
   )
 }
@@ -169,6 +154,15 @@ function BaseConversationAvatar({
     </Avatar>
   )
 }
+
+const styles = StyleSheet.create({
+  unreadBadge: {
+    position: "absolute",
+    right: -7,
+    top: -7,
+    zIndex: 1,
+  },
+})
 
 function getConversationInitial(name: string) {
   return Array.from(name.trim())[0]?.toUpperCase() ?? "?"

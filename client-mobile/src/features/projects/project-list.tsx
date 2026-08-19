@@ -4,6 +4,7 @@ import {
   StyleSheet,
   type SectionListRenderItemInfo,
 } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import {
   ListItem,
   Spinner,
@@ -20,6 +21,7 @@ import type { ServerTarget } from "@/core/server-target"
 import { formatActivityTime } from "@/domain/time/activity-time"
 import { ProjectAvatar } from "@/features/projects/project-avatar"
 import type { ProjectListSection } from "@/features/projects/project-list-model"
+import { XGUI_TABBAR_CONTENT_HEIGHT } from "@/xgui"
 
 export function ProjectList({
   currentUser,
@@ -44,15 +46,17 @@ export function ProjectList({
   sections: ProjectListSection[]
   server: ServerTarget
 }) {
+  const insets = useSafeAreaInsets()
   const theme = useTheme()
+  const bottomContentInset = XGUI_TABBAR_CONTENT_HEIGHT + insets.bottom + 16
 
   return (
     <SectionList<ClientProjectSummary, ProjectListSection>
-      contentContainerStyle={
-        sections.length === 0
-          ? [styles.content, styles.emptyContent]
-          : styles.content
-      }
+      contentContainerStyle={[
+        styles.content,
+        { paddingBottom: bottomContentInset },
+        sections.length === 0 && styles.emptyContent,
+      ]}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       keyExtractor={(project) => project.id}

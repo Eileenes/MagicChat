@@ -21,6 +21,7 @@ export function PageHeader({
   actionIcon,
   actionDisabled = false,
   primaryAction = false,
+  backDisabled = false,
   backIcon = ArrowLeft,
   backIconColor,
   background = "$background",
@@ -40,6 +41,7 @@ export function PageHeader({
   actionDisabled?: boolean
   actionIcon?: GetProps<typeof Button>["icon"]
   actionLabel?: string
+  backDisabled?: boolean
   backIcon?: LucideIcon
   backIconColor?: string
   background?: GetProps<typeof YStack>["bg"]
@@ -70,6 +72,7 @@ export function PageHeader({
             compactIconButtons ? (
               <CompactIconButton
                 accessibilityLabel="返回"
+                disabled={backDisabled}
                 icon={backIcon}
                 iconColor={backIconColor}
                 iconSize={26}
@@ -80,6 +83,7 @@ export function PageHeader({
               <HeaderButton
                 accessibilityLabel="返回"
                 circular
+                disabled={backDisabled}
                 icon={<ThemedIcon icon={backIcon} size={22} />}
                 onPress={onBackPress}
                 subtlePress={subtleButtonPress}

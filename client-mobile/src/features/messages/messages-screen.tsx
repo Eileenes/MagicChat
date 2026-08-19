@@ -1,9 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useToastController } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import { isUnauthorizedError } from "@/data/api-client"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import {
@@ -23,9 +21,11 @@ import {
   buildConversationListItems,
   type ConversationListItemModel,
 } from "@/features/messages/conversation-list-model"
-import { DismissConversationDialog } from "@/features/messages/dismiss-conversation-dialog"
+import { DismissConversationActionSheet } from "@/features/messages/dismiss-conversation-dialog"
 import { NetworkFailureDialog } from "@/features/messages/network-failure-dialog"
+import { subscribeToMessagesTabReselected } from "@/features/messages/messages-tab-reselect"
 import { useClientData } from "@/providers/client-data-provider"
+import { useXGUITheme, useXGUIToast } from "@/xgui"
 import { buildConversationHref } from "@/navigation/conversations"
 
 const MESSAGE_PAGE_SIZE = 20
@@ -33,14 +33,14 @@ const PREWARM_CONVERSATION_COUNT = 30
 const CONVERSATION_LIST_CLOCK_INTERVAL_MS = 60_000
 
 export function MessagesScreen() {
+  const { colors } = useXGUITheme()
+  const toast = useXGUIToast()
   const router = useRouter()
   const queryClient = useQueryClient()
-  const toast = useToastController()
   const session = useAuthenticatedSession()
   const pinMutation = useSetConversationPinned(session)
   const muteMutation = useSetConversationMuted(session)
   const dismissMutation = useDismissConversation(session)
-  const pendingDismissCandidateRef = useRef<ClientConversation | null>(null)
   const conversationPreparationRef = useRef(
     new Map<string, Promise<boolean>>()
   )
@@ -73,6 +73,7 @@ export function MessagesScreen() {
   const [actionSheetOpen, setActionSheetOpen] = useState(false)
   const [dismissCandidate, setDismissCandidate] =
     useState<ClientConversation | null>(null)
+  const [scrollToUnreadRequest, setScrollToUnreadRequest] = useState(0)
   const [listNow, setListNow] = useState(() => new Date())
   const {
     contacts,
@@ -110,6 +111,14 @@ export function MessagesScreen() {
     return () => clearInterval(interval)
   }, [])
 
+  useEffect(
+    () =>
+      subscribeToMessagesTabReselected(() => {
+        setScrollToUnreadRequest((request) => request + 1)
+      }),
+    []
+  )
+
   useEffect(() => {
     for (const item of items.slice(0, PREWARM_CONVERSATION_COUNT)) {
       void prepareConversationMessages(item.conversation.id)
@@ -132,7 +141,6 @@ export function MessagesScreen() {
   function handleConversationLongPress(item: ConversationListItemModel) {
     if (item.conversation.type === "topic") return
 
-    pendingDismissCandidateRef.current = null
     setActionItem(item)
     setActionSheetOpen(true)
   }
@@ -141,17 +149,14 @@ export function MessagesScreen() {
     if (open) return
 
     setActionItem(null)
-    const pendingDismissCandidate = pendingDismissCandidateRef.current
-    pendingDismissCandidateRef.current = null
-    if (pendingDismissCandidate) {
-      setDismissCandidate(pendingDismissCandidate)
-    }
   }
 
-  async function handlePinnedChange(pinned: boolean) {
+  async function handlePinnedChange(
+    item: ConversationListItemModel,
+    pinned: boolean
+  ) {
     if (
-      !actionItem ||
-      actionItem.conversation.type === "topic" ||
+      item.conversation.type === "topic" ||
       pinMutation.isPending ||
       muteMutation.isPending
     ) {
@@ -159,11 +164,12 @@ export function MessagesScreen() {
     }
 
     try {
+      showLoadingToast(toast, pinned ? "正在置顶" : "正在取消置顶")
       await pinMutation.mutateAsync({
-        conversationId: actionItem.conversation.id,
+        conversationId: item.conversation.id,
         pinned,
       })
-      showSuccessToast(toast, pinned ? "会话已置顶" : "已取消置顶")
+      toast.hide()
       setActionSheetOpen(false)
     } catch (error: unknown) {
       showErrorToast(
@@ -174,18 +180,22 @@ export function MessagesScreen() {
     }
   }
 
-  async function handleMutedChange(muted: boolean) {
-    if (!actionItem || pinMutation.isPending || muteMutation.isPending) return
+  async function handleMutedChange(
+    item: ConversationListItemModel,
+    muted: boolean
+  ) {
+    if (pinMutation.isPending || muteMutation.isPending) return
 
     try {
+      showLoadingToast(
+        toast,
+        muted ? "正在开启免打扰" : "正在取消免打扰"
+      )
       await muteMutation.mutateAsync({
-        conversationId: actionItem.conversation.id,
+        conversationId: item.conversation.id,
         muted,
       })
-      showSuccessToast(
-        toast,
-        muted ? "已开启消息免打扰" : "已取消消息免打扰"
-      )
+      toast.hide()
       setActionSheetOpen(false)
     } catch (error: unknown) {
       showErrorToast(
@@ -196,20 +206,21 @@ export function MessagesScreen() {
     }
   }
 
-  function handleRequestDismiss() {
-    if (!actionItem || pinMutation.isPending || muteMutation.isPending) return
+  function handleRequestDismiss(item: ConversationListItemModel) {
+    if (pinMutation.isPending || muteMutation.isPending) return
 
-    pendingDismissCandidateRef.current = actionItem.conversation
     setActionSheetOpen(false)
+    setDismissCandidate(item.conversation)
   }
 
   async function handleDismissConversation() {
     if (!dismissCandidate || dismissMutation.isPending) return
 
     try {
+      showLoadingToast(toast, "正在删除")
       await dismissMutation.mutateAsync(dismissCandidate.id)
       setDismissCandidate(null)
-      showSuccessToast(toast, "对话已删除")
+      toast.hide()
     } catch (error: unknown) {
       showErrorToast(toast, "删除对话失败", error)
     }
@@ -224,7 +235,7 @@ export function MessagesScreen() {
   return (
     <>
       <KeyboardAwareScreen
-        contentBackground="$color1"
+        contentBackground={colors.background0}
         edges={[]}
         scrollable={false}
       >
@@ -232,10 +243,19 @@ export function MessagesScreen() {
           hasKeyword={false}
           isRefreshing={isConversationsRefreshing}
           items={items}
+          onConversationDelete={handleRequestDismiss}
           onConversationLongPress={handleConversationLongPress}
+          onConversationMutedChange={(item, muted) =>
+            void handleMutedChange(item, muted)
+          }
+          onConversationPinnedChange={(item, pinned) =>
+            void handlePinnedChange(item, pinned)
+          }
           onConversationPress={handleConversationPress}
           onConversationPressIn={handleConversationPressIn}
           onRefresh={handleRefresh}
+          onSearchPress={() => router.push("/search")}
+          scrollToUnreadRequest={scrollToUnreadRequest}
           server={session}
         />
       </KeyboardAwareScreen>
@@ -244,12 +264,26 @@ export function MessagesScreen() {
         activeAction={activeAction}
         item={actionItem}
         onAnimationComplete={handleActionSheetAnimationComplete}
-        onDelete={handleRequestDismiss}
-        onMutedChange={(muted) => void handleMutedChange(muted)}
+        onDelete={() => {
+          if (actionItem) handleRequestDismiss(actionItem)
+        }}
+        onMutedChange={(muted) => {
+          if (actionItem) void handleMutedChange(actionItem, muted)
+        }}
+        onMutedChangeStart={(muted) =>
+          showLoadingToast(
+            toast,
+            muted ? "正在开启免打扰" : "正在取消免打扰"
+          )
+        }
         onOpenChange={setActionSheetOpen}
-        onPinnedChange={(pinned) => void handlePinnedChange(pinned)}
+        onPinnedChange={(pinned) => {
+          if (actionItem) void handlePinnedChange(actionItem, pinned)
+        }}
+        onPinnedChangeStart={(pinned) =>
+          showLoadingToast(toast, pinned ? "正在置顶" : "正在取消置顶")
+        }
         open={actionSheetOpen}
-        server={session}
       />
 
       <NetworkFailureDialog
@@ -258,9 +292,10 @@ export function MessagesScreen() {
         retrying={isBootstrapRefreshing}
       />
 
-      <DismissConversationDialog
+      <DismissConversationActionSheet
         conversationName={dismissCandidate?.name ?? ""}
         deleting={dismissMutation.isPending}
+        onBeforeConfirm={() => showLoadingToast(toast, "正在删除")}
         onConfirm={() => void handleDismissConversation()}
         onOpenChange={(open) => {
           if (!open) setDismissCandidate(null)
@@ -271,23 +306,22 @@ export function MessagesScreen() {
   )
 }
 
-function showSuccessToast(
-  toast: ReturnType<typeof useToastController>,
-  title: string
+function showLoadingToast(
+  toast: ReturnType<typeof useXGUIToast>,
+  message: string
 ) {
-  toast.show(title, {
-    customData: { tone: "success" satisfies AppToastTone },
-  })
+  toast.show({ duration: 0, message, type: "loading" })
 }
 
 function showErrorToast(
-  toast: ReturnType<typeof useToastController>,
+  toast: ReturnType<typeof useXGUIToast>,
   title: string,
   error: unknown
 ) {
-  toast.show(title, {
-    customData: { tone: "error" satisfies AppToastTone },
-    duration: 4000,
-    message: error instanceof Error ? error.message : title,
+  const detail = error instanceof Error ? error.message.trim() : ""
+  toast.show({
+    duration: 2000,
+    message: detail && detail !== title ? `${title}\n${detail}` : title,
+    type: "error",
   })
 }

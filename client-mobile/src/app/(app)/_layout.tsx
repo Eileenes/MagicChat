@@ -1,9 +1,11 @@
 import { Redirect, Stack } from "expo-router"
 
 import { useAuth } from "@/providers/auth-provider"
+import { useXGUITheme } from "@/xgui"
 
 export default function AppStackLayout() {
   const { isAuthenticated, isHydrated } = useAuth()
+  const { colors } = useXGUITheme()
 
   if (!isHydrated) return null
 
@@ -12,7 +14,12 @@ export default function AppStackLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        contentStyle: { backgroundColor: colors.background0 },
+        headerShown: false,
+      }}
+    >
       <Stack.Screen name="(drawer)" />
       <Stack.Screen name="conversation/[conversationId]" />
       <Stack.Screen

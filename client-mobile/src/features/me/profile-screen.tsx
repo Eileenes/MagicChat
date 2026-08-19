@@ -113,7 +113,7 @@ export function ProfileScreen() {
 
   return (
     <>
-      <KeyboardAwareScreen contentBackground="$backgroundLight" edges={[]}>
+      <KeyboardAwareScreen contentBackground="$background" edges={[]}>
         <YStack maxW={440} py="$4" self="center" width="100%">
           <Card bg="$background" overflow="hidden" rounded={0}>
             <ProfileRow

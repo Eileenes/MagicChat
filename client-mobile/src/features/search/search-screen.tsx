@@ -139,7 +139,7 @@ export function SearchScreen() {
         </XStack>
       </YStack>
 
-      <YStack bg="$color1" flex={1} minH={0} pb={insets.bottom}>
+      <YStack bg="$background" flex={1} minH={0} pb={insets.bottom}>
         {hasKeyword ? (
           <SearchResultList
             currentUser={currentUser}

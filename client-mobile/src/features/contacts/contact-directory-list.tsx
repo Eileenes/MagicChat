@@ -4,6 +4,7 @@ import {
   StyleSheet,
   type SectionListRenderItemInfo,
 } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import {
   ListItem,
   Paragraph,
@@ -21,6 +22,7 @@ import {
   type DirectoryItem,
   type DirectorySection,
 } from "@/features/contacts/contact-directory-model"
+import { XGUI_TABBAR_CONTENT_HEIGHT } from "@/xgui"
 
 export function ContactDirectoryList({
   emptyLabel,
@@ -39,15 +41,17 @@ export function ContactDirectoryList({
   sections: DirectorySection[]
   server: ServerTarget
 }) {
+  const insets = useSafeAreaInsets()
   const theme = useTheme()
+  const bottomContentInset = XGUI_TABBAR_CONTENT_HEIGHT + insets.bottom + 16
 
   return (
     <SectionList<DirectoryItem, DirectorySection>
-      contentContainerStyle={
-        sections.length === 0
-          ? [styles.content, styles.emptyContent]
-          : styles.content
-      }
+      contentContainerStyle={[
+        styles.content,
+        { paddingBottom: bottomContentInset },
+        sections.length === 0 && styles.emptyContent,
+      ]}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       keyExtractor={(item) => item.key}

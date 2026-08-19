@@ -150,7 +150,7 @@ export function XGUIListItem({
             {description ? (
               <Text
                 numberOfLines={1}
-                style={[styles.description, { color: colors.textSecondary }]}
+                style={[styles.description, { color: colors.textPlaceholder }]}
               >
                 {description}
               </Text>

@@ -428,7 +428,7 @@ export function ConversationScreen() {
 
       <YStack bg="$background" flex={1} pb={insets.bottom}>
         <KeyboardAwareScreen
-          contentBackground="$backgroundLight"
+          contentBackground="$background"
           edges={[]}
           keyboardVerticalOffset={insets.top + PAGE_HEADER_HEIGHT}
           scrollable={false}

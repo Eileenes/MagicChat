@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react"
 
+import type { AuthenticatedTarget } from "@/core/server-target"
 import type {
   RealtimeConnectionStatus,
   RealtimeSnapshot,
@@ -7,6 +8,10 @@ import type {
 
 export type RealtimeContextValue = RealtimeSnapshot & {
   activateConversation: (conversationId: string) => () => void
+  waitUntilReady: (
+    target: AuthenticatedTarget,
+    options: { attempts: number; timeoutMs: number }
+  ) => Promise<void>
 }
 
 export const RealtimeContext = createContext<RealtimeContextValue | null>(null)
@@ -25,4 +30,7 @@ export const DISCONNECTED_REALTIME_SNAPSHOT: RealtimeContextValue = {
   activateConversation: () => () => undefined,
   ready: false,
   status: "disconnected" satisfies RealtimeConnectionStatus,
+  waitUntilReady: async () => {
+    throw new Error("实时连接尚未初始化")
+  },
 }

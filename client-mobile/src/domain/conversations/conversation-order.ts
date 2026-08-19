@@ -58,6 +58,28 @@ export function orderConversations(
   return ordered
 }
 
+export function flattenVisibleConversations(
+  conversations: ClientConversation[],
+  options: { activeConversationId?: string; now?: number } = {}
+) {
+  const ordered = orderConversations(conversations, options.now)
+  const parentIds = new Set(
+    ordered
+      .filter((conversation) => conversation.type !== "topic")
+      .map((conversation) => conversation.id)
+  )
+
+  return ordered.filter((conversation) => {
+    if (conversation.type !== "topic") return true
+
+    const parentId = conversation.topic?.parentConversationId
+    return (
+      Boolean(parentId && parentIds.has(parentId)) &&
+      isConversationTopicVisibleInList(conversation, options)
+    )
+  })
+}
+
 export function isConversationTopicVisibleInList(
   conversation: ClientConversation,
   options: { activeConversationId?: string; now?: number } = {}

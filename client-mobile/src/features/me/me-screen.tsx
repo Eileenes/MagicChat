@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native"
 import { Alert } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import {
   Avatar,
   Card,
@@ -41,6 +42,7 @@ import {
 import { useAppTheme } from "@/providers/app-theme-provider"
 import { useClientData } from "@/providers/client-data-provider"
 import { useServers } from "@/providers/server-provider"
+import { XGUI_TABBAR_CONTENT_HEIGHT, useXGUITheme } from "@/xgui"
 
 const THEME_LABELS: Record<ThemePreference, string> = {
   dark: "深色",
@@ -49,6 +51,8 @@ const THEME_LABELS: Record<ThemePreference, string> = {
 }
 
 export function MeScreen() {
+  const insets = useSafeAreaInsets()
+  const { colors } = useXGUITheme()
   const router = useRouter()
   const session = useAuthenticatedSession()
   const { selectedServer } = useServers()
@@ -103,8 +107,15 @@ export function MeScreen() {
 
   return (
     <>
-      <KeyboardAwareScreen contentBackground="$backgroundLight" edges={[]}>
-        <YStack gap="$4" maxW={440} py="$4" self="center" width="100%">
+      <KeyboardAwareScreen contentBackground={colors.background0} edges={[]}>
+        <YStack
+          gap="$4"
+          maxW={440}
+          pb={XGUI_TABBAR_CONTENT_HEIGHT + insets.bottom + 16}
+          pt="$4"
+          self="center"
+          width="100%"
+        >
           <Card bg="$background" overflow="hidden" rounded={0}>
             <XStack
               accessibilityLabel="个人信息"

@@ -19,13 +19,18 @@ export type AuthSession = AuthenticatedTarget
 
 const AUTH_SESSION_STORAGE_KEY = "@magicchat/auth-session/v1"
 
+type AuthPhase = "anonymous" | "preparing" | "authenticated"
+
 type AuthContextValue = {
+  beginSignIn: (session: AuthSession) => void
+  commitSignIn: (session: AuthSession) => Promise<void>
   invalidateSession: () => Promise<void>
   isAuthenticated: boolean
   isHydrated: boolean
+  isPreparingSignIn: boolean
   isSigningOut: boolean
+  rollbackSignIn: (session: AuthSession) => Promise<void>
   session: AuthSession | null
-  signIn: (session: AuthSession) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -34,9 +39,11 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: React.PropsWithChildren) {
   const queryClient = useQueryClient()
   const [session, setSession] = useState<AuthSession | null>(null)
+  const [phase, setPhase] = useState<AuthPhase>("anonymous")
   const [isHydrated, setIsHydrated] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const sessionRef = useRef<AuthSession | null>(null)
+  const phaseRef = useRef<AuthPhase>("anonymous")
   const sessionMutationVersionRef = useRef(0)
   const signOutPromiseRef = useRef<Promise<void> | null>(null)
   useEffect(() => {
@@ -53,7 +60,9 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
         }
         const restoredSession = parsePersistedAuthSession(storedSession)
         sessionRef.current = restoredSession
+        phaseRef.current = restoredSession ? "authenticated" : "anonymous"
         setSession(restoredSession)
+        setPhase(phaseRef.current)
       })
       .catch(() => undefined)
       .finally(() => {
@@ -65,22 +74,68 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
     }
   }, [])
 
-  const signIn = useCallback(async (nextSession: AuthSession) => {
+  const beginSignIn = useCallback((nextSession: AuthSession) => {
     sessionMutationVersionRef.current += 1
     sessionRef.current = nextSession
+    phaseRef.current = "preparing"
     setSession(nextSession)
+    setPhase("preparing")
+  }, [])
+
+  const commitSignIn = useCallback(async (expectedSession: AuthSession) => {
+    if (
+      phaseRef.current !== "preparing" ||
+      !matchesSession(sessionRef.current, expectedSession)
+    ) {
+      throw new Error("登录初始化已失效")
+    }
+
+    const mutationVersion = sessionMutationVersionRef.current
     await AsyncStorage.setItem(
       AUTH_SESSION_STORAGE_KEY,
-      JSON.stringify(nextSession)
-    ).catch(() => undefined)
+      JSON.stringify(expectedSession)
+    )
+    if (
+      sessionMutationVersionRef.current !== mutationVersion ||
+      !matchesSession(sessionRef.current, expectedSession)
+    ) {
+      throw new Error("登录初始化已失效")
+    }
+
+    phaseRef.current = "authenticated"
+    setPhase("authenticated")
   }, [])
+
+  const rollbackSignIn = useCallback(
+    async (expectedSession: AuthSession) => {
+      if (
+        phaseRef.current !== "preparing" ||
+        !matchesSession(sessionRef.current, expectedSession)
+      ) {
+        return
+      }
+
+      sessionMutationVersionRef.current += 1
+      sessionRef.current = null
+      phaseRef.current = "anonymous"
+      setSession(null)
+      setPhase("anonymous")
+      await AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY).catch(
+        () => undefined
+      )
+      await clearSessionData(queryClient, expectedSession)
+    },
+    [queryClient]
+  )
 
   const invalidateSession = useCallback(async () => {
     const currentSession = sessionRef.current
 
     sessionMutationVersionRef.current += 1
     sessionRef.current = null
+    phaseRef.current = "anonymous"
     setSession(null)
+    setPhase("anonymous")
     await AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY).catch(() => undefined)
 
     if (currentSession) {
@@ -116,15 +171,28 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
 
   const value = useMemo(
     () => ({
+      beginSignIn,
+      commitSignIn,
       invalidateSession,
-      isAuthenticated: session !== null,
+      isAuthenticated: phase === "authenticated",
       isHydrated,
+      isPreparingSignIn: phase === "preparing",
       isSigningOut,
+      rollbackSignIn,
       session,
-      signIn,
       signOut,
     }),
-    [invalidateSession, isHydrated, isSigningOut, session, signIn, signOut]
+    [
+      beginSignIn,
+      commitSignIn,
+      invalidateSession,
+      isHydrated,
+      isSigningOut,
+      phase,
+      rollbackSignIn,
+      session,
+      signOut,
+    ]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -156,6 +224,17 @@ function parsePersistedAuthSession(value: string | null): AuthSession | null {
   }
 }
 
+function matchesSession(
+  current: AuthSession | null,
+  expected: AuthSession
+) {
+  return (
+    current?.id === expected.id &&
+    current.url === expected.url &&
+    current.userId === expected.userId
+  )
+}
+
 export function useAuth() {
   const value = useContext(AuthContext)
 
@@ -167,9 +246,9 @@ export function useAuth() {
 }
 
 export function useAuthenticatedSession() {
-  const { session } = useAuth()
+  const { isAuthenticated, session } = useAuth()
 
-  if (!session) {
+  if (!isAuthenticated || !session) {
     throw new Error("当前页面需要已认证的用户会话")
   }
 

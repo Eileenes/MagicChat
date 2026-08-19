@@ -2,10 +2,7 @@ import type {
   ClientContacts,
   ClientConversation,
 } from "@/core/models"
-import {
-  isConversationTopicVisibleInList,
-  orderConversations,
-} from "@/domain/conversations/conversation-order"
+import { flattenVisibleConversations } from "@/domain/conversations/conversation-order"
 import { getContactDisplayName } from "@/domain/contacts/contact-display"
 import {
   formatMentionTemplateText,
@@ -102,7 +99,10 @@ function getConversationListRows({
   conversations: ClientConversation[]
   now: number
 }) {
-  const orderedConversations = orderConversations(conversations, now)
+  const orderedConversations = flattenVisibleConversations(conversations, {
+    activeConversationId,
+    now,
+  })
   const parentById = new Map(
     orderedConversations
       .filter((conversation) => conversation.type !== "topic")
@@ -111,13 +111,7 @@ function getConversationListRows({
   const topicsByParentId = new Map<string, ClientConversation[]>()
 
   for (const conversation of orderedConversations) {
-    if (
-      conversation.type !== "topic" ||
-      !isConversationTopicVisibleInList(conversation, {
-        activeConversationId,
-        now,
-      })
-    ) {
+    if (conversation.type !== "topic") {
       continue
     }
 
@@ -153,6 +147,27 @@ function getConversationListRows({
   }
 
   return rows
+}
+
+export function findLatestUnreadConversationIndex(
+  items: ConversationListItemModel[]
+) {
+  let latestIndex = -1
+  let latestActivityAt = Number.NEGATIVE_INFINITY
+
+  items.forEach((item, index) => {
+    if (item.conversation.unreadCount <= 0) return
+
+    const activityAt = Date.parse(
+      item.conversation.lastMessageAt ?? item.conversation.createdAt
+    )
+    if (Number.isNaN(activityAt) || activityAt <= latestActivityAt) return
+
+    latestIndex = index
+    latestActivityAt = activityAt
+  })
+
+  return latestIndex
 }
 
 export function formatConversationUnreadDescription(

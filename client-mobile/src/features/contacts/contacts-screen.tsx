@@ -13,6 +13,7 @@ import {
 } from "@/features/contacts/contact-directory-model"
 import { ContactDirectoryList } from "@/features/contacts/contact-directory-list"
 import { useClientData } from "@/providers/client-data-provider"
+import { useXGUITheme } from "@/xgui"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
 
 const DIRECTORY_TABS: { label: string; value: DirectoryTab }[] = [
@@ -22,6 +23,7 @@ const DIRECTORY_TABS: { label: string; value: DirectoryTab }[] = [
 ]
 
 export function ContactsScreen() {
+  const { colors } = useXGUITheme()
   const router = useRouter()
   const session = useAuthenticatedSession()
   const appInfoQuery = useCachedAppInfo(session)
@@ -64,7 +66,7 @@ export function ContactsScreen() {
 
   return (
     <KeyboardAwareScreen
-      contentBackground="$color1"
+      contentBackground={colors.background0}
       edges={[]}
       scrollable={false}
     >

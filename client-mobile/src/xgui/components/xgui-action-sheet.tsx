@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Sheet } from "tamagui"
@@ -9,7 +9,9 @@ export type XGUIActionSheetAction = {
   accessibilityLabel?: string
   destructive?: boolean
   disabled?: boolean
+  deferUntilClosed?: boolean
   label: string
+  onBeforePress?: () => void
   onPress: () => void
 }
 
@@ -17,21 +19,28 @@ export type XGUIActionSheetProps = {
   actions: readonly XGUIActionSheetAction[]
   cancelLabel?: string
   description?: string
+  descriptionNumberOfLines?: number
+  onAnimationComplete?: (open: boolean) => void
   onOpenChange: (open: boolean) => void
   open: boolean
   title?: string
+  titleNumberOfLines?: number
 }
 
 export function XGUIActionSheet({
   actions,
   cancelLabel = "取消",
   description,
+  descriptionNumberOfLines,
+  onAnimationComplete,
   onOpenChange,
   open,
   title,
+  titleNumberOfLines,
 }: XGUIActionSheetProps) {
   const insets = useSafeAreaInsets()
   const { colors } = useXGUITheme()
+  const pendingActionRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -51,6 +60,14 @@ export function XGUIActionSheet({
       dismissOnOverlayPress
       dismissOnSnapToBottom
       modal
+      onAnimationComplete={({ open: animationOpen }) => {
+        onAnimationComplete?.(animationOpen)
+        if (!animationOpen && pendingActionRef.current) {
+          const pendingAction = pendingActionRef.current
+          pendingActionRef.current = null
+          pendingAction()
+        }
+      }}
       onOpenChange={onOpenChange}
       open={open}
       snapPointsMode="fit"
@@ -61,12 +78,18 @@ export function XGUIActionSheet({
           {title || description ? (
             <View style={styles.header}>
               {title ? (
-                <Text style={[styles.title, { color: colors.textSecondary }]}>
+                <Text
+                  ellipsizeMode="tail"
+                  numberOfLines={titleNumberOfLines}
+                  style={[styles.title, { color: colors.textSecondary }]}
+                >
                   {title}
                 </Text>
               ) : null}
               {description ? (
                 <Text
+                  ellipsizeMode="tail"
+                  numberOfLines={descriptionNumberOfLines}
                   style={[styles.description, { color: colors.textSecondary }]}
                 >
                   {description}
@@ -82,8 +105,14 @@ export function XGUIActionSheet({
               disabled={action.disabled}
               key={`${action.label}-${index}`}
               onPress={() => {
+                action.onBeforePress?.()
+                if (action.deferUntilClosed) {
+                  pendingActionRef.current = action.onPress
+                }
                 onOpenChange(false)
-                action.onPress()
+                if (!action.deferUntilClosed) {
+                  setTimeout(action.onPress, 0)
+                }
               }}
               style={({ pressed }) => [
                 styles.action,

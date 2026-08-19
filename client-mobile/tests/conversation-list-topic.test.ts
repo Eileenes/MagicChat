@@ -10,13 +10,47 @@ import {
   isConversationTopicVisibleInList,
   orderConversations,
 } from "../src/domain/conversations/conversation-order.ts"
-import { buildConversationListItems } from "../src/features/messages/conversation-list-model.ts"
+import {
+  buildConversationListItems,
+  findLatestUnreadConversationIndex,
+  formatUnreadCount,
+} from "../src/features/messages/conversation-list-model.ts"
 
 const EMPTY_CONTACTS: ClientContacts = {
   apps: [],
   groups: [],
   users: [],
 }
+
+test("formats unread badge counts with a 99+ cap", () => {
+  assert.equal(formatUnreadCount(99), "99")
+  assert.equal(formatUnreadCount(100), "99+")
+})
+
+test("finds the most recently active unread conversation", () => {
+  const items = buildConversationListItems({
+    contacts: EMPTY_CONTACTS,
+    conversations: [
+      conversation({
+        id: "older-pinned",
+        lastMessageAt: "2026-07-30T07:00:00Z",
+        pinned: true,
+        unreadCount: 4,
+      }),
+      conversation({
+        id: "latest-unread",
+        lastMessageAt: "2026-07-30T07:55:00Z",
+        unreadCount: 2,
+      }),
+    ],
+    currentUserId: "current-user",
+    keyword: "",
+    now: new Date("2026-07-30T08:00:00Z"),
+  })
+
+  assert.equal(items[0]?.conversation.id, "older-pinned")
+  assert.equal(findLatestUnreadConversationIndex(items), 1)
+})
 
 test("keeps topics under their parent and lets recent topic activity move the group", () => {
   const now = Date.parse("2026-07-30T08:00:00Z")
