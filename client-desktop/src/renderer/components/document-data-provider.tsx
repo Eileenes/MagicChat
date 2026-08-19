@@ -17,7 +17,7 @@ import {
 import { useAppInfo } from "@/lib/app-info-context"
 import { ClientDataContext } from "@/lib/client-data-context"
 import { DocumentDataContext } from "@/lib/document-data-context"
-import { listClientProjects } from "@/lib/project-data-api"
+import { listClientProjects, type ClientProjectSummary } from "@/lib/project-data-api"
 
 export function DocumentDataProvider({ children }: { children: ReactNode }) {
   const clientData = useContext(ClientDataContext)
@@ -25,7 +25,12 @@ export function DocumentDataProvider({ children }: { children: ReactNode }) {
     () =>
       clientData
         ? {
+            loadMoreProjects: clientData.loadMoreProjects,
             me: clientData.me,
+            personalProject: clientData.personalProject,
+            projects: clientData.projects,
+            projectsLoadingMore: clientData.projectsLoadingMore,
+            projectsNextCursor: clientData.projectsNextCursor,
             refreshMe: clientData.refreshMe,
             refreshProjects: clientData.refreshProjects,
           }
@@ -48,12 +53,21 @@ function StandaloneDocumentDataProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<ClientUser | null>(null)
   const [error, setError] = useState<ClientDataRequestError | null>(null)
   const [loading, setLoading] = useState(true)
+  const [personalProject, setPersonalProject] = useState<ClientProjectSummary | null>(null)
+  const [projects, setProjects] = useState<readonly ClientProjectSummary[]>([])
+  const [projectsLoadingMore, setProjectsLoadingMore] = useState(false)
+  const [projectsNextCursor, setProjectsNextCursor] = useState<string | null>(null)
+  const projectsLoadingMoreRef = useRef(false)
+  const loadRequestEpochRef = useRef(0)
+  const projectsRequestEpochRef = useRef(0)
   const mountedRef = useRef(true)
 
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
+      loadRequestEpochRef.current += 1
+      projectsRequestEpochRef.current += 1
     }
   }, [])
 
@@ -86,29 +100,65 @@ function StandaloneDocumentDataProvider({ children }: { children: ReactNode }) {
   }, [handleRequestError, setAuthenticated])
 
   const refreshProjects = useCallback(async () => {
+    const requestEpoch = ++projectsRequestEpochRef.current
     try {
-      await listClientProjects({ limit: 100 })
-      if (mountedRef.current) setError(null)
+      const page = await listClientProjects({ limit: 100 })
+      if (!mountedRef.current || projectsRequestEpochRef.current !== requestEpoch) return
+      setPersonalProject(page.personalProject)
+      setProjects(page.projects)
+      setProjectsNextCursor(page.nextCursor)
+      setError(null)
     } catch (reason) {
+      if (!mountedRef.current || projectsRequestEpochRef.current !== requestEpoch) return
       throw handleRequestError(reason, "加载项目列表失败")
     }
   }, [handleRequestError])
 
+  const loadMoreProjects = useCallback(async () => {
+    const cursor = projectsNextCursor
+    if (!cursor || projectsLoadingMoreRef.current) return
+    projectsLoadingMoreRef.current = true
+    setProjectsLoadingMore(true)
+    const requestEpoch = ++projectsRequestEpochRef.current
+    try {
+      const page = await listClientProjects({ cursor, limit: 100 })
+      if (!mountedRef.current || projectsRequestEpochRef.current !== requestEpoch) return
+      setPersonalProject(page.personalProject)
+      setProjects((current) => mergeProjects(current, page.projects))
+      setProjectsNextCursor(page.nextCursor)
+      setError(null)
+    } catch (reason) {
+      if (!mountedRef.current || projectsRequestEpochRef.current !== requestEpoch) return
+      throw handleRequestError(reason, "加载更多项目失败")
+    } finally {
+      projectsLoadingMoreRef.current = false
+      if (mountedRef.current) setProjectsLoadingMore(false)
+    }
+  }, [handleRequestError, projectsNextCursor])
+
   const load = useCallback(async () => {
+    const loadRequestEpoch = ++loadRequestEpochRef.current
+    const projectsRequestEpoch = ++projectsRequestEpochRef.current
     setLoading(true)
     setError(null)
     try {
-      const [nextMe] = await Promise.all([
+      const [nextMe, projectPage] = await Promise.all([
         getCurrentClientUser(),
         listClientProjects({ limit: 100 }),
       ])
-      if (!mountedRef.current) return
+      if (!mountedRef.current || loadRequestEpochRef.current !== loadRequestEpoch) return
       setMe(nextMe)
+      if (projectsRequestEpochRef.current === projectsRequestEpoch) {
+        setPersonalProject(projectPage.personalProject)
+        setProjects(projectPage.projects)
+        setProjectsNextCursor(projectPage.nextCursor)
+      }
       setAuthenticated(true)
     } catch (reason) {
+      if (!mountedRef.current || loadRequestEpochRef.current !== loadRequestEpoch) return
       handleRequestError(reason, "加载文档工作区失败", true)
     } finally {
-      if (mountedRef.current) setLoading(false)
+      if (mountedRef.current && loadRequestEpochRef.current === loadRequestEpoch) setLoading(false)
     }
   }, [handleRequestError, setAuthenticated])
 
@@ -117,8 +167,29 @@ function StandaloneDocumentDataProvider({ children }: { children: ReactNode }) {
   }, [load])
 
   const value = useMemo(
-    () => (me ? { me, refreshMe, refreshProjects } : null),
-    [me, refreshMe, refreshProjects],
+    () =>
+      me && personalProject
+        ? {
+            loadMoreProjects,
+            me,
+            personalProject,
+            projects,
+            projectsLoadingMore,
+            projectsNextCursor,
+            refreshMe,
+            refreshProjects,
+          }
+        : null,
+    [
+      loadMoreProjects,
+      me,
+      personalProject,
+      projects,
+      projectsLoadingMore,
+      projectsNextCursor,
+      refreshMe,
+      refreshProjects,
+    ],
   )
 
   if (loading) return <DocumentDataStatus message="正在连接文档工作区" onRetry={undefined} />
@@ -135,6 +206,15 @@ function StandaloneDocumentDataProvider({ children }: { children: ReactNode }) {
     )
 
   return <DocumentDataContext.Provider value={value}>{children}</DocumentDataContext.Provider>
+}
+
+function mergeProjects(
+  current: readonly ClientProjectSummary[],
+  incoming: readonly ClientProjectSummary[],
+) {
+  const projectsById = new Map(current.map((project) => [project.id, project]))
+  for (const project of incoming) projectsById.set(project.id, project)
+  return Array.from(projectsById.values())
 }
 
 function DocumentDataStatus({ message, onRetry }: { message: string; onRetry?: () => void }) {

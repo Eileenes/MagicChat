@@ -7,6 +7,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { MessageBubble, SystemMessageBadge } from "@/components/conversation/conversation-message"
+import { ConversationStatusIndicator } from "@/components/conversation/conversation-status-indicator"
 import { formatConversationMessageTime } from "@/lib/conversation-message-presenter"
 import { conversationMessageRetentionLimit } from "@/lib/client-data-state"
 import type {
@@ -47,6 +48,7 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
   onSetMessageReaction,
   onToggleMessageSelection,
   pendingLatestMessageCount: externalPendingLatestMessageCount = 0,
+  status,
 }: {
   canReply?: boolean
   conversation: ClientConversation
@@ -83,6 +85,7 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
   ) => Promise<void>
   onToggleMessageSelection?: (message: ConversationPanelMessage) => void
   pendingLatestMessageCount?: number
+  status?: string
 }) {
   const { t } = useLocale()
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
@@ -421,6 +424,7 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
               </div>
             )}
             {error && <div className="text-center text-xs text-muted-foreground">{error}</div>}
+            {status && <ConversationStatusBubble status={status} />}
           </div>
         </ScrollArea>
       </div>
@@ -430,10 +434,7 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
   if (messages.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-muted/10">
-        <Empty
-          className="h-full min-h-0 flex-1 rounded-none"
-          data-testid="conversation-history-empty"
-        >
+        <Empty className="min-h-0 flex-1 rounded-none" data-testid="conversation-history-empty">
           <EmptyMedia>
             <MessageCircle className="size-14 text-muted-foreground/25" />
           </EmptyMedia>
@@ -442,6 +443,11 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
             <EmptyDescription>{t("history.emptyHint")}</EmptyDescription>
           </EmptyHeader>
         </Empty>
+        {status && (
+          <div className="px-5 pb-6">
+            <ConversationStatusBubble status={status} />
+          </div>
+        )}
       </div>
     )
   }
@@ -512,6 +518,7 @@ export const ConversationPanelHistory = React.memo(function ConversationPanelHis
               )}
             </React.Fragment>
           ))}
+          {status && <ConversationStatusBubble status={status} />}
           {loadingAfter && (
             <div
               className="flex items-center justify-center gap-2 text-xs text-muted-foreground"
@@ -548,6 +555,17 @@ function isMessageAvailable(message: ConversationPanelMessage) {
     message.body.type !== "choice" &&
     message.body.type !== "revoked" &&
     message.body.type !== "unsupported"
+  )
+}
+
+function ConversationStatusBubble({ status }: { status: string }) {
+  return (
+    <div
+      className="w-fit max-w-[75%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm text-muted-foreground"
+      data-testid="conversation-status-bubble"
+    >
+      <ConversationStatusIndicator status={status} />
+    </div>
   )
 }
 
