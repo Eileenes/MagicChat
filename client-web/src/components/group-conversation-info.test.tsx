@@ -269,6 +269,43 @@ describe("GroupConversationInfo", () => {
     )
   })
 
+  it("lets a regular member edit the group name", async () => {
+    const user = userEvent.setup()
+    const conversation = createGroupConversation()
+    const updateGroupConversationName = vi.fn().mockResolvedValue(conversation)
+
+    render(
+      <MemoryRouter>
+        <ClientDataContext.Provider
+          value={createClientDataContextValue({
+            conversations: [conversation],
+            getConversation: vi.fn(() => conversation),
+            updateGroupConversationName,
+          })}
+        >
+          <Sheet open>
+            <SheetContent showCloseButton={false}>
+              <GroupConversationInfo conversationId={conversation.id} />
+            </SheetContent>
+          </Sheet>
+        </ClientDataContext.Provider>
+      </MemoryRouter>
+    )
+
+    await user.click(screen.getByRole("button", { name: "修改群聊名称" }))
+    const input = screen.getByLabelText("群聊名称")
+    await user.clear(input)
+    await user.type(input, "成员修改后的群名")
+    await user.click(screen.getByRole("button", { name: "保存群聊名称" }))
+
+    await waitFor(() =>
+      expect(updateGroupConversationName).toHaveBeenCalledWith(
+        conversation.id,
+        "成员修改后的群名"
+      )
+    )
+  })
+
   it("shows the group announcement read-only to regular members", () => {
     const conversation = createGroupConversation()
     conversation.announcement = "成员可查看公告"

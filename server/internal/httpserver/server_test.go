@@ -10113,7 +10113,7 @@ func TestUpdateGroupConversationNameCreatesSystemMessage(t *testing.T) {
 	}
 }
 
-func TestUpdateGroupConversationNameRejectsMember(t *testing.T) {
+func TestUpdateGroupConversationNameAllowsMember(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()
 
@@ -10131,10 +10131,17 @@ func TestUpdateGroupConversationNameRejectsMember(t *testing.T) {
 	resp, body := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/name", map[string]any{
 		"name": "新产品讨论组",
 	}, loginAsUser(t, server, bob.Email))
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403, body = %#v", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %#v", resp.StatusCode, body)
 	}
-	requireError(t, body, "forbidden")
+	data := requireSuccess(t, body)
+	updatedConversation := data["conversation"].(map[string]any)
+	if updatedConversation["name"] != "新产品讨论组" {
+		t.Fatalf("conversation.name = %v, want 新产品讨论组", updatedConversation["name"])
+	}
+	if updatedConversation["last_message_summary"] != "Bob 修改群聊名称为 新产品讨论组" {
+		t.Fatalf("last_message_summary = %v, want member rename summary", updatedConversation["last_message_summary"])
+	}
 }
 
 func TestLeaveGroupConversationCreatesSystemMessage(t *testing.T) {

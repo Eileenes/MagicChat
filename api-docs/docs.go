@@ -3658,7 +3658,7 @@ const docTemplate = `{
         },
         "/api/client/conversations/groups/{conversation_id}/name": {
             "patch": {
-                "description": "群主或管理员修改 active 群聊名称，并生成系统消息。",
+                "description": "任意当前群成员均可修改 active 群聊名称，并生成系统消息。",
                 "consumes": [
                     "application/json"
                 ],

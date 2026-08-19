@@ -789,7 +789,7 @@ func (a *ConversationAPI) removeMemberByType(c echo.Context, memberType string) 
 // updateName godoc
 //
 // @Summary 修改群聊名称
-// @Description 群主或管理员修改 active 群聊名称，并生成系统消息。
+// @Description 任意当前群成员均可修改 active 群聊名称，并生成系统消息。
 // @Tags 客户端会话
 // @Accept json
 // @Produce json
