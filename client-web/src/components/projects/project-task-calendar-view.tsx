@@ -290,7 +290,7 @@ function UnscheduledCalendarTasks({
                 )}
                 status={task.status}
               />
-              <span className="min-w-0 flex-1 truncate transition-colors group-hover/task:text-sky-600">
+              <span className="min-w-0 flex-1 truncate transition-colors group-hover/task:text-(--weui-link)">
                 {task.title}
               </span>
               {task.assignee && (

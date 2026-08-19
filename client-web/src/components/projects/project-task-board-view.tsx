@@ -262,7 +262,7 @@ function BoardTask({
             listeners?.onKeyDown?.(event)
           }}
         >
-          <div className="line-clamp-2 text-sm leading-snug font-medium transition-colors group-hover/task:text-sky-600">
+          <div className="line-clamp-2 text-sm leading-snug font-medium transition-colors group-hover/task:text-(--weui-link)">
             {task.title}
           </div>
           {task.description && (

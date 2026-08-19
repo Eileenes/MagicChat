@@ -65,7 +65,7 @@ export function UserProfilePopoverLink({
       fallbackProfile={profile}
       triggerAriaLabel={`${displayName}资料`}
       triggerClassName={cn(
-        "max-w-full truncate transition-colors hover:text-sky-500 focus-visible:text-sky-500 data-[state=open]:text-sky-500",
+        "max-w-full truncate transition-colors hover:text-(--weui-link) focus-visible:text-(--weui-link) data-[state=open]:text-(--weui-link)",
         triggerClassName
       )}
       userId={profile.id}

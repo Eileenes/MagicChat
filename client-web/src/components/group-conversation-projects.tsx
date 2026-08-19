@@ -315,7 +315,7 @@ function ProjectItem({
       <ProjectAvatar project={project} />
       <div className="min-w-0 flex-1">
         <Link
-          className="block w-fit max-w-full truncate transition-colors group-hover/project:text-sky-600 focus-visible:text-sky-600 focus-visible:outline-none"
+          className="block w-fit max-w-full truncate transition-colors group-hover/project:text-(--weui-link) focus-visible:text-(--weui-link) focus-visible:outline-none"
           to={`/projects/${encodeURIComponent(project.id)}/tasks`}
         >
           {project.name}

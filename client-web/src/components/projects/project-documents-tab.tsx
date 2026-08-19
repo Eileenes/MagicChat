@@ -638,7 +638,7 @@ function DocumentTreeRow({
           "flex size-8 shrink-0 items-center justify-center rounded-md",
           node.kind === "folder"
             ? "bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300"
-            : "bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300"
+            : "bg-sky-50 text-(--weui-link) dark:bg-sky-950/60 dark:text-(--weui-link)"
         )}
       >
         <NodeIcon className="size-5" />
@@ -647,7 +647,7 @@ function DocumentTreeRow({
         className={cn(
           "min-w-0 truncate font-medium transition-colors",
           node.kind === "document" &&
-            "group-focus-within/name:text-sky-500 group-hover/name:text-sky-500"
+            "group-focus-within/name:text-(--weui-link) group-hover/name:text-(--weui-link)"
         )}
       >
         {node.title}

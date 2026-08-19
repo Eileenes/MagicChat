@@ -160,7 +160,7 @@ function ReactionUserName({ user }: { user: ClientMessageReactionUser }) {
   return (
     <UserProfilePopover
       triggerAriaLabel={`${user.name}资料`}
-      triggerClassName="min-w-0 max-w-full break-all whitespace-normal transition-colors hover:text-sky-500 focus-visible:text-sky-500 data-[state=open]:text-sky-500"
+      triggerClassName="min-w-0 max-w-full break-all whitespace-normal transition-colors hover:text-(--weui-link) focus-visible:text-(--weui-link) data-[state=open]:text-(--weui-link)"
       userId={user.id}
     >
       <span>{user.name}</span>
@@ -222,7 +222,7 @@ function MessageReactionUsersPopover({
       <PopoverTrigger asChild>
         <button
           aria-label={`查看表情 ${reaction.text} 的 ${reaction.count} 位参与者`}
-          className="cursor-pointer rounded-sm font-medium text-sky-500 transition-colors outline-none hover:text-sky-600 focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:text-sky-400 dark:hover:text-sky-300"
+          className="cursor-pointer rounded-sm font-medium text-(--weui-link) transition-colors outline-none hover:text-(--weui-link) focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:text-(--weui-link) dark:hover:text-(--weui-link)"
           type="button"
         >
           {reaction.count}
@@ -252,7 +252,7 @@ function MessageReactionUsersPopover({
                 <UserProfilePopover
                   key={user.id}
                   triggerAriaLabel={`${user.name}资料`}
-                  triggerClassName="w-full rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent hover:text-sky-500 focus-visible:text-sky-500 data-[state=open]:bg-accent data-[state=open]:text-sky-500"
+                  triggerClassName="w-full rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent hover:text-(--weui-link) focus-visible:text-(--weui-link) data-[state=open]:bg-accent data-[state=open]:text-(--weui-link)"
                   userId={user.id}
                 >
                   <span className="truncate">{user.name}</span>

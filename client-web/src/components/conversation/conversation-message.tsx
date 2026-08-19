@@ -353,7 +353,7 @@ export const MessageBubble = React.memo(function MessageBubble({
           <div className="flex max-w-full min-w-0 items-center gap-2 text-xs text-muted-foreground">
             {canInsertAuthorMention && !selectionMode ? (
               <button
-                className="max-w-32 cursor-pointer truncate p-0 text-muted-foreground transition-colors hover:text-sky-500"
+                className="max-w-32 cursor-pointer truncate p-0 text-muted-foreground transition-colors hover:text-(--weui-link)"
                 onClick={handleAuthorMentionClick}
                 onMouseDown={(event) => event.preventDefault()}
                 title={message.author}
@@ -1115,7 +1115,7 @@ export const MessageBodyRenderer = React.memo(function MessageBodyRenderer({
       return body.editableBody && onReeditRevoked ? (
         <span className="text-muted-foreground">
           <button
-            className="cursor-pointer p-0 font-medium text-sky-500 transition-colors hover:text-sky-600 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none"
+            className="cursor-pointer p-0 font-medium text-(--weui-link) transition-colors hover:text-(--weui-link) focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-(--weui-link)/40 focus-visible:outline-none"
             onClick={onReeditRevoked}
             type="button"
           >

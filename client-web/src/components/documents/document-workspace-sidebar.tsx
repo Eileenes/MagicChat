@@ -326,7 +326,7 @@ function DocumentTree({
             style={{ paddingLeft: depth * 16 + 8 }}
             to={`/documents/document/${encodeURIComponent(node.id)}`}
           >
-            <FileText className="size-4 shrink-0 text-sky-600 dark:text-sky-300" />
+            <FileText className="size-4 shrink-0 text-(--weui-link)" />
             <span className="truncate">
               {activeDocumentId === node.id ? activeTitle : node.title}
             </span>
