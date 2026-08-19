@@ -340,6 +340,19 @@ type CreateDirectCommand struct {
 	UserID string
 }
 
+type RecordFriendshipCreatedCommand struct {
+	ActorUserID     string
+	AddresseeUserID string
+	CreatedAt       time.Time
+	RequesterUserID string
+}
+
+type RecordFriendshipCreatedResult struct {
+	Message         Message
+	RestoredUserIDs []string
+	UserIDs         []string
+}
+
 type CreateAppCommand struct {
 	Actor Actor
 	AppID string

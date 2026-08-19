@@ -468,6 +468,11 @@ export type TopicClosedSystemEventBodyResponse = {
   type?: "system_event"
 }
 
+export type FriendshipCreatedSystemEventBodyResponse = {
+  event?: "friendship_created"
+  type?: "system_event"
+}
+
 export type MessageBodyResponse =
   | TextMessageBodyResponse
   | MarkdownMessageBodyResponse
@@ -489,6 +494,7 @@ export type MessageBodyResponse =
   | GroupAnnouncementUpdatedSystemEventBodyResponse
   | MessageRevokedSystemEventBodyResponse
   | TopicClosedSystemEventBodyResponse
+  | FriendshipCreatedSystemEventBodyResponse
 
 export type MessageResponse = {
   body?: MessageBodyResponse
@@ -1177,6 +1183,11 @@ export type ClientTopicClosedSystemEventBody = {
   type: "system_event"
 }
 
+export type ClientFriendshipCreatedSystemEventBody = {
+  event: "friendship_created"
+  type: "system_event"
+}
+
 export type ClientMessageBody =
   | ClientTextMessageBody
   | ClientMarkdownMessageBody
@@ -1200,6 +1211,7 @@ export type ClientMessageBody =
   | ClientGroupAnnouncementUpdatedSystemEventBody
   | ClientMessageRevokedSystemEventBody
   | ClientTopicClosedSystemEventBody
+  | ClientFriendshipCreatedSystemEventBody
 
 export type ClientMessage = {
   body: ClientMessageBody

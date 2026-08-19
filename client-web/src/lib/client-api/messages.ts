@@ -1259,6 +1259,10 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
     return `${body.actor.displayName} 撤回了一条消息`
   }
 
+  if (body.event === "friendship_created") {
+    return "你们已成为好友，现在可以开始聊天了"
+  }
+
   if (body.event === "topic_closed") {
     return `${body.actor.displayName} 已将话题关闭`
   }
@@ -1342,6 +1346,10 @@ export function isClientMessageInitiatedByUser(
   }
 
   if (message.body.type !== "system_event") {
+    return false
+  }
+
+  if (message.body.event === "friendship_created") {
     return false
   }
 

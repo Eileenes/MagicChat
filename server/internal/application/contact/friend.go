@@ -39,8 +39,13 @@ func (s *Service) CreateFriendRequest(ctx context.Context, cmd CreateFriendReque
 	if userID == cmd.AccountID {
 		return FriendRequest{}, invalidError("不能添加自己为好友", nil)
 	}
+	recordFriendshipMessage, err := s.shouldRecordFriendshipMessage(ctx)
+	if err != nil {
+		return FriendRequest{}, err
+	}
 	now := s.now().UTC()
 	var result store.UserFriendRequest
+	var messageNotification FriendshipMessageNotification
 	createdFriendship := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var target store.User
@@ -75,6 +80,15 @@ func (s *Service) CreateFriendRequest(ctx context.Context, cmd CreateFriendReque
 			if err := tx.Create(&store.UserFriendship{UserIDLow: low, UserIDHigh: high, CreatedAt: now}).Error; err != nil {
 				return err
 			}
+			if recordFriendshipMessage {
+				messageNotification, err = s.friendshipMessages.RecordFriendshipCreated(ctx, tx, FriendshipMessageCommand{
+					ActorUserID: cmd.AccountID, AddresseeUserID: pending.AddresseeUserID,
+					CreatedAt: now, RequesterUserID: pending.RequesterUserID,
+				})
+				if err != nil {
+					return err
+				}
+			}
 			result = pending
 			createdFriendship = true
 			return nil
@@ -96,6 +110,9 @@ func (s *Service) CreateFriendRequest(ctx context.Context, cmd CreateFriendReque
 		eventType = "friendship.created"
 	}
 	s.publishFriendEvent(ctx, FriendEvent{RequestID: result.ID, Type: eventType, UserIDs: []string{cmd.AccountID, userID}})
+	if messageNotification != nil {
+		messageNotification(ctx)
+	}
 	return newFriendRequest(result), nil
 }
 
@@ -182,8 +199,16 @@ func (s *Service) finishFriendRequest(ctx context.Context, cmd UpdateFriendReque
 	if err != nil {
 		return FriendRequest{}, err
 	}
+	recordFriendshipMessage := false
+	if status == store.FriendRequestStatusAccepted {
+		recordFriendshipMessage, err = s.shouldRecordFriendshipMessage(ctx)
+		if err != nil {
+			return FriendRequest{}, err
+		}
+	}
 	now := s.now().UTC()
 	var value store.UserFriendRequest
+	var messageNotification FriendshipMessageNotification
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND addressee_user_id = ? AND status = ?", requestID, cmd.AccountID, store.FriendRequestStatusPending).
@@ -198,9 +223,19 @@ func (s *Service) finishFriendRequest(ctx context.Context, cmd UpdateFriendReque
 		}
 		if status == store.FriendRequestStatusAccepted {
 			low, high := friendPair(value.RequesterUserID, value.AddresseeUserID)
-			return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&store.UserFriendship{
+			friendshipResult := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&store.UserFriendship{
 				UserIDLow: low, UserIDHigh: high, CreatedAt: now,
-			}).Error
+			})
+			if friendshipResult.Error != nil {
+				return friendshipResult.Error
+			}
+			if recordFriendshipMessage && friendshipResult.RowsAffected > 0 {
+				messageNotification, err = s.friendshipMessages.RecordFriendshipCreated(ctx, tx, FriendshipMessageCommand{
+					ActorUserID: cmd.AccountID, AddresseeUserID: value.AddresseeUserID,
+					CreatedAt: now, RequesterUserID: value.RequesterUserID,
+				})
+				return err
+			}
 		}
 		return nil
 	})
@@ -212,6 +247,9 @@ func (s *Service) finishFriendRequest(ctx context.Context, cmd UpdateFriendReque
 		eventType = "friendship.created"
 	}
 	s.publishFriendEvent(ctx, FriendEvent{RequestID: value.ID, Type: eventType, UserIDs: []string{value.RequesterUserID, value.AddresseeUserID}})
+	if messageNotification != nil {
+		messageNotification(ctx)
+	}
 	return newFriendRequest(value), nil
 }
 
@@ -267,4 +305,18 @@ func (s *Service) publishFriendEvent(ctx context.Context, event FriendEvent) {
 	if s.notifications != nil {
 		s.notifications.PublishFriendEvent(ctx, event)
 	}
+}
+
+func (s *Service) shouldRecordFriendshipMessage(ctx context.Context) (bool, error) {
+	if s.friendshipMessages == nil {
+		return false, nil
+	}
+	if s.settings == nil {
+		return false, internalError(errors.New("contact directory settings are unavailable"))
+	}
+	mode, err := s.settings.ContactDirectoryMode(ctx)
+	if err != nil {
+		return false, internalError(err)
+	}
+	return mode == DirectoryModeFriends, nil
 }

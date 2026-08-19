@@ -6408,6 +6408,7 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "description": "若对方已有一条反向待处理申请，则自动建立好友关系；好友通讯录模式下同时创建或更新双方私聊，并写入好友建立系统消息。",
                 "consumes": [
                     "application/json"
                 ],
@@ -6517,6 +6518,7 @@ const docTemplate = `{
         },
         "/api/client/friend-requests/{request_id}/accept": {
             "post": {
+                "description": "建立好友关系；好友通讯录模式下同时创建或更新双方私聊，并写入好友建立系统消息。",
                 "produces": [
                     "application/json"
                 ],

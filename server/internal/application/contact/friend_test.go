@@ -2,10 +2,13 @@ package contact
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"app/internal/store"
+
+	"gorm.io/gorm"
 )
 
 func TestServiceFriendLifecycleAndFriendsDirectory(t *testing.T) {
@@ -18,9 +21,11 @@ func TestServiceFriendLifecycleAndFriendsDirectory(t *testing.T) {
 	bob := insertContactTestUser(t, db, "bob-friend@example.com", "Bob", store.UserStatusActive, now)
 	carol := insertContactTestUser(t, db, "carol-friend@example.com", "Carol", store.UserStatusActive, now)
 	notifications := &friendNotificationRecorder{}
+	friendshipMessages := &friendshipMessageRecorder{}
 	service := NewService(Dependencies{
 		DB: db, Now: func() time.Time { return now },
 		Settings: fixedDirectorySettings{mode: DirectoryModeFriends}, Notifications: notifications,
+		FriendshipMessages: friendshipMessages,
 	})
 
 	request, err := service.CreateFriendRequest(context.Background(), CreateFriendRequestCommand{AccountID: alice.ID, UserID: bob.ID})
@@ -66,6 +71,69 @@ func TestServiceFriendLifecycleAndFriendsDirectory(t *testing.T) {
 		notifications.events[1].Type != "friendship.created" || notifications.events[2].Type != "friendship.deleted" {
 		t.Fatalf("friend events = %#v", notifications.events)
 	}
+	if len(friendshipMessages.commands) != 1 || friendshipMessages.commands[0].ActorUserID != bob.ID || friendshipMessages.published != 1 {
+		t.Fatalf("friendship messages = %#v, published = %d", friendshipMessages.commands, friendshipMessages.published)
+	}
+}
+
+func TestServiceOrganizationModeDoesNotRecordFriendshipMessage(t *testing.T) {
+	db := openContactTestDB(t)
+	if err := db.AutoMigrate(&store.UserFriendship{}, &store.UserFriendRequest{}); err != nil {
+		t.Fatalf("migrate friend tables: %v", err)
+	}
+	now := time.Date(2026, 8, 11, 8, 30, 0, 0, time.UTC)
+	alice := insertContactTestUser(t, db, "alice-organization-friend@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertContactTestUser(t, db, "bob-organization-friend@example.com", "Bob", store.UserStatusActive, now)
+	friendshipMessages := &friendshipMessageRecorder{}
+	service := NewService(Dependencies{
+		DB: db, Now: func() time.Time { return now },
+		Settings: fixedDirectorySettings{mode: DirectoryModeOrganization}, FriendshipMessages: friendshipMessages,
+	})
+
+	request, err := service.CreateFriendRequest(context.Background(), CreateFriendRequestCommand{AccountID: alice.ID, UserID: bob.ID})
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	if _, err := service.AcceptFriendRequest(context.Background(), UpdateFriendRequestCommand{AccountID: bob.ID, RequestID: request.ID}); err != nil {
+		t.Fatalf("accept request: %v", err)
+	}
+	if len(friendshipMessages.commands) != 0 || friendshipMessages.published != 0 {
+		t.Fatalf("organization friendship messages = %#v, published = %d", friendshipMessages.commands, friendshipMessages.published)
+	}
+}
+
+func TestServiceFriendshipMessageFailureRollsBackAcceptance(t *testing.T) {
+	db := openContactTestDB(t)
+	if err := db.AutoMigrate(&store.UserFriendship{}, &store.UserFriendRequest{}); err != nil {
+		t.Fatalf("migrate friend tables: %v", err)
+	}
+	now := time.Date(2026, 8, 11, 8, 45, 0, 0, time.UTC)
+	alice := insertContactTestUser(t, db, "alice-failed-friend-message@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertContactTestUser(t, db, "bob-failed-friend-message@example.com", "Bob", store.UserStatusActive, now)
+	friendshipMessages := &friendshipMessageRecorder{err: errors.New("message failed")}
+	service := NewService(Dependencies{
+		DB: db, Now: func() time.Time { return now },
+		Settings: fixedDirectorySettings{mode: DirectoryModeFriends}, FriendshipMessages: friendshipMessages,
+	})
+	request, err := service.CreateFriendRequest(context.Background(), CreateFriendRequestCommand{AccountID: alice.ID, UserID: bob.ID})
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	if _, err := service.AcceptFriendRequest(context.Background(), UpdateFriendRequestCommand{AccountID: bob.ID, RequestID: request.ID}); ErrorCodeOf(err) != CodeInternal {
+		t.Fatalf("accept error = %v, want internal", err)
+	}
+	var friendshipCount int64
+	if err := db.Model(&store.UserFriendship{}).Count(&friendshipCount).Error; err != nil {
+		t.Fatalf("count friendships: %v", err)
+	}
+	var storedRequest store.UserFriendRequest
+	if err := db.First(&storedRequest, "id = ?", request.ID).Error; err != nil {
+		t.Fatalf("load request: %v", err)
+	}
+	if friendshipCount != 0 || storedRequest.Status != store.FriendRequestStatusPending {
+		t.Fatalf("friendships = %d, request status = %s", friendshipCount, storedRequest.Status)
+	}
 }
 
 func TestServiceCrossedFriendRequestAcceptsExistingRequest(t *testing.T) {
@@ -76,7 +144,11 @@ func TestServiceCrossedFriendRequestAcceptsExistingRequest(t *testing.T) {
 	now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 	alice := insertContactTestUser(t, db, "alice-cross@example.com", "Alice", store.UserStatusActive, now)
 	bob := insertContactTestUser(t, db, "bob-cross@example.com", "Bob", store.UserStatusActive, now)
-	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
+	friendshipMessages := &friendshipMessageRecorder{}
+	service := NewService(Dependencies{
+		DB: db, Now: func() time.Time { return now },
+		Settings: fixedDirectorySettings{mode: DirectoryModeFriends}, FriendshipMessages: friendshipMessages,
+	})
 
 	request, err := service.CreateFriendRequest(context.Background(), CreateFriendRequestCommand{AccountID: alice.ID, UserID: bob.ID})
 	if err != nil {
@@ -85,6 +157,9 @@ func TestServiceCrossedFriendRequestAcceptsExistingRequest(t *testing.T) {
 	accepted, err := service.CreateFriendRequest(context.Background(), CreateFriendRequestCommand{AccountID: bob.ID, UserID: alice.ID})
 	if err != nil || accepted.ID != request.ID || accepted.Status != store.FriendRequestStatusAccepted {
 		t.Fatalf("crossed request = %#v, error = %v", accepted, err)
+	}
+	if len(friendshipMessages.commands) != 1 || friendshipMessages.commands[0].ActorUserID != bob.ID || friendshipMessages.published != 1 {
+		t.Fatalf("crossed friendship messages = %#v, published = %d", friendshipMessages.commands, friendshipMessages.published)
 	}
 }
 
@@ -98,4 +173,22 @@ type friendNotificationRecorder struct{ events []FriendEvent }
 
 func (r *friendNotificationRecorder) PublishFriendEvent(_ context.Context, event FriendEvent) {
 	r.events = append(r.events, event)
+}
+
+type friendshipMessageRecorder struct {
+	commands  []FriendshipMessageCommand
+	err       error
+	published int
+}
+
+func (r *friendshipMessageRecorder) RecordFriendshipCreated(
+	_ context.Context,
+	_ *gorm.DB,
+	cmd FriendshipMessageCommand,
+) (FriendshipMessageNotification, error) {
+	r.commands = append(r.commands, cmd)
+	if r.err != nil {
+		return nil, r.err
+	}
+	return func(context.Context) { r.published++ }, nil
 }

@@ -6131,6 +6131,7 @@ paths:
     post:
       consumes:
       - application/json
+      description: 若对方已有一条反向待处理申请，则自动建立好友关系；好友通讯录模式下同时创建或更新双方私聊，并写入好友建立系统消息。
       parameters:
       - description: 目标用户
         in: body
@@ -6194,6 +6195,7 @@ paths:
       - 客户端好友
   /api/client/friend-requests/{request_id}/accept:
     post:
+      description: 建立好友关系；好友通讯录模式下同时创建或更新双方私聊，并写入好友建立系统消息。
       parameters:
       - description: 申请 ID
         in: path

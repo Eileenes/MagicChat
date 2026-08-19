@@ -4377,6 +4377,28 @@ func TestFriendModeLifecycleAndExactUserSearch(t *testing.T) {
 	if acceptResp.StatusCode != http.StatusOK {
 		t.Fatalf("accept friend request status = %d, body = %#v", acceptResp.StatusCode, acceptBody)
 	}
+	lowID, highID := alice.ID, bob.ID
+	if lowID > highID {
+		lowID, highID = highID, lowID
+	}
+	var direct store.DirectConversation
+	if err := db.First(&direct, "user_low_id = ? AND user_high_id = ?", lowID, highID).Error; err != nil {
+		t.Fatalf("load friendship direct conversation: %v", err)
+	}
+	var friendshipMessage store.Message
+	if err := db.First(&friendshipMessage, "conversation_id = ? AND seq = ?", direct.ConversationID, 1).Error; err != nil {
+		t.Fatalf("load friendship system message: %v", err)
+	}
+	if friendshipMessage.Summary != "你们已成为好友，现在可以开始聊天了" {
+		t.Fatalf("friendship message summary = %q", friendshipMessage.Summary)
+	}
+	var friendshipBody map[string]any
+	if err := json.Unmarshal(friendshipMessage.Body, &friendshipBody); err != nil {
+		t.Fatalf("decode friendship system message: %v", err)
+	}
+	if friendshipBody["type"] != "system_event" || friendshipBody["event"] != "friendship_created" {
+		t.Fatalf("friendship system body = %#v", friendshipBody)
+	}
 
 	contactsResp, contactsBody := getJSON(t, server, "/api/client/contacts", aliceCookie)
 	if contactsResp.StatusCode != http.StatusOK {

@@ -254,6 +254,7 @@ func (a *ContactAPI) listFriendRequests(c echo.Context) error {
 // createFriendRequest godoc
 //
 // @Summary 发送好友申请
+// @Description 若对方已有一条反向待处理申请，则自动建立好友关系；好友通讯录模式下同时创建或更新双方私聊，并写入好友建立系统消息。
 // @Tags 客户端好友
 // @Accept json
 // @Produce json
@@ -282,6 +283,7 @@ func (a *ContactAPI) createFriendRequest(c echo.Context) error {
 // acceptFriendRequest godoc
 //
 // @Summary 接受好友申请
+// @Description 建立好友关系；好友通讯录模式下同时创建或更新双方私聊，并写入好友建立系统消息。
 // @Tags 客户端好友
 // @Produce json
 // @Param request_id path string true "申请 ID"

@@ -3,6 +3,8 @@ package contact
 import (
 	"context"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -148,6 +150,19 @@ type FriendEvent struct {
 
 type FriendNotifications interface {
 	PublishFriendEvent(context.Context, FriendEvent)
+}
+
+type FriendshipMessageCommand struct {
+	ActorUserID     string
+	AddresseeUserID string
+	CreatedAt       time.Time
+	RequesterUserID string
+}
+
+type FriendshipMessageNotification func(context.Context)
+
+type FriendshipMessageRecorder interface {
+	RecordFriendshipCreated(context.Context, *gorm.DB, FriendshipMessageCommand) (FriendshipMessageNotification, error)
 }
 
 type DirectorySettings interface {
