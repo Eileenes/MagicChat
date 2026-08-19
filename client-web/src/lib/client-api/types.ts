@@ -606,6 +606,20 @@ export type ListConversationMessagesResponse = {
   page?: MessagePageResponse
 }
 
+export type ConversationAttachmentResponse = {
+  created_at?: string
+  file_id?: string
+  message_id?: string
+  name?: string
+  seq?: number
+  size_bytes?: number
+}
+
+export type ListConversationAttachmentsResponse = {
+  attachments?: ConversationAttachmentResponse[]
+  next_cursor?: string | null
+}
+
 export type CreateMessageResponse = {
   message?: MessageResponse
 }
@@ -866,6 +880,18 @@ export type ClientConversationTopicListStatus = "all" | "active" | "archived"
 export type ClientConversationTopicsPage = {
   nextCursor: string | null
   topics: ClientConversation[]
+}
+
+export type ClientConversationAttachment = {
+  createdAt: string
+  file: ClientFileMessageBody
+  messageId: string
+  seq: number
+}
+
+export type ClientConversationAttachmentsPage = {
+  attachments: ClientConversationAttachment[]
+  nextCursor: string | null
 }
 
 export type ClientConversationProject = {

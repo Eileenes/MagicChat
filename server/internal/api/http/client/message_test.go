@@ -77,6 +77,39 @@ func TestMessageAPIListsMessagesEncodesEmptyChoiceOptionIDsAsArray(t *testing.T)
 	}
 }
 
+func TestMessageAPIListsConversationAttachments(t *testing.T) {
+	conversationID := uuid.NewString()
+	createdAt := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	stub := &messageServiceStub{listAttachmentsResult: messageapp.ListAttachmentsResult{
+		Attachments: []messageapp.Attachment{{
+			CreatedAt: createdAt, FileID: "file-id", MessageID: "message-id",
+			Name: "设计文档.pdf", Seq: 12, SizeBytes: 1024,
+		}},
+		NextCursor: "12",
+	}}
+	api := NewMessageAPI(stub, nil)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/conversations/"+conversationID+"/attachments?cursor=20&limit=25", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/conversations/:conversation_id/attachments")
+	c.SetParamNames("conversation_id")
+	c.SetParamValues(conversationID)
+	c.Set(currentAccountKey, account.Account{ID: "account-id"})
+
+	if err := api.listAttachments(c); err != nil {
+		t.Fatalf("list attachments: %v", err)
+	}
+	if rec.Code != http.StatusOK || stub.listAttachmentsCommand.AccountID != "account-id" || stub.listAttachmentsCommand.ConversationID != conversationID || stub.listAttachmentsCommand.Cursor != "20" || stub.listAttachmentsCommand.Limit != 25 {
+		t.Fatalf("status = %d, command = %#v", rec.Code, stub.listAttachmentsCommand)
+	}
+	for _, expected := range []string{`"name":"设计文档.pdf"`, `"size_bytes":1024`, `"next_cursor":"12"`} {
+		if !strings.Contains(rec.Body.String(), expected) {
+			t.Fatalf("response missing %s: %s", expected, rec.Body.String())
+		}
+	}
+}
+
 func TestMessageAPICreatesMessage(t *testing.T) {
 	conversationID := uuid.NewString()
 	createdAt := time.Date(2026, 7, 15, 14, 0, 0, 0, time.UTC)
@@ -467,6 +500,9 @@ type messageServiceStub struct {
 	listCommand                  messageapp.ListCommand
 	listResult                   messageapp.ListResult
 	listErr                      error
+	listAttachmentsCommand       messageapp.ListAttachmentsCommand
+	listAttachmentsResult        messageapp.ListAttachmentsResult
+	listAttachmentsErr           error
 	createCommand                messageapp.CreateCommand
 	createResult                 messageapp.CreateResult
 	createErr                    error
@@ -496,6 +532,11 @@ type messageServiceStub struct {
 func (s *messageServiceStub) List(_ context.Context, command messageapp.ListCommand) (messageapp.ListResult, error) {
 	s.listCommand = command
 	return s.listResult, s.listErr
+}
+
+func (s *messageServiceStub) ListAttachments(_ context.Context, command messageapp.ListAttachmentsCommand) (messageapp.ListAttachmentsResult, error) {
+	s.listAttachmentsCommand = command
+	return s.listAttachmentsResult, s.listAttachmentsErr
 }
 
 func (s *messageServiceStub) Create(_ context.Context, command messageapp.CreateCommand) (messageapp.CreateResult, error) {

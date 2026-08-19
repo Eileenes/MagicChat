@@ -7,19 +7,21 @@ import (
 )
 
 const (
-	DefaultHistoryLimit       = 20
-	MaxHistoryLimit           = 20
-	MaxClientMessageID        = 128
-	MaxCreateRequestBody      = 64*1024 + 1024
-	MaxSetReactionRequestBody = 1024
-	MaxReactionSnapshotIDs    = 100
-	MaxReactionSnapshotBody   = 8 * 1024
-	MaxChoiceResponseBody     = 8 * 1024
-	MaxChoiceSnapshotBody     = 8 * 1024
-	ForwardModeMerged         = "merged"
-	ForwardModeSeparate       = "separate"
-	MaxForwardCount           = 50
-	MaxForwardTargets         = 20
+	DefaultHistoryLimit        = 20
+	MaxHistoryLimit            = 20
+	MaxClientMessageID         = 128
+	MaxCreateRequestBody       = 64*1024 + 1024
+	MaxSetReactionRequestBody  = 1024
+	MaxReactionSnapshotIDs     = 100
+	MaxReactionSnapshotBody    = 8 * 1024
+	MaxChoiceResponseBody      = 8 * 1024
+	MaxChoiceSnapshotBody      = 8 * 1024
+	ForwardModeMerged          = "merged"
+	ForwardModeSeparate        = "separate"
+	MaxForwardCount            = 50
+	MaxForwardTargets          = 20
+	DefaultAttachmentListLimit = 50
+	MaxAttachmentListLimit     = 100
 )
 
 type Identity struct {
@@ -225,6 +227,27 @@ type ListResult struct {
 	Page     Page
 }
 
+type Attachment struct {
+	CreatedAt time.Time
+	FileID    string
+	MessageID string
+	Name      string
+	Seq       int64
+	SizeBytes int64
+}
+
+type ListAttachmentsCommand struct {
+	AccountID      string
+	ConversationID string
+	Cursor         string
+	Limit          int
+}
+
+type ListAttachmentsResult struct {
+	Attachments []Attachment
+	NextCursor  string
+}
+
 type CreateCommand struct {
 	AccountID        string
 	Body             json.RawMessage
@@ -409,6 +432,7 @@ type TaskReminderNotificationCommand struct {
 
 type ClientService interface {
 	List(context.Context, ListCommand) (ListResult, error)
+	ListAttachments(context.Context, ListAttachmentsCommand) (ListAttachmentsResult, error)
 	Create(context.Context, CreateCommand) (CreateResult, error)
 	PrepareUpload(context.Context, PrepareUploadCommand) (PrepareUploadResult, error)
 	CreatePrepared(context.Context, CreatePreparedCommand) (CreateResult, error)
