@@ -1237,6 +1237,16 @@ definitions:
       page:
         $ref: '#/definitions/client.listMessagesPageResponse'
     type: object
+  client.listConversationTopicsResponse:
+    properties:
+      next_cursor:
+        type: string
+        x-nullable: true
+      topics:
+        items:
+          $ref: '#/definitions/client.conversationListItemResponse'
+        type: array
+    type: object
   client.listFriendRequestsResponse:
     properties:
       requests:
@@ -5200,6 +5210,63 @@ paths:
           schema:
             $ref: '#/definitions/client.errorEnvelope'
       summary: 将会话恢复到当前用户的对话列表
+      tags:
+      - 客户端会话
+  /api/client/conversations/{conversation_id}/topics:
+    get:
+      description: 按最后活动时间倒序列出当前用户有权查看的全部下属话题，包括未参与和已关闭话题。
+      parameters:
+      - description: 父会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - default: all
+        description: 话题状态：all、active 或 archived
+        in: query
+        name: status
+        type: string
+      - description: 话题分页游标
+        in: query
+        name: cursor
+        type: string
+      - description: 每页数量，默认 50，最大 100
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.listConversationTopicsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 列出会话下属话题
       tags:
       - 客户端会话
   /api/client/conversations/apps:

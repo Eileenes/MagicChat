@@ -38,6 +38,13 @@ func TestTopicLifecycleKeepsGroupVisibilityParticipantScoped(t *testing.T) {
 		t.Fatalf("topic source sender = %#v", created.Conversation.Topic.SourceSender)
 	}
 
+	listedTopics, err := service.ListTopics(context.Background(), ListTopicsCommand{
+		AccountID: member.ID, ParentConversationID: parent.ID, Status: TopicListStatusAll,
+	})
+	if err != nil || len(listedTopics.Topics) != 1 || listedTopics.Topics[0].ID != created.Conversation.ID || listedTopics.Topics[0].Topic == nil || listedTopics.Topics[0].Topic.Participating {
+		t.Fatalf("list visible non-participating topic = %#v, err = %v", listedTopics, err)
+	}
+
 	var participantCount int64
 	if err := db.Model(&store.ConversationTopicParticipant{}).Where("conversation_id = ?", created.Conversation.ID).Count(&participantCount).Error; err != nil {
 		t.Fatalf("count participants: %v", err)
@@ -93,10 +100,76 @@ func TestTopicLifecycleKeepsGroupVisibilityParticipantScoped(t *testing.T) {
 	if err != nil || containsAppConversation(actorList.Conversations, created.Conversation.ID) {
 		t.Fatalf("archived topic actor list = %#v, err = %v", actorList, err)
 	}
+	listedTopics, err = service.ListTopics(context.Background(), ListTopicsCommand{
+		AccountID: member.ID, ParentConversationID: parent.ID, Status: TopicListStatusArchived,
+	})
+	if err != nil || len(listedTopics.Topics) != 1 || listedTopics.Topics[0].Topic == nil || !listedTopics.Topics[0].Topic.Archived {
+		t.Fatalf("list archived topic = %#v, err = %v", listedTopics, err)
+	}
+	activeTopics, err := service.ListTopics(context.Background(), ListTopicsCommand{
+		AccountID: member.ID, ParentConversationID: parent.ID, Status: TopicListStatusActive,
+	})
+	if err != nil || len(activeTopics.Topics) != 0 {
+		t.Fatalf("list active topics after archive = %#v, err = %v", activeTopics, err)
+	}
 	if _, err := service.ParticipateTopic(context.Background(), ParticipateTopicCommand{
 		Actor: actorFromTestUser(member), TopicConversationID: created.Conversation.ID,
 	}); err == nil || ErrorCodeOf(err) != CodeConflict {
 		t.Fatalf("participate archived topic error = %v, want conflict", err)
+	}
+}
+
+func TestListTopicsPaginatesByLatestActivity(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 20, 4, 30, 0, 0, time.UTC)
+	currentTime := now
+	owner := insertConversationTestUser(t, db, "topic-list-owner@example.com", "Owner", now)
+	member := insertConversationTestUser(t, db, "topic-list-member@example.com", "Member", now)
+	parent, firstSource := insertConversationTopicFixture(t, db, owner, member, now)
+	service := NewService(Dependencies{
+		DB: db, Apps: config.AppsConfig{AIAssistantSecret: "secret"}, Now: func() time.Time { return currentTime },
+	})
+
+	first, err := service.CreateTopic(context.Background(), CreateTopicCommand{
+		Actor: actorFromTestUser(owner), ParentConversationID: parent.ID, SourceMessageID: firstSource.ID,
+	})
+	if err != nil {
+		t.Fatalf("create first topic: %v", err)
+	}
+	currentTime = now.Add(time.Minute)
+	ownerID := owner.ID
+	secondSource := store.Message{
+		ID: uuid.NewString(), ConversationID: parent.ID, Seq: 2,
+		SenderType: store.MessageSenderTypeUser, SenderID: &ownerID,
+		Body: json.RawMessage(`{"type":"text","content":"second topic"}`), Summary: "second topic",
+		CreatedAt: currentTime, UpdatedAt: currentTime,
+	}
+	if err := db.Create(&secondSource).Error; err != nil {
+		t.Fatalf("create second source: %v", err)
+	}
+	if err := db.Model(&store.Conversation{}).Where("id = ?", parent.ID).Updates(map[string]any{
+		"last_message_at": secondSource.CreatedAt, "last_message_id": secondSource.ID, "last_message_seq": secondSource.Seq,
+	}).Error; err != nil {
+		t.Fatalf("update parent activity: %v", err)
+	}
+	second, err := service.CreateTopic(context.Background(), CreateTopicCommand{
+		Actor: actorFromTestUser(owner), ParentConversationID: parent.ID, SourceMessageID: secondSource.ID,
+	})
+	if err != nil {
+		t.Fatalf("create second topic: %v", err)
+	}
+
+	firstPage, err := service.ListTopics(context.Background(), ListTopicsCommand{
+		AccountID: member.ID, ParentConversationID: parent.ID, Limit: 1,
+	})
+	if err != nil || len(firstPage.Topics) != 1 || firstPage.Topics[0].ID != second.Conversation.ID || firstPage.NextCursor == nil {
+		t.Fatalf("first topic page = %#v, err = %v", firstPage, err)
+	}
+	secondPage, err := service.ListTopics(context.Background(), ListTopicsCommand{
+		AccountID: member.ID, ParentConversationID: parent.ID, Limit: 1, Cursor: *firstPage.NextCursor,
+	})
+	if err != nil || len(secondPage.Topics) != 1 || secondPage.Topics[0].ID != first.Conversation.ID || secondPage.NextCursor != nil {
+		t.Fatalf("second topic page = %#v, err = %v", secondPage, err)
 	}
 }
 
@@ -192,6 +265,12 @@ func TestTopicAccessHonorsParentHistoryWindow(t *testing.T) {
 	}
 	if containsConversation(listed.Conversations, created.Conversation.ID) {
 		t.Fatal("topic before the current parent history window appeared in the list")
+	}
+	listedTopics, err := service.ListTopics(context.Background(), ListTopicsCommand{
+		AccountID: member.ID, ParentConversationID: parent.ID,
+	})
+	if err != nil || len(listedTopics.Topics) != 0 {
+		t.Fatalf("hidden topic list = %#v, err = %v", listedTopics, err)
 	}
 }
 

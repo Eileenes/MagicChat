@@ -200,6 +200,9 @@ describe("ChatPage topic source forwarding", () => {
     const sourceBubble = await screen.findByTestId(
       "topic-source-message-bubble"
     )
+    expect(
+      screen.queryByRole("button", { name: "话题列表" })
+    ).not.toBeInTheDocument()
     fireEvent.contextMenu(sourceBubble)
     await user.click(screen.getByRole("menuitem", { name: "多选" }))
     await user.click(screen.getByText("话题回复"))
@@ -243,6 +246,7 @@ describe("ChatPage app direct access", () => {
     )
 
     expect(await screen.findByText("你当前无权直接使用此应用")).toBeVisible()
+    expect(screen.getByRole("button", { name: "话题列表" })).toBeVisible()
     expect(
       screen.queryByTestId("conversation-panel-composer")
     ).not.toBeInTheDocument()

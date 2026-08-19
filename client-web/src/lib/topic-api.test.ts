@@ -5,6 +5,7 @@ import {
   formatClientMessageBodySummary,
   getConversationTopic,
   listClientConversations,
+  listConversationTopics,
   normalizeMessageCreatedEventPayload,
 } from "@/lib/client-data-api"
 
@@ -53,6 +54,31 @@ describe("topic client API", () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       "/api/client/conversations?include_conversation_id=topic%2Fcurrent",
+      { credentials: "include", method: "GET" }
+    )
+  })
+
+  it("lists all visible topics with status and cursor pagination", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        success: true,
+        data: {
+          next_cursor: "cursor-2",
+          topics: [topicConversationResponse()],
+        },
+      })
+    )
+
+    const page = await listConversationTopics(
+      "parent/1",
+      { cursor: "cursor-1", limit: 20, status: "archived" },
+      fetcher
+    )
+
+    expect(page.nextCursor).toBe("cursor-2")
+    expect(page.topics[0]).toMatchObject({ id: "topic-1", type: "topic" })
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/conversations/parent%2F1/topics?cursor=cursor-1&limit=20&status=archived",
       { credentials: "include", method: "GET" }
     )
   })

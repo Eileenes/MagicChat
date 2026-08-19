@@ -163,6 +163,19 @@ type GetTopicCommand struct {
 	TopicConversationID string
 }
 
+type ListTopicsCommand struct {
+	AccountID            string
+	Cursor               string
+	Limit                int
+	ParentConversationID string
+	Status               string
+}
+
+type ListTopicsResult struct {
+	NextCursor *string
+	Topics     []Item
+}
+
 type ParticipateTopicCommand struct {
 	Actor               Actor
 	TopicConversationID string
@@ -455,6 +468,7 @@ type ClientService interface {
 	UploadAvatar(context.Context, UploadAvatarCommand) (UpdateAvatarResult, error)
 	CreateTopic(context.Context, CreateTopicCommand) (CreateTopicResult, error)
 	GetTopic(context.Context, GetTopicCommand) (TopicDetail, error)
+	ListTopics(context.Context, ListTopicsCommand) (ListTopicsResult, error)
 	ParticipateTopic(context.Context, ParticipateTopicCommand) (Item, error)
 	ArchiveTopic(context.Context, ArchiveTopicCommand) (Item, error)
 }

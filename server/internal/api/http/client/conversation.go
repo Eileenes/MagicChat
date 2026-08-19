@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -178,6 +179,11 @@ type createTopicResponse struct {
 	Created      bool                         `json:"created"`
 }
 
+type listConversationTopicsResponse struct {
+	NextCursor *string                        `json:"next_cursor" extensions:"x-nullable"`
+	Topics     []conversationListItemResponse `json:"topics"`
+}
+
 type groupConversationResponse struct {
 	Announcement       string                                 `json:"announcement" example:"本周五 18:00 发布，请及时更新任务状态。"`
 	Avatar             string                                 `json:"avatar" example:"/assets/avatars/groups/07.webp"`
@@ -288,6 +294,7 @@ func (a *ConversationAPI) RegisterRoutes(group *echo.Group) {
 	group.PUT("/conversations/:conversation_id/pin", a.pin)
 	group.DELETE("/conversations/:conversation_id/pin", a.unpin)
 	group.POST("/conversations/:conversation_id/messages/:message_id/topic", a.createTopic)
+	group.GET("/conversations/:conversation_id/topics", a.listTopics)
 	group.GET("/conversations/topics/:conversation_id", a.getTopic)
 	group.POST("/conversations/topics/:conversation_id/participate", a.participateTopic)
 	group.POST("/conversations/topics/:conversation_id/archive", a.archiveTopic)
@@ -472,6 +479,50 @@ func (a *ConversationAPI) createTopic(c echo.Context) error {
 		status = http.StatusCreated
 	}
 	return writeSuccess(c, status, createTopicResponse{Conversation: newConversationItemResponse(result.Conversation), Created: result.Created})
+}
+
+// listTopics godoc
+//
+// @Summary 列出会话下属话题
+// @Description 按最后活动时间倒序列出当前用户有权查看的全部下属话题，包括未参与和已关闭话题。
+// @Tags 客户端会话
+// @Produce json
+// @Param conversation_id path string true "父会话 ID"
+// @Param status query string false "话题状态：all、active 或 archived" default(all)
+// @Param cursor query string false "话题分页游标"
+// @Param limit query int false "每页数量，默认 50，最大 100"
+// @Success 200 {object} successEnvelope{data=listConversationTopicsResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/topics [get]
+func (a *ConversationAPI) listTopics(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(conversationapp.CodeInternal), "服务端错误")
+	}
+	limit := 0
+	if raw := c.QueryParam("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > conversationapp.MaxClientListItems {
+			return writeFailure(c, http.StatusBadRequest, string(conversationapp.CodeInvalidRequest), "limit 必须为 1 到 100 的整数")
+		}
+		limit = parsed
+	}
+	result, err := a.conversations.ListTopics(c.Request().Context(), conversationapp.ListTopicsCommand{
+		AccountID: current.ID, Cursor: c.QueryParam("cursor"), Limit: limit,
+		ParentConversationID: c.Param("conversation_id"), Status: c.QueryParam("status"),
+	})
+	if err != nil {
+		return writeConversationError(c, err)
+	}
+	topics := make([]conversationListItemResponse, 0, len(result.Topics))
+	for _, topic := range result.Topics {
+		topics = append(topics, newConversationItemResponse(topic))
+	}
+	return writeSuccess(c, http.StatusOK, listConversationTopicsResponse{Topics: topics, NextCursor: result.NextCursor})
 }
 
 func (a *ConversationAPI) getTopic(c echo.Context) error {

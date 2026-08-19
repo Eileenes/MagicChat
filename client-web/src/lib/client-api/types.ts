@@ -199,6 +199,11 @@ export type TopicConversationResponse = {
   conversation?: ConversationResponse
 }
 
+export type ListConversationTopicsResponse = {
+  next_cursor?: string | null
+  topics?: ConversationResponse[]
+}
+
 export type ConversationProjectResponse = {
   avatar?: string
   description?: string
@@ -854,6 +859,13 @@ export type ClientTopicDetail = {
     type: "direct" | "group" | "app"
   }
   sourceMessage: ClientTopicSourceMessage
+}
+
+export type ClientConversationTopicListStatus = "all" | "active" | "archived"
+
+export type ClientConversationTopicsPage = {
+  nextCursor: string | null
+  topics: ClientConversation[]
 }
 
 export type ClientConversationProject = {
