@@ -53,6 +53,7 @@ export function LoginForm({
   onLogin,
   onRequestEmailCode,
   passwordLoginEnabled = true,
+  submitClassName,
   submitVariant = "default",
   ...props
 }: React.ComponentProps<"div"> & {
@@ -66,6 +67,7 @@ export function LoginForm({
     email: string
   ) => Promise<EmailCodeRequestResult> | EmailCodeRequestResult
   passwordLoginEnabled?: boolean
+  submitClassName?: string
   submitVariant?: "default" | "outline"
 }) {
   const [rememberedCredentials] = useState(readRememberedLoginCredentials)
@@ -260,6 +262,7 @@ export function LoginForm({
                       </Field>
                       <Field>
                         <Button
+                          className={submitClassName}
                           disabled={pending}
                           type="submit"
                           variant={submitVariant}
@@ -346,6 +349,7 @@ export function LoginForm({
                       </div>
                       <Field>
                         <Button
+                          className={submitClassName}
                           disabled={pending}
                           type="submit"
                           variant={submitVariant}
