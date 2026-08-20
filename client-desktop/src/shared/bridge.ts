@@ -13,6 +13,11 @@ import type { ShortcutBridge } from "@shared/shortcut-contract"
 import type { DocumentCollaborationBridge } from "@shared/document-collaboration-contract"
 import type { DocumentWindowOpenResponse } from "@shared/document-window-contract"
 import type {
+  DesktopStorageStats,
+  StorageCacheKind,
+  StorageClearResult,
+} from "@shared/storage-contract"
+import type {
   DiagnosticEvent,
   DiagnosticEventInput,
   DiagnosticStorageStats,
@@ -101,6 +106,8 @@ export const IPC = {
   serversSelect: "desktop:v1:servers-select",
   settingsGet: "desktop:v1:settings-get",
   settingsSet: "desktop:v1:settings-set",
+  storageCacheClear: "desktop:v1:storage-cache-clear",
+  storageGetStats: "desktop:v1:storage-get-stats",
   transportCancel: "desktop:v1:transport-cancel",
   transportStreamAbort: "desktop:v1:transport-stream-abort",
   transportStreamChunk: "desktop:v1:transport-stream-chunk",
@@ -310,6 +317,10 @@ export interface DesktopBridge {
   settings: {
     get(): Promise<DesktopSettings>
     set(patch: DesktopSettingsPatch): Promise<DesktopSettings>
+  }
+  storage: {
+    clearCache(kinds: ReadonlyArray<StorageCacheKind>): Promise<StorageClearResult>
+    getStats(): Promise<DesktopStorageStats>
   }
   shell: { openExternal(url: string): Promise<void> }
   transport: {

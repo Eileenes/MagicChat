@@ -29,6 +29,7 @@ import { StartupHealth } from "@main/startup-health"
 import { WindowController } from "@main/window-controller"
 import { ScreenshotController } from "@main/screenshot-controller"
 import { ShortcutManager } from "@main/shortcut-manager"
+import { StorageService } from "@main/storage-service"
 import messageCacheWorkerPath from "@main/message-cache/message-cache-worker?modulePath"
 
 registerPrivilegedSchemes()
@@ -65,7 +66,7 @@ async function start(): Promise<void> {
     profiles,
   )
   await messageCache.initialize().catch(() => undefined)
-  const sessions = new SessionController()
+  const sessions = new SessionController(app.getPath("userData"))
   installLocalProtocol(path.resolve(__dirname, "../renderer"), profiles, sessions)
   const files = new FileService(profiles, sessions)
   const credentials = new CredentialStore(path.join(app.getPath("userData"), "credentials"))
@@ -152,6 +153,13 @@ async function start(): Promise<void> {
     hasActiveTransfers: () => files.hasActiveTransfers() || uploads.hasActiveTransfers(),
     prepareInstall: () => prepareUpdateInstall({ documentWindows, messageCache, windows }),
   })
+  const storage = new StorageService({
+    installationPath: appInstallationPath(),
+    sessions,
+    updater,
+    updaterCachePath: updaterCachePath(),
+    userDataPath: app.getPath("userData"),
+  })
   const shortcuts = new ShortcutManager({
     diagnostics,
     screenshots,
@@ -173,6 +181,7 @@ async function start(): Promise<void> {
     realtime,
     sessions,
     shortcuts,
+    storage,
     store,
     system,
     updater,
@@ -346,6 +355,26 @@ async function start(): Promise<void> {
       })
     }
   }
+}
+
+function updaterCachePath(): string {
+  const home = app.getPath("home")
+  const parent =
+    process.platform === "darwin"
+      ? path.join(home, "Library", "Caches")
+      : process.platform === "win32"
+        ? (process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"))
+        : (process.env.XDG_CACHE_HOME ?? path.join(home, ".cache"))
+  return path.join(parent, `${app.getName()}-updater`)
+}
+
+function appInstallationPath(): string | undefined {
+  if (!app.isPackaged) return undefined
+  if (process.platform === "linux" && process.env.APPIMAGE) return process.env.APPIMAGE
+  const executable = app.getPath("exe")
+  return process.platform === "darwin"
+    ? path.resolve(path.dirname(executable), "../..")
+    : path.dirname(executable)
 }
 
 function registerProtocolClient(): void {

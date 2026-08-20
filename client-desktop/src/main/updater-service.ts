@@ -61,7 +61,7 @@ type UpdaterServiceOptions = Readonly<{
 const TRANSITIONS: Readonly<Record<UpdaterStatus, ReadonlySet<UpdaterStatus>>> = {
   available: new Set(["downloading", "error", "manual"]),
   checking: new Set(["available", "error", "idle", "manual"]),
-  downloaded: new Set(["error", "installing", "manual"]),
+  downloaded: new Set(["available", "error", "installing", "manual"]),
   downloading: new Set(["downloaded", "error", "manual"]),
   error: new Set(["checking", "manual", "unsupported"]),
   idle: new Set(["checking", "manual", "unsupported"]),
@@ -193,6 +193,20 @@ export class UpdaterService {
 
   isInstallIntent(): boolean {
     return this.installIntent
+  }
+
+  canDiscardDownloadedUpdate(): boolean {
+    return !this.downloadPromise && !this.installIntent && this.state.status !== "downloading"
+  }
+
+  discardDownloadedUpdate(): void {
+    if (!this.canDiscardDownloadedUpdate() || this.state.status !== "downloaded") return
+    this.transition({
+      ...this.baseState(),
+      retryable: true,
+      status: "available",
+      targetVersion: this.state.targetVersion,
+    })
   }
 
   dispose(): void {
