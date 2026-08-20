@@ -160,10 +160,10 @@ export function registerIpc(deps: IpcDependencies): () => void {
     deps.profiles.require(asId(id))
     await deps.store.setSettings({ selectedServerId: asId(id) })
   })
-  register(IPC.serversRemove, async (_event, rawId) => {
+  register(IPC.serversRemove, (_event, rawId) => {
     const id = asId(rawId)
     const profile = deps.profiles.require(id)
-    await removeServerResources(deps, id, profile)
+    return removeServerResources(deps, id, profile)
   })
   register(IPC.settingsGet, () => deps.store.getSettings())
   register(IPC.settingsSet, async (_event, rawPatch) => {
@@ -390,6 +390,7 @@ function asString(value: unknown, max: number): string {
     throw new Error("参数格式无效")
   return value
 }
+
 function optionalString(value: unknown, max: number): string | undefined {
   return value === undefined ? undefined : asString(value, max)
 }

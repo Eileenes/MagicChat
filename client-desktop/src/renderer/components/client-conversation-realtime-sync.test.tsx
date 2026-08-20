@@ -3,13 +3,14 @@ import { MemoryRouter } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const callbacks = new Map<string, (payload: unknown) => void>()
+const realtimeMock = vi.hoisted(() => ({ ready: true }))
 const updateConversationMuted = vi.fn()
 const refreshConversations = vi.fn().mockResolvedValue(undefined)
 const syncLoadedConversationMessages = vi.fn()
 
 vi.mock("@/lib/realtime-context", () => ({
   useRealtime: () => ({
-    ready: true,
+    ready: realtimeMock.ready,
     subscribeRealtimeEvent: (event: string, callback: (payload: unknown) => void) => {
       callbacks.set(event, callback)
       return () => callbacks.delete(event)
@@ -38,7 +39,8 @@ import { ClientConversationRealtimeSync } from "@/components/client-conversation
 describe("ClientConversationRealtimeSync", () => {
   beforeEach(() => {
     callbacks.clear()
-    refreshConversations.mockClear()
+    realtimeMock.ready = true
+    refreshConversations.mockReset().mockResolvedValue(undefined)
     syncLoadedConversationMessages.mockClear()
     updateConversationMuted.mockClear()
   })
@@ -51,7 +53,94 @@ describe("ClientConversationRealtimeSync", () => {
     )
 
     expect(syncLoadedConversationMessages).toHaveBeenCalledOnce()
+    expect(syncLoadedConversationMessages).toHaveBeenCalledWith()
     expect(refreshConversations).not.toHaveBeenCalled()
+  })
+
+  it("每次 system.ready 均在刷新会话列表后触发消息补偿", async () => {
+    render(
+      <MemoryRouter initialEntries={["/chat/conversation-1"]}>
+        <ClientConversationRealtimeSync />
+      </MemoryRouter>,
+    )
+    refreshConversations.mockClear()
+    syncLoadedConversationMessages.mockClear()
+
+    act(() => callbacks.get("system.ready")?.({}))
+
+    await waitFor(() => expect(refreshConversations).toHaveBeenCalledOnce())
+    await waitFor(() => expect(syncLoadedConversationMessages).toHaveBeenCalledOnce())
+    expect(syncLoadedConversationMessages).toHaveBeenCalledWith({
+      includeConversationGapSync: false,
+    })
+    expect(refreshConversations.mock.invocationCallOrder[0]).toBeLessThan(
+      syncLoadedConversationMessages.mock.invocationCallOrder[0],
+    )
+  })
+
+  it("恢复任务在卸载后不再触发消息补偿", async () => {
+    const refresh = createDeferred<void>()
+    refreshConversations.mockImplementationOnce(() => refresh.promise)
+    const view = render(
+      <MemoryRouter initialEntries={["/chat/conversation-1"]}>
+        <ClientConversationRealtimeSync />
+      </MemoryRouter>,
+    )
+    syncLoadedConversationMessages.mockClear()
+
+    act(() => callbacks.get("system.ready")?.({}))
+    expect(refreshConversations).toHaveBeenCalledOnce()
+
+    view.unmount()
+    await act(async () => {
+      refresh.resolve()
+      await refresh.promise
+    })
+
+    expect(syncLoadedConversationMessages).not.toHaveBeenCalled()
+  })
+
+  it("system.ready 与 ready 边沿同轮发生时只执行一次恢复", async () => {
+    const view = render(
+      <MemoryRouter initialEntries={["/chat/conversation-1"]}>
+        <ClientConversationRealtimeSync />
+      </MemoryRouter>,
+    )
+    refreshConversations.mockClear()
+    syncLoadedConversationMessages.mockClear()
+
+    realtimeMock.ready = false
+    view.rerender(
+      <MemoryRouter initialEntries={["/chat/conversation-1"]}>
+        <ClientConversationRealtimeSync />
+      </MemoryRouter>,
+    )
+
+    const refresh = createDeferred<void>()
+    refreshConversations.mockImplementationOnce(() => refresh.promise)
+
+    act(() => {
+      realtimeMock.ready = true
+      view.rerender(
+        <MemoryRouter initialEntries={["/chat/conversation-1"]}>
+          <ClientConversationRealtimeSync />
+        </MemoryRouter>,
+      )
+      callbacks.get("system.ready")?.({})
+    })
+
+    expect(refreshConversations).toHaveBeenCalledOnce()
+    expect(syncLoadedConversationMessages).not.toHaveBeenCalled()
+
+    await act(async () => {
+      refresh.resolve()
+      await refresh.promise
+    })
+
+    expect(syncLoadedConversationMessages).toHaveBeenCalledOnce()
+    expect(syncLoadedConversationMessages).toHaveBeenCalledWith({
+      includeConversationGapSync: false,
+    })
   })
 
   it("applies conversation mute realtime events", () => {
@@ -86,3 +175,11 @@ describe("ClientConversationRealtimeSync", () => {
     await waitFor(() => expect(refreshConversations).toHaveBeenCalledOnce())
   })
 })
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}

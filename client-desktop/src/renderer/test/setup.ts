@@ -73,6 +73,60 @@ if (typeof window !== "undefined") {
       value: ResizeObserverMock,
     })
   }
+
+  if (!document.elementFromPoint) {
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => null,
+    })
+  }
+
+  if (!Range.prototype.getClientRects) {
+    Object.defineProperties(Range.prototype, {
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => new DOMRect(0, 0, 0, 0),
+      },
+      getClientRects: {
+        configurable: true,
+        value: () => {
+          const rects: DOMRect[] = []
+          return Object.assign(rects, {
+            item: (index: number) => rects[index] ?? null,
+          }) as unknown as DOMRectList
+        },
+      },
+    })
+  }
+
+  const elementCompatibility: PropertyDescriptorMap = {}
+  if (!HTMLElement.prototype.hasPointerCapture) {
+    elementCompatibility.hasPointerCapture = {
+      configurable: true,
+      value: () => false,
+      writable: true,
+    }
+    elementCompatibility.releasePointerCapture = {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    }
+    elementCompatibility.setPointerCapture = {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    }
+  }
+  if (!HTMLElement.prototype.scrollIntoView) {
+    elementCompatibility.scrollIntoView = {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    }
+  }
+  if (Object.keys(elementCompatibility).length > 0) {
+    Object.defineProperties(HTMLElement.prototype, elementCompatibility)
+  }
 }
 
 afterEach(() => {
