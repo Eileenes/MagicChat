@@ -83,6 +83,45 @@ describe("服务器移除 IPC", () => {
   })
 })
 
+describe("存储空间 IPC", () => {
+  beforeEach(() => {
+    electronMocks.handlers.clear()
+    electronMocks.removeHandler.mockClear()
+    mocks.registerDiagnosticsIpc.mockClear()
+    mocks.registerRuntimeDiagnosticsIpc.mockClear()
+  })
+
+  it("仅允许可信 Renderer 读取并清理受控缓存类别", async () => {
+    const deps = createDependencies()
+    const stats = {
+      appBytes: 0,
+      cacheItems: [],
+      diagnosticsBytes: 0,
+      disk: { availableBytes: 0, totalBytes: 0, usedBytes: 0 },
+      messageCacheBytes: 0,
+      otherBytes: 0,
+      userDataBytes: 0,
+    }
+    vi.mocked(deps.storage.getStats).mockResolvedValue(stats)
+    vi.mocked(deps.storage.clearCache).mockResolvedValue({
+      expectedBytes: 0,
+      reclaimedBytes: 0,
+      stats,
+    })
+    const unregister = registerIpc(deps)
+    const getStats = electronMocks.handlers.get(IPC.storageGetStats)
+    const clearCache = electronMocks.handlers.get(IPC.storageCacheClear)
+
+    if (!getStats || !clearCache) throw new Error("存储空间 IPC 未注册")
+    await expect(getStats(trustedEvent())).resolves.toEqual(stats)
+    await expect(clearCache(trustedEvent(), ["network"])).resolves.toMatchObject({ stats })
+    expect(deps.storage.clearCache).toHaveBeenCalledWith(["network"])
+    await expect(getStats(untrustedEvent())).rejects.toThrow("IPC 调用来源不受信任")
+
+    unregister()
+  })
+})
+
 function createDependencies() {
   return {
     asr: { off: vi.fn(), on: vi.fn() },
@@ -90,10 +129,15 @@ function createDependencies() {
     documentCollaboration: { off: vi.fn(), on: vi.fn() },
     profiles: { require: vi.fn().mockReturnValue(profile) },
     realtime: { off: vi.fn(), on: vi.fn() },
+    storage: { clearCache: vi.fn(), getStats: vi.fn() },
     updater: { subscribe: vi.fn(() => vi.fn()) },
   } as unknown as IpcDependencies
 }
 
 function trustedEvent(): IpcMainInvokeEvent {
   return { senderFrame: { url: "magicchat-app://app/index.html" } } as IpcMainInvokeEvent
+}
+
+function untrustedEvent(): IpcMainInvokeEvent {
+  return { senderFrame: { url: "https://example.com" } } as IpcMainInvokeEvent
 }

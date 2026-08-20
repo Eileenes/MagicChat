@@ -23,6 +23,7 @@ import type { ServerProfiles } from "@main/server-profiles"
 import type { SessionController } from "@main/session-controller"
 import type { SystemIntegration } from "@main/system-integration"
 import type { StreamingUploadController } from "@main/streaming-upload"
+import type { StorageService } from "@main/storage-service"
 import type { UpdaterService } from "@main/updater-service"
 import { assertTrustedIpcSender } from "@main/ipc-security"
 import { parseDesktopSettingsPatch } from "@main/settings-validation"
@@ -62,6 +63,7 @@ export type IpcDependencies = {
   realtime: RealtimeController
   sessions: SessionController
   shortcuts: ShortcutManager
+  storage: StorageService
   store: ConfigStore
   system: SystemIntegration
   uploads: StreamingUploadController
@@ -174,6 +176,8 @@ export function registerIpc(deps: IpcDependencies): () => void {
     if (remaining.notificationPrivacy !== undefined) deps.system.refreshTray()
     return settings
   })
+  register(IPC.storageGetStats, () => deps.storage.getStats())
+  register(IPC.storageCacheClear, (_event, kinds) => deps.storage.clearCache(kinds))
   register(IPC.shortcutsGetState, (_event, kind) =>
     deps.shortcuts.getState(parseShortcutKind(kind)),
   )

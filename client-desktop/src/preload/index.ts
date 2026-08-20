@@ -151,6 +151,10 @@ const bridge: DesktopBridge = {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     set: (patch) => ipcRenderer.invoke(IPC.settingsSet, patch),
   },
+  storage: {
+    clearCache: (kinds) => ipcRenderer.invoke(IPC.storageCacheClear, kinds),
+    getStats: () => ipcRenderer.invoke(IPC.storageGetStats),
+  },
   shell: { openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) },
   transport: {
     cancel: (requestId) => ipcRenderer.invoke(IPC.transportCancel, requestId),

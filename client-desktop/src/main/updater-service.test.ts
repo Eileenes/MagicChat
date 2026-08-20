@@ -99,6 +99,39 @@ describe("UpdaterService", () => {
     })
   })
 
+  it("丢弃已下载更新后恢复为可重新下载状态", async () => {
+    const service = createService(adapter, clock)
+    const check = service.check()
+    adapter.emit("update-available", { version: "1.1.0" })
+    await check
+    const download = service.download()
+    adapter.emit("update-downloaded", { version: "1.1.0" })
+    await download
+
+    expect(service.canDiscardDownloadedUpdate()).toBe(true)
+    service.discardDownloadedUpdate()
+
+    expect(service.current()).toMatchObject({
+      retryable: true,
+      status: "available",
+      targetVersion: "1.1.0",
+    })
+  })
+
+  it("下载或安装期间不允许丢弃更新缓存", async () => {
+    const pending = deferred<unknown>()
+    adapter.downloadResult = pending.promise
+    const service = createService(adapter, clock)
+    const check = service.check()
+    adapter.emit("update-available", { version: "1.1.0" })
+    await check
+    const download = service.download()
+
+    expect(service.canDiscardDownloadedUpdate()).toBe(false)
+    pending.resolve(undefined)
+    await download
+  })
+
   it("为已验证版本生成固定仓库的发布页地址", async () => {
     const opened: string[] = []
     const service = createService(adapter, clock, {
