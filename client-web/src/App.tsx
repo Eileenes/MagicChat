@@ -53,7 +53,7 @@ export function App() {
           }
         />
         <Route
-          path="/documents/document/:documentId"
+          path="/documents/:documentType/:documentId"
           element={<DocumentWorkspaceRoute />}
         />
         <Route

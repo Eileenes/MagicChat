@@ -82,6 +82,41 @@ describe("document data API", () => {
     })
   })
 
+  it("creates a Markdown document with its explicit document type", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          success: true,
+          data: {
+            ...documentResponse,
+            document_type: "markdown",
+            title: "开发说明",
+          },
+        },
+        201
+      )
+    )
+
+    const created = await createClientDocument(
+      "project-1",
+      {
+        documentType: "markdown",
+        kind: "document",
+        title: "开发说明",
+      },
+      fetcher
+    )
+
+    const init = fetcher.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).toEqual({
+      document_type: "markdown",
+      kind: "document",
+      parent_id: null,
+      title: "开发说明",
+    })
+    expect(created.documentType).toBe("markdown")
+  })
+
   it("preserves null parent updates", async () => {
     const fetcher = vi
       .fn()

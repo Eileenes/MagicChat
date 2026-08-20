@@ -5,12 +5,20 @@ import * as Y from "yjs"
 
 import { createInitialState, normalizeTitle } from "./document-store.js"
 
-test("createInitialState seeds the stable Y.Doc schema", () => {
+test("createInitialState seeds the rich document Y.Doc schema", () => {
   const document = new Y.Doc()
   Y.applyUpdate(document, createInitialState("产品需求文档"))
 
   assert.equal(document.getText("title").toString(), "产品需求文档")
   assert.equal(document.getXmlFragment("body").length, 0)
+})
+
+test("createInitialState seeds the Markdown Y.Doc schema", () => {
+  const document = new Y.Doc()
+  Y.applyUpdate(document, createInitialState("开发说明", "markdown"))
+
+  assert.equal(document.getText("title").toString(), "开发说明")
+  assert.equal(document.getText("markdown").toString(), "")
 })
 
 test("normalizeTitle supplies the visible empty title", () => {

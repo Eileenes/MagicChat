@@ -65,6 +65,7 @@ const (
 	DocumentKindFolder   = "folder"
 	DocumentKindDocument = "document"
 	DocumentTypeDocument = "document"
+	DocumentTypeMarkdown = "markdown"
 
 	AppVisibilityCreator    = "creator"
 	AppVisibilityRestricted = "restricted"

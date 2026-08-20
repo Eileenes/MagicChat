@@ -55,6 +55,8 @@ vi.mock("@/lib/client-data-api", () => ({
 vi.mock("@/lib/document-data-api", () => ({
   deleteClientDocument: (...args: unknown[]) => deleteClientDocument(...args),
   getClientDocument: (...args: unknown[]) => getClientDocument(...args),
+  getClientDocumentPath: (documentId: string, documentType: string) =>
+    `/documents/${documentType}/${documentId}`,
   updateCollaborativeDocumentTitle: (...args: unknown[]) =>
     updateCollaborativeDocumentTitle(...args),
 }))
@@ -96,6 +98,10 @@ vi.mock("@/components/documents/document-workspace-sidebar", async () => {
 
 vi.mock("@/components/documents/document-editor", () => ({
   DocumentEditor: () => <div>正文编辑器</div>,
+}))
+
+vi.mock("@/components/documents/markdown-document-editor", () => ({
+  MarkdownDocumentEditor: () => <div>Markdown 编辑器</div>,
 }))
 
 vi.mock("sonner", () => ({
@@ -162,6 +168,28 @@ describe("DocumentPage", () => {
         "新版需求"
       )
     )
+  })
+
+  it("loads Markdown documents in the shared document session", async () => {
+    getClientDocument.mockResolvedValueOnce({
+      ...document,
+      documentType: "markdown",
+      title: "开发说明",
+    })
+
+    render(
+      <MemoryRouter initialEntries={[`/documents/markdown/${document.id}`]}>
+        <Routes>
+          <Route
+            path="/documents/:documentType/:documentId"
+            element={<DocumentPage />}
+          />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByText("Markdown 编辑器")).toBeInTheDocument()
+    expect(screen.queryByText("正文编辑器")).not.toBeInTheDocument()
   })
 
   it("shows every online user in the presence popover", async () => {
@@ -253,7 +281,7 @@ describe("DocumentPage", () => {
         <SwitchDocumentButton documentId={nextDocument.id} />
         <Routes>
           <Route
-            path="/documents/document/:documentId"
+            path="/documents/:documentType/:documentId"
             element={<DocumentPage />}
           />
         </Routes>
@@ -315,7 +343,7 @@ function renderDocumentPage() {
     <MemoryRouter initialEntries={[`/documents/document/${document.id}`]}>
       <Routes>
         <Route
-          path="/documents/document/:documentId"
+          path="/documents/:documentType/:documentId"
           element={<DocumentPage />}
         />
         <Route

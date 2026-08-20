@@ -1,0 +1,39 @@
+.markdown-source-editor .cm-editor {
+  min-height: 36rem;
+  height: 100%;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+}
+
+.markdown-source-editor .cm-editor .cm-scroller {
+  overflow: auto;
+  padding: 1.5rem 2rem;
+  line-height: 1.75;
+}
+
+.markdown-source-editor .cm-content {
+  caret-color: var(--foreground);
+}
+
+.markdown-source-editor .cm-gutters {
+  border-right-color: var(--border);
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.markdown-source-editor .cm-activeLine,
+.markdown-source-editor .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.markdown-source-editor .cm-focused {
+  outline: none;
+}
+
+@media (min-width: 640px) {
+  .markdown-source-editor .cm-editor .cm-scroller {
+    padding-right: 3rem;
+    padding-left: 3rem;
+  }
+}

@@ -11,7 +11,7 @@ describe("document prototype data", () => {
     expect(findPrototypeDocumentNode("document-6")?.name).toBe("消息分区设计")
   })
 
-  it("only creates a route for an implemented document type", () => {
+  it("creates routes for rich text and Markdown documents", () => {
     const document = findPrototypeDocumentNode("document-1")
     const markdown = findPrototypeDocumentNode("document-2")
 
@@ -24,6 +24,8 @@ describe("document prototype data", () => {
     expect(getPrototypeDocumentPath(document)).toBe(
       "/documents/document/document-1"
     )
-    expect(getPrototypeDocumentPath(markdown)).toBeNull()
+    expect(getPrototypeDocumentPath(markdown)).toBe(
+      "/documents/markdown/document-2"
+    )
   })
 })

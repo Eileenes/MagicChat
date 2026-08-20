@@ -69,7 +69,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (Document, erro
 	if err != nil {
 		return Document{}, err
 	}
-	kind, documentType, err := normalizeKind(cmd.Kind)
+	kind, documentType, err := normalizeKind(cmd.Kind, cmd.DocumentType)
 	if err != nil {
 		return Document{}, err
 	}
@@ -374,16 +374,27 @@ func upsertDocumentContributor(tx *gorm.DB, documentID, userID string, editedAt 
 	}).Create(&value).Error
 }
 
-func normalizeKind(field Field[string]) (string, *string, error) {
+func normalizeKind(field, documentTypeField Field[string]) (string, *string, error) {
 	if !field.Present || field.Null {
 		return "", nil, invalid("kind 是必填字段", nil)
 	}
 	kind := strings.TrimSpace(field.Value)
 	switch kind {
 	case KindFolder:
+		if documentTypeField.Present && !documentTypeField.Null && strings.TrimSpace(documentTypeField.Value) != "" {
+			return "", nil, invalid("目录不能设置 document_type", nil)
+		}
 		return kind, nil, nil
 	case KindDocument:
 		documentType := store.DocumentTypeDocument
+		if documentTypeField.Present && !documentTypeField.Null {
+			documentType = strings.TrimSpace(documentTypeField.Value)
+		}
+		switch documentType {
+		case store.DocumentTypeDocument, store.DocumentTypeMarkdown:
+		default:
+			return "", nil, invalid("document_type 仅支持 document 或 markdown", nil)
+		}
 		return kind, &documentType, nil
 	default:
 		return "", nil, invalid("kind 仅支持 document 或 folder", nil)

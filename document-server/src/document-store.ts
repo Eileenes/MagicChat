@@ -6,23 +6,26 @@ import { assertDocumentName } from "./document-name.js"
 const defaultTitle = "无标题文档"
 const maximumTitleCharacters = 500
 
+type CollaborativeDocumentType = "document" | "markdown"
+
 export class DocumentStore {
   constructor(private readonly pool: Pool) {}
 
   async fetch(documentName: string): Promise<Uint8Array | null> {
     assertDocumentName(documentName)
     const result = await this.pool.query<{
+      document_type: CollaborativeDocumentType
       title: string
       ydoc_state: Buffer | null
     }>(
       `
-        SELECT d.title, s.ydoc_state
+        SELECT d.document_type, d.title, s.ydoc_state
         FROM documents d
         LEFT JOIN document_collab_states s ON s.document_id = d.id
         WHERE d.id = $1
           AND d.deleted_at IS NULL
           AND d.kind = 'document'
-          AND d.document_type = 'document'
+          AND d.document_type IN ('document', 'markdown')
       `,
       [documentName]
     )
@@ -30,7 +33,7 @@ export class DocumentStore {
     if (!row) return null
     if (row.ydoc_state) return row.ydoc_state
 
-    const initialState = createInitialState(row.title)
+    const initialState = createInitialState(row.title, row.document_type)
     const inserted = await this.pool.query<{ ydoc_state: Buffer }>(
       `
         INSERT INTO document_collab_states (
@@ -129,7 +132,7 @@ export class DocumentStore {
         WHERE id = $1
           AND deleted_at IS NULL
           AND kind = 'document'
-          AND document_type = 'document'
+          AND document_type IN ('document', 'markdown')
         FOR UPDATE
       `,
       [documentName]
@@ -138,10 +141,14 @@ export class DocumentStore {
   }
 }
 
-export function createInitialState(title: string): Uint8Array {
+export function createInitialState(
+  title: string,
+  documentType: CollaborativeDocumentType = "document"
+): Uint8Array {
   const document = new Y.Doc()
   document.getText("title").insert(0, normalizeTitle(title))
-  document.getXmlFragment("body")
+  if (documentType === "markdown") document.getText("markdown")
+  else document.getXmlFragment("body")
   return Y.encodeStateAsUpdate(document)
 }
 

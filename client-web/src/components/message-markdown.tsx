@@ -76,15 +76,25 @@ type ReactMarkdownProps = React.ComponentProps<typeof ReactMarkdown>
 const fallbackMentionLabelResolver: MentionLabelResolver = () => undefined
 const maxMarkdownMathLength = 10_000
 
-export const MessageMarkdown = React.memo(function MessageMarkdown({
-  content,
-  currentUserId,
-  mentionLabelResolver = fallbackMentionLabelResolver,
-}: {
+type MarkdownRendererProps = {
   content: string
   currentUserId?: string
   mentionLabelResolver?: MentionLabelResolver
-}) {
+  variant?: "document" | "message"
+}
+
+export const MessageMarkdown = React.memo(function MessageMarkdown(
+  props: Omit<MarkdownRendererProps, "variant">
+) {
+  return <MarkdownRenderer {...props} variant="message" />
+})
+
+export const MarkdownRenderer = React.memo(function MarkdownRenderer({
+  content,
+  currentUserId,
+  mentionLabelResolver = fallbackMentionLabelResolver,
+  variant = "document",
+}: MarkdownRendererProps) {
   const remarkPlugins = React.useMemo<ReactMarkdownProps["remarkPlugins"]>(
     () => [
       [remarkGfm, { singleTilde: false }],
@@ -96,12 +106,17 @@ export const MessageMarkdown = React.memo(function MessageMarkdown({
     [mentionLabelResolver]
   )
   const components = React.useMemo(
-    () => createMarkdownComponents(currentUserId),
-    [currentUserId]
+    () => createMarkdownComponents(currentUserId, variant),
+    [currentUserId, variant]
   )
 
   return (
-    <div className="max-w-full space-y-4 break-all">
+    <div
+      className={cn(
+        "max-w-full space-y-4",
+        variant === "message" ? "break-all" : "break-words"
+      )}
+    >
       <ReactMarkdown
         allowedElements={allowedMarkdownElements}
         components={components}
@@ -116,12 +131,24 @@ export const MessageMarkdown = React.memo(function MessageMarkdown({
 })
 
 function createMarkdownComponents(
-  currentUserId: string | undefined
+  currentUserId: string | undefined,
+  variant: "document" | "message"
 ): ReactMarkdownProps["components"] {
   return {
     a: ({ children, href }) =>
       href ? (
-        <MessageInlineLink href={href}>{children}</MessageInlineLink>
+        variant === "message" ? (
+          <MessageInlineLink href={href}>{children}</MessageInlineLink>
+        ) : (
+          <a
+            className="text-(--weui-link) underline-offset-2 hover:underline"
+            href={href}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {children}
+          </a>
+        )
       ) : (
         <span>{children}</span>
       ),
@@ -176,7 +203,10 @@ function createMarkdownComponents(
       return imageSource ? (
         <img
           alt={alt ?? ""}
-          className="my-1 block h-auto max-h-80 max-w-full rounded-md object-contain"
+          className={cn(
+            "my-1 block h-auto max-w-full rounded-md object-contain",
+            variant === "message" && "max-h-80"
+          )}
           decoding="async"
           loading="lazy"
           src={imageSource}

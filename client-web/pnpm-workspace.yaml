@@ -3,3 +3,6 @@ packages: []
 allowBuilds:
   esbuild: true
   msw: false
+
+minimumReleaseAgeExclude:
+  - y-codemirror.next@0.3.6

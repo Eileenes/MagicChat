@@ -7406,7 +7406,7 @@ const docTemplate = `{
                         "UserSession": []
                     }
                 ],
-                "description": "在项目根目录或指定父目录下创建富文本文档或目录。",
+                "description": "在项目根目录或指定父目录下创建富文本文档、Markdown 文档或目录；document_type 省略时默认为 document。",
                 "consumes": [
                     "application/json"
                 ],
@@ -9997,6 +9997,14 @@ const docTemplate = `{
                 "title"
             ],
             "properties": {
+                "document_type": {
+                    "type": "string",
+                    "enum": [
+                        "document",
+                        "markdown"
+                    ],
+                    "x-nullable": true
+                },
                 "kind": {
                     "type": "string",
                     "enum": [

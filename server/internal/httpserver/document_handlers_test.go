@@ -103,6 +103,20 @@ func TestHTTPDocumentCreateRejectsUnsupportedTypeAndInaccessibleProject(t *testi
 		t.Fatalf("unsupported status = %d, body = %#v", response.StatusCode, body)
 	}
 
+	response, body = postJSON(t, server, path, map[string]any{
+		"kind": "document", "document_type": "markdown", "title": "开发说明",
+	}, ownerCookie)
+	if response.StatusCode != http.StatusCreated || requireDocumentResponseData(t, body)["document_type"] != "markdown" {
+		t.Fatalf("markdown status = %d, body = %#v", response.StatusCode, body)
+	}
+
+	response, body = postJSON(t, server, path, map[string]any{
+		"kind": "document", "document_type": "spreadsheet", "title": "Unsupported type",
+	}, ownerCookie)
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unsupported document type status = %d, body = %#v", response.StatusCode, body)
+	}
+
 	response, body = postJSON(t, server, path, map[string]any{"kind": "document", "title": "Hidden"}, outsiderCookie)
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("outsider status = %d, body = %#v", response.StatusCode, body)

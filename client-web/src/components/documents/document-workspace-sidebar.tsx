@@ -1,6 +1,7 @@
 import * as React from "react"
 import {
   ChevronDown,
+  FileCode2,
   FileText,
   Folder,
   FolderOpen,
@@ -23,8 +24,10 @@ import {
 import { useClientData } from "@/lib/client-data-context"
 import {
   createClientDocument,
+  getClientDocumentPath,
   listClientDocuments,
   type ClientDocument,
+  type ClientDocumentType,
 } from "@/lib/document-data-api"
 import { cn } from "@/lib/utils"
 
@@ -121,15 +124,16 @@ export function DocumentWorkspaceSidebar({
     }
   }, [selectedProjectId])
 
-  async function createDocument() {
+  async function createDocument(documentType: ClientDocumentType) {
     if (!onBeforeNavigate()) return
     setCreating(true)
     try {
       const created = await createClientDocument(selectedProjectId, {
+        documentType,
         kind: "document",
-        title: "无标题文档",
+        title: documentType === "markdown" ? "无标题 Markdown" : "无标题文档",
       })
-      navigate(`/documents/document/${encodeURIComponent(created.id)}`)
+      navigate(getClientDocumentPath(created.id, documentType))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "创建文档失败")
     } finally {
@@ -213,18 +217,32 @@ export function DocumentWorkspaceSidebar({
       </div>
 
       <div className="shrink-0 px-3 py-2">
-        <Button
-          aria-label="新建文档"
-          className="h-9 w-full bg-transparent"
-          disabled={creating}
-          onClick={() => void createDocument()}
-          title="新建文档"
-          type="button"
-          variant="outline"
-        >
-          {creating ? <Loader2 className="animate-spin" /> : <Plus />}
-          新建文档
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label="新建文档"
+              className="h-9 w-full bg-transparent"
+              disabled={creating}
+              title="新建文档"
+              type="button"
+              variant="outline"
+            >
+              {creating ? <Loader2 className="animate-spin" /> : <Plus />}
+              新建文档
+              <ChevronDown className="ml-auto" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem onSelect={() => void createDocument("document")}>
+              <FileText />
+              富文本文档
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void createDocument("markdown")}>
+              <FileCode2 />
+              Markdown 文档
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <nav
@@ -310,6 +328,8 @@ function DocumentTree({
           )
         }
 
+        if (!node.documentType) return null
+
         return (
           <Link
             aria-current={activeDocumentId === node.id ? "page" : undefined}
@@ -324,9 +344,13 @@ function DocumentTree({
             }}
             role="treeitem"
             style={{ paddingLeft: depth * 16 + 8 }}
-            to={`/documents/document/${encodeURIComponent(node.id)}`}
+            to={getClientDocumentPath(node.id, node.documentType)}
           >
-            <FileText className="size-4 shrink-0 text-(--weui-link)" />
+            {node.documentType === "markdown" ? (
+              <FileCode2 className="size-4 shrink-0 text-(--weui-link)" />
+            ) : (
+              <FileText className="size-4 shrink-0 text-(--weui-link)" />
+            )}
             <span className="truncate">
               {activeDocumentId === node.id ? activeTitle : node.title}
             </span>
