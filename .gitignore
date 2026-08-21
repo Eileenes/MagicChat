@@ -47,3 +47,5 @@ worktrees/
 .serena
 openspec/
 .qoder
+.monkeycode/
+.ohmyagent/
