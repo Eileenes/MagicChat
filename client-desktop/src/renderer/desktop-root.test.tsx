@@ -639,7 +639,7 @@ describe("桌面设置服务器管理", () => {
     expect(screen.getByText("其他磁盘已用空间")).toBeInTheDocument()
     expect(
       screen.getByRole("img", {
-        name: "即应本地数据 6.0 KiB，磁盘已用空间 40.0 KiB，磁盘可用空间 60.0 KiB",
+        name: "即应本地数据 9.0 KiB，磁盘已用空间 40.0 KiB，磁盘可用空间 60.0 KiB",
       }),
     ).toBeInTheDocument()
 

@@ -730,7 +730,7 @@ function StorageDiskOverview({ stats }: { stats?: DesktopStorageStats }) {
   const diskAvailable = disk?.availableBytes ?? 0
   const diskUsed = disk?.usedBytes ?? 0
   const diskTotal = disk?.totalBytes ?? 0
-  const appBytes = Math.min(stats?.userDataBytes ?? 0, diskUsed)
+  const appBytes = Math.min(stats?.appBytes ?? 0, diskUsed)
   const otherUsedBytes = Math.max(0, diskUsed - appBytes)
   const percentages = diskTotal
     ? {
