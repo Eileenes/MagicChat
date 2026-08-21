@@ -27,6 +27,7 @@ export type XGUIColors = {
   link: string
   orange: string
   purple: string
+  secondaryBackground: string
   separator: string
   textOnColor: string
   textPlaceholder: string
@@ -64,6 +65,7 @@ export const xguiColors = {
     link: "#576B95",
     orange: "#FA9D3B",
     purple: "#6467F0",
+    secondaryBackground: "rgba(0,0,0,0.05)",
     separator: "rgba(0,0,0,0.1)",
     textOnColor: "#FFFFFF",
     textPlaceholder: "rgba(0,0,0,0.3)",
@@ -99,6 +101,7 @@ export const xguiColors = {
     link: "#7D90A9",
     orange: "#C87D2F",
     purple: "#8183FF",
+    secondaryBackground: "rgba(255,255,255,0.1)",
     separator: "rgba(255,255,255,0.05)",
     textOnColor: "#FFFFFF",
     textPlaceholder: "rgba(255,255,255,0.3)",

@@ -80,34 +80,7 @@ export function useComposerUpload({
     }
   }, [disabled, onSend, replaceSelected, selected])
 
-  const pickAndSend = useCallback(
-    async (picker: UploadPicker) => {
-      if (disabled) return
-      setPreparing(true)
-
-      let selection: PreparedClientMessageUpload | null = null
-      try {
-        selection = await picker()
-        if (!selection) return
-
-        uploadInFlightRef.current = true
-        await onSend(selection)
-      } catch (error: unknown) {
-        toast.show({
-          duration: 1_000,
-          message: `${"无法发送图片"}：${error instanceof Error ? error.message : "请稍后重试"}`,
-          type: "text",
-        })
-      } finally {
-        uploadInFlightRef.current = false
-        selection?.cleanup?.()
-        if (mountedRef.current) setPreparing(false)
-      }
-    },
-    [disabled, onSend, toast]
-  )
-
   const cancel = useCallback(() => replaceSelected(null), [replaceSelected])
 
-  return { cancel, confirm, pick, pickAndSend, preparing, selected }
+  return { cancel, confirm, pick, preparing, selected }
 }

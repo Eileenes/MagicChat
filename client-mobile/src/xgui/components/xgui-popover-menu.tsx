@@ -48,7 +48,8 @@ export type XGUIPopoverMenuProps = {
 }
 
 const ANIMATION_DURATION = 150
-const ARROW_SIZE = 10
+const ARROW_HEIGHT = 8
+const ARROW_WIDTH = 10
 const ITEM_HEIGHT = 48
 
 export function XGUIPopoverMenu({
@@ -154,17 +155,14 @@ export function XGUIPopoverMenu({
         <Pressable accessibilityRole="button" onPress={close} style={styles.fill} />
         {layout ? (
           <Animated.View
-            needsOffscreenAlphaCompositing
-            renderToHardwareTextureAndroid
-            shouldRasterizeIOS
             style={[
               styles.positioned,
               {
                 left: layout.menuX,
                 opacity: progress,
-                paddingBottom: isBottom ? 0 : ARROW_SIZE / 2,
-                paddingTop: isBottom ? ARROW_SIZE / 2 : 0,
-                top: layout.menuY - (isBottom ? ARROW_SIZE / 2 : 0),
+                paddingBottom: isBottom ? 0 : ARROW_HEIGHT,
+                paddingTop: isBottom ? ARROW_HEIGHT : 0,
+                top: layout.menuY - (isBottom ? ARROW_HEIGHT : 0),
                 width,
               },
             ]}
@@ -174,7 +172,14 @@ export function XGUIPopoverMenu({
               style={[
                 styles.arrow,
                 {
-                  backgroundColor: menuBackground,
+                  borderBottomColor: isBottom
+                    ? menuBackground
+                    : "transparent",
+                  borderBottomWidth: isBottom ? ARROW_HEIGHT : 0,
+                  borderTopColor: isBottom
+                    ? "transparent"
+                    : menuBackground,
+                  borderTopWidth: isBottom ? 0 : ARROW_HEIGHT,
                   left: layout.arrowX,
                   [isBottom ? "top" : "bottom"]: 0,
                 },
@@ -217,10 +222,13 @@ export function XGUIPopoverMenu({
 
 const styles = StyleSheet.create({
   arrow: {
-    height: ARROW_SIZE,
+    borderLeftColor: "transparent",
+    borderLeftWidth: ARROW_WIDTH / 2,
+    borderRightColor: "transparent",
+    borderRightWidth: ARROW_WIDTH / 2,
+    height: 0,
     position: "absolute",
-    transform: [{ rotate: "45deg" }],
-    width: ARROW_SIZE,
+    width: 0,
     zIndex: 1,
   },
   disabled: { opacity: 0.4 },

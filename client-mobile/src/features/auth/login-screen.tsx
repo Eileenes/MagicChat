@@ -167,7 +167,6 @@ export function LoginScreen() {
       markServerAsRecentlyUsed(selectedServer.id)
       await commitSignIn(authenticatedTarget)
       hideToast()
-      router.replace("/messages")
     } catch (error: unknown) {
       await rollbackSignIn(authenticatedTarget)
       throw new ApiRequestError(

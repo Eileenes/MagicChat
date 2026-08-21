@@ -116,9 +116,6 @@ export function MessageVoiceDialog({
 
         {status !== "idle" ? (
           <View style={styles.transcriptSection}>
-            <Text style={[styles.transcriptLabel, { color: colors.textPrimary }]}>
-              文字内容
-            </Text>
             <Text style={[styles.transcript, { color: colors.textSecondary }]}>
               {getTranscriptText(status, transcript)}
             </Text>
@@ -174,13 +171,9 @@ const styles = StyleSheet.create({
   transcript: {
     fontSize: 16,
     lineHeight: 24,
-  },
-  transcriptLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 20,
+    textAlign: "center",
   },
   transcriptSection: {
-    gap: 8,
+    alignItems: "center",
   },
 })

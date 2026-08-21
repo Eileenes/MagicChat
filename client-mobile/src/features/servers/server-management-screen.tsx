@@ -26,7 +26,7 @@ import {
 export function ServerManagementScreen() {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const { invalidateSession, session } = useAuth()
+  const { invalidateSession, isAuthenticated, session } = useAuth()
   const {
     recentServerId,
     removeServer,
@@ -41,7 +41,7 @@ export function ServerManagementScreen() {
   const closeOpenSwipeableRef = useRef<(() => void) | null>(null)
   const selectionAttemptRef = useRef(0)
 
-  if (session) return <Redirect href="/messages" />
+  if (isAuthenticated) return <Redirect href="/messages" />
 
   function closeOpenSwipeable() {
     closeOpenSwipeableRef.current?.()
@@ -98,7 +98,7 @@ export function ServerManagementScreen() {
       queryKey: queryKeys.appInfo(server),
     })
     selectServer(server.id)
-    router.push("/login")
+    router.replace("/login")
   }
 
   async function handleDelete(server: ServerConfig) {

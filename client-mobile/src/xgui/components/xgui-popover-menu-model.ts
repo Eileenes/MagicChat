@@ -26,7 +26,9 @@ export type XGUIPopoverLayout = {
 }
 
 const EDGE_GAP = 8
-const ARROW_SIZE = 10
+const ANCHOR_GAP = 6
+const ARROW_HEIGHT = 8
+const ARROW_WIDTH = 10
 const ARROW_EDGE_GAP = 8
 
 export function calculateXGUIPopoverLayout({
@@ -49,7 +51,7 @@ export function calculateXGUIPopoverLayout({
   const requestedBottom = placement.startsWith("bottom")
   const availableBelow = windowHeight - insets.bottom - EDGE_GAP - (anchor.y + anchor.height)
   const availableAbove = anchor.y - insets.top - EDGE_GAP
-  const required = menuHeight + ARROW_SIZE
+  const required = menuHeight + ARROW_HEIGHT + ANCHOR_GAP
   const useBottom = requestedBottom
     ? availableBelow >= required || availableBelow >= availableAbove
     : !(availableAbove >= required || availableAbove >= availableBelow)
@@ -61,12 +63,12 @@ export function calculateXGUIPopoverLayout({
   const menuX = Math.min(maxX, Math.max(minX, desiredX))
   const anchorCenter = anchor.x + anchor.width / 2
   const arrowX = Math.min(
-    menuWidth - ARROW_EDGE_GAP - ARROW_SIZE,
-    Math.max(ARROW_EDGE_GAP, anchorCenter - menuX - ARROW_SIZE / 2)
+    menuWidth - ARROW_EDGE_GAP - ARROW_WIDTH,
+    Math.max(ARROW_EDGE_GAP, anchorCenter - menuX - ARROW_WIDTH / 2)
   )
   const desiredY = useBottom
-    ? anchor.y + anchor.height + ARROW_SIZE
-    : anchor.y - ARROW_SIZE - menuHeight
+    ? anchor.y + anchor.height + ARROW_HEIGHT + ANCHOR_GAP
+    : anchor.y - ARROW_HEIGHT - ANCHOR_GAP - menuHeight
   const minY = insets.top + EDGE_GAP
   const maxY = Math.max(minY, windowHeight - insets.bottom - EDGE_GAP - menuHeight)
   const menuY = Math.min(maxY, Math.max(minY, desiredY))

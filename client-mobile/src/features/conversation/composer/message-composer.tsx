@@ -126,11 +126,17 @@ export const MessageComposer = forwardRef<
   const selectionRef = useRef<TextSelection>({ end: 0, start: 0 })
   const shouldFocusAfterPickerCloseRef = useRef(false)
   const restoreKeyboardAfterMediaPickerRef = useRef(false)
+  const pendingImageUploadsRef = useRef<PreparedClientMessageUpload[]>([])
+  const imageConfirmationPendingRef = useRef(false)
   const [content, setContent] = useState("")
   const [inputHeight, setInputHeight] = useState(COMPOSER_CONTROL_HEIGHT)
   const [accessoryMode, setAccessoryMode] =
     useState<ComposerAccessoryMode>(null)
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false)
+  const [pendingImageUploads, setPendingImageUploads] = useState<
+    PreparedClientMessageUpload[]
+  >([])
+  const [imageBatchSending, setImageBatchSending] = useState(false)
   const [pendingSelection, setPendingSelection] =
     useState<TextSelection>()
   const upload = useComposerUpload({
@@ -168,6 +174,15 @@ export const MessageComposer = forwardRef<
     const frame = requestAnimationFrame(() => setPendingSelection(undefined))
     return () => cancelAnimationFrame(frame)
   }, [pendingSelection])
+
+  useEffect(() => {
+    return () => {
+      pendingImageUploadsRef.current.forEach((selection) =>
+        selection.cleanup?.()
+      )
+      pendingImageUploadsRef.current = []
+    }
+  }, [])
 
   useImperativeHandle(ref, () => ({
     dismissAccessory() {
@@ -413,21 +428,45 @@ export const MessageComposer = forwardRef<
     if (!selection) restoreKeyboardAfterMediaPicker()
   }
 
-  async function handleCameraPick() {
-    if (interactionDisabled) return
-
-    setAccessoryMode(null)
-    await upload.pickAndSend(pickCameraImageMessage)
-    restoreKeyboardAfterMediaPicker()
-  }
-
   function handleUploadCancel() {
-    upload.cancel()
+    if (pendingImageUploadsRef.current.length > 0) {
+      pendingImageUploadsRef.current.forEach((selection) =>
+        selection.cleanup?.()
+      )
+      pendingImageUploadsRef.current = []
+      imageConfirmationPendingRef.current = false
+      setPendingImageUploads([])
+    } else {
+      upload.cancel()
+    }
     restoreKeyboardAfterMediaPicker()
   }
 
   async function handleUploadConfirm() {
-    if (await upload.confirm()) restoreKeyboardAfterMediaPicker()
+    if (pendingImageUploadsRef.current.length === 0) {
+      if (await upload.confirm()) restoreKeyboardAfterMediaPicker()
+      return
+    }
+    if (imageBatchSending) return
+
+    setImageBatchSending(true)
+    try {
+      while (pendingImageUploadsRef.current.length > 0) {
+        const selection = pendingImageUploadsRef.current[0]
+        if (!selection || !(await onSendUpload(selection))) break
+
+        selection.cleanup?.()
+        pendingImageUploadsRef.current = pendingImageUploadsRef.current.slice(1)
+        setPendingImageUploads(pendingImageUploadsRef.current)
+      }
+    } finally {
+      setImageBatchSending(false)
+    }
+
+    if (pendingImageUploadsRef.current.length === 0) {
+      imageConfirmationPendingRef.current = false
+      restoreKeyboardAfterMediaPicker()
+    }
   }
 
   function handleLibraryPick() {
@@ -437,23 +476,42 @@ export const MessageComposer = forwardRef<
       confirmLabel: "发送",
       maxSelection: 4,
       mode: "multiple",
-      onClose: restoreKeyboardAfterMediaPicker,
-      onSelect: async (assets) => {
-        for (const asset of assets) {
-          const info = await MediaLibrary.getAssetInfoAsync(asset)
-          const prepared = await prepareImageMessage({
-            height: asset.height,
-            mimeType: imageMimeType(asset.filename),
-            name: asset.filename,
-            uri: info.localUri ?? info.uri,
-            width: asset.width,
-          })
-          try {
-            if (!(await onSendUpload(prepared))) break
-          } finally {
-            prepared.cleanup?.()
-          }
+      onClose: () => {
+        if (!imageConfirmationPendingRef.current) {
+          restoreKeyboardAfterMediaPicker()
         }
+      },
+      onSelect: async (assets) => {
+        const preparedUploads: PreparedClientMessageUpload[] = []
+        try {
+          for (const asset of assets) {
+            const uri =
+              Platform.OS === "android"
+                ? await MediaLibrary.getAssetContentUriAsync(asset)
+                : await MediaLibrary.getAssetInfoAsync(asset).then(
+                    (info) => info.localUri ?? info.uri
+                  )
+            preparedUploads.push(
+              await prepareImageMessage({
+                height: asset.height,
+                mimeType: imageMimeType(asset.filename),
+                name: asset.filename,
+                uri,
+                width: asset.width,
+              })
+            )
+          }
+        } catch (error: unknown) {
+          preparedUploads.forEach((selection) => selection.cleanup?.())
+          throw error
+        }
+
+        pendingImageUploadsRef.current.forEach((selection) =>
+          selection.cleanup?.()
+        )
+        pendingImageUploadsRef.current = preparedUploads
+        imageConfirmationPendingRef.current = true
+        setPendingImageUploads(preparedUploads)
       },
     })
     router.push({ pathname: "/media-picker", params: { requestId } } as unknown as Href)
@@ -585,7 +643,7 @@ export const MessageComposer = forwardRef<
         <ComposerAccessoryPanel
           disabled={interactionDisabled}
           mode={accessoryMode}
-          onCameraPress={() => void handleCameraPick()}
+          onCameraPress={() => void handleUploadPick(pickCameraImageMessage)}
           onEmojiPress={handleEmojiPress}
           onFilePress={() => void handleUploadPick(pickFileMessage)}
           onLibraryPress={handleLibraryPick}
@@ -604,8 +662,14 @@ export const MessageComposer = forwardRef<
       <MessageUploadDialog
         onCancel={handleUploadCancel}
         onConfirm={() => void handleUploadConfirm()}
-        selection={upload.selected}
-        sending={disabled}
+        selections={
+          pendingImageUploads.length > 0
+            ? pendingImageUploads
+            : upload.selected
+              ? [upload.selected]
+              : []
+        }
+        sending={disabled || sending || imageBatchSending}
       />
       <MessageVoiceGestureOverlay
         active={voice.gestureActive}

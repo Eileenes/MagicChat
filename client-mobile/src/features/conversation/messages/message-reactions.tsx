@@ -66,7 +66,7 @@ export function MessageReactionChips({
 
         return (
           <XStack
-            bg={colors.foreground4}
+            bg={colors.secondaryBackground}
             height={20}
             items="center"
             key={reaction.text}

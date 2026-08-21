@@ -17,7 +17,7 @@ test("positions bottom-end against the anchor end", () => {
   assert.deepEqual(calculateXGUIPopoverLayout(base), {
     arrowX: 195,
     menuX: 120,
-    menuY: 150,
+    menuY: 154,
     placement: "bottom-end",
   })
 })
@@ -37,7 +37,7 @@ test("flips bottom placement when only the top has room", () => {
     anchor: { ...base.anchor, y: 700 },
   })
   assert.equal(result.placement, "top-end")
-  assert.equal(result.menuY, 578)
+  assert.equal(result.menuY, 574)
 })
 
 test("keeps requested top placement when it has room", () => {
@@ -47,7 +47,7 @@ test("keeps requested top placement when it has room", () => {
     placement: "top-start",
   })
   assert.equal(result.placement, "top-start")
-  assert.equal(result.menuY, 178)
+  assert.equal(result.menuY, 174)
 })
 
 test("clamps the triangle away from menu corners", () => {

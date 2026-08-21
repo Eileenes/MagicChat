@@ -211,7 +211,7 @@ export function ConversationDetailsScreen() {
         await leaveMutation.mutateAsync(conversationId)
       }
       toast.hide()
-      router.replace("/messages")
+      router.dismissTo("/messages")
     } catch (error) {
       toast.hide()
       showError(error, isGroupOwner ? "解散群聊失败" : "退出群聊失败")

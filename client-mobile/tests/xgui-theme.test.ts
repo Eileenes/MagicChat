@@ -58,6 +58,11 @@ test("XGUI 提供通讯录入口使用的 WeUI 强调色", () => {
   assert.equal(xguiColors.dark.blue, "#10AEFF")
 })
 
+test("XGUI 提供 WeUI 2.6.26 的 Secondary BG", () => {
+  assert.equal(xguiColors.light.secondaryBackground, "rgba(0,0,0,0.05)")
+  assert.equal(xguiColors.dark.secondaryBackground, "rgba(255,255,255,0.1)")
+})
+
 test("XGUI 按钮禁用态使用 WeUI 2.6.26 的 FG-4 和 FG-5", () => {
   assert.equal(xguiColors.light.foreground0Half, "rgba(0,0,0,0.9)")
   assert.equal(xguiColors.dark.foreground0Half, "rgba(255,255,255,0.6)")

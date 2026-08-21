@@ -350,19 +350,17 @@ export function ConversationScreen() {
     const error = messagesQuery.error ?? topicQuery.error ?? currentUserError
     if (isUnauthorizedError(error)) {
       void invalidateSession()
-      router.replace("/server-management")
     }
   }, [
     currentUserError,
     invalidateSession,
     messagesQuery.error,
-    router,
     topicQuery.error,
   ])
 
   useEffect(() => {
     if (isReady && !conversation && !expectsTopic) {
-      router.replace("/messages")
+      router.dismissTo("/messages")
     }
   }, [conversation, expectsTopic, isReady, router])
 
