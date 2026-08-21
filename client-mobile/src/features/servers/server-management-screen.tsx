@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { type Href, useRouter } from "expo-router"
+import { Redirect, type Href, useRouter } from "expo-router"
 import { useRef, useState } from "react"
 import {
   ScrollView,
@@ -40,6 +40,8 @@ export function ServerManagementScreen() {
   const [serverToDelete, setServerToDelete] = useState<ServerConfig | null>(null)
   const closeOpenSwipeableRef = useRef<(() => void) | null>(null)
   const selectionAttemptRef = useRef(0)
+
+  if (session) return <Redirect href="/messages" />
 
   function closeOpenSwipeable() {
     closeOpenSwipeableRef.current?.()

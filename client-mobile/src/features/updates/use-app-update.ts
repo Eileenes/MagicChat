@@ -1,7 +1,6 @@
+import { useXGUIToast } from "@/xgui"
 import { useEffect, useRef, useState } from "react"
-import { useToastController } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import {
   hasNewAppVersion,
   type AppRelease,
@@ -17,7 +16,7 @@ import {
 } from "@/features/updates/app-update-service"
 
 export function useAppUpdate() {
-  const toast = useToastController()
+  const toast = useXGUIToast()
   const installedVersion = getInstalledAppVersion()
   const platform = getMobileUpdatePlatform()
   const activeDownloadRef = useRef<AndroidUpdateDownload | null>(null)
@@ -34,15 +33,15 @@ export function useAppUpdate() {
     }
   }, [])
 
-  async function checkForUpdates() {
-    if (status !== "idle") return
+  async function checkForUpdates(): Promise<AppRelease | null> {
+    if (status !== "idle") return null
 
     const operation = ++operationRef.current
     setStatus("checking")
 
     try {
       const latestRelease = await fetchLatestAppRelease(platform)
-      if (operation !== operationRef.current) return
+      if (operation !== operationRef.current) return null
 
       if (installedVersion.build === null) {
         throw new Error("无法读取当前应用的构建版本")
@@ -50,32 +49,16 @@ export function useAppUpdate() {
 
       if (!hasNewAppVersion(installedVersion.build, latestRelease)) {
         setStatus("idle")
-        toast.show("已是最新版本", {
-          customData: { tone: "success" satisfies AppToastTone },
-          message: `当前版本 ${installedVersion.version}`,
-        })
-        return
-      }
-
-      if (platform === "ios") {
-        setStatus("idle")
-        toast.show("发现新版本", {
-          customData: { tone: "success" satisfies AppToastTone },
-          message: `当前版本 ${installedVersion.version}，最新版本 ${latestRelease.version}`,
-        })
-        return
+        return null
       }
 
       setRelease(latestRelease)
       setStatus("available")
+      return latestRelease
     } catch (error: unknown) {
-      if (operation !== operationRef.current) return
+      if (operation !== operationRef.current) return null
       setStatus("idle")
-      toast.show("检查更新失败", {
-        customData: { tone: "error" satisfies AppToastTone },
-        duration: 4000,
-        message: getUpdateErrorMessage(error),
-      })
+      throw error
     }
   }
 
@@ -93,25 +76,21 @@ export function useAppUpdate() {
       activeDownloadRef.current = download
 
       const fileUri = await download.start()
-      if (operation !== operationRef.current) return
+      if (operation !== operationRef.current) return null
 
       activeDownloadRef.current = null
       setStatus("installing")
       await installAndroidUpdate(fileUri)
-      if (operation !== operationRef.current) return
+      if (operation !== operationRef.current) return null
 
       setRelease(null)
       setStatus("idle")
     } catch (error: unknown) {
-      if (operation !== operationRef.current) return
+      if (operation !== operationRef.current) return null
       activeDownloadRef.current = null
       setRelease(null)
       setStatus("idle")
-      toast.show("更新失败", {
-        customData: { tone: "error" satisfies AppToastTone },
-        duration: 4000,
-        message: getUpdateErrorMessage(error),
-      })
+      toast.show({ message: `${"更新失败"}：${getUpdateErrorMessage(error)}`, type: "text", duration: 1_000 })
     }
   }
 
@@ -129,6 +108,7 @@ export function useAppUpdate() {
     cancelUpdate,
     checkForUpdates,
     installedVersion,
+    platform,
     progress,
     release,
     startUpdate,

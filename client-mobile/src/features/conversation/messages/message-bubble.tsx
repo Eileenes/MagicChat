@@ -1,7 +1,6 @@
-import { useRef, useState } from "react"
+import { useRef } from "react"
 import { View } from "react-native"
 import {
-  Avatar,
   Button,
   Paragraph,
   SizableText,
@@ -9,7 +8,7 @@ import {
   YStack,
 } from "tamagui"
 
-import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
+import { AppAvatar } from "@/components/avatar/app-avatar"
 import type { EntityReference } from "@/domain/entities/entity-profile"
 import type { ServerTarget } from "@/core/server-target"
 import type { ResourceLoadState } from "@/data/resources"
@@ -22,16 +21,19 @@ import {
   type MessageMentionLabelResolver,
   type PresentedMessage,
 } from "@/domain/messages/message-presenter"
+import { useXGUITheme } from "@/xgui"
 
 export function MessageBubble({
   currentUserId,
   message,
   canAddReaction,
+  canCreateTopic,
   canRespondToChoice,
   onAvatarLongPress,
   onAvatarPress,
   onImagePress,
   onMentionPress,
+  onMessageLongPress,
   onOpenTopic,
   onResourceError,
   onResourcePress,
@@ -44,6 +46,7 @@ export function MessageBubble({
   showChoiceResponseCounts,
 }: {
   canAddReaction: boolean
+  canCreateTopic: boolean
   canRespondToChoice: boolean
   currentUserId: string
   message: PresentedMessage
@@ -51,6 +54,7 @@ export function MessageBubble({
   onAvatarPress: (sender: EntityReference) => void
   onImagePress: (fileId: string, messageId: string) => void
   onMentionPress: (target: EntityReference) => void
+  onMessageLongPress: (message: PresentedMessage) => void
   onOpenTopic: (conversationId: string) => void
   onResourceError: (fileId: string) => void
   onResourcePress: (fileId: string) => void
@@ -66,14 +70,14 @@ export function MessageBubble({
   server: ServerTarget
   showChoiceResponseCounts: boolean
 }) {
+  const { colors } = useXGUITheme()
   const didLongPressAvatarRef = useRef(false)
-  const [bubblePressed, setBubblePressed] = useState(false)
 
   if (message.role === "system") {
     return (
       <XStack justify="center" px="$5">
-        <XStack bg="$color4" maxW="85%" p="$2" px="$3" rounded="$10">
-          <SizableText color="$color10" size="$2" text="center">
+        <XStack maxW="85%">
+          <SizableText color={colors.textPlaceholder} size="$2" text="center">
             {formatClientMessageBodySummary(message.body, resolveMentionLabel)}
           </SizableText>
         </XStack>
@@ -82,15 +86,12 @@ export function MessageBubble({
   }
 
   const fromMe = message.role === "me"
-  const showsBubblePressFeedback =
-    message.body.type === "text" ||
-    message.body.type === "markdown" ||
-    message.body.type === "revoked" ||
-    message.body.type === "unsupported"
-  const messageSelectionNativeId =
+  const allowsTextSelection =
     message.body.type === "text" || message.body.type === "markdown"
-      ? `magicchat-message:${message.canRevoke ? "1" : "0"}:${message.id}`
-      : undefined
+  const allowsTopicCreation = canCreateTopic && !message.topic
+  const messageSelectionNativeId = allowsTextSelection
+    ? `magicchat-message:${message.canRevoke ? "1" : "0"}:${allowsTopicCreation ? "1" : "0"}:${message.id}`
+    : undefined
   const sender = message.sender
   const flushImageBubble =
     message.body.type === "image" && !message.replyTo && !message.topic
@@ -139,6 +140,7 @@ export function MessageBubble({
         avatar={message.avatar}
         name={fromMe ? "我" : message.author}
         server={server}
+        type={message.sender?.type === "app" ? "app" : "user"}
       />
     </Button>
   ) : (
@@ -146,6 +148,7 @@ export function MessageBubble({
       avatar={message.avatar}
       name={fromMe ? "我" : message.author}
       server={server}
+      type={message.sender?.type === "app" ? "app" : "user"}
     />
   )
 
@@ -164,7 +167,11 @@ export function MessageBubble({
         width={structuredBubbleWidth}
       >
         <XStack gap="$2" items="center">
-          <SizableText color="$color10" numberOfLines={1} size="$2">
+          <SizableText
+            color={colors.textSecondary}
+            numberOfLines={1}
+            size="$2"
+          >
             {message.author}
           </SizableText>
         </XStack>
@@ -172,21 +179,6 @@ export function MessageBubble({
         <View
           collapsable={false}
           nativeID={messageSelectionNativeId}
-          onTouchCancel={
-            showsBubblePressFeedback
-              ? () => setBubblePressed(false)
-              : undefined
-          }
-          onTouchEnd={
-            showsBubblePressFeedback
-              ? () => setBubblePressed(false)
-              : undefined
-          }
-          onTouchStart={
-            showsBubblePressFeedback
-              ? () => setBubblePressed(true)
-              : undefined
-          }
           style={{
             maxWidth: "100%",
             width: structuredBubbleWidth ? "100%" : undefined,
@@ -194,13 +186,9 @@ export function MessageBubble({
         >
           <YStack
             bg={
-              bubblePressed
-                ? fromMe
-                  ? "$color5"
-                  : "$color2"
-                : fromMe
-                  ? "$color4"
-                  : "$color1"
+              fromMe
+                ? colors.brand1
+                : colors.background2
             }
             rounded="$5"
             borderTopLeftRadius={fromMe ? "$5" : "$1"}
@@ -218,10 +206,21 @@ export function MessageBubble({
                 mb="$2"
                 pl="$2"
               >
-                <SizableText fontWeight="600" numberOfLines={1} size="$2">
+                <SizableText
+                  color={colors.textSecondary}
+                  fontWeight="700"
+                  numberOfLines={1}
+                  selectable={allowsTextSelection}
+                  size="$3"
+                >
                   {message.replyTo.author}
                 </SizableText>
-                <Paragraph color="$color10" numberOfLines={2} size="$2">
+                <Paragraph
+                  color={colors.textSecondary}
+                  numberOfLines={2}
+                  selectable={allowsTextSelection}
+                  size="$3"
+                >
                   {message.replyTo.summary}
                 </Paragraph>
               </YStack>
@@ -232,6 +231,7 @@ export function MessageBubble({
                 canRespond={canRespondToChoice}
                 choice={message.choice}
                 currentUserId={currentUserId}
+                onLongPress={() => onMessageLongPress(message)}
                 onMentionPress={onMentionPress}
                 onRespond={
                   onRespondChoice
@@ -245,12 +245,12 @@ export function MessageBubble({
             ) : (
               <MessageBody
                 body={message.body}
-                bubblePressed={bubblePressed}
                 bubbleTone={fromMe ? "mine" : "other"}
                 currentUserId={currentUserId}
                 flushImage={flushImageBubble}
                 onImagePress={(fileId) => onImagePress(fileId, message.id)}
                 onMentionPress={onMentionPress}
+                onMessageLongPress={() => onMessageLongPress(message)}
                 onResourceError={onResourceError}
                 onResourcePress={onResourcePress}
                 onVoiceResourcePress={onVoiceResourcePress}
@@ -308,19 +308,12 @@ function MessageAvatar({
   avatar,
   name,
   server,
+  type,
 }: {
   avatar: string
   name: string
   server: ServerTarget
+  type: "app" | "user"
 }) {
-  return (
-    <Avatar rounded="$2" size="$3" theme={name === "我" ? "teal" : undefined}>
-      <CachedAvatarImage avatar={avatar} server={server} />
-      <Avatar.Fallback bg="$backgroundFocus" items="center" justify="center">
-        <SizableText fontWeight="600" size="$2">
-          {Array.from(name.trim())[0]?.toUpperCase() ?? "?"}
-        </SizableText>
-      </Avatar.Fallback>
-    </Avatar>
-  )
+  return <AppAvatar accessibilityLabel={name} avatar={avatar} server={server} size="$3" type={type} />
 }

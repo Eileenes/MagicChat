@@ -1,7 +1,6 @@
 import type { Icon as TablerIcon } from "@tabler/icons-react-native"
-import { BlurView } from "expo-blur"
-import type { ReactNode, RefObject } from "react"
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
+import type { ReactNode } from "react"
+import { Pressable, StyleSheet, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { XGUIBadge } from "@/xgui/components/xgui-badge"
@@ -9,10 +8,7 @@ import { useXGUITheme } from "@/xgui/theme/use-xgui-theme"
 
 type XGUITabbarIcon = TablerIcon
 
-export const XGUI_TABBAR_CONTENT_HEIGHT = 59
-
 export type XGUITabbarProps = {
-  blurTarget?: RefObject<View | null>
   children: ReactNode
 }
 
@@ -26,46 +22,22 @@ export type XGUITabbarItemProps = {
   unreadCount?: number
 }
 
-export function XGUITabbar({ blurTarget, children }: XGUITabbarProps) {
+export function XGUITabbar({ children }: XGUITabbarProps) {
   const insets = useSafeAreaInsets()
-  const { colorScheme, colors } = useXGUITheme()
+  const { colors } = useXGUITheme()
 
   return (
     <View
       style={[
         styles.tabbar,
         {
+          backgroundColor: colors.background1,
           paddingBottom: insets.bottom,
           paddingLeft: insets.left,
           paddingRight: insets.right,
         },
       ]}
     >
-      {Platform.OS === "android" && blurTarget ? (
-        <BlurView
-          blurMethod="dimezisBlurView"
-          blurReductionFactor={3}
-          blurTarget={blurTarget}
-          intensity={95}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFill}
-          tint={colorScheme}
-        />
-      ) : Platform.OS === "ios" ? (
-        <BlurView
-          intensity={95}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFill}
-          tint={colorScheme}
-        />
-      ) : null}
-      <View
-        pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: withOpacity(colors.background1, 0.85) },
-        ]}
-      />
       {children}
     </View>
   )
@@ -116,13 +88,6 @@ export function XGUITabbarItem({
   )
 }
 
-function withOpacity(hexColor: string, opacity: number) {
-  const red = Number.parseInt(hexColor.slice(1, 3), 16)
-  const green = Number.parseInt(hexColor.slice(3, 5), 16)
-  const blue = Number.parseInt(hexColor.slice(5, 7), 16)
-  return `rgba(${red},${green},${blue},${opacity})`
-}
-
 const styles = StyleSheet.create({
   badge: {
     position: "absolute",
@@ -152,12 +117,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   tabbar: {
-    bottom: 0,
     flexDirection: "row",
-    left: 0,
-    minHeight: XGUI_TABBAR_CONTENT_HEIGHT,
-    position: "absolute",
-    right: 0,
+    minHeight: 58,
+    position: "relative",
     zIndex: 500,
   },
 })

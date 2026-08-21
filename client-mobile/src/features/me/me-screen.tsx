@@ -1,33 +1,33 @@
-import { type ReactNode, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+// eslint-disable-next-line import/no-unresolved
+import IconDatabase from "@tabler/icons-react-native/IconDatabase"
+// eslint-disable-next-line import/no-unresolved
+import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop"
+// eslint-disable-next-line import/no-unresolved
+import IconLogout from "@tabler/icons-react-native/IconLogout"
+// eslint-disable-next-line import/no-unresolved
+import IconMoon from "@tabler/icons-react-native/IconMoon"
+// eslint-disable-next-line import/no-unresolved
+import IconPalette from "@tabler/icons-react-native/IconPalette"
+// eslint-disable-next-line import/no-unresolved
+import IconRefresh from "@tabler/icons-react-native/IconRefresh"
+// eslint-disable-next-line import/no-unresolved
+import IconSwitchHorizontal from "@tabler/icons-react-native/IconSwitchHorizontal"
+// eslint-disable-next-line import/no-unresolved
+import IconChevronRight from "@tabler/icons-react-native/IconChevronRight"
+// eslint-disable-next-line import/no-unresolved
+import IconSun from "@tabler/icons-react-native/IconSun"
 import { useRouter, type Href } from "expo-router"
+import { Alert, Pressable } from "react-native"
 import {
-  Bug,
-  Check,
-  ChevronRight,
-  HardDrive,
-  Info,
-  LogOut,
-  Moon,
-  PackageSearch,
-  Server,
-  type LucideIcon,
-} from "lucide-react-native"
-import { Alert } from "react-native"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
-import {
-  Avatar,
   Card,
   Paragraph,
-  Sheet,
   SizableText,
-  Spinner,
-  Text,
   XStack,
   YStack,
 } from "tamagui"
 
-import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
-import { ThemedIcon } from "@/components/icons/themed-icon"
+import { AppAvatar } from "@/components/avatar/app-avatar"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { appConfig } from "@/config/app-config"
 import type { ThemePreference } from "@/config/theme-preference"
@@ -41,32 +41,39 @@ import {
 } from "@/providers/auth-provider"
 import { useAppTheme } from "@/providers/app-theme-provider"
 import { useClientData } from "@/providers/client-data-provider"
-import { useServers } from "@/providers/server-provider"
-import { XGUI_TABBAR_CONTENT_HEIGHT, useXGUITheme } from "@/xgui"
+import { XGUIActionSheet, XGUIList, XGUIListItem, XGUIPicker, useXGUITheme, useXGUIToast, type XGUIPickerItem } from "@/xgui"
+
+const THEME_OPTIONS = [
+  { icon: ({ color, size, strokeWidth }) => <IconDeviceDesktop color={color} size={size} strokeWidth={strokeWidth} />, label: "跟随系统", value: "system" },
+  { icon: ({ color, size, strokeWidth }) => <IconSun color={color} size={size} strokeWidth={strokeWidth} />, label: "浅色主题", value: "light" },
+  { icon: ({ color, size, strokeWidth }) => <IconMoon color={color} size={size} strokeWidth={strokeWidth} />, label: "深色主题", value: "dark" },
+] satisfies readonly XGUIPickerItem<ThemePreference>[]
 
 const THEME_LABELS: Record<ThemePreference, string> = {
-  dark: "深色",
-  light: "浅色",
+  dark: "深色主题",
+  light: "浅色主题",
   system: "跟随系统",
 }
 
 export function MeScreen() {
-  const insets = useSafeAreaInsets()
   const { colors } = useXGUITheme()
+  const toast = useXGUIToast()
   const router = useRouter()
   const session = useAuthenticatedSession()
-  const { selectedServer } = useServers()
   const appInfoQuery = useCachedAppInfo(session)
   const { currentUser } = useClientData()
   const { isSigningOut, signOut } = useAuth()
   const appUpdate = useAppUpdate()
+  const updateConfirmedRef = useRef(false)
+  const themeSwitchFrameRef = useRef<number | null>(null)
   const {
     preference: themePreference,
     setPreference: setThemePreference,
   } = useAppTheme()
-  const [themeSheetOpen, setThemeSheetOpen] = useState(false)
+  const [themePickerOpen, setThemePickerOpen] = useState(false)
+  const [logoutSheetOpen, setLogoutSheetOpen] = useState(false)
+  const [pendingTheme, setPendingTheme] = useState<ThemePreference>(themePreference)
 
-  const appName = appInfoQuery.data?.appName ?? appConfig.name
   const organizationName =
     appInfoQuery.data?.organizationName ?? appConfig.organizationName
   const currentUserName =
@@ -75,20 +82,37 @@ export function MeScreen() {
     currentUser?.email ||
     "当前账号"
 
-  function selectTheme(value: ThemePreference) {
-    setThemePreference(value)
-    setThemeSheetOpen(false)
+  function openThemePicker() {
+    setPendingTheme(themePreference)
+    setThemePickerOpen(true)
   }
 
+  function handleThemeConfirm(value: ThemePreference) {
+    if (value === themePreference) return
+
+    toast.show({ duration: 0, message: "正在切换主题", type: "loading" })
+    themeSwitchFrameRef.current = requestAnimationFrame(() => {
+      setThemePreference(value)
+      themeSwitchFrameRef.current = requestAnimationFrame(() => {
+        themeSwitchFrameRef.current = null
+        toast.hide()
+      })
+    })
+  }
+
+  useEffect(
+    () => () => {
+      if (themeSwitchFrameRef.current !== null) {
+        cancelAnimationFrame(themeSwitchFrameRef.current)
+        themeSwitchFrameRef.current = null
+        toast.hide()
+      }
+    },
+    [toast]
+  )
+
   function confirmLogout() {
-    Alert.alert("退出登录", "确定要退出当前账号吗？", [
-      { style: "cancel", text: "取消" },
-      {
-        onPress: () => void handleLogout(),
-        style: "destructive",
-        text: "退出登录",
-      },
-    ])
+    setLogoutSheetOpen(true)
   }
 
   async function handleLogout() {
@@ -105,166 +129,178 @@ export function MeScreen() {
     }
   }
 
+  async function handleCheckForUpdates() {
+    toast.show({ duration: 0, message: "正在检查更新", type: "loading" })
+    try {
+      const release = await appUpdate.checkForUpdates()
+      toast.hide()
+      if (!release) toast.show({ message: "已经是最新版本", type: "success" })
+    } catch (error: unknown) {
+      toast.show({
+        message: error instanceof Error ? error.message : "检查更新失败",
+        type: "error",
+      })
+    }
+  }
+
+  function startAvailableUpdate() {
+    if (appUpdate.platform === "ios") {
+      appUpdate.cancelUpdate()
+      toast.show({ message: "iOS 暂不支持应用内安装，请联系管理员更新", type: "text" })
+      return
+    }
+    void appUpdate.startUpdate()
+  }
+
   return (
     <>
-      <KeyboardAwareScreen contentBackground={colors.background0} edges={[]}>
-        <YStack
-          gap="$4"
-          maxW={440}
-          pb={XGUI_TABBAR_CONTENT_HEIGHT + insets.bottom + 16}
-          pt="$4"
-          self="center"
-          width="100%"
-        >
+      <KeyboardAwareScreen
+        contentBackground={colors.background0}
+        edges={[]}
+        elastic
+      >
+        <YStack maxW={440} pb="$4" pt="$2" self="center" width="100%">
           <Card bg="$background" overflow="hidden" rounded={0}>
-            <XStack
+            <Pressable
               accessibilityLabel="个人信息"
               accessibilityRole="button"
-              gap="$4"
-              items="center"
-              minH={116}
               onPress={() => router.push("/profile" as Href)}
-              pressStyle={{ background: "$backgroundPress" }}
-              px="$4"
-              py="$4"
+              style={({ pressed }) => ({
+                backgroundColor: pressed
+                  ? colors.background1
+                  : colors.background2,
+              })}
             >
-              <Avatar rounded="$4" size="$7">
-                <CachedAvatarImage
-                  avatar={currentUser?.avatar ?? ""}
-                  server={session}
+              <XStack gap="$4" items="center" minH={116} px="$4" py="$4">
+                <AppAvatar accessibilityLabel={currentUserName} avatar={currentUser?.avatar} server={session} size="$7" type="user" />
+                <YStack flex={1} gap="$2" justify="center">
+                  <SizableText
+                    color={colors.textPrimary}
+                    fontWeight="700"
+                    numberOfLines={1}
+                    size="$6"
+                  >
+                    {currentUserName}
+                  </SizableText>
+                  <Paragraph color="$gray10" numberOfLines={1} size="$3">
+                    {organizationName}
+                  </Paragraph>
+                </YStack>
+                <IconChevronRight
+                  color={colors.textPlaceholder}
+                  size={18}
+                  strokeWidth={1}
                 />
-                <Avatar.Fallback bg="$color3" items="center" justify="center">
-                  <Text fontSize="$7" fontWeight="600">
-                    {Array.from(currentUserName)[0] ?? "即"}
-                  </Text>
-                </Avatar.Fallback>
-              </Avatar>
-              <YStack flex={1} gap="$2" justify="center">
-                <SizableText fontWeight="700" numberOfLines={1} size="$6">
-                  {currentUserName}
-                </SizableText>
-                <Paragraph color="$gray10" numberOfLines={1} size="$3">
-                  {currentUser?.email ?? "未设置邮箱"}
-                </Paragraph>
-              </YStack>
-              <ThemedIcon icon={ChevronRight} size={20} />
-            </XStack>
+              </XStack>
+            </Pressable>
           </Card>
 
-          <YStack gap="$4">
-            <SettingsSection title="账号">
-              <SettingsRow
-                detail={session.url}
-                icon={Server}
-                onPress={() => router.push("/server-management")}
-                testID="login-server"
-                title="当前服务器"
-                value={selectedServer.name}
-              />
-            </SettingsSection>
-
-            <SettingsSection title="偏好设置">
-              <SettingsRow
-                detail="跟随你的使用习惯调整界面"
-                icon={Moon}
-                onPress={() => setThemeSheetOpen(true)}
+          <YStack>
+            <XGUIList size="large">
+              <XGUIListItem
+                icon={({ size, strokeWidth }) => <IconPalette color={colors.yellow} size={size} strokeWidth={strokeWidth} />}
+                onPress={openThemePicker}
                 title="外观主题"
                 value={THEME_LABELS[themePreference]}
               />
-              <SettingsRow
-                detail="媒体文件与离线消息"
-                icon={HardDrive}
-                last
+              <XGUIListItem
+                icon={({ size, strokeWidth }) => <IconDatabase color={colors.blue} size={size} strokeWidth={strokeWidth} />}
                 onPress={() => router.push("/storage" as Href)}
+                separator
                 title="存储空间"
               />
-            </SettingsSection>
+            </XGUIList>
 
-            <SettingsSection title="应用">
-              <SettingsRow
-                detail={`当前版本 ${appUpdate.installedVersion.label}`}
-                icon={PackageSearch}
+            <XGUIList size="large">
+              <XGUIListItem
+                disabled={appUpdate.status !== "idle"}
+                icon={({ size, strokeWidth }) => <IconRefresh color={colors.brand} size={size} strokeWidth={strokeWidth} />}
                 onPress={
                   appUpdate.status === "idle"
-                    ? () => void appUpdate.checkForUpdates()
+                    ? () => void handleCheckForUpdates()
                     : undefined
                 }
-                title={
-                  appUpdate.status === "checking" ? "正在检查更新…" : "检查更新"
-                }
-                trailing={
-                  appUpdate.status === "checking" ? <Spinner size="small" /> : undefined
-                }
+                title="检查更新"
+                value={appUpdate.installedVersion.label}
               />
-              <SettingsRow
-                detail={`${organizationName} 的工作空间`}
-                icon={Info}
-                last={!__DEV__}
-                title={appName}
-              />
-              {__DEV__ ? (
-                <SettingsRow
-                  icon={Bug}
-                  last
-                  onPress={() => router.push("/theme-debug" as Href)}
-                  title="界面调试"
-                />
-              ) : null}
-            </SettingsSection>
+            </XGUIList>
 
-            <Card bg="$background" overflow="hidden" rounded={0}>
-              <SettingsRow
-                danger
-                icon={LogOut}
-                last
+            <XGUIList size="large">
+              <XGUIListItem
+                centerContent
+                destructive
+                icon={({ color, size, strokeWidth }) => <IconSwitchHorizontal color={color} size={size} strokeWidth={strokeWidth} />}
+                onPress={() => router.push("/server-management")}
+                title="切换账号"
+              />
+            </XGUIList>
+
+            <XGUIList size="large">
+              <XGUIListItem
+                centerContent
+                destructive
+                disabled={isSigningOut}
+                icon={({ color, size, strokeWidth }) => <IconLogout color={color} size={size} strokeWidth={strokeWidth} />}
                 onPress={isSigningOut ? undefined : confirmLogout}
                 title={isSigningOut ? "正在退出…" : "退出登录"}
-                trailing={isSigningOut ? <Spinner size="small" /> : undefined}
               />
-            </Card>
+            </XGUIList>
           </YStack>
         </YStack>
       </KeyboardAwareScreen>
 
-      <Sheet
-        dismissOnSnapToBottom
-        modal
-        onOpenChange={setThemeSheetOpen}
-        open={themeSheetOpen}
-        snapPoints={[42]}
-      >
-        <Sheet.Overlay bg="$shadow6" opacity={0.45} />
-        <Sheet.Frame gap="$3" p="$5">
-          <Sheet.Handle />
-          <YStack gap="$1" mb="$1">
-            <SizableText fontWeight="700" size="$5">
-              外观主题
-            </SizableText>
-            <Paragraph color="$gray10" size="$3">
-              选择你偏好的界面显示方式
-            </Paragraph>
-          </YStack>
-          {(["system", "light", "dark"] as const).map((value) => (
-            <XStack
-              bg={themePreference === value ? "$color3" : "$background"}
-              borderColor={themePreference === value ? "$color7" : "$borderColor"}
-              borderWidth={1}
-              gap="$3"
-              items="center"
-              key={value}
-              minH={52}
-              onPress={() => selectTheme(value)}
-              px="$4"
-              rounded="$4"
-            >
-              <SizableText flex={1} fontWeight="600" size="$4">
-                {THEME_LABELS[value]}
-              </SizableText>
-              {themePreference === value ? <ThemedIcon icon={Check} /> : null}
-            </XStack>
-          ))}
-        </Sheet.Frame>
-      </Sheet>
+      <XGUIPicker
+        columns={[THEME_OPTIONS]}
+        onChange={([value]) => {
+          if (value) setPendingTheme(value)
+        }}
+        onConfirm={([value]) => {
+          if (value) handleThemeConfirm(value)
+        }}
+        onOpenChange={setThemePickerOpen}
+        open={themePickerOpen}
+        title="外观主题"
+        value={[pendingTheme]}
+      />
+
+      <XGUIActionSheet
+        actions={[
+          {
+            destructive: true,
+            label: "退出登录",
+            onPress: () => void handleLogout(),
+          },
+        ]}
+        description="确定要退出当前账号吗？"
+        onOpenChange={setLogoutSheetOpen}
+        open={logoutSheetOpen}
+        title="退出登录"
+      />
+
+      <XGUIActionSheet
+        actions={[
+          {
+            label: "更新",
+            onBeforePress: () => {
+              updateConfirmedRef.current = true
+            },
+            onPress: startAvailableUpdate,
+          },
+        ]}
+        description={
+          appUpdate.release
+            ? `当前版本 ${appUpdate.installedVersion.version}，最新版本 ${appUpdate.release.version}`
+            : undefined
+        }
+        onOpenChange={(open) => {
+          if (!open && appUpdate.status === "available") {
+            if (updateConfirmedRef.current) updateConfirmedRef.current = false
+            else appUpdate.cancelUpdate()
+          }
+        }}
+        open={appUpdate.status === "available"}
+        title="发现新版本，是否更新？"
+      />
 
       <AppUpdateDialog
         onCancel={appUpdate.cancelUpdate}
@@ -274,99 +310,5 @@ export function MeScreen() {
         status={appUpdate.status}
       />
     </>
-  )
-}
-
-function SettingsSection({ children, title }: { children: ReactNode; title: string }) {
-  return (
-    <YStack gap="$2">
-      <SizableText color="$gray10" fontWeight="600" px="$4" size="$2">
-        {title}
-      </SizableText>
-      <Card bg="$background" overflow="hidden" rounded={0}>
-        {children}
-      </Card>
-    </YStack>
-  )
-}
-
-function SettingsRow({
-  danger = false,
-  detail,
-  icon,
-  last = false,
-  onPress,
-  testID,
-  title,
-  trailing,
-  value,
-}: {
-  danger?: boolean
-  detail?: string
-  icon: LucideIcon
-  last?: boolean
-  onPress?: () => void
-  testID?: string
-  title: string
-  trailing?: ReactNode
-  value?: string
-}) {
-  return (
-    <XStack
-      accessibilityLabel={title}
-      accessibilityRole={onPress ? "button" : "text"}
-      bg="$background"
-      gap="$3"
-      items="center"
-      minH={68}
-      onPress={onPress}
-      opacity={onPress === undefined && trailing ? 0.7 : 1}
-      pressStyle={onPress ? { background: "$backgroundPress" } : undefined}
-      px="$4"
-      testID={testID}
-    >
-      <YStack
-        bg={danger ? "$red3" : "$color3"}
-        height={38}
-        items="center"
-        justify="center"
-        rounded={999}
-        theme={danger ? "red" : undefined}
-        width={38}
-      >
-        <ThemedIcon icon={icon} size={19} />
-      </YStack>
-      <YStack
-        borderBottomColor="$borderColor"
-        borderBottomWidth={last ? 0 : 1}
-        flex={1}
-        justify="center"
-        minH={68}
-        py="$2"
-      >
-        <XStack gap="$2" items="center">
-          <SizableText
-            color={danger ? "$red10" : "$color"}
-            flex={1}
-            fontWeight="600"
-            size="$3"
-          >
-            {title}
-          </SizableText>
-          {value ? (
-            <SizableText color="$gray10" maxW="45%" numberOfLines={1} size="$3">
-              {value}
-            </SizableText>
-          ) : null}
-          {trailing}
-          {onPress ? <ThemedIcon icon={ChevronRight} size={18} /> : null}
-        </XStack>
-        {detail ? (
-          <Paragraph color="$gray9" mt="$1" numberOfLines={1} size="$2">
-            {detail}
-          </Paragraph>
-        ) : null}
-      </YStack>
-    </XStack>
   )
 }

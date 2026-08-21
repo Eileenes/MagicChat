@@ -10,14 +10,18 @@ import {
 import { collectMessageResources } from "../src/domain/messages/message-presenter.ts"
 import { getVoiceRecordingFormat } from "../src/domain/audio/voice-recording-format.ts"
 
-test("uses WebM/Opus on Android and M4A/AAC on iOS", () => {
+test("uses M4A/AAC natively and WebM/Opus on web", () => {
   assert.deepEqual(getVoiceRecordingFormat("android"), {
-    extension: ".webm",
-    mimeType: "audio/webm",
+    extension: ".m4a",
+    mimeType: "audio/mp4",
   })
   assert.deepEqual(getVoiceRecordingFormat("ios"), {
     extension: ".m4a",
     mimeType: "audio/mp4",
+  })
+  assert.deepEqual(getVoiceRecordingFormat("web"), {
+    extension: ".webm",
+    mimeType: "audio/webm",
   })
 })
 

@@ -5,7 +5,6 @@ import {
   PixelRatio,
   Platform,
   Pressable,
-  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -13,12 +12,12 @@ import {
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { SizableText, useTheme } from "tamagui"
+import { SizableText } from "tamagui"
 
 import { ContentState } from "@/components/feedback/content-state"
 import { InlineError } from "@/components/feedback/inline-error"
 import { ListItemContent } from "@/components/lists/list-item-content"
+import { ElasticOverscroll } from "@/components/layout/elastic-overscroll"
 import type { ServerTarget } from "@/core/server-target"
 import { isBuiltinAssistantConversation } from "@/domain/conversations/conversation-order"
 import { ConversationAvatar } from "@/features/messages/conversation-avatar"
@@ -29,17 +28,16 @@ import {
 import { ConversationPreferenceIndicators } from "@/features/messages/conversation-preference-indicators"
 import {
   XGUIFilledSearchBar,
-  XGUI_TABBAR_CONTENT_HEIGHT,
+  XGUIListCountFooter,
   useXGUITheme,
 } from "@/xgui"
 
 const PARENT_ROW_HEIGHT = PixelRatio.roundToNearestPixel(64)
-const NESTED_ROW_HEIGHT = PixelRatio.roundToNearestPixel(60)
+const NESTED_ROW_HEIGHT = PixelRatio.roundToNearestPixel(52)
 
 export function ConversationList({
   errorMessage,
   hasKeyword,
-  isRefreshing,
   items,
   onConversationDelete,
   onConversationLongPress,
@@ -47,14 +45,12 @@ export function ConversationList({
   onConversationPinnedChange,
   onConversationPress,
   onConversationPressIn,
-  onRefresh,
   onSearchPress,
   scrollToUnreadRequest = 0,
   server,
 }: {
   errorMessage?: string
   hasKeyword: boolean
-  isRefreshing: boolean
   items: ConversationListItemModel[]
   onConversationDelete: (item: ConversationListItemModel) => void
   onConversationLongPress: (item: ConversationListItemModel) => void
@@ -68,14 +64,10 @@ export function ConversationList({
   ) => void
   onConversationPress: (conversationId: string) => void
   onConversationPressIn: (conversationId: string) => void
-  onRefresh: () => void
   onSearchPress: () => void
   scrollToUnreadRequest?: number
   server: ServerTarget
 }) {
-  const insets = useSafeAreaInsets()
-  const theme = useTheme()
-  const bottomContentInset = XGUI_TABBAR_CONTENT_HEIGHT + insets.bottom + 16
   const listRef = useRef<FlatList<ConversationListItemModel>>(null)
   const openSwipeableRef = useRef<SwipeableMethods | null>(null)
   const latestUnreadIndex = findLatestUnreadConversationIndex(items)
@@ -93,18 +85,28 @@ export function ConversationList({
   }, [latestUnreadIndex, scrollToUnreadRequest])
 
   return (
-    <FlatList
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: bottomContentInset },
-        items.length === 0 && styles.emptyContent,
-      ]}
+    <ElasticOverscroll>
+      {(elasticBindings) => <FlatList
+      {...elasticBindings}
+      alwaysBounceVertical
+      bounces
+      overScrollMode={Platform.OS === "android" ? "never" : "always"}
+      contentContainerStyle={
+        items.length === 0
+          ? [styles.content, styles.emptyContent]
+          : styles.content
+      }
       data={items}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       keyExtractor={(item) => item.conversation.id}
       ListEmptyComponent={
         <ContentState message={hasKeyword ? "没有匹配的会话" : "暂无会话"} />
+      }
+      ListFooterComponent={
+        items.length > 0 ? (
+          <XGUIListCountFooter count={items.length} noun="对话" />
+        ) : null
       }
       ListHeaderComponent={
         <View>
@@ -131,18 +133,10 @@ export function ConversationList({
         }, 50)
       }}
       ref={listRef}
-      refreshControl={
-        <RefreshControl
-          colors={[String(theme.color10.val)]}
-          onRefresh={onRefresh}
-          refreshing={isRefreshing}
-          tintColor={String(theme.color10.val)}
-        />
-      }
-      renderItem={({ index, item }) => (
+      renderItem={({ item }) => (
         <ConversationListItem
           item={item}
-          last={index === items.length - 1}
+          last={false}
           onDelete={() => onConversationDelete(item)}
           onLongPress={() => onConversationLongPress(item)}
           onMutedChange={(muted) => onConversationMutedChange(item, muted)}
@@ -171,7 +165,8 @@ export function ConversationList({
       )}
       showsVerticalScrollIndicator={false}
       style={styles.list}
-    />
+    />}
+    </ElasticOverscroll>
   )
 }
 
@@ -242,7 +237,7 @@ function ConversationListItem({
         },
       ]}
     >
-      <View style={[styles.avatar, item.nested && styles.nestedAvatar]}>
+      <View style={styles.avatar}>
         <ConversationAvatar
           conversation={conversation}
           server={server}
@@ -252,14 +247,16 @@ function ConversationListItem({
       </View>
       <View style={styles.rowContent}>
         <ListItemContent
+          compact={item.nested}
           meta={item.lastMessageTime}
           subtitle={item.description}
           subtitleLeading={
             item.unreadAlertLabel ? (
               <SizableText
                 color={colors.destructive}
+                fontSize={item.nested ? 12 : 14}
                 fontWeight="600"
-                size="$2"
+                lineHeight={item.nested ? 17 : 20}
               >
                 {item.unreadAlertLabel}
               </SizableText>
@@ -276,7 +273,6 @@ function ConversationListItem({
           pointerEvents="none"
           style={[
             styles.separator,
-            item.nested && styles.nestedSeparator,
             { backgroundColor: colors.separator },
           ]}
         />
@@ -419,11 +415,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   avatar: {
+    alignItems: "center",
     marginRight: 10,
+    width: 44,
   },
   content: {
     flexGrow: 1,
-    paddingBottom: 16,
   },
   emptyContent: {
     justifyContent: "center",
@@ -431,15 +428,9 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
   },
-  nestedAvatar: {
-    marginLeft: 28,
-  },
   nestedRow: {
     height: NESTED_ROW_HEIGHT,
-    paddingVertical: 8,
-  },
-  nestedSeparator: {
-    left: 72,
+    paddingVertical: 4,
   },
   parentRow: {
     height: PARENT_ROW_HEIGHT,

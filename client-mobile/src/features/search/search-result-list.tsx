@@ -1,8 +1,7 @@
-import { FlatList, StyleSheet } from "react-native"
-import { ListItem } from "tamagui"
+import { useMemo } from "react"
+import { SectionList, StyleSheet, Text, View } from "react-native"
 
 import { ContentState } from "@/components/feedback/content-state"
-import { ListItemContent } from "@/components/lists/list-item-content"
 import type {
   ClientUser,
   ContactApp,
@@ -15,6 +14,12 @@ import { ContactDirectoryAvatar } from "@/features/contacts/contact-directory-av
 import { ConversationAvatar } from "@/features/messages/conversation-avatar"
 import { ProjectAvatar } from "@/features/projects/project-avatar"
 import type { GlobalSearchResult } from "@/features/search/search-model"
+import { XGUIListItem, useXGUITheme } from "@/xgui"
+
+type SearchResultSection = {
+  data: GlobalSearchResult[]
+  title: string
+}
 
 export function SearchResultList({
   currentUser,
@@ -27,26 +32,59 @@ export function SearchResultList({
   results: GlobalSearchResult[]
   server: ServerTarget
 }) {
+  const { colors } = useXGUITheme()
+  const sections = useMemo<SearchResultSection[]>(
+    () =>
+      [
+        {
+          data: results.filter((result) => result.type === "conversation"),
+          title: "会话",
+        },
+        {
+          data: results.filter((result) => result.type === "contact"),
+          title: "联系人",
+        },
+        {
+          data: results.filter((result) => result.type === "project"),
+          title: "项目",
+        },
+      ].filter((section) => section.data.length > 0),
+    [results]
+  )
+
   return (
-    <FlatList
+    <SectionList<GlobalSearchResult, SearchResultSection>
       contentContainerStyle={
         results.length === 0
           ? [styles.content, styles.emptyContent]
           : styles.content
       }
-      data={results}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       keyExtractor={(result) => result.key}
       ListEmptyComponent={<ContentState message="没有匹配的结果" />}
-      renderItem={({ item }) => (
+      renderSectionHeader={({ section }) => (
+        <View
+          style={[
+            styles.sectionHeader,
+            { backgroundColor: colors.background0 },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+            {section.title}
+          </Text>
+        </View>
+      )}
+      renderItem={({ index, item }) => (
         <SearchResultItem
           currentUser={currentUser}
           onPress={() => onResultPress(item)}
           result={item}
+          separator={index > 0}
           server={server}
         />
       )}
+      sections={sections}
       showsVerticalScrollIndicator={false}
       style={styles.list}
     />
@@ -57,20 +95,22 @@ function SearchResultItem({
   currentUser,
   onPress,
   result,
+  separator,
   server,
 }: {
   currentUser: ClientUser | null
   onPress: () => void
   result: GlobalSearchResult
+  separator: boolean
   server: ServerTarget
 }) {
   if (result.type === "conversation") {
     const { conversation } = result
     return (
-      <ListItem
+      <XGUIListItem
         accessibilityLabel={`打开会话 ${conversation.name}`}
-        bg="transparent"
-        icon={
+        description={getConversationSubtitle(conversation)}
+        leading={
           <ConversationAvatar
             conversation={conversation}
             server={server}
@@ -78,13 +118,8 @@ function SearchResultItem({
           />
         }
         onPress={onPress}
-        size="$4"
-        title={
-          <ListItemContent
-            subtitle={getConversationSubtitle(conversation)}
-            title={conversation.name}
-          />
-        }
+        separator={separator}
+        title={conversation.name}
       />
     )
   }
@@ -95,10 +130,10 @@ function SearchResultItem({
       contact.type === "user" ? getContactDisplayName(contact) : contact.name
 
     return (
-      <ListItem
+      <XGUIListItem
         accessibilityLabel={`查看${getContactTypeLabel(contact.type)} ${displayName}`}
-        bg="transparent"
-        icon={
+        description={getContactSubtitle(contact)}
+        leading={
           <ContactDirectoryAvatar
             avatar={contact.avatar}
             members={contact.type === "group" ? contact.avatarMembers : undefined}
@@ -109,35 +144,25 @@ function SearchResultItem({
           />
         }
         onPress={onPress}
-        size="$4"
-        title={
-          <ListItemContent
-            subtitle={getContactSubtitle(contact)}
-            title={displayName}
-          />
-        }
+        separator={separator}
+        title={displayName}
       />
     )
   }
 
   return (
-    <ListItem
+    <XGUIListItem
       accessibilityLabel={`项目 ${result.project.name}`}
-      bg="transparent"
-      icon={
+      description={`项目 · ${result.project.description.trim() || "暂无说明"}`}
+      leading={
         <ProjectAvatar
           currentUser={currentUser}
           project={result.project}
           server={server}
         />
       }
-      size="$4"
-      title={
-        <ListItemContent
-          subtitle={`项目 · ${result.project.description.trim() || "暂无说明"}`}
-          title={result.project.name}
-        />
-      }
+      separator={separator}
+      title={result.project.name}
     />
   )
 }
@@ -178,5 +203,15 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  sectionHeader: {
+    justifyContent: "center",
+    minHeight: 32,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18,
   },
 })

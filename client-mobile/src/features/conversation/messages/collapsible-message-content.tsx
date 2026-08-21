@@ -2,29 +2,35 @@ import { ChevronDown } from "lucide-react-native"
 import { type ReactNode, useId, useState } from "react"
 import { Pressable, StyleSheet, View } from "react-native"
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg"
-import { SizableText, useTheme, XStack } from "tamagui"
+import { SizableText, XStack } from "tamagui"
 
 import {
   type CollapsibleMessageVariant,
   getCollapsibleMessageLayout,
 } from "@/features/conversation/messages/collapsible-message-layout"
+import { useXGUITheme } from "@/xgui"
 
-const EXPAND_LABEL_HEIGHT = 28
-const FADE_HEIGHT = 52
-const EXPAND_HIT_AREA_HEIGHT = EXPAND_LABEL_HEIGHT + FADE_HEIGHT
+const EXPAND_LABEL_HEIGHT = 24
+const EXPAND_LABEL_BOTTOM_OFFSET = 8
+const FADE_CONTENT_OVERLAP_HEIGHT = 56
+const FADE_LAYER_HEIGHT =
+  FADE_CONTENT_OVERLAP_HEIGHT +
+  EXPAND_LABEL_HEIGHT +
+  EXPAND_LABEL_BOTTOM_OFFSET
+const BUBBLE_HORIZONTAL_PADDING = 12
+const EXPAND_HIT_AREA_HEIGHT = FADE_LAYER_HEIGHT
+const FADE_END_OFFSET = FADE_CONTENT_OVERLAP_HEIGHT / FADE_LAYER_HEIGHT
 
 export function CollapsibleMessageContent({
-  bubblePressed,
   children,
   tone,
   variant,
 }: {
-  bubblePressed: boolean
   children: ReactNode
   tone: "mine" | "other"
   variant: CollapsibleMessageVariant
 }) {
-  const theme = useTheme()
+  const { colors } = useXGUITheme()
   const gradientId = useId().replace(/[^a-zA-Z0-9_-]/g, "")
   const [contentHeight, setContentHeight] = useState<number | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -35,16 +41,8 @@ export function CollapsibleMessageContent({
   })
   const viewportStyle =
     viewportHeight === null ? undefined : { height: viewportHeight }
-  const fadeColor = String(
-    tone === "mine"
-      ? bubblePressed
-        ? theme.color5.val
-        : theme.color4.val
-      : bubblePressed
-        ? theme.color2.val
-        : theme.color1.val
-  )
-  const actionColor = String(theme.color10.val)
+  const fadeColor = tone === "mine" ? colors.brand1 : colors.background2
+  const actionColor = colors.textPrimary
 
   return (
     <View
@@ -72,11 +70,12 @@ export function CollapsibleMessageContent({
           accessibilityLabel="展开"
           accessibilityRole="button"
           accessibilityState={{ expanded: false }}
+          hitSlop={8}
           onPress={() => setExpanded(true)}
           style={styles.expandHitArea}
         >
           <Svg
-            height={FADE_HEIGHT}
+            height={FADE_LAYER_HEIGHT}
             pointerEvents="none"
             style={styles.fade}
             width="100%"
@@ -90,27 +89,38 @@ export function CollapsibleMessageContent({
                 y2="100%"
               >
                 <Stop offset="0" stopColor={fadeColor} stopOpacity={0} />
-                <Stop offset="1" stopColor={fadeColor} stopOpacity={1} />
+                <Stop
+                  offset={FADE_END_OFFSET}
+                  stopColor={fadeColor}
+                  stopOpacity={1}
+                />
+                <Stop offset="100%" stopColor={fadeColor} stopOpacity={1} />
               </LinearGradient>
             </Defs>
             <Rect
               fill={`url(#${gradientId})`}
-              height={FADE_HEIGHT}
+              height={FADE_LAYER_HEIGHT}
               width="100%"
               x={0}
               y={0}
             />
           </Svg>
           <XStack
+            b={EXPAND_LABEL_BOTTOM_OFFSET}
             height={EXPAND_LABEL_HEIGHT}
             gap="$1"
             items="center"
             justify="center"
             pointerEvents="none"
+            position="absolute"
             width="100%"
           >
-            <ChevronDown color={actionColor} size={15} />
-            <SizableText color="$color10" fontWeight="600" size="$2">
+            <ChevronDown color={actionColor} size={14} />
+            <SizableText
+              color={colors.textPrimary}
+              lineHeight={18}
+              size="$3"
+            >
               展开
             </SizableText>
           </XStack>
@@ -127,7 +137,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   containerCollapsed: {
-    paddingBottom: EXPAND_LABEL_HEIGHT,
+    marginBottom: -8,
   },
   content: {
     maxWidth: "100%",
@@ -143,9 +153,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: EXPAND_HIT_AREA_HEIGHT,
     justifyContent: "flex-end",
-    left: 0,
+    left: -BUBBLE_HORIZONTAL_PADDING,
     position: "absolute",
-    right: 0,
+    right: -BUBBLE_HORIZONTAL_PADDING,
     zIndex: 1,
   },
   fade: {

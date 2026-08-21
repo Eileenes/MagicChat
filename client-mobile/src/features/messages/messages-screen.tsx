@@ -11,7 +11,10 @@ import {
 } from "@/data/conversations/conversation-hooks"
 import type { ClientConversation } from "@/core/models"
 import { hydrateConversationMessagesQuery } from "@/data/messages"
-import { useAuthenticatedSession } from "@/providers/auth-provider"
+import {
+  useAuth,
+  useAuthenticatedSession,
+} from "@/providers/auth-provider"
 import {
   ConversationActionSheet,
   type ConversationAction,
@@ -36,6 +39,7 @@ export function MessagesScreen() {
   const { colors } = useXGUITheme()
   const toast = useXGUIToast()
   const router = useRouter()
+  const { invalidateSession } = useAuth()
   const queryClient = useQueryClient()
   const session = useAuthenticatedSession()
   const pinMutation = useSetConversationPinned(session)
@@ -83,9 +87,7 @@ export function MessagesScreen() {
     currentUser,
     currentUserError,
     isBootstrapRefreshing,
-    isConversationsRefreshing,
     refreshBootstrap,
-    refreshConversations,
   } = useClientData()
   const bootstrapError =
     currentUserError ?? contactsError ?? conversationsError
@@ -125,10 +127,6 @@ export function MessagesScreen() {
     }
   }, [items, prepareConversationMessages])
 
-  function handleRefresh() {
-    void refreshConversations().catch(() => undefined)
-  }
-
   function handleConversationPress(conversationId: string) {
     void prepareConversationMessages(conversationId)
     router.push(buildConversationHref(conversationId))
@@ -143,6 +141,28 @@ export function MessagesScreen() {
 
     setActionItem(item)
     setActionSheetOpen(true)
+  }
+
+  async function handleNetworkRetry() {
+    if (isBootstrapRefreshing) return
+    toast.show({
+      duration: 0,
+      message: "正在刷新",
+      type: "loading",
+    })
+    try {
+      await refreshBootstrap()
+    } catch {
+      // The persisted query error reopens the network failure dialog.
+    } finally {
+      toast.hide()
+    }
+  }
+
+  async function handleNetworkRelogin() {
+    toast.hide()
+    await invalidateSession()
+    router.replace("/login")
   }
 
   function handleActionSheetAnimationComplete(open: boolean) {
@@ -241,7 +261,6 @@ export function MessagesScreen() {
       >
         <ConversationList
           hasKeyword={false}
-          isRefreshing={isConversationsRefreshing}
           items={items}
           onConversationDelete={handleRequestDismiss}
           onConversationLongPress={handleConversationLongPress}
@@ -253,7 +272,6 @@ export function MessagesScreen() {
           }
           onConversationPress={handleConversationPress}
           onConversationPressIn={handleConversationPressIn}
-          onRefresh={handleRefresh}
           onSearchPress={() => router.push("/search")}
           scrollToUnreadRequest={scrollToUnreadRequest}
           server={session}
@@ -287,9 +305,9 @@ export function MessagesScreen() {
       />
 
       <NetworkFailureDialog
-        onRetry={() => void refreshBootstrap().catch(() => undefined)}
-        open={networkFailure}
-        retrying={isBootstrapRefreshing}
+        onRelogin={() => void handleNetworkRelogin()}
+        onRetry={() => void handleNetworkRetry()}
+        open={networkFailure && !isBootstrapRefreshing}
       />
 
       <DismissConversationActionSheet

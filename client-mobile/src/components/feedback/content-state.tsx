@@ -1,21 +1,23 @@
-import type { ReactNode } from "react"
+import type { ComponentProps, ReactNode } from "react"
 import { Paragraph, Spinner, Theme, XStack, YStack } from "tamagui"
 
 export function ContentState({
   children,
   loading = false,
   message,
+  messageColor,
   tone = "default",
 }: {
   children?: ReactNode
   loading?: boolean
   message: string
+  messageColor?: ComponentProps<typeof Paragraph>["color"]
   tone?: "default" | "error"
 }) {
   const content = (
     <XStack gap="$2" items="center" justify="center">
       {loading ? <Spinner size="small" /> : null}
-      <Paragraph color="$color10" text="center">
+      <Paragraph color={messageColor ?? "$color10"} text="center">
         {message}
       </Paragraph>
     </XStack>

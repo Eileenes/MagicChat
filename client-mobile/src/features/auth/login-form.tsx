@@ -117,6 +117,8 @@ export function LoginForm({
     emailCodeLoginMutation.isPending ||
     requestEmailCodeMutation.isPending
   const isFormUnavailable = isCredentialsLoading || isPending
+  const areInputsUnavailable =
+    isCredentialsLoading || requestEmailCodeMutation.isPending
   const canSignIn =
     !isCredentialsLoading &&
     account.trim().length > 0 &&
@@ -230,6 +232,7 @@ export function LoginForm({
         serverKey,
       })
       toast.show({
+        duration: 1_000,
         message: "验证码已发送",
         type: "success",
       })
@@ -308,7 +311,7 @@ export function LoginForm({
                     autoCapitalize="none"
                     autoComplete="email"
                     autoCorrect={false}
-                    disabled={isFormUnavailable}
+                    disabled={areInputsUnavailable}
                     id={ACCOUNT_INPUT_ID}
                     keyboardType="email-address"
                     label="邮箱"
@@ -325,7 +328,7 @@ export function LoginForm({
                     accessibilityLabel="邮箱验证码"
                     autoCapitalize="none"
                     autoComplete="one-time-code"
-                    disabled={isFormUnavailable}
+                    disabled={areInputsUnavailable}
                     id={EMAIL_CODE_INPUT_ID}
                     keyboardType="number-pad"
                     label="验证码"
@@ -393,7 +396,7 @@ export function LoginForm({
                     autoCapitalize="none"
                     autoComplete="email"
                     autoCorrect={false}
-                    disabled={isFormUnavailable}
+                    disabled={areInputsUnavailable}
                     id={ACCOUNT_INPUT_ID}
                     keyboardType="email-address"
                     label="账号"
@@ -410,7 +413,7 @@ export function LoginForm({
                     accessibilityLabel="密码"
                     autoCapitalize="none"
                     autoComplete="password"
-                    disabled={isFormUnavailable}
+                    disabled={areInputsUnavailable}
                     id={PASSWORD_INPUT_ID}
                     label="密码"
                     onChangeText={handlePasswordChange}

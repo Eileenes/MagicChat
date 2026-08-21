@@ -31,6 +31,12 @@ test("XGUI 完整提供 WeUI 2.6.26 的 Light 和 Dark 背景色", () => {
 test("XGUI 按钮普通态和按下遮罩使用 WeUI 2.6.26", () => {
   assert.equal(xguiColors.light.brand, "#07C160")
   assert.equal(xguiColors.dark.brand, "#07C160")
+  assert.equal(xguiColors.light.brand1, "#B4ECCE")
+  assert.equal(xguiColors.dark.brand1, "#023A1C")
+  assert.equal(xguiColors.light.brand2, "#38CD7F")
+  assert.equal(xguiColors.dark.brand2, "#059A4C")
+  assert.equal(xguiColors.light.brand5, "#059A4C")
+  assert.equal(xguiColors.dark.brand5, "#38CD7F")
   assert.equal(xguiColors.light.indigo, "#1485EE")
   assert.equal(xguiColors.dark.indigo, "#1196FF")
   assert.equal(xguiColors.light.destructive, "#FA5151")
@@ -41,7 +47,20 @@ test("XGUI 按钮普通态和按下遮罩使用 WeUI 2.6.26", () => {
   assert.equal(xguiColors.dark.activeMask, "rgba(255,255,255,0.2)")
 })
 
+test("XGUI 提供通讯录入口使用的 WeUI 强调色", () => {
+  assert.equal(xguiColors.light.yellow, "#FFC300")
+  assert.equal(xguiColors.dark.yellow, "#CC9C00")
+  assert.equal(xguiColors.light.indigo, "#1485EE")
+  assert.equal(xguiColors.dark.indigo, "#1196FF")
+  assert.equal(xguiColors.light.brand, "#07C160")
+  assert.equal(xguiColors.dark.brand, "#07C160")
+  assert.equal(xguiColors.light.blue, "#10AEFF")
+  assert.equal(xguiColors.dark.blue, "#10AEFF")
+})
+
 test("XGUI 按钮禁用态使用 WeUI 2.6.26 的 FG-4 和 FG-5", () => {
+  assert.equal(xguiColors.light.foreground0Half, "rgba(0,0,0,0.9)")
+  assert.equal(xguiColors.dark.foreground0Half, "rgba(255,255,255,0.6)")
   assert.equal(xguiColors.light.foreground4, "rgba(0,0,0,0.15)")
   assert.equal(xguiColors.light.foreground5, "rgba(0,0,0,0.05)")
   assert.equal(xguiColors.dark.foreground4, "rgba(255,255,255,0.15)")

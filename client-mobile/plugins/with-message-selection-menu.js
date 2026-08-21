@@ -40,6 +40,7 @@ const activityMembers = `
   ) : ActionMode.Callback2() {
     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
       val context = findMessageSelectionContext(textView) ?: return false
+      textView.onTextContextMenuItem(android.R.id.selectAll)
       configureMessageSelectionMenu(menu, context.canRevoke)
       return true
     }
@@ -51,10 +52,6 @@ const activityMembers = `
     }
 
     override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-      if (item.itemId == android.R.id.selectAll) {
-        return textView.onTextContextMenuItem(item.itemId)
-      }
-
       val context = findMessageSelectionContext(textView) ?: return false
       val action = when (item.itemId) {
         android.R.id.copy -> "copy"
@@ -76,11 +73,10 @@ const activityMembers = `
   private fun configureMessageSelectionMenu(menu: Menu, canRevoke: Boolean) {
     menu.clear()
     addMessageSelectionMenuItem(menu, android.R.id.copy, 0, R.string.message_action_copy)
-    addMessageSelectionMenuItem(menu, android.R.id.selectAll, 1, R.string.message_action_select_all)
-    addMessageSelectionMenuItem(menu, MESSAGE_ACTION_REPLY, 2, R.string.message_action_reply)
-    addMessageSelectionMenuItem(menu, MESSAGE_ACTION_FORWARD, 3, R.string.message_action_forward)
+    addMessageSelectionMenuItem(menu, MESSAGE_ACTION_REPLY, 1, R.string.message_action_reply)
+    addMessageSelectionMenuItem(menu, MESSAGE_ACTION_FORWARD, 2, R.string.message_action_forward)
     if (canRevoke) {
-      addMessageSelectionMenuItem(menu, MESSAGE_ACTION_REVOKE, 4, R.string.message_action_revoke)
+      addMessageSelectionMenuItem(menu, MESSAGE_ACTION_REVOKE, 3, R.string.message_action_revoke)
     }
   }
 
@@ -133,16 +129,16 @@ const activityMembers = `
       return null
     }
     val value = nativeId.removePrefix(MESSAGE_NATIVE_ID_PREFIX)
-    val separator = value.indexOf(':')
-    if (separator <= 0 || separator == value.lastIndex) return null
+    val parts = value.split(':', limit = 3)
+    if (parts.size != 3 || parts[2].isEmpty()) return null
 
-    val canRevoke = when (value.substring(0, separator)) {
+    val canRevoke = when (parts[0]) {
       "1" -> true
       "0" -> false
       else -> return null
     }
-    val messageId = value.substring(separator + 1)
-    return MessageSelectionContext(canRevoke, messageId)
+    if (parts[1] != "0" && parts[1] != "1") return null
+    return MessageSelectionContext(canRevoke, parts[2])
   }
 
   private data class MessageSelectionContext(
@@ -163,7 +159,6 @@ const messageActionStrings = {
   message_action_forward: "转发",
   message_action_reply: "回复",
   message_action_revoke: "撤回",
-  message_action_select_all: "全选",
 }
 
 const iosSource = `#import <UIKit/UIKit.h>
@@ -192,21 +187,31 @@ static NSDictionary<NSString *, id> *MagicChatMessageContextForView(UIView *view
     }
 
     NSString *value = [nativeId substringFromIndex:MagicChatMessageNativeIDPrefix.length];
-    NSRange separator = [value rangeOfString:@":"];
-    if (separator.location == NSNotFound ||
-        separator.location == 0 ||
-        NSMaxRange(separator) >= value.length) {
+    NSRange firstSeparator = [value rangeOfString:@":"];
+    if (firstSeparator.location == NSNotFound || firstSeparator.location == 0) {
+      return nil;
+    }
+    NSRange remainder = NSMakeRange(
+        NSMaxRange(firstSeparator), value.length - NSMaxRange(firstSeparator));
+    NSRange secondSeparator = [value rangeOfString:@":" options:0 range:remainder];
+    if (secondSeparator.location == NSNotFound ||
+        secondSeparator.location == NSMaxRange(firstSeparator) ||
+        NSMaxRange(secondSeparator) >= value.length) {
       return nil;
     }
 
-    NSString *flag = [value substringToIndex:separator.location];
-    if (![flag isEqualToString:@"0"] && ![flag isEqualToString:@"1"]) {
+    NSString *revokeFlag = [value substringToIndex:firstSeparator.location];
+    NSString *topicFlag = [value substringWithRange:NSMakeRange(
+        NSMaxRange(firstSeparator),
+        secondSeparator.location - NSMaxRange(firstSeparator))];
+    if ((![revokeFlag isEqualToString:@"0"] && ![revokeFlag isEqualToString:@"1"]) ||
+        (![topicFlag isEqualToString:@"0"] && ![topicFlag isEqualToString:@"1"])) {
       return nil;
     }
 
     return @{
-      @"canRevoke": @([flag isEqualToString:@"1"]),
-      @"messageId": [value substringFromIndex:NSMaxRange(separator)],
+      @"canRevoke": @([revokeFlag isEqualToString:@"1"]),
+      @"messageId": [value substringFromIndex:NSMaxRange(secondSeparator)],
     };
   }
   return nil;

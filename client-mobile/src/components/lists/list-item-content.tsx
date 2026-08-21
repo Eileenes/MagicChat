@@ -4,12 +4,14 @@ import { SizableText, XStack, YStack } from "tamagui"
 import { useXGUITheme } from "@/xgui"
 
 export function ListItemContent({
+  compact = false,
   meta,
   subtitle,
   subtitleLeading,
   subtitleTrailing,
   title,
 }: {
+  compact?: boolean
   meta?: string
   subtitle: string
   subtitleLeading?: ReactNode
@@ -19,13 +21,19 @@ export function ListItemContent({
   const { colors } = useXGUITheme()
 
   return (
-    <YStack height="$4" justify="center" minW={0} pl="$1.5" width="100%">
+    <YStack
+      height={compact ? 42 : "$4"}
+      justify="center"
+      minW={0}
+      pl="$1.5"
+      width="100%"
+    >
       <XStack gap="$2" items="center" maxW="100%">
         <SizableText
-          color={colors.textPrimary}
+          color={compact ? colors.textSecondary : colors.textPrimary}
           flex={1}
-          fontSize={18}
-          lineHeight={24}
+          fontSize={compact ? 12 : 18}
+          lineHeight={compact ? 17 : 24}
           numberOfLines={1}
         >
           {title}
@@ -41,13 +49,13 @@ export function ListItemContent({
         ) : null}
       </XStack>
 
-      <XStack gap="$1" items="center" maxW="100%" pt={4}>
+      <XStack gap="$1" items="center" maxW="100%" pt={compact ? 2 : 4}>
         {subtitleLeading}
         <SizableText
           color={colors.textPlaceholder}
           flex={1}
-          fontSize={14}
-          lineHeight={20}
+          fontSize={compact ? 12 : 14}
+          lineHeight={compact ? 17 : 20}
           numberOfLines={1}
         >
           {subtitle}

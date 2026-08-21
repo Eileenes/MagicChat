@@ -10,12 +10,10 @@ import {
   Paragraph,
   SizableText,
   Spinner,
-  useToastController,
   XStack,
   YStack,
 } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import { ThemedIcon } from "@/components/icons/themed-icon"
 import type { ResourceLoadState } from "@/data/resources"
 import { formatVoiceDuration } from "@/domain/messages/message-presenter"
@@ -23,10 +21,12 @@ import {
   activateVoicePlayer,
   deactivateVoicePlayer,
 } from "@/features/conversation/voice/voice-message-player-state"
+import { useXGUITheme, useXGUIToast } from "@/xgui"
 
 export function VoiceMessagePlayer({
   durationMS,
   fileId,
+  onLongPress,
   onResourceError,
   onResourceRequest,
   state,
@@ -34,16 +34,19 @@ export function VoiceMessagePlayer({
 }: {
   durationMS: number
   fileId: string
+  onLongPress: () => void
   onResourceError: (fileId: string) => void
   onResourceRequest: (fileId: string) => void
   state: ResourceLoadState | undefined
   transcript: string
 }) {
-  const toast = useToastController()
+  const { colors } = useXGUITheme()
+  const toast = useXGUIToast()
   const resourceUri = state?.resource?.uri ?? ""
   const player = useAudioPlayer(resourceUri || null, { updateInterval: 100 })
   const playerStatus = useAudioPlayerStatus(player)
   const playerId = player.id
+  const didLongPressRef = useRef(false)
   const playWhenReadyRef = useRef(false)
   const retriedResourceRef = useRef(false)
   const shownPlaybackErrorRef = useRef("")
@@ -70,11 +73,7 @@ export function VoiceMessagePlayer({
       player.play()
     } catch (error: unknown) {
       deactivateVoicePlayer(player.id)
-      toast.show("无法播放语音", {
-        customData: { tone: "error" satisfies AppToastTone },
-        duration: 4000,
-        message: error instanceof Error ? error.message : "请稍后重试",
-      })
+      toast.show({ message: `${"无法播放语音"}：${error instanceof Error ? error.message : "请稍后重试"}`, type: "text", duration: 1_000 })
     }
   }, [player, playerId, playerStatus.didJustFinish, toast])
 
@@ -103,11 +102,7 @@ export function VoiceMessagePlayer({
     if (shownPlaybackErrorRef.current === playbackError) return
 
     shownPlaybackErrorRef.current = playbackError
-    toast.show("无法播放语音", {
-      customData: { tone: "error" satisfies AppToastTone },
-      duration: 4000,
-      message: playbackError,
-    })
+    toast.show({ message: `${"无法播放语音"}：${playbackError}`, type: "text", duration: 1_000 })
   }, [fileId, onResourceError, playerStatus.error, toast])
 
   useEffect(
@@ -118,6 +113,10 @@ export function VoiceMessagePlayer({
   )
 
   function handlePress() {
+    if (didLongPressRef.current) {
+      didLongPressRef.current = false
+      return
+    }
     if (playerStatus.playing) {
       player.pause()
       deactivateVoicePlayer(playerId)
@@ -134,10 +133,21 @@ export function VoiceMessagePlayer({
   }
 
   return (
-    <YStack gap="$2" width="100%">
+    <YStack
+      gap="$2"
+      onLongPress={() => {
+        didLongPressRef.current = true
+        onLongPress()
+      }}
+      width="100%"
+    >
       <XStack gap="$3" items="center">
-        <ThemedIcon icon={AudioLines} size={22} />
-        <SizableText flex={1}>
+        <ThemedIcon
+          color={colors.brand5}
+          icon={AudioLines}
+          size={22}
+        />
+        <SizableText color={colors.brand5} flex={1} size="$4">
           语音 {formatVoiceDuration(durationMS)}
         </SizableText>
         <Button
@@ -147,20 +157,28 @@ export function VoiceMessagePlayer({
           disabled={isLoading}
           icon={
             isLoading ? (
-              <Spinner size="small" />
+              <Spinner color={colors.brand5} size="small" />
             ) : (
               <ThemedIcon
+                color={colors.brand5}
                 icon={playerStatus.playing ? Pause : Play}
                 size={18}
               />
             )
           }
+          onLongPress={() => {
+            didLongPressRef.current = true
+            onLongPress()
+          }}
           onPress={handlePress}
+          onPressIn={() => {
+            didLongPressRef.current = false
+          }}
           size="$3"
         />
       </XStack>
       {transcript ? (
-        <Paragraph color="$color10" size="$2">
+        <Paragraph color={colors.textSecondary} size="$3">
           {transcript}
         </Paragraph>
       ) : null}

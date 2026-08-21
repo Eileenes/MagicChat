@@ -1,9 +1,5 @@
-import { Bot } from "lucide-react-native"
-import { Avatar, SizableText } from "tamagui"
-
+import { AppAvatar } from "@/components/avatar/app-avatar"
 import { GroupAvatar } from "@/components/avatar/group-avatar"
-import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
-import { ThemedIcon } from "@/components/icons/themed-icon"
 import type { ClientConversation } from "@/core/models"
 import type { ServerTarget } from "@/core/server-target"
 
@@ -27,21 +23,6 @@ export function ConversationHeaderAvatar({
   }
 
   return (
-    <Avatar rounded="$2" size="$3">
-      <CachedAvatarImage avatar={conversation.avatar} server={server} />
-      <Avatar.Fallback
-        bg="$backgroundFocus"
-        items="center"
-        justify="center"
-      >
-        {conversation.type === "app" ? (
-          <ThemedIcon icon={Bot} size={16} />
-        ) : (
-          <SizableText fontWeight="600" size="$2">
-            {Array.from(conversation.name.trim())[0]?.toUpperCase() ?? "?"}
-          </SizableText>
-        )}
-      </Avatar.Fallback>
-    </Avatar>
+    <AppAvatar accessibilityLabel={conversation.name} avatar={conversation.avatar} server={server} size="$3" type={conversation.type === "app" ? "app" : "user"} />
   )
 }

@@ -1,14 +1,11 @@
-import { Bot } from "lucide-react-native"
 import { Pressable } from "react-native"
-import { Avatar, SizableText } from "tamagui"
 
+import { AppAvatar } from "@/components/avatar/app-avatar"
 import { GroupAvatar } from "@/components/avatar/group-avatar"
-import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
-import { ThemedIcon } from "@/components/icons/themed-icon"
 import type { ServerTarget } from "@/core/server-target"
 import type { EntityProfile } from "@/domain/entities/entity-profile"
 
-const PROFILE_AVATAR_SIZE = 88
+const PROFILE_AVATAR_SIZE = 72
 
 export function EntityDetailAvatar({
   onPress,
@@ -29,22 +26,7 @@ export function EntityDetailAvatar({
         size={PROFILE_AVATAR_SIZE}
       />
     ) : (
-      <Avatar rounded="$3" size={PROFILE_AVATAR_SIZE}>
-        <CachedAvatarImage avatar={profile.avatar} server={server} />
-        <Avatar.Fallback
-          bg="$backgroundFocus"
-          items="center"
-          justify="center"
-        >
-          {profile.type === "app" ? (
-            <ThemedIcon icon={Bot} size={34} />
-          ) : (
-            <SizableText fontWeight="600" size="$7">
-              {Array.from(profile.displayName.trim())[0]?.toUpperCase() ?? "?"}
-            </SizableText>
-          )}
-        </Avatar.Fallback>
-      </Avatar>
+      <AppAvatar accessibilityLabel={profile.displayName} avatar={profile.avatar} server={server} size={PROFILE_AVATAR_SIZE} type={profile.type} />
     )
 
   if (!onPress) return avatar

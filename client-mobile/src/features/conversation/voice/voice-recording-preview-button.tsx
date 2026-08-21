@@ -5,9 +5,8 @@ import {
 } from "expo-audio"
 import { AudioLines, Pause } from "lucide-react-native"
 import { useCallback, useEffect, useRef } from "react"
-import { Button, Spinner, useToastController } from "tamagui"
+import { Button, Spinner } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import { ThemedIcon } from "@/components/icons/themed-icon"
 import {
   activateVoicePlayer,
@@ -16,12 +15,13 @@ import {
 
 export function VoiceRecordingPreviewButton({
   disabled,
+  onPlaybackError,
   uri,
 }: {
   disabled: boolean
+  onPlaybackError: (message: string) => void
   uri: string
 }) {
-  const toast = useToastController()
   const player = useAudioPlayer(uri, { updateInterval: 100 })
   const status = useAudioPlayerStatus(player)
   const shownErrorRef = useRef("")
@@ -49,12 +49,8 @@ export function VoiceRecordingPreviewButton({
     if (shownErrorRef.current === playbackError) return
 
     shownErrorRef.current = playbackError
-    toast.show("无法播放语音", {
-      customData: { tone: "error" satisfies AppToastTone },
-      duration: 4000,
-      message: playbackError,
-    })
-  }, [status.error, toast])
+    onPlaybackError(playbackError)
+  }, [onPlaybackError, status.error])
 
   useEffect(
     () => () => {
@@ -82,11 +78,9 @@ export function VoiceRecordingPreviewButton({
       player.play()
     } catch (error: unknown) {
       pause()
-      toast.show("无法播放语音", {
-        customData: { tone: "error" satisfies AppToastTone },
-        duration: 4000,
-        message: error instanceof Error ? error.message : "请稍后重试",
-      })
+      onPlaybackError(
+        error instanceof Error ? error.message : "请稍后重试"
+      )
     }
   }
 

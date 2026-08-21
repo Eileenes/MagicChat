@@ -24,10 +24,7 @@ export function AppUpdateDialog({
   status: AppUpdateDialogStatus
 }) {
   const open =
-    Boolean(release) &&
-    (status === "available" ||
-      status === "downloading" ||
-      status === "installing")
+    Boolean(release) && (status === "downloading" || status === "installing")
   const busy = status === "downloading" || status === "installing"
   const percent = Math.round(progress * 100)
 

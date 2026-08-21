@@ -34,6 +34,18 @@ let cacheRoot: Directory | null = null
 let cacheIndexPromise: Promise<CacheIndex> | null = null
 let cachePreparationPromise: Promise<void> | null = null
 let mutationQueue: Promise<void> = Promise.resolve()
+const cacheChangeListeners = new Set<(server: ServerTarget | null) => void>()
+
+export function subscribeResourceCacheCleared(
+  listener: (server: ServerTarget | null) => void
+) {
+  cacheChangeListeners.add(listener)
+  return () => cacheChangeListeners.delete(listener)
+}
+
+function notifyCacheCleared(server: ServerTarget | null) {
+  for (const listener of cacheChangeListeners) listener(server)
+}
 
 export async function getResourceCacheSize(): Promise<number> {
   if (Platform.OS === "web") return 0
@@ -53,6 +65,7 @@ export async function clearResourceCache(): Promise<void> {
     index.entries = {}
     await persistCacheIndex(index)
   })
+  notifyCacheCleared(null)
 }
 
 export async function getCachedResource(
@@ -159,6 +172,7 @@ export async function removeServerResourceCache(server: ServerTarget) {
     }
     await persistCacheIndex(index)
   })
+  notifyCacheCleared(server)
 }
 
 export async function removeCachedResource(

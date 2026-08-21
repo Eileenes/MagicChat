@@ -1,27 +1,23 @@
+import { useMemo } from "react"
 import {
+  FlatList,
+  Pressable,
   RefreshControl,
-  SectionList,
   StyleSheet,
-  type SectionListRenderItemInfo,
+  View,
 } from "react-native"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
-import {
-  ListItem,
-  Spinner,
-  useTheme,
-  YStack,
-} from "tamagui"
+import { Spinner, useTheme, YStack } from "tamagui"
 
-import { AppButton } from "@/components/forms/app-button"
 import { ContentState } from "@/components/feedback/content-state"
 import { InlineError } from "@/components/feedback/inline-error"
+import { AppButton } from "@/components/forms/app-button"
 import { ListItemContent } from "@/components/lists/list-item-content"
 import type { ClientProjectSummary, ClientUser } from "@/core/models"
 import type { ServerTarget } from "@/core/server-target"
 import { formatActivityTime } from "@/domain/time/activity-time"
 import { ProjectAvatar } from "@/features/projects/project-avatar"
 import type { ProjectListSection } from "@/features/projects/project-list-model"
-import { XGUI_TABBAR_CONTENT_HEIGHT } from "@/xgui"
+import { useXGUITheme, useXGUIToast } from "@/xgui"
 
 export function ProjectList({
   currentUser,
@@ -46,27 +42,31 @@ export function ProjectList({
   sections: ProjectListSection[]
   server: ServerTarget
 }) {
-  const insets = useSafeAreaInsets()
   const theme = useTheme()
-  const bottomContentInset = XGUI_TABBAR_CONTENT_HEIGHT + insets.bottom + 16
+  const { colors } = useXGUITheme()
+  const toast = useXGUIToast()
+  const projects = useMemo(
+    () => sections.flatMap((section) => section.data),
+    [sections]
+  )
 
   return (
-    <SectionList<ClientProjectSummary, ProjectListSection>
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: bottomContentInset },
-        sections.length === 0 && styles.emptyContent,
-      ]}
+    <FlatList<ClientProjectSummary>
+      contentContainerStyle={
+        projects.length === 0
+          ? [styles.content, styles.emptyContent]
+          : styles.content
+      }
+      data={projects}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       keyExtractor={(project) => project.id}
       ListEmptyComponent={
         <ContentState message={hasKeyword ? "没有匹配的项目" : "暂无项目"} />
       }
-      ListHeaderComponent={<InlineError message={errorMessage} />}
       ListFooterComponent={
         hasMore && !hasKeyword ? (
-          <YStack p="$4">
+          <YStack bg={colors.background0} p="$4">
             <AppButton
               accessibilityLabel="加载更多项目"
               disabled={isLoadingMore}
@@ -81,6 +81,7 @@ export function ProjectList({
           </YStack>
         ) : null
       }
+      ListHeaderComponent={<InlineError message={errorMessage} />}
       refreshControl={
         <RefreshControl
           colors={[String(theme.color10.val)]}
@@ -89,68 +90,110 @@ export function ProjectList({
           tintColor={String(theme.color10.val)}
         />
       }
-      renderItem={(itemInfo) => (
+      renderItem={({ index, item }) => (
         <ProjectListItem
           currentUser={currentUser}
-          itemInfo={itemInfo}
+          last={index === projects.length - 1}
+          onPress={() => {
+            toast.show({
+              duration: 1_000,
+              message: "暂不支持查看",
+              type: "text",
+            })
+          }}
+          project={item}
           server={server}
         />
       )}
-      sections={sections}
       showsVerticalScrollIndicator={false}
-      stickySectionHeadersEnabled={false}
-      style={styles.list}
+      style={[styles.list, { backgroundColor: colors.background0 }]}
     />
   )
 }
 
 function ProjectListItem({
   currentUser,
-  itemInfo,
+  last,
+  onPress,
+  project,
   server,
 }: {
   currentUser: ClientUser | null
-  itemInfo: SectionListRenderItemInfo<
-    ClientProjectSummary,
-    ProjectListSection
-  >
+  last: boolean
+  onPress: () => void
+  project: ClientProjectSummary
   server: ServerTarget
 }) {
-  const { item: project } = itemInfo
+  const { colors } = useXGUITheme()
   const updatedAt = formatActivityTime(project.updatedAt)
 
   return (
-    <ListItem
-      bg="transparent"
-      icon={
+    <Pressable
+      accessibilityLabel={`查看项目 ${project.name}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.row,
+        {
+          backgroundColor: pressed ? colors.background1 : colors.background2,
+        },
+      ]}
+    >
+      <View style={styles.avatar}>
         <ProjectAvatar
           currentUser={currentUser}
           project={project}
           server={server}
         />
-      }
-      pressStyle={{ bg: "$backgroundPress" }}
-      size="$4"
-      title={
+      </View>
+      <View style={styles.rowContent}>
         <ListItemContent
           meta={updatedAt}
           subtitle={project.description.trim() || "暂无说明"}
           title={project.name}
         />
-      }
-    />
+      </View>
+      {!last ? (
+        <View
+          pointerEvents="none"
+          style={[styles.separator, { backgroundColor: colors.separator }]}
+        />
+      ) : null}
+    </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
+  avatar: {
+    alignItems: "center",
+    marginRight: 10,
+    width: 44,
+  },
   content: {
     flexGrow: 1,
-    paddingBottom: 16,
   },
   emptyContent: {
     justifyContent: "center",
   },
   list: {
     flex: 1,
+  },
+  row: {
+    alignItems: "center",
+    flexDirection: "row",
+    height: 64,
+    paddingHorizontal: 16,
+    position: "relative",
+  },
+  rowContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  separator: {
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    left: 68,
+    position: "absolute",
+    right: 16,
   },
 })

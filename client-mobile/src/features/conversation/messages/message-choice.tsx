@@ -1,20 +1,8 @@
 import { Check } from "lucide-react-native"
-import { useState } from "react"
-import { Pressable, StyleSheet } from "react-native"
-import {
-  Checkbox,
-  Paragraph,
-  RadioGroup,
-  Separator,
-  SizableText,
-  useTheme,
-  useToastController,
-  XStack,
-  YStack,
-} from "tamagui"
+import { useRef, useState } from "react"
+import { Pressable, StyleSheet, Text, View } from "react-native"
+import { Paragraph, YStack } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
-import { AppButton } from "@/components/forms/app-button"
 import type {
   ClientChoiceMessageBody,
   ClientMessageChoiceState,
@@ -27,12 +15,14 @@ import {
 } from "@/domain/messages/message-choices"
 import { MarkdownMessage } from "@/features/conversation/messages/markdown-message"
 import { MessageMentionText } from "@/features/conversation/messages/message-mention-text"
+import { XGUIBadge, XGUIButton, useXGUITheme, useXGUIToast } from "@/xgui"
 
 export function MessageChoice({
   body,
   canRespond,
   choice,
   currentUserId,
+  onLongPress,
   onMentionPress,
   onRespond,
   resolveMentionLabel,
@@ -43,13 +33,16 @@ export function MessageChoice({
   canRespond: boolean
   choice?: ClientMessageChoiceState
   currentUserId: string
+  onLongPress: () => void
   onMentionPress: (target: EntityReference) => void
   onRespond?: (optionIds: string[]) => Promise<void>
   resolveMentionLabel: MessageMentionLabelResolver
   serverUrl: string
   showResponseCounts: boolean
 }) {
-  const toast = useToastController()
+  const toast = useXGUIToast()
+  const { colors } = useXGUITheme()
+  const didLongPressRef = useRef(false)
   const [draftOptionIds, setDraftOptionIds] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const answered = isMessageChoiceAnswered(choice)
@@ -64,6 +57,10 @@ export function MessageChoice({
   )
 
   function selectSingle(optionId: string) {
+    if (didLongPressRef.current) {
+      didLongPressRef.current = false
+      return
+    }
     if (!disabled) {
       setDraftOptionIds((current) =>
         updateMessageChoiceDraft(body, current, optionId)
@@ -72,6 +69,10 @@ export function MessageChoice({
   }
 
   function toggleMultiple(optionId: string) {
+    if (didLongPressRef.current) {
+      didLongPressRef.current = false
+      return
+    }
     if (disabled) return
     setDraftOptionIds((current) =>
       updateMessageChoiceDraft(body, current, optionId)
@@ -79,6 +80,10 @@ export function MessageChoice({
   }
 
   async function submitResponse() {
+    if (didLongPressRef.current) {
+      didLongPressRef.current = false
+      return
+    }
     if (
       !onRespond ||
       answered ||
@@ -91,26 +96,32 @@ export function MessageChoice({
     try {
       await onRespond(selectedOptionIds)
     } catch (error: unknown) {
-      toast.show(error instanceof Error ? error.message : "提交选择失败", {
-        customData: { tone: "error" satisfies AppToastTone },
-      })
+      toast.show({ message: error instanceof Error ? error.message : "提交选择失败", type: "text", duration: 1_000 })
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <YStack gap="$3" width="100%">
+    <YStack
+      gap="$3"
+      onLongPress={() => {
+        didLongPressRef.current = true
+        onLongPress()
+      }}
+      width="100%"
+    >
       {body.contentType === "markdown" ? (
         <MarkdownMessage
           content={body.content}
           currentUserId={currentUserId}
           onMentionPress={onMentionPress}
           resolveMentionLabel={resolveMentionLabel}
+          selectable={false}
           serverUrl={serverUrl}
         />
       ) : (
-        <Paragraph selectable>
+        <Paragraph size="$4">
           <MessageMentionText
             content={body.content}
             currentUserId={currentUserId}
@@ -120,187 +131,217 @@ export function MessageChoice({
         </Paragraph>
       )}
 
-      {body.selection === "single" ? (
-        <RadioGroup
-          disabled={disabled}
-          gap="$2"
-          onValueChange={selectSingle}
-          orientation="vertical"
-          value={selectedOptionIds[0] ?? ""}
-        >
-          {body.options.map((option) => (
-            <ChoiceOptionRow
-              control={
-                <RadioGroup.Item
-                  accessible={false}
-                  disabled={disabled}
-                  pointerEvents="none"
-                  size="$3"
-                  value={option.id}
-                >
-                  <RadioGroup.Indicator />
-                </RadioGroup.Item>
-              }
-              count={countsByOptionId.get(option.id) ?? 0}
-              disabled={disabled}
-              key={option.id}
-              label={option.label}
-              onPress={() => selectSingle(option.id)}
-              selected={selectedOptionIds.includes(option.id)}
-              showResponseCount={showResponseCounts}
-              type="radio"
-            />
-          ))}
-        </RadioGroup>
-      ) : (
-        <YStack gap="$2">
-          {body.options.map((option) => (
-            <ChoiceOptionRow
-              control={
-                <ChoiceCheckbox
-                  checked={selectedOptionIds.includes(option.id)}
-                  disabled={disabled}
-                />
-              }
-              count={countsByOptionId.get(option.id) ?? 0}
-              disabled={disabled}
-              key={option.id}
-              label={option.label}
-              onPress={() => toggleMultiple(option.id)}
-              selected={selectedOptionIds.includes(option.id)}
-              showResponseCount={showResponseCounts}
-              type="checkbox"
-            />
-          ))}
-        </YStack>
-      )}
+      <YStack
+        borderColor={colors.separator}
+        rounded={8}
+        borderWidth={StyleSheet.hairlineWidth}
+        overflow="hidden"
+      >
+        {body.options.map((option, index) => (
+          <ChoiceOptionRow
+            count={countsByOptionId.get(option.id) ?? 0}
+            disabled={disabled}
+            key={option.id}
+            label={option.label}
+            onLongPress={() => {
+              didLongPressRef.current = true
+              onLongPress()
+            }}
+            onPress={() =>
+              body.selection === "single"
+                ? selectSingle(option.id)
+                : toggleMultiple(option.id)
+            }
+            onPressIn={() => {
+              didLongPressRef.current = false
+            }}
+            selected={selectedOptionIds.includes(option.id)}
+            separator={index > 0}
+            showResponseCount={showResponseCounts}
+            type={body.selection === "single" ? "radio" : "checkbox"}
+          />
+        ))}
+      </YStack>
 
       {!answered ? (
         <YStack gap="$3">
-          <Separator borderColor="$borderColor" />
-          <AppButton
+          <XGUIButton
             accessibilityLabel="提交选择"
-            bg={hasSubmittableSelection ? "$color9" : "transparent"}
-            borderColor={
-              hasSubmittableSelection ? "$color9" : "$borderColor"
-            }
-            color={hasSubmittableSelection ? "$white" : "$color"}
             disabled={!hasSubmittableSelection || submitting}
-            disabledStyle={{
-              opacity: hasSubmittableSelection ? 0.72 : 0.45,
+            loading={submitting}
+            onLongPress={() => {
+              didLongPressRef.current = true
+              onLongPress()
             }}
             onPress={() => void submitResponse()}
-            pressStyle={
-              hasSubmittableSelection
-                ? { bg: "$color10", borderColor: "$color10" }
-                : undefined
-            }
-            size="$3"
-            theme={hasSubmittableSelection ? "teal" : "gray"}
-            variant={hasSubmittableSelection ? undefined : "outlined"}
-            width="100%"
+            onPressIn={() => {
+              didLongPressRef.current = false
+            }}
+            style={styles.submitButton}
+            textStyle={styles.submitButtonText}
           >
-            {submitting ? "提交中…" : "提交"}
-          </AppButton>
+            提交
+          </XGUIButton>
         </YStack>
       ) : null}
     </YStack>
   )
 }
 
-function ChoiceCheckbox({
-  checked,
-  disabled,
-}: {
-  checked: boolean
-  disabled: boolean
-}) {
-  const theme = useTheme()
-  return (
-    <Checkbox
-      accessible={false}
-      checked={checked}
-      disabled={disabled}
-      pointerEvents="none"
-      size="$3"
-    >
-      <Checkbox.Indicator>
-        <Check color={String(theme.color.val)} size={14} strokeWidth={2.5} />
-      </Checkbox.Indicator>
-    </Checkbox>
-  )
-}
-
 function ChoiceOptionRow({
-  control,
   count,
   disabled,
   label,
+  onLongPress,
   onPress,
+  onPressIn,
   selected,
+  separator,
   showResponseCount,
   type,
 }: {
-  control: React.ReactNode
   count: number
   disabled: boolean
   label: string
+  onLongPress: () => void
   onPress: () => void
+  onPressIn: () => void
   selected: boolean
+  separator: boolean
   showResponseCount: boolean
   type: "checkbox" | "radio"
 }) {
+  const { colors } = useXGUITheme()
+
   return (
     <Pressable
       accessibilityLabel={label}
       accessibilityRole={type}
       accessibilityState={{ checked: selected, disabled }}
       disabled={disabled}
+      onLongPress={onLongPress}
       onPress={onPress}
+      onPressIn={onPressIn}
       style={styles.optionPressable}
     >
       {({ pressed }) => (
-        <XStack
-          bg={selected ? "$color3" : pressed ? "$backgroundPress" : "transparent"}
-          borderColor={selected ? "$color8" : "$borderColor"}
-          borderWidth={1}
-          gap="$2"
-          items="center"
-          minH={44}
-          opacity={disabled && !selected ? 0.65 : 1}
-          px="$3"
-          py="$2"
-          rounded="$3"
-          width="100%"
+        <View
+          style={[
+            styles.optionRow,
+            pressed ? { backgroundColor: colors.background1 } : null,
+            disabled && !selected ? styles.optionDisabled : null,
+          ]}
         >
-          {control}
-          <SizableText color="$color" flex={1} minW={0}>
-            {label}
-          </SizableText>
-          {showResponseCount ? (
-            <XStack
-              bg="$backgroundPress"
-              height={20}
-              items="center"
-              justify="center"
-              minW={20}
-              px={6}
-              rounded="$10"
-              shrink={0}
-            >
-              <SizableText color="$color10" lineHeight={14} size="$1" text="center">
-                {count}
-              </SizableText>
-            </XStack>
+          {separator ? (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.optionSeparator,
+                { backgroundColor: colors.separator },
+              ]}
+            />
           ) : null}
-        </XStack>
+          <ChoiceSelectionControl selected={selected} type={type} />
+          <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>
+            {label}
+          </Text>
+          {showResponseCount ? (
+            <XGUIBadge
+              accessibilityLabel={`${count} 人选择`}
+              backgroundColor={colors.foreground4}
+              count={count}
+              style={styles.optionCount}
+              textColor={colors.foreground0Half}
+            />
+          ) : null}
+        </View>
       )}
     </Pressable>
   )
 }
 
+function ChoiceSelectionControl({
+  selected,
+  type,
+}: {
+  selected: boolean
+  type: "checkbox" | "radio"
+}) {
+  const { colors } = useXGUITheme()
+  return (
+    <View
+      style={[
+        styles.selectionControl,
+        {
+          backgroundColor: selected ? colors.brand : "transparent",
+          borderColor: selected ? colors.brand : colors.textPlaceholder,
+        },
+      ]}
+    >
+      {selected && type === "checkbox" ? (
+        <Check color={colors.textOnColor} size={15} strokeWidth={2.4} />
+      ) : null}
+      {selected && type === "radio" ? (
+        <View
+          style={[styles.radioDot, { backgroundColor: colors.textOnColor }]}
+        />
+      ) : null}
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
+  optionCount: {
+    marginLeft: 12,
+  },
+  optionDisabled: {
+    opacity: 0.45,
+  },
+  optionLabel: {
+    flex: 1,
+    fontSize: 16,
+    lineHeight: 22,
+    minWidth: 0,
+  },
   optionPressable: {
     alignSelf: "stretch",
+  },
+  optionRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    minHeight: 48,
+    paddingHorizontal: 12,
+    position: "relative",
+  },
+  optionSeparator: {
+    height: StyleSheet.hairlineWidth,
+    left: 46,
+    position: "absolute",
+    right: 12,
+    top: 0,
+  },
+  radioDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8,
+  },
+  selectionControl: {
+    alignItems: "center",
+    borderRadius: 11,
+    borderWidth: 1,
+    height: 22,
+    justifyContent: "center",
+    marginRight: 12,
+    width: 22,
+  },
+  submitButton: {
+    height: 40,
+    minHeight: 40,
+    paddingVertical: 0,
+    width: "100%",
+  },
+  submitButtonText: {
+    fontSize: 16,
+    lineHeight: 22,
   },
 })

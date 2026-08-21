@@ -1,6 +1,7 @@
 import type { Icon as TablerIcon } from "@tabler/icons-react-native"
 import type { LucideIcon } from "lucide-react-native"
-import { Pressable } from "react-native"
+import type { Ref } from "react"
+import { Pressable, type View } from "react-native"
 import { Button, Spinner, useTheme } from "tamagui"
 
 const DEFAULT_BUTTON_SIZE = 30
@@ -8,6 +9,7 @@ const HIT_SLOP = 7
 
 export function CompactIconButton({
   accessibilityLabel,
+  buttonRef,
   buttonSize = DEFAULT_BUTTON_SIZE,
   disabled = false,
   icon,
@@ -18,6 +20,7 @@ export function CompactIconButton({
   strokeWidth = 2,
 }: {
   accessibilityLabel: string
+  buttonRef?: Ref<View>
   buttonSize?: number
   disabled?: boolean
   icon: LucideIcon | TablerIcon
@@ -40,6 +43,7 @@ export function CompactIconButton({
       hitSlop={HIT_SLOP}
       onPress={onPress}
       pressRetentionOffset={0}
+      ref={buttonRef}
       style={{ height: resolvedButtonSize, width: resolvedButtonSize }}
     >
       {({ pressed }) => (

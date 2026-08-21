@@ -8,6 +8,7 @@ import {
   type MessageMentionLabelResolver,
 } from "@/domain/messages/message-mentions"
 import { linkifyMessageText } from "@/domain/messages/message-links"
+import { useXGUITheme } from "@/xgui"
 
 export function MessageMentionText({
   content,
@@ -20,6 +21,7 @@ export function MessageMentionText({
   onMentionPress: (target: EntityReference) => void
   resolveMentionLabel: MessageMentionLabelResolver
 }) {
+  const { colors } = useXGUITheme()
   const parts = parseMessageMentionTemplate(content, resolveMentionLabel)
 
   return parts.map((part, index) => {
@@ -29,7 +31,7 @@ export function MessageMentionText({
           {linkifyMessageText(part.text).map((textPart, textIndex) =>
             textPart.type === "link" ? (
               <Text
-                color="$blue10"
+                color={colors.link}
                 fontWeight="600"
                 key={`link:${textIndex}:${textPart.value}`}
                 onPress={() => void openMessageLink(textPart.href)}
@@ -44,18 +46,18 @@ export function MessageMentionText({
       )
     }
 
-    const mentionsCurrentUser =
-      part.targetType === "all" ||
-      (part.targetType === "user" &&
-        part.id.toLowerCase() === currentUserId.toLowerCase())
     const target =
       part.targetType === "all"
         ? null
         : ({ id: part.id, type: part.targetType } satisfies EntityReference)
+    const highlighted =
+      part.targetType === "all" ||
+      (part.targetType === "user" &&
+        part.id.toLowerCase() === currentUserId.toLowerCase())
 
     return (
       <Text
-        color={mentionsCurrentUser ? "$orange10" : "$blue10"}
+        color={highlighted ? colors.orange : colors.link}
         fontWeight="600"
         key={`${part.targetType}:${part.id}:${index}`}
         onPress={target ? () => onMentionPress(target) : undefined}

@@ -36,10 +36,10 @@ const VOICE_RECORDING_FORMAT = getVoiceRecordingFormat(Platform.OS)
 
 const VOICE_RECORDING_OPTIONS: RecordingOptions = {
   android: {
-    audioEncoder: "opus",
+    audioEncoder: "aac",
     audioSource: "voice_communication",
     maxFileSize: VOICE_MESSAGE_MAX_BYTES,
-    outputFormat: "webm",
+    outputFormat: "mpeg4",
   },
   bitRate: Platform.OS === "ios" ? 64_000 : 24_000,
   directory: "cache",

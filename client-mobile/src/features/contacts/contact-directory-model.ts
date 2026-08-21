@@ -11,6 +11,28 @@ import {
 
 export type DirectoryTab = "user" | "app" | "group"
 
+export type DirectoryCategory =
+  | "all-apps"
+  | "joined-groups"
+  | "my-apps"
+  | "new-friends"
+  | "public-groups"
+
+export const DIRECTORY_CATEGORY_TITLES: Record<DirectoryCategory, string> = {
+  "all-apps": "所有应用",
+  "joined-groups": "我加入的群组",
+  "my-apps": "我的应用",
+  "new-friends": "新朋友",
+  "public-groups": "公开群组",
+}
+
+export const CONTACT_INDEX_LABELS = [
+  ...Array.from({ length: 26 }, (_, index) =>
+    String.fromCharCode("A".charCodeAt(0) + index)
+  ),
+  "#",
+] as const
+
 export type DirectoryItem =
   | { key: string; type: "user"; value: ContactUser }
   | { key: string; type: "app"; value: ContactApp }
@@ -27,19 +49,54 @@ const contactNameCollator = new Intl.Collator("zh-CN-u-co-pinyin", {
   sensitivity: "base",
   usage: "sort",
 })
+const latinNameCollator = new Intl.Collator("en", {
+  numeric: true,
+  sensitivity: "base",
+  usage: "sort",
+})
+const PINYIN_INITIAL_BOUNDARIES = [
+  ["A", "阿"],
+  ["B", "八"],
+  ["C", "嚓"],
+  ["D", "咑"],
+  ["E", "妸"],
+  ["F", "发"],
+  ["G", "噶"],
+  ["H", "哈"],
+  ["J", "击"],
+  ["K", "咔"],
+  ["L", "垃"],
+  ["M", "妈"],
+  ["N", "拿"],
+  ["O", "哦"],
+  ["P", "啪"],
+  ["Q", "期"],
+  ["R", "然"],
+  ["S", "撒"],
+  ["T", "塌"],
+  ["W", "挖"],
+  ["X", "昔"],
+  ["Y", "压"],
+  ["Z", "匝"],
+] as const
+
+type ContactSortValue = {
+  bucket: number
+  initial: string
+  scriptOrder: number
+  value: string
+}
 
 export function buildDirectorySections({
   activeTab,
   contacts,
   currentUserId,
   keyword,
-  organizationName,
 }: {
   activeTab: DirectoryTab
   contacts: ClientContacts
   currentUserId: string
   keyword: string
-  organizationName: string
 }): DirectorySection[] {
   const normalizedKeyword = keyword.trim().toLocaleLowerCase()
 
@@ -82,7 +139,7 @@ export function buildDirectorySections({
     ].filter((section) => section.data.length > 0)
   }
 
-  const users = [...contacts.users]
+  const users = contacts.users
     .filter((contact) =>
       matchesKeyword(
         [
@@ -95,29 +152,91 @@ export function buildDirectorySections({
         normalizedKeyword
       )
     )
-    .sort(compareContactsByDisplayName)
+    .map((contact) => {
+      const displayName = getContactDisplayName(contact)
+      return {
+        contact,
+        displayName,
+        sortValue: getContactSortValue(displayName),
+      }
+    })
+    .sort(comparePreparedContacts)
 
-  return users.length > 0
-    ? [
-        {
-          count: users.length,
-          data: users.map((contact) => ({
-            key: `user:${contact.id}`,
-            type: "user",
-            value: contact,
-          })),
-          title: organizationName,
-        },
-      ]
-    : []
+  const usersByIndexLabel = new Map<string, ContactUser[]>()
+  for (const user of users) {
+    const label = getContactIndexLabelFromSortValue(user.sortValue)
+    const groupedUsers = usersByIndexLabel.get(label) ?? []
+    groupedUsers.push(user.contact)
+    usersByIndexLabel.set(label, groupedUsers)
+  }
+
+  return CONTACT_INDEX_LABELS.flatMap((label) => {
+    const groupedUsers = usersByIndexLabel.get(label)
+    return groupedUsers
+      ? [
+          {
+            count: groupedUsers.length,
+            data: groupedUsers.map((contact) => ({
+              key: `user:${contact.id}`,
+              type: "user" as const,
+              value: contact,
+            })),
+            title: label,
+          },
+        ]
+      : []
+  })
 }
 
 export function getContactInitial(name: string) {
   return Array.from(name.trim())[0]?.toUpperCase() ?? "?"
 }
 
+export function isDirectoryCategory(value: string): value is DirectoryCategory {
+  return value in DIRECTORY_CATEGORY_TITLES
+}
+
+export function buildDirectoryCategorySections({
+  category,
+  contacts,
+  currentUserId,
+}: {
+  category: DirectoryCategory
+  contacts: ClientContacts
+  currentUserId: string
+}): DirectorySection[] {
+  if (category === "new-friends") return []
+
+  if (category === "my-apps" || category === "all-apps") {
+    const normalizedCurrentUserId = currentUserId.toLocaleLowerCase()
+    const apps = [...contacts.apps]
+      .filter(
+        (app) =>
+          category === "all-apps" ||
+          app.creatorUserId?.toLocaleLowerCase() === normalizedCurrentUserId
+      )
+      .sort((left, right) => contactNameCollator.compare(left.name, right.name))
+
+    return apps.length > 0
+      ? [createAppSection(undefined, category, apps)]
+      : []
+  }
+
+  const groups = [...contacts.groups]
+    .filter((group) =>
+      category === "joined-groups"
+        ? group.joined
+        : group.visibility === "public"
+    )
+    .sort((left, right) => contactNameCollator.compare(left.name, right.name))
+
+  return groups.length > 0
+    ? [createGroupSection(undefined, category, groups)]
+    : []
+}
+
 function createAppSection(
-  title: string,
+  title: string | undefined,
   sectionKey: string,
   apps: ContactApp[]
 ): DirectorySection {
@@ -133,7 +252,7 @@ function createAppSection(
 }
 
 function createGroupSection(
-  title: string,
+  title: string | undefined,
   sectionKey: string,
   groups: ContactGroup[]
 ): DirectorySection {
@@ -155,13 +274,87 @@ function matchesKeyword(values: string[], keyword: string) {
   )
 }
 
-function compareContactsByDisplayName(left: ContactUser, right: ContactUser) {
+function comparePreparedContacts(
+  left: {
+    contact: ContactUser
+    displayName: string
+    sortValue: ContactSortValue
+  },
+  right: {
+    contact: ContactUser
+    displayName: string
+    sortValue: ContactSortValue
+  }
+) {
   return (
-    contactNameCollator.compare(
-      getContactDisplayName(left),
-      getContactDisplayName(right)
-    ) ||
-    contactNameCollator.compare(left.email, right.email) ||
-    contactNameCollator.compare(left.id, right.id)
+    left.sortValue.bucket - right.sortValue.bucket ||
+    (left.sortValue.bucket === 0
+      ? latinNameCollator.compare(
+          left.sortValue.initial,
+          right.sortValue.initial
+        ) ||
+        left.sortValue.scriptOrder - right.sortValue.scriptOrder ||
+        contactNameCollator.compare(left.displayName, right.displayName)
+      : contactNameCollator.compare(left.displayName, right.displayName)) ||
+    contactNameCollator.compare(left.contact.email, right.contact.email) ||
+    contactNameCollator.compare(left.contact.id, right.contact.id)
   )
+}
+
+export function getContactIndexLabel(name: string) {
+  return getContactIndexLabelFromSortValue(getContactSortValue(name))
+}
+
+function getContactIndexLabelFromSortValue(sortValue: ContactSortValue) {
+  if (sortValue.bucket !== 0) return "#"
+  return /^[A-Z]$/.test(sortValue.initial) ? sortValue.initial : "#"
+}
+
+function getContactSortValue(name: string) {
+  const trimmedName = name.trim()
+  const firstCharacter = Array.from(trimmedName)[0] ?? ""
+  const latinFirstCharacter = firstCharacter
+    .normalize("NFD")
+    .replace(/\p{Mark}/gu, "")
+
+  if (/^[A-Z]$/i.test(latinFirstCharacter)) {
+    return {
+      bucket: 0,
+      initial: latinFirstCharacter.toUpperCase(),
+      scriptOrder: 0,
+      value: trimmedName.normalize("NFD"),
+    }
+  }
+
+  if (/^\p{Script=Han}$/u.test(firstCharacter)) {
+    return {
+      bucket: 0,
+      initial: getHanPinyinInitial(firstCharacter),
+      scriptOrder: 1,
+      value: trimmedName,
+    }
+  }
+
+  return { bucket: 1, initial: "#", scriptOrder: 2, value: trimmedName }
+}
+
+function getHanPinyinInitial(character: string) {
+  let low = 0
+  let high = PINYIN_INITIAL_BOUNDARIES.length - 1
+  let matchedIndex = 0
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    const boundary = PINYIN_INITIAL_BOUNDARIES[middle]
+    if (!boundary) break
+
+    if (contactNameCollator.compare(character, boundary[1]) >= 0) {
+      matchedIndex = middle
+      low = middle + 1
+    } else {
+      high = middle - 1
+    }
+  }
+
+  return PINYIN_INITIAL_BOUNDARIES[matchedIndex]?.[0] ?? "A"
 }

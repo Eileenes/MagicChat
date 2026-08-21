@@ -9,20 +9,14 @@ import {
 
 export function useConversationNavigation({
   activateConversation,
-  archivePending,
   conversationId,
   isFocused,
-  onCloseArchiveDialog,
   parentConversationId,
-  topicArchiveDialogOpen,
 }: {
   activateConversation: (conversationId: string) => (() => void) | undefined
-  archivePending: boolean
   conversationId: string
   isFocused: boolean
-  onCloseArchiveDialog: () => void
   parentConversationId: string
-  topicArchiveDialogOpen: boolean
 }) {
   const router = useRouter()
   const openingTopicRef = useRef(false)
@@ -42,23 +36,12 @@ export function useConversationNavigation({
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
-        if (topicArchiveDialogOpen) {
-          if (!archivePending) onCloseArchiveDialog()
-          return true
-        }
         router.dismissTo(buildConversationHref(parentConversationId))
         return true
       }
     )
     return () => subscription.remove()
-  }, [
-    archivePending,
-    isFocused,
-    onCloseArchiveDialog,
-    parentConversationId,
-    router,
-    topicArchiveDialogOpen,
-  ])
+  }, [isFocused, parentConversationId, router])
 
   const openTopic = useCallback(
     (topicConversationId: string) => {

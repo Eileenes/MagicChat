@@ -1,8 +1,7 @@
+import { useXGUIToast } from "@/xgui"
 import { useRouter } from "expo-router"
 import { Alert } from "react-native"
-import { useToastController } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import { ApiRequestError, isUnauthorizedError } from "@/data/api-client"
 import {
   useForwardConversationMessage,
@@ -34,7 +33,7 @@ export function useConversationMessageActions({
   server: AuthenticatedTarget
 }) {
   const router = useRouter()
-  const toast = useToastController()
+  const toast = useXGUIToast()
   const { invalidateSession } = useAuth()
   const sendTextMutation = useSendConversationTextMessage(
     server,
@@ -151,12 +150,9 @@ export function useConversationMessageActions({
         void invalidateSession()
         router.replace("/server-management")
       } else {
-        toast.show(
-          error instanceof ApiRequestError
+        toast.show({ message: error instanceof ApiRequestError
             ? error.message
-            : "更新消息表情失败，请重试。",
-          { customData: { tone: "error" satisfies AppToastTone } }
-        )
+            : "更新消息表情失败，请重试。", type: "text", duration: 1_000 })
       }
       throw error
     }
@@ -187,39 +183,24 @@ export function useConversationMessageActions({
         const firstFailure = result.results.find(
           (candidate) => candidate.status === "failed"
         )
-        toast.show(
-          firstFailure?.status === "failed"
+        toast.show({ message: firstFailure?.status === "failed"
             ? firstFailure.error.message
-            : "转发消息失败，请重试。",
-          { customData: { tone: "error" satisfies AppToastTone } }
-        )
+            : "转发消息失败，请重试。", type: "text", duration: 1_000 })
         return false
       }
 
-      toast.show(
-        result.failedCount > 0
+      toast.show({ message: result.failedCount > 0
           ? `已转发到 ${result.sentCount} 个会话，${result.failedCount} 个失败`
-          : `已转发到 ${result.sentCount} 个会话`,
-        {
-          customData: {
-            tone: (result.failedCount > 0
-              ? "error"
-              : "success") satisfies AppToastTone,
-          },
-        }
-      )
+          : `已转发到 ${result.sentCount} 个会话`, type: "text", duration: 1_000 })
       return true
     } catch (error: unknown) {
       if (isUnauthorizedError(error)) {
         void invalidateSession()
         router.replace("/server-management")
       } else {
-        toast.show(
-          error instanceof ApiRequestError
+        toast.show({ message: error instanceof ApiRequestError
             ? error.message
-            : "转发消息失败，请重试。",
-          { customData: { tone: "error" satisfies AppToastTone } }
-        )
+            : "转发消息失败，请重试。", type: "text", duration: 1_000 })
       }
       return false
     }

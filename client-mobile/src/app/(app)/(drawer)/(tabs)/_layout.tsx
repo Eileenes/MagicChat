@@ -14,26 +14,28 @@ import IconMessageCircleFilled from "@tabler/icons-react-native/IconMessageCircl
 // eslint-disable-next-line import/no-unresolved
 import IconCirclePlus from "@tabler/icons-react-native/IconCirclePlus"
 // eslint-disable-next-line import/no-unresolved
+import IconZoomScanFilled from "@tabler/icons-react-native/IconZoomScanFilled"
+// eslint-disable-next-line import/no-unresolved
 import IconSettings from "@tabler/icons-react-native/IconSettings"
 // eslint-disable-next-line import/no-unresolved
 import IconSettingsFilled from "@tabler/icons-react-native/IconSettingsFilled"
-import { BlurTargetView } from "expo-blur"
-import { Tabs as RouterTabs } from "expo-router"
-import {
-  type ComponentProps,
-  type RefObject,
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react"
-import { StyleSheet, View } from "react-native"
+// eslint-disable-next-line import/no-unresolved
+import IconUserFilled from "@tabler/icons-react-native/IconUserFilled"
+import { Tabs as RouterTabs, type Href, useRouter } from "expo-router"
+import { useRef, useState, type ComponentProps } from "react"
+import type { View } from "react-native"
 
 import { AppHeader } from "@/components/navigation/app-header"
 import { notifyMessagesTabReselected } from "@/features/messages/messages-tab-reselect"
 import { formatUnreadCount } from "@/features/messages/conversation-list-model"
+import { buildCreateGroupConversationHref } from "@/navigation/conversations"
 import { useClientData } from "@/providers/client-data-provider"
-import { XGUITabbar, XGUITabbarItem, useXGUITheme } from "@/xgui"
+import {
+  XGUIPopoverMenu,
+  XGUITabbar,
+  XGUITabbarItem,
+  useXGUITheme,
+} from "@/xgui"
 
 const TAB_ITEMS = {
   contacts: {
@@ -54,7 +56,7 @@ const TAB_ITEMS = {
   projects: {
     activeIcon: IconBriefcaseFilled,
     icon: IconBriefcase,
-    label: "项目",
+    label: "办公",
   },
 }
 
@@ -62,36 +64,9 @@ type AppTabBarProps = Parameters<
   NonNullable<ComponentProps<typeof RouterTabs>["tabBar"]>
 >[0]
 
-type CapturedAppTabBarProps = Pick<AppTabBarProps, "navigation" | "state">
-
-type RenderedAppTabBarProps = CapturedAppTabBarProps & {
-  blurTarget: RefObject<View | null>
-  unreadMessageCount: number
-}
-
 export default function AppTabsLayout() {
   const { conversations } = useClientData()
   const { colors } = useXGUITheme()
-  const blurTarget = useRef<View>(null)
-  const [tabBarProps, setTabBarProps] =
-    useState<CapturedAppTabBarProps | null>(null)
-  const captureTabBarProps = useCallback((next: CapturedAppTabBarProps) => {
-    setTabBarProps((current) =>
-      current?.navigation === next.navigation && current.state === next.state
-        ? current
-        : next
-    )
-  }, [])
-  const renderTabBar = useCallback(
-    (props: AppTabBarProps) => (
-      <AppTabBarCapture
-        navigation={props.navigation}
-        onCapture={captureTabBarProps}
-        state={props.state}
-      />
-    ),
-    [captureTabBarProps]
-  )
   const unreadMessageCount = conversations.reduce(
     (total, conversation) =>
       conversation.notificationMuted
@@ -101,98 +76,128 @@ export default function AppTabsLayout() {
   )
   const messageTitle =
     unreadMessageCount > 0
-      ? `消息(${formatUnreadCount(unreadMessageCount)})`
+      ? `消息 (${formatUnreadCount(unreadMessageCount)})`
       : "消息"
 
   return (
-    <View style={styles.fill}>
-      <BlurTargetView ref={blurTarget} style={styles.fill}>
-        <RouterTabs
-          tabBar={renderTabBar}
-          screenOptions={{
-            headerShown: true,
-            sceneStyle: {
-              backgroundColor: colors.background0,
-            },
-            tabBarHideOnKeyboard: true,
-          }}
-        >
-          <RouterTabs.Screen
-            name="messages"
-            options={{
-              header: () => (
-                <AppHeader
-                  actions={[
-                    {
-                      icon: IconCirclePlus,
-                      iconColor: colors.textPrimary,
-                      label: "新增",
-                      onPress: () => undefined,
-                      strokeWidth: 1,
-                    },
-                  ]}
-                  title={messageTitle}
-                  titleFontSize={18}
-                />
-              ),
-              title: "消息",
-            }}
-          />
-          <RouterTabs.Screen
-            name="contacts"
-            options={{
-              header: () => <AppHeader title="通讯录" />,
-              title: "通讯录",
-            }}
-          />
-          <RouterTabs.Screen
-            name="projects"
-            options={{
-              header: () => <AppHeader title="项目" />,
-              title: "项目",
-            }}
-          />
-          <RouterTabs.Screen
-            name="me"
-            options={{
-              header: () => <AppHeader title="设置" />,
-              title: "设置",
-            }}
-          />
-        </RouterTabs>
-      </BlurTargetView>
-      {tabBarProps ? (
-        <AppTabBar
-          blurTarget={blurTarget}
-          navigation={tabBarProps.navigation}
-          state={tabBarProps.state}
-          unreadMessageCount={unreadMessageCount}
-        />
-      ) : null}
-    </View>
+    <RouterTabs
+      detachInactiveScreens={false}
+      tabBar={(props) => (
+        <AppTabBar {...props} unreadMessageCount={unreadMessageCount} />
+      )}
+      screenOptions={{
+        freezeOnBlur: true,
+        headerShown: true,
+        sceneStyle: {
+          backgroundColor: colors.background0,
+        },
+        tabBarHideOnKeyboard: true,
+      }}
+    >
+      <RouterTabs.Screen
+        name="messages"
+        options={{
+          header: () => (
+            <AppTabHeader title={messageTitle} titleFontSize={18} />
+          ),
+          title: "消息",
+        }}
+      />
+      <RouterTabs.Screen
+        name="contacts"
+        options={{
+          header: () => <AppTabHeader title="通讯录" />,
+          lazy: false,
+          title: "通讯录",
+        }}
+      />
+      <RouterTabs.Screen
+        name="projects"
+        options={{
+          header: () => <AppTabHeader title="办公" />,
+          title: "办公",
+        }}
+      />
+      <RouterTabs.Screen
+        name="me"
+        options={{
+          header: () => <AppHeader title="设置" />,
+          title: "设置",
+        }}
+      />
+    </RouterTabs>
   )
 }
 
-function AppTabBarCapture({
-  navigation,
-  onCapture,
-  state,
-}: CapturedAppTabBarProps & {
-  onCapture: (props: CapturedAppTabBarProps) => void
+function AppTabHeader({
+  title,
+  titleFontSize,
+}: {
+  title: string
+  titleFontSize?: number
 }) {
-  useLayoutEffect(() => {
-    onCapture({ navigation, state })
-  }, [navigation, onCapture, state])
+  const anchorRef = useRef<View>(null)
+  const router = useRouter()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { colors } = useXGUITheme()
 
-  return null
+  return (
+    <>
+      <AppHeader
+        actions={[
+          {
+            buttonRef: anchorRef,
+            icon: IconCirclePlus,
+            iconColor: colors.textPrimary,
+            label: "新增",
+            onPress: () => setMenuOpen(true),
+            strokeWidth: 1,
+          },
+        ]}
+        title={title}
+        titleFontSize={titleFontSize}
+      />
+      <XGUIPopoverMenu
+        anchorRef={anchorRef}
+        items={[
+          {
+            icon: (props) => <IconMessageCircleFilled {...props} />,
+            label: "发起群聊",
+            onPress: () => router.push(buildCreateGroupConversationHref()),
+          },
+          {
+            icon: (props) => <IconUserFilled {...props} />,
+            label: "添加朋友",
+            onPress: () => {
+              setMenuOpen(false)
+              router.push({
+                params: { category: "new-friends" },
+                pathname: "/(app)/contacts/[category]",
+              } as unknown as Href)
+            },
+          },
+          {
+            icon: (props) => <IconZoomScanFilled {...props} />,
+            label: "扫一扫",
+            onPress: () => {
+              setMenuOpen(false)
+              router.push("/qr-scanner" as Href)
+            },
+          },
+        ]}
+        onOpenChange={setMenuOpen}
+        open={menuOpen}
+        width={140}
+      />
+    </>
+  )
 }
 
 function AppTabBar({
-  blurTarget,
   navigation,
   state,
   unreadMessageCount,
-}: RenderedAppTabBarProps) {
+}: AppTabBarProps & { unreadMessageCount: number }) {
   const activeRouteName = state.routes[state.index]?.name ?? "messages"
 
   function handlePress(routeName: string) {
@@ -218,7 +223,7 @@ function AppTabBar({
   }
 
   return (
-    <XGUITabbar blurTarget={blurTarget}>
+    <XGUITabbar>
       {state.routes.map((route) => {
         const item = TAB_ITEMS[route.name as keyof typeof TAB_ITEMS]
         if (!item) return null
@@ -240,9 +245,3 @@ function AppTabBar({
     </XGUITabbar>
   )
 }
-
-const styles = StyleSheet.create({
-  fill: {
-    flex: 1,
-  },
-})

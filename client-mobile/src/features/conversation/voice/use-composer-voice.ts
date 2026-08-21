@@ -1,9 +1,8 @@
+import { useXGUIToast } from "@/xgui"
 import { ImpactFeedbackStyle, impactAsync } from "expo-haptics"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Keyboard } from "react-native"
-import { useToastController } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import type { PreparedClientVoiceMessage } from "@/data/messages/message-upload"
 import { useVoiceMessageRecorder } from "@/features/conversation/voice/use-voice-message-recorder"
 
@@ -24,7 +23,7 @@ export function useComposerVoice({
   onSendVoice: (recording: PreparedClientVoiceMessage) => Promise<boolean>
   serverUrl: string
 }) {
-  const toast = useToastController()
+  const toast = useXGUIToast()
   const [transcript, setTranscript] = useState("")
   const recorder = useVoiceMessageRecorder({
     onTranscript: setTranscript,
@@ -56,11 +55,7 @@ export function useComposerVoice({
   useEffect(() => {
     if (!recorder.error) return
 
-    toast.show("无法录音", {
-      customData: { tone: "error" satisfies AppToastTone },
-      duration: 4000,
-      message: recorder.error,
-    })
+    toast.show({ message: `${"无法录音"}：${recorder.error}`, type: "text", duration: 1_000 })
     recorder.clearError()
   }, [recorder, toast])
 

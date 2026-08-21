@@ -16,6 +16,7 @@ import type {
   ResourceLoadState,
   ResolvedResource,
 } from "@/core/resource-models"
+import { getRememberedAttachmentResource } from "@/data/resources/attachment-resource-memory"
 
 export function useCachedAvatar(server: ServerTarget, avatar: string) {
   const sourceUrl = resolveAvatarResourceUrl(server, avatar)
@@ -35,6 +36,7 @@ export function useCachedAvatar(server: ServerTarget, avatar: string) {
     error: query.error,
     isLoading: query.isLoading,
     refetch,
+    resource: query.data ?? null,
     sourceUrl,
     uri: query.data?.uri ?? "",
   }
@@ -144,7 +146,26 @@ export function useMessageResources(
     }
   }, [ensure, references, session])
 
-  return { ensure, reload, states }
+  const visibleStates = useMemo(() => {
+    const next = new Map(states)
+    for (const reference of references) {
+      if (next.get(reference.fileId)?.resource) continue
+      const remembered = getRememberedAttachmentResource(
+        session,
+        reference.fileId
+      )
+      if (remembered) {
+        next.set(reference.fileId, {
+          error: null,
+          resource: remembered,
+          status: "ready",
+        })
+      }
+    }
+    return next
+  }, [references, session, states])
+
+  return { ensure, reload, states: visibleStates }
 }
 
 function setResourceState(

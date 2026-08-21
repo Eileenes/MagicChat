@@ -139,6 +139,7 @@ export type ClientConversationLastMessageSender = {
 }
 
 export type ClientConversation = {
+  announcement?: string
   avatar: string
   canSend: boolean
   createdAt: string

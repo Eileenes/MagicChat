@@ -1,11 +1,12 @@
 import { MessagesSquare } from "lucide-react-native"
 import { Pressable } from "react-native"
-import { Avatar, Separator, SizableText, XStack, YStack } from "tamagui"
+import { Separator, SizableText, XStack, YStack } from "tamagui"
 
-import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
+import { AppAvatar } from "@/components/avatar/app-avatar"
 import { ThemedIcon } from "@/components/icons/themed-icon"
 import type { ServerTarget } from "@/core/server-target"
 import type { PresentedMessage } from "@/domain/messages/message-presenter"
+import { useXGUITheme } from "@/xgui"
 
 export function TopicReplyPreview({
   onOpen,
@@ -16,6 +17,7 @@ export function TopicReplyPreview({
   server: ServerTarget
   topic: NonNullable<PresentedMessage["topic"]>
 }) {
+  const { colors } = useXGUITheme()
   const latestReplyTime = topic.recentReplies.at(-1)?.time ?? ""
 
   return (
@@ -26,7 +28,7 @@ export function TopicReplyPreview({
     >
       {({ pressed }) => (
         <YStack mt="$3" opacity={pressed ? 0.72 : 1} width="100%">
-          <Separator borderColor="$borderColor" mb="$2" />
+          <Separator borderColor={colors.separator} mb="$2" />
 
           {topic.recentReplies.length > 0 ? (
             <>
@@ -38,30 +40,34 @@ export function TopicReplyPreview({
                       name={reply.author}
                       server={server}
                     />
-                    <SizableText flex={1} minW={0} numberOfLines={1} size="$2">
-                      <SizableText fontWeight="600" size="$2">
+                    <SizableText flex={1} minW={0} numberOfLines={1} size="$3">
+                      <SizableText
+                        color={colors.textPrimary}
+                        fontWeight="600"
+                        size="$3"
+                      >
                         {reply.author}
                       </SizableText>
-                      <SizableText color="$color10" size="$2">
+                      <SizableText color={colors.textSecondary} size="$3">
                         ：{reply.summary}
                       </SizableText>
                     </SizableText>
                   </XStack>
                 ))}
               </YStack>
-              <Separator borderColor="$borderColor" my="$3" />
+              <Separator borderColor={colors.separator} my="$3" />
             </>
           ) : null}
 
           <XStack gap="$3" items="center" justify="space-between">
             <XStack gap="$2" items="center">
-              <ThemedIcon icon={MessagesSquare} size={17} />
-              <SizableText color="$color10" fontWeight="600" size="$3">
+              <ThemedIcon color={colors.link} icon={MessagesSquare} size={16} />
+              <SizableText color={colors.link} fontWeight="600" size="$3">
                 查看话题
               </SizableText>
             </XStack>
             {latestReplyTime ? (
-              <SizableText color="$color10" size="$2">
+              <SizableText color={colors.textSecondary} size="$3">
                 {latestReplyTime}
               </SizableText>
             ) : null}
@@ -81,14 +87,5 @@ function TopicReplyAvatar({
   name: string
   server: ServerTarget
 }) {
-  return (
-    <Avatar rounded="$2" size={20}>
-      <CachedAvatarImage avatar={avatar} server={server} />
-      <Avatar.Fallback bg="$backgroundFocus" items="center" justify="center">
-        <SizableText fontSize={9} fontWeight="600" lineHeight={11}>
-          {Array.from(name.trim())[0]?.toUpperCase() ?? "?"}
-        </SizableText>
-      </Avatar.Fallback>
-    </Avatar>
-  )
+  return <AppAvatar accessibilityLabel={name} avatar={avatar} server={server} size={20} type="user" />
 }
