@@ -1,4 +1,9 @@
 import * as React from "react"
+
+import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
 import { Loader2Icon, Search } from "lucide-react"
 import { toast } from "sonner"
 
@@ -148,13 +153,13 @@ function SendCardDialogContent({
     const sendableConversations = conversations.filter(
       (conversation) => !conversation.topic?.archived
     )
-    const normalizedKeyword = keyword.trim().toLocaleLowerCase()
+    const normalizedKeyword = normalizePinyinSearchQuery(keyword)
     if (!normalizedKeyword) {
       return sendableConversations
     }
 
     return sendableConversations.filter((conversation) =>
-      conversation.name.toLocaleLowerCase().includes(normalizedKeyword)
+      createPinyinSearchText([conversation.name]).includes(normalizedKeyword)
     )
   }, [conversations, keyword])
 

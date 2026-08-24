@@ -1,6 +1,11 @@
 import * as React from "react"
 
 import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
+
+import {
   Combobox,
   ComboboxChip,
   ComboboxChips,
@@ -61,9 +66,9 @@ export function ProjectTaskLabelsCombobox({
     <Combobox<string, true>
       disabled={disabled}
       filter={(label, inputValue) =>
-        label
-          .toLocaleLowerCase()
-          .includes(inputValue.trim().toLocaleLowerCase())
+        createPinyinSearchText([label]).includes(
+          normalizePinyinSearchQuery(inputValue)
+        )
       }
       inputValue={query}
       items={options}

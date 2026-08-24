@@ -1,4 +1,9 @@
 import * as React from "react"
+
+import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
 import { Loader2Icon, Search } from "lucide-react"
 import { toast } from "sonner"
 
@@ -96,7 +101,7 @@ function CreateGroupConversationForm({
   const trimmedName = name.trim()
   const canCreate = Boolean(trimmedName) && !creating
   const filteredContacts = React.useMemo(() => {
-    const normalizedKeyword = keyword.trim().toLowerCase()
+    const normalizedKeyword = normalizePinyinSearchQuery(keyword)
 
     return sortContactsByDisplayName(
       contacts.filter((contact) => {
@@ -107,25 +112,25 @@ function CreateGroupConversationForm({
           return true
         }
 
-        return [
+        return createPinyinSearchText([
           contact.email,
           contact.name,
           contact.nickname,
           contact.phone,
-        ].some((value) => value.toLowerCase().includes(normalizedKeyword))
+        ]).includes(normalizedKeyword)
       })
     )
   }, [contacts, currentUserId, keyword])
   const filteredApps = React.useMemo(() => {
-    const normalizedKeyword = keyword.trim().toLowerCase()
+    const normalizedKeyword = normalizePinyinSearchQuery(keyword)
 
     if (!normalizedKeyword) {
       return apps
     }
 
     return apps.filter((app) =>
-      [app.name, app.description].some((value) =>
-        value.toLowerCase().includes(normalizedKeyword)
+      createPinyinSearchText([app.name, app.description]).includes(
+        normalizedKeyword
       )
     )
   }, [apps, keyword])

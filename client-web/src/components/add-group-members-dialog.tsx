@@ -1,4 +1,9 @@
 import * as React from "react"
+
+import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
 import { Search, UserPlus } from "lucide-react"
 import { toast } from "sonner"
 
@@ -88,31 +93,31 @@ export function AddGroupMembersDialog({
     [contactApps, conversation.members]
   )
   const filteredUserCandidates = React.useMemo(() => {
-    const normalizedKeyword = keyword.trim().toLowerCase()
+    const normalizedKeyword = normalizePinyinSearchQuery(keyword)
 
     if (!normalizedKeyword) {
       return userCandidates
     }
 
     return userCandidates.filter((candidate) =>
-      [
+      createPinyinSearchText([
         candidate.email,
         candidate.name,
         candidate.nickname,
         candidate.phone,
-      ].some((value) => value.toLowerCase().includes(normalizedKeyword))
+      ]).includes(normalizedKeyword)
     )
   }, [keyword, userCandidates])
   const filteredAppCandidates = React.useMemo(() => {
-    const normalizedKeyword = keyword.trim().toLowerCase()
+    const normalizedKeyword = normalizePinyinSearchQuery(keyword)
 
     if (!normalizedKeyword) {
       return appCandidates
     }
 
     return appCandidates.filter((candidate) =>
-      [candidate.name, candidate.description].some((value) =>
-        value.toLowerCase().includes(normalizedKeyword)
+      createPinyinSearchText([candidate.name, candidate.description]).includes(
+        normalizedKeyword
       )
     )
   }, [appCandidates, keyword])

@@ -1,5 +1,10 @@
 import * as React from "react"
 
+import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
+
 import { SelectionListAvatar } from "@/components/selection-list-avatar"
 import {
   Combobox,
@@ -80,15 +85,18 @@ export function AppAccessUserCombobox({
 }
 
 function contactMatchesQuery(user: ContactUser, query: string) {
-  const normalizedQuery = query.trim().toLowerCase()
+  const normalizedQuery = normalizePinyinSearchQuery(query)
 
   if (!normalizedQuery) {
     return true
   }
 
-  return [user.email, user.name, user.nickname, user.phone].some((value) =>
-    value.toLowerCase().includes(normalizedQuery)
-  )
+  return createPinyinSearchText([
+    user.email,
+    user.name,
+    user.nickname,
+    user.phone,
+  ]).includes(normalizedQuery)
 }
 
 function getContactDisplayName(user: ContactUser) {

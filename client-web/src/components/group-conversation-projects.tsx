@@ -10,6 +10,10 @@ import {
 } from "@/lib/project-data-api"
 import type { ClientConversationProject } from "@/lib/client-data-api"
 import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -73,14 +77,14 @@ export function GroupConversationProjects({
     [linkedProjects]
   )
   const candidates = useMemo(() => {
-    const normalizedKeyword = keyword.trim().toLocaleLowerCase()
+    const normalizedKeyword = normalizePinyinSearchQuery(keyword)
 
     return availableProjects.filter(
       (project) =>
         !project.isPersonal &&
         !linkedProjectIds.has(project.id) &&
         (!normalizedKeyword ||
-          project.name.toLocaleLowerCase().includes(normalizedKeyword))
+          createPinyinSearchText([project.name]).includes(normalizedKeyword))
     )
   }, [availableProjects, keyword, linkedProjectIds])
 

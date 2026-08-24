@@ -1,4 +1,9 @@
 import * as React from "react"
+
+import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
 import { useSearchParams } from "react-router"
 import { toast } from "sonner"
 import {
@@ -702,11 +707,11 @@ function AssigneeFilter({
 }) {
   const [query, setQuery] = React.useState("")
   const searchInputRef = React.useRef<HTMLInputElement | null>(null)
-  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const normalizedQuery = normalizePinyinSearchQuery(query)
   const filteredMembers = normalizedQuery
     ? members.filter((member) =>
         [member.displayName, member.name, member.nickname, member.email].some(
-          (field) => field.toLocaleLowerCase().includes(normalizedQuery)
+          (field) => createPinyinSearchText([field]).includes(normalizedQuery)
         )
       )
     : members

@@ -1,4 +1,9 @@
 import * as React from "react"
+
+import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
 import { Search } from "lucide-react"
 import { toast } from "sonner"
 
@@ -39,9 +44,11 @@ export function ProjectCreateDialog({
     () => new Set()
   )
   const filteredGroups = React.useMemo(() => {
-    const keyword = groupKeyword.trim().toLowerCase()
+    const keyword = normalizePinyinSearchQuery(groupKeyword)
     return keyword
-      ? groups.filter((group) => group.name.toLowerCase().includes(keyword))
+      ? groups.filter((group) =>
+          createPinyinSearchText([group.name]).includes(keyword)
+        )
       : groups
   }, [groupKeyword, groups])
   const trimmedName = name.trim()

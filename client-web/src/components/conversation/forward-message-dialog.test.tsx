@@ -9,6 +9,35 @@ import type {
 } from "@/lib/client-data-api"
 
 describe("ForwardMessageDialog", () => {
+  it("searches conversations by full pinyin and initials", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <ForwardMessageDialog
+        conversations={[
+          createConversation("conversation-1", "张三讨论组", "group"),
+          createConversation("conversation-2", "产品研发群", "group"),
+        ]}
+        messageCount={1}
+        onComplete={vi.fn()}
+        onForward={vi.fn()}
+        onOpenChange={vi.fn()}
+        open
+      />
+    )
+
+    const searchInput = screen.getByRole("searchbox", { name: "搜索会话" })
+
+    await user.type(searchInput, "zhang san")
+    expect(screen.getByText("张三讨论组")).toBeInTheDocument()
+    expect(screen.queryByText("产品研发群")).not.toBeInTheDocument()
+
+    await user.clear(searchInput)
+    await user.type(searchInput, "cpyf")
+    expect(screen.getByText("产品研发群")).toBeInTheDocument()
+    expect(screen.queryByText("张三讨论组")).not.toBeInTheDocument()
+  })
+
   it("selects multiple conversations including the current one", async () => {
     const user = userEvent.setup()
     const onComplete = vi.fn()

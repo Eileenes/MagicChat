@@ -1,4 +1,9 @@
 import * as React from "react"
+
+import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
 import { Plus, Search } from "lucide-react"
 import { useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
@@ -34,16 +39,17 @@ export function ProjectSidebar({ onCreate }: { onCreate: () => void }) {
     projectsNextCursor,
   } = useClientData()
   const [keyword, setKeyword] = React.useState("")
-  const normalizedKeyword = keyword.trim().toLowerCase()
+  const normalizedKeyword = normalizePinyinSearchQuery(keyword)
   const visiblePersonalWorkspace = normalizedKeyword
-    ? [personalProject.name, personalProject.description].some((value) =>
-        value.toLowerCase().includes(normalizedKeyword)
-      )
+    ? createPinyinSearchText([
+        personalProject.name,
+        personalProject.description,
+      ]).includes(normalizedKeyword)
     : true
   const visibleProjects = normalizedKeyword
     ? projects.filter((project) =>
-        [project.name, project.description].some((value) =>
-          value.toLowerCase().includes(normalizedKeyword)
+        createPinyinSearchText([project.name, project.description]).includes(
+          normalizedKeyword
         )
       )
     : projects

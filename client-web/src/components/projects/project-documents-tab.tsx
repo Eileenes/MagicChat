@@ -1,4 +1,9 @@
 import * as React from "react"
+
+import {
+  createPinyinSearchText,
+  normalizePinyinSearchQuery,
+} from "@/lib/pinyin-search"
 import {
   DndContext,
   DragOverlay,
@@ -192,7 +197,7 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
     }
   }, [ensureUsers, projectId])
 
-  const normalizedKeyword = keyword.trim().toLocaleLowerCase()
+  const normalizedKeyword = normalizePinyinSearchQuery(keyword)
   const searching = normalizedKeyword.length > 0
   const visibleTree = searching
     ? filterDocumentTree(documentTree, normalizedKeyword)
@@ -1264,12 +1269,12 @@ function filterDocumentTree(
 ): DocumentTreeNode[] {
   return tree.flatMap((node) => {
     const children = filterDocumentTree(node.children, keyword)
-    const matches = [
+    const matches = createPinyinSearchText([
       node.title,
       node.creator.name,
       node.updatedBy.name,
       node.kind === "folder" ? "目录" : "文档",
-    ].some((value) => value.toLocaleLowerCase().includes(keyword))
+    ]).includes(keyword)
     return matches || children.length ? [{ ...node, children }] : []
   })
 }
