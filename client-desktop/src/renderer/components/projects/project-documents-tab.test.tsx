@@ -98,7 +98,9 @@ describe("ProjectDocumentsTab", () => {
     ).toBeInTheDocument()
     await user.click(screen.getByRole("menuitem", { name: "新窗口打开" }))
 
-    await waitFor(() => expect(openDocumentWindow).toHaveBeenCalledWith(base.id, "server-1"))
+    await waitFor(() =>
+      expect(openDocumentWindow).toHaveBeenCalledWith(base.id, "server-1", "document"),
+    )
     expect(screen.getByRole("link", { name: /产品需求文档/ })).toHaveAttribute(
       "href",
       `/documents/document/${base.id}`,

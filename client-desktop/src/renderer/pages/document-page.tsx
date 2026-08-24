@@ -11,13 +11,18 @@ import {
   Trash2,
   Users,
 } from "lucide-react"
-import { Link, useBlocker, useNavigate, useParams } from "react-router"
+import { Link, useBlocker, useLocation, useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
 import * as Y from "yjs"
 
 import { ClientDocumentTitle } from "@/components/client-document-title"
 import { SendCardDialog, StandaloneCardDialog } from "@/components/conversation/send-card-dialog"
 import { DocumentEditor } from "@/components/documents/document-editor"
+const MarkdownDocumentEditor = React.lazy(() =>
+  import("@/components/documents/markdown-document-editor").then((module) => ({
+    default: module.MarkdownDocumentEditor,
+  })),
+)
 import { DocumentWorkspaceSidebar } from "@/components/documents/document-workspace-sidebar"
 import { useLocale } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
@@ -44,6 +49,7 @@ import {
   getClientDocument,
   updateCollaborativeDocumentTitle,
   type ClientDocument,
+  type ClientDocumentType,
 } from "@/lib/document-data-api"
 import {
   createDocumentWebSocketPolyfill,
@@ -78,9 +84,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { TranslationKey } from "@/lib/i18n"
 
 type Loaded = Readonly<{
-  document: ClientDocument
+  document: EditableClientDocument
   project: ClientProjectDetail
 }>
+type EditableClientDocument = Readonly<
+  Omit<ClientDocument, "documentType" | "kind"> & {
+    documentType: ClientDocumentType
+    kind: "document"
+  }
+>
 type DocumentUnavailableMessage = Readonly<{ key: TranslationKey }> | Readonly<{ value: string }>
 type DocumentLoadError = Readonly<{
   documentId: string
@@ -92,8 +104,19 @@ type DocumentNavigationHandlers = Readonly<{
   getEditVersion(): number
 }>
 
+function isEditableClientDocument(document: ClientDocument): document is EditableClientDocument {
+  return (
+    document.kind === "document" &&
+    (document.documentType === "document" || document.documentType === "markdown")
+  )
+}
+
 export function DocumentPage() {
   const { documentId = "" } = useParams<{ documentId: string }>()
+  const { pathname } = useLocation()
+  const routeDocumentType = pathname.split("/")[2] ?? ""
+  const requestedDocumentType: ClientDocumentType | null =
+    routeDocumentType === "document" || routeDocumentType === "markdown" ? routeDocumentType : null
   const [loaded, setLoaded] = React.useState<Loaded>()
   const [error, setError] = React.useState<DocumentLoadError>()
   const [loading, setLoading] = React.useState(true)
@@ -108,11 +131,23 @@ export function DocumentPage() {
       setLoading(false)
       return () => controller.abort()
     }
+    if (!requestedDocumentType) {
+      setError({ documentId, message: { key: "document.invalidType" } })
+      setLoading(false)
+      return () => controller.abort()
+    }
     void getClientDocument(documentId, fetch, controller.signal)
       .then(async (document) => {
-        if (document.kind !== "document" || document.documentType !== "document") {
+        if (!isEditableClientDocument(document)) {
           if (!controller.signal.aborted) {
             setError({ documentId, message: { key: "document.notEditable" } })
+            setLoading(false)
+          }
+          return
+        }
+        if (document.documentType !== requestedDocumentType) {
+          if (!controller.signal.aborted) {
+            setError({ documentId, message: { key: "document.typeMismatch" } })
             setLoading(false)
           }
           return
@@ -136,10 +171,12 @@ export function DocumentPage() {
         }
       })
     return () => controller.abort()
-  }, [documentId, retry])
+  }, [documentId, requestedDocumentType, retry])
 
   const currentError = error?.documentId === documentId ? error.message : undefined
-  if (!loaded && currentError)
+  const loadedMatchesRoute =
+    loaded?.document.id === documentId && loaded.document.documentType === requestedDocumentType
+  if ((!loadedMatchesRoute || !loaded) && currentError)
     return (
       <DocumentUnavailable message={currentError} onRetry={() => setRetry((value) => value + 1)} />
     )
@@ -164,7 +201,7 @@ function DocumentWorkspace({
   project,
 }: {
   contentError?: DocumentUnavailableMessage
-  document: ClientDocument
+  document: EditableClientDocument
   loading: boolean
   onRetry(): void
   project: ClientProjectDetail
@@ -259,7 +296,7 @@ function DocumentSession({
   onSidebarTitleChange,
   project,
 }: {
-  document: ClientDocument
+  document: EditableClientDocument
   onNavigationHandlersChange(documentId: string, handlers: DocumentNavigationHandlers | null): void
   onOpenSidebar(): void
   onSidebarTitleChange(documentId: string, title: string): void
@@ -321,8 +358,8 @@ function DocumentSession({
   const [title, setTitle] = React.useState<DocumentTitleSnapshot>(titleController.value)
   const titleText = normalizeDocumentTitle(title.input)
   const documentCard = React.useMemo(
-    () => createDocumentCard(document.id, titleText, project.name),
-    [document.id, project.name, titleText],
+    () => createDocumentCard(document.id, titleText, project.name, document.documentType),
+    [document.documentType, document.id, project.name, titleText],
   )
   const dirty = titleController.dirty || body.unsyncedChanges > 0
   const allowNextNavigation = React.useRef(false)
@@ -525,7 +562,7 @@ function DocumentSession({
       : getDocumentReturnPath(`/projects/${encodeURIComponent(project.id)}/documents`)
     setOpeningWindow(true)
     try {
-      const result = await requestDocumentWindow(document.id, target.id)
+      const result = await requestDocumentWindow(document.id, target.id, document.documentType)
       toast.success(
         t(result.status === "focused" ? "documentWindow.focused" : "documentWindow.opened"),
       )
@@ -721,17 +758,38 @@ function DocumentSession({
           <DocumentOnlineUsers users={onlineUsers} />
         </header>
         {collaborationProvider ? (
-          <DocumentEditor
-            collaborationDocument={ydoc}
-            collaborationProvider={collaborationProvider}
-            collaborationUser={collaborationUser}
-            onTitleBlur={saveTitle}
-            onTitleChange={(value) => {
-              editVersion.current += 1
-              titleController.change(value)
-            }}
-            title={title.input}
-          />
+          <React.Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+                正在加载文档编辑器
+              </div>
+            }
+          >
+            {document.documentType === "markdown" ? (
+              <MarkdownDocumentEditor
+                collaborationDocument={ydoc}
+                collaborationProvider={collaborationProvider}
+                onTitleBlur={saveTitle}
+                onTitleChange={(value) => {
+                  editVersion.current += 1
+                  titleController.change(value)
+                }}
+                title={title.input}
+              />
+            ) : (
+              <DocumentEditor
+                collaborationDocument={ydoc}
+                collaborationProvider={collaborationProvider}
+                collaborationUser={collaborationUser}
+                onTitleBlur={saveTitle}
+                onTitleChange={(value) => {
+                  editVersion.current += 1
+                  titleController.change(value)
+                }}
+                title={title.input}
+              />
+            )}
+          </React.Suspense>
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />

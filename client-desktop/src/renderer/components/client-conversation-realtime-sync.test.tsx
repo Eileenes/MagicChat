@@ -1,9 +1,10 @@
 import { act, render, waitFor } from "@testing-library/react"
-import { MemoryRouter } from "react-router"
+import { MemoryRouter, useLocation } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const callbacks = new Map<string, (payload: unknown) => void>()
 const realtimeMock = vi.hoisted(() => ({ ready: true }))
+const handleIncomingConversationMessage = vi.fn()
 const updateConversationMuted = vi.fn()
 const refreshConversations = vi.fn().mockResolvedValue(undefined)
 const syncLoadedConversationMessages = vi.fn()
@@ -21,7 +22,7 @@ vi.mock("@/lib/realtime-context", () => ({
 vi.mock("@/lib/client-data-context", () => ({
   useClientData: () => ({
     foregroundConversationId: "",
-    handleIncomingConversationMessage: vi.fn(),
+    handleIncomingConversationMessage,
     handleIncomingConversationMessageUpdate: vi.fn(),
     handleIncomingMessageReactionsUpdate: vi.fn(),
     refreshConversations,
@@ -36,12 +37,17 @@ vi.mock("@/lib/client-data-context", () => ({
 
 import { ClientConversationRealtimeSync } from "@/components/client-conversation-realtime-sync"
 
+function LocationProbe() {
+  return <output data-testid="location">{useLocation().pathname}</output>
+}
+
 describe("ClientConversationRealtimeSync", () => {
   beforeEach(() => {
     callbacks.clear()
     realtimeMock.ready = true
     refreshConversations.mockReset().mockResolvedValue(undefined)
     syncLoadedConversationMessages.mockClear()
+    handleIncomingConversationMessage.mockClear()
     updateConversationMuted.mockClear()
   })
 
@@ -158,6 +164,37 @@ describe("ClientConversationRealtimeSync", () => {
     })
 
     expect(updateConversationMuted).toHaveBeenCalledWith("conversation-1", true)
+  })
+
+  it("处理好友建立系统消息、刷新会话摘要并打开好友会话", async () => {
+    render(
+      <MemoryRouter initialEntries={["/chat/other-conversation"]}>
+        <ClientConversationRealtimeSync />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+
+    act(() => {
+      callbacks.get("message.created")?.({
+        message: {
+          body: { event: "friendship_created", type: "system_event" },
+          conversation_id: "conversation-1",
+          created_at: "2026-08-01T00:00:00Z",
+          id: "message-1",
+          sender: { id: "system", type: "system" },
+          seq: 1,
+        },
+      })
+    })
+
+    expect(handleIncomingConversationMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ body: { event: "friendship_created", type: "system_event" } }),
+      expect.objectContaining({ activeConversationId: "other-conversation" }),
+    )
+    await waitFor(() => expect(refreshConversations).toHaveBeenCalledOnce())
+    expect(document.querySelector("[data-testid=location]")?.textContent).toBe(
+      "/chat/conversation-1",
+    )
   })
 
   it("refreshes conversations for a valid restored event and ignores malformed payloads", async () => {

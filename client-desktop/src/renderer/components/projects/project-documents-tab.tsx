@@ -69,6 +69,7 @@ import {
   updateCollaborativeDocumentTitle,
   formatDocumentModifiedTime,
   type ClientDocumentKind,
+  type ClientDocumentType,
 } from "@/lib/document-data-api"
 import {
   buildDocumentTree,
@@ -98,7 +99,12 @@ import {
 } from "@/lib/document-window-route"
 
 type EditDialogState =
-  | Readonly<{ kind: ClientDocumentKind; mode: "create"; parentId: string | null }>
+  | Readonly<{
+      documentType?: ClientDocumentType
+      kind: ClientDocumentKind
+      mode: "create"
+      parentId: string | null
+    }>
   | Readonly<{ mode: "rename"; node: DocumentTreeNode }>
   | null
 
@@ -186,6 +192,7 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
           kind: editDialog.kind,
           parentId: editDialog.parentId,
           title,
+          documentType: editDialog.documentType,
         })
         if (editDialog.parentId) {
           setExpandedFolderIds((current) => new Set(current).add(editDialog.parentId as string))
@@ -257,14 +264,14 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
   }
 
   async function openDocumentInWindow(node: DocumentTreeNode) {
-    if (node.kind !== "document" || openingWindowId) return
+    if (node.kind !== "document" || !node.documentType || openingWindowId) return
     if (!target) {
       toast.error(t("documentWindow.error.missingTarget"))
       return
     }
     setOpeningWindowId(node.id)
     try {
-      const result = await requestDocumentWindow(node.id, target.id)
+      const result = await requestDocumentWindow(node.id, target.id, node.documentType)
       toast.success(
         t(result.status === "focused" ? "documentWindow.focused" : "documentWindow.opened"),
       )
@@ -282,7 +289,9 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
         <DocumentToolbar
           disabled={mutating}
           keyword={keyword}
-          onCreate={(kind) => setEditDialog({ kind, mode: "create", parentId: null })}
+          onCreate={(kind, documentType) =>
+            setEditDialog({ documentType, kind, mode: "create", parentId: null })
+          }
           onKeywordChange={setKeyword}
         />
         <DndContext
@@ -333,7 +342,9 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
                   disabled={mutating || searching}
                   expandedFolderIds={expandedFolderIds}
                   nodes={visibleTree}
-                  onCreate={(kind, parentId) => setEditDialog({ kind, mode: "create", parentId })}
+                  onCreate={(kind, parentId, documentType) =>
+                    setEditDialog({ documentType, kind, mode: "create", parentId })
+                  }
                   onDelete={setDeleteNode}
                   onFolderOpenChange={(id, open) =>
                     setExpandedFolderIds((current) => {
@@ -408,7 +419,7 @@ function DocumentToolbar({
 }: {
   disabled: boolean
   keyword: string
-  onCreate: (kind: ClientDocumentKind) => void
+  onCreate: (kind: ClientDocumentKind, documentType?: ClientDocumentType) => void
   onKeywordChange: (keyword: string) => void
 }) {
   const { t } = useLocale()
@@ -454,7 +465,7 @@ function DocumentTree(props: {
   disabled: boolean
   expandedFolderIds: ReadonlySet<string>
   nodes: ReadonlyArray<DocumentTreeNode>
-  onCreate: (kind: ClientDocumentKind, parentId: string) => void
+  onCreate: (kind: ClientDocumentKind, parentId: string, documentType?: ClientDocumentType) => void
   onDelete: (node: DocumentTreeNode) => void
   onFolderOpenChange: (folderId: string, open: boolean) => void
   onOpenWindow: (node: DocumentTreeNode) => void
@@ -604,7 +615,7 @@ function DocumentTreeRow(props: React.ComponentProps<typeof DocumentTreeItem> & 
         ) : (
           <Link
             className="flex min-w-0 items-center gap-2 rounded-sm focus-visible:ring-2"
-            to={`/documents/document/${encodeURIComponent(props.node.id)}`}
+            to={`/documents/${props.node.documentType}/${encodeURIComponent(props.node.id)}`}
           >
             {name}
           </Link>
@@ -775,7 +786,9 @@ function DocumentEditDialog({
               ? t("docTree.rename")
               : kind === "folder"
                 ? t("docTree.newFolder")
-                : t("docTree.newDoc")}
+                : state.mode === "create" && state.documentType === "markdown"
+                  ? "新建 Markdown 文档"
+                  : t("docTree.newDoc")}
           </DialogTitle>
         </DialogHeader>
         <form
