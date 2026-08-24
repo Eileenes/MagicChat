@@ -13,6 +13,7 @@ import {
 } from "@dnd-kit/core"
 import {
   Ellipsis,
+  FileCode2,
   FileText,
   Folder,
   FolderOpen,
@@ -72,12 +73,14 @@ import { formatDocumentModifiedTime } from "@/lib/activity-time"
 import {
   createClientDocument,
   deleteClientDocument,
+  getClientDocumentPath,
   listClientDocuments,
   moveClientDocument,
   updateClientDocument,
   updateCollaborativeDocumentTitle,
   type ClientDocument,
   type ClientDocumentKind,
+  type ClientDocumentType,
 } from "@/lib/document-data-api"
 import {
   useClientData,
@@ -91,8 +94,15 @@ type DocumentDropTarget =
   | { folderId: string; kind: "folder" }
   | { index: number; kind: "position"; parentId: string | null }
 
+type CreateDocumentNode = (
+  kind: ClientDocumentKind,
+  parentId: string,
+  documentType?: ClientDocumentType
+) => void
+
 type EditDialogState =
   | {
+      documentType?: ClientDocumentType
       kind: ClientDocumentKind
       mode: "create"
       parentId: string | null
@@ -197,11 +207,17 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
     setMutating(true)
     try {
       if (editDialog.mode === "create") {
-        const created = await createClientDocument(projectId, {
-          kind: editDialog.kind,
-          parentId: editDialog.parentId,
-          title,
-        })
+        const created = await createClientDocument(
+          projectId,
+          editDialog.kind === "document"
+            ? {
+                documentType: editDialog.documentType ?? "document",
+                kind: "document",
+                parentId: editDialog.parentId,
+                title,
+              }
+            : { kind: "folder", parentId: editDialog.parentId, title }
+        )
         if (editDialog.parentId) {
           setExpandedFolderIds((current) =>
             new Set(current).add(editDialog.parentId as string)
@@ -290,8 +306,13 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
         <DocumentToolbar
           disabled={mutating}
           keyword={keyword}
-          onCreate={(kind) =>
-            setEditDialog({ kind, mode: "create", parentId: null })
+          onCreate={(kind, documentType) =>
+            setEditDialog({
+              documentType,
+              kind,
+              mode: "create",
+              parentId: null,
+            })
           }
           onKeywordChange={setKeyword}
         />
@@ -337,8 +358,13 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
                       draggingDisabled={searching || mutating}
                       expandedFolderIds={expandedFolderIds}
                       items={visibleTree}
-                      onCreate={(kind, parentId) =>
-                        setEditDialog({ kind, mode: "create", parentId })
+                      onCreate={(kind, parentId, documentType) =>
+                        setEditDialog({
+                          documentType,
+                          kind,
+                          mode: "create",
+                          parentId,
+                        })
                       }
                       onDelete={setDeleteNode}
                       onFolderOpenChange={(folderId, open) =>
@@ -375,7 +401,7 @@ export function ProjectDocumentsTab({ projectId }: { projectId: string }) {
           key={
             editDialog.mode === "rename"
               ? `rename:${editDialog.node.id}`
-              : `create:${editDialog.kind}:${editDialog.parentId ?? "root"}`
+              : `create:${editDialog.kind}:${editDialog.documentType ?? "none"}:${editDialog.parentId ?? "root"}`
           }
           onOpenChange={(open) => !open && setEditDialog(null)}
           onSubmit={handleEditSubmit}
@@ -420,7 +446,10 @@ function DocumentToolbar({
 }: {
   disabled: boolean
   keyword: string
-  onCreate: (kind: ClientDocumentKind) => void
+  onCreate: (
+    kind: ClientDocumentKind,
+    documentType?: ClientDocumentType
+  ) => void
   onKeywordChange: (keyword: string) => void
 }) {
   return (
@@ -443,12 +472,18 @@ function DocumentToolbar({
             创建
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => onCreate("document")}>
+        <DropdownMenuContent align="end" className="w-50">
+          <DropdownMenuItem onSelect={() => onCreate("document", "document")}>
             <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300">
               <FileText className="size-4 text-sky-600 dark:text-sky-300" />
             </span>
             新建文档
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onCreate("document", "markdown")}>
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
+              <FileCode2 className="size-4" />
+            </span>
+            新建 Markdown 文档
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => onCreate("folder")}>
             <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300">
@@ -482,7 +517,7 @@ function DocumentTree({
   draggingDisabled: boolean
   expandedFolderIds: Set<string>
   items: DocumentTreeNode[]
-  onCreate: (kind: ClientDocumentKind, parentId: string) => void
+  onCreate: CreateDocumentNode
   onDelete: (node: DocumentTreeNode) => void
   onFolderOpenChange: (folderId: string, open: boolean) => void
   onRename: (node: DocumentTreeNode) => void
@@ -544,7 +579,7 @@ function DocumentTreeItem(props: {
   draggingDisabled: boolean
   expandedFolderIds: Set<string>
   node: DocumentTreeNode
-  onCreate: (kind: ClientDocumentKind, parentId: string) => void
+  onCreate: CreateDocumentNode
   onDelete: (node: DocumentTreeNode) => void
   onFolderOpenChange: (folderId: string, open: boolean) => void
   onRename: (node: DocumentTreeNode) => void
@@ -601,7 +636,7 @@ function DocumentTreeRow({
   draggingDisabled: boolean
   folderDropDisabled: boolean
   node: DocumentTreeNode
-  onCreate: (kind: ClientDocumentKind, parentId: string) => void
+  onCreate: CreateDocumentNode
   onDelete: (node: DocumentTreeNode) => void
   onRename: (node: DocumentTreeNode) => void
   open: boolean
@@ -630,7 +665,13 @@ function DocumentTreeRow({
     [setDragRef, setDropRef]
   )
   const NodeIcon =
-    node.kind === "folder" ? (open ? FolderOpen : Folder) : FileText
+    node.kind === "folder"
+      ? open
+        ? FolderOpen
+        : Folder
+      : node.documentType === "markdown"
+        ? FileCode2
+        : FileText
   const name = (
     <>
       <span
@@ -638,7 +679,7 @@ function DocumentTreeRow({
           "flex size-8 shrink-0 items-center justify-center rounded-md",
           node.kind === "folder"
             ? "bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300"
-            : "bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300"
+            : "bg-sky-50 text-(--weui-link) dark:bg-sky-950/60 dark:text-(--weui-link)"
         )}
       >
         <NodeIcon className="size-5" />
@@ -647,7 +688,7 @@ function DocumentTreeRow({
         className={cn(
           "min-w-0 truncate font-medium transition-colors",
           node.kind === "document" &&
-            "group-focus-within/name:text-sky-500 group-hover/name:text-sky-500"
+            "group-focus-within/name:text-(--weui-link) group-hover/name:text-(--weui-link)"
         )}
       >
         {node.title}
@@ -695,7 +736,7 @@ function DocumentTreeRow({
             onTouchStart={stopDocumentDragActivation}
             style={{ marginLeft: depth * 24 }}
             target="_blank"
-            to={`/documents/document/${encodeURIComponent(node.id)}`}
+            to={getClientDocumentPath(node.id, node.documentType)}
           >
             {name}
           </Link>
@@ -740,10 +781,16 @@ function DocumentTreeRow({
             {node.kind === "folder" && (
               <>
                 <DropdownMenuItem
-                  onSelect={() => onCreate("document", node.id)}
+                  onSelect={() => onCreate("document", node.id, "document")}
                 >
                   <FileText />
                   新建子文档
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => onCreate("document", node.id, "markdown")}
+                >
+                  <FileCode2 />
+                  新建子 Markdown 文档
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => onCreate("folder", node.id)}>
                   <FolderPlus />
@@ -886,7 +933,9 @@ function DocumentEditDialog({
               ? "重命名"
               : kind === "folder"
                 ? "新建目录"
-                : "新建文档"}
+                : state.documentType === "markdown"
+                  ? "新建 Markdown 文档"
+                  : "新建文档"}
           </DialogTitle>
         </DialogHeader>
         <form
@@ -903,7 +952,13 @@ function DocumentEditDialog({
               id="document-node-title"
               maxLength={500}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder={kind === "folder" ? "无标题目录" : "无标题文档"}
+              placeholder={
+                kind === "folder"
+                  ? "无标题目录"
+                  : state.mode === "create" && state.documentType === "markdown"
+                    ? "无标题 Markdown"
+                    : "无标题文档"
+              }
               value={title}
             />
           </div>
@@ -957,7 +1012,12 @@ function DocumentErrorState({
 }
 
 function DocumentDragOverlay({ node }: { node: DocumentTreeNode }) {
-  const NodeIcon = node.kind === "folder" ? Folder : FileText
+  const NodeIcon =
+    node.kind === "folder"
+      ? Folder
+      : node.documentType === "markdown"
+        ? FileCode2
+        : FileText
   return (
     <div className="flex w-80 cursor-grabbing items-center gap-2 rounded-md border border-border/80 bg-background/95 p-2 shadow-xl ring-1 ring-black/5 backdrop-blur-sm dark:ring-white/10">
       <NodeIcon

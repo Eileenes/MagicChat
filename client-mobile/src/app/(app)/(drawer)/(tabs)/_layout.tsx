@@ -1,25 +1,63 @@
-import { Tabs as RouterTabs, useRouter } from "expo-router"
-import type { Href } from "expo-router"
-import {
-  BriefcaseBusiness,
-  ContactRound,
-  MessageCircleMore,
-  Search,
-  UserRound,
-  type LucideIcon,
-} from "lucide-react-native"
-import type { ComponentProps } from "react"
-import { useState } from "react"
-import { SizableText, Tabs, YStack } from "tamagui"
+// Tabler exposes per-icon runtime entry points without per-icon declarations.
+// eslint-disable-next-line import/no-unresolved
+import IconBook from "@tabler/icons-react-native/IconBook"
+// eslint-disable-next-line import/no-unresolved
+import IconBookFilled from "@tabler/icons-react-native/IconBookFilled"
+// eslint-disable-next-line import/no-unresolved
+import IconBriefcase from "@tabler/icons-react-native/IconBriefcase"
+// eslint-disable-next-line import/no-unresolved
+import IconBriefcaseFilled from "@tabler/icons-react-native/IconBriefcaseFilled"
+// eslint-disable-next-line import/no-unresolved
+import IconMessageCircle from "@tabler/icons-react-native/IconMessageCircle"
+// eslint-disable-next-line import/no-unresolved
+import IconMessageCircleFilled from "@tabler/icons-react-native/IconMessageCircleFilled"
+// eslint-disable-next-line import/no-unresolved
+import IconCirclePlus from "@tabler/icons-react-native/IconCirclePlus"
+// eslint-disable-next-line import/no-unresolved
+import IconZoomScanFilled from "@tabler/icons-react-native/IconZoomScanFilled"
+// eslint-disable-next-line import/no-unresolved
+import IconSettings from "@tabler/icons-react-native/IconSettings"
+// eslint-disable-next-line import/no-unresolved
+import IconSettingsFilled from "@tabler/icons-react-native/IconSettingsFilled"
+// eslint-disable-next-line import/no-unresolved
+import IconUserFilled from "@tabler/icons-react-native/IconUserFilled"
+import { Tabs as RouterTabs, type Href, useRouter } from "expo-router"
+import { useRef, useState, type ComponentProps } from "react"
+import type { View } from "react-native"
 
 import { AppHeader } from "@/components/navigation/app-header"
-import { useXGUITheme } from "@/xgui"
+import { notifyMessagesTabReselected } from "@/features/messages/messages-tab-reselect"
+import { formatUnreadCount } from "@/features/messages/conversation-list-model"
+import { buildCreateGroupConversationHref } from "@/navigation/conversations"
+import { useClientData } from "@/providers/client-data-provider"
+import {
+  XGUIPopoverMenu,
+  XGUITabbar,
+  XGUITabbarItem,
+  useXGUITheme,
+} from "@/xgui"
 
-const TAB_ITEMS: Record<string, { icon: LucideIcon; label: string }> = {
-  contacts: { icon: ContactRound, label: "通讯录" },
-  me: { icon: UserRound, label: "我" },
-  messages: { icon: MessageCircleMore, label: "消息" },
-  projects: { icon: BriefcaseBusiness, label: "项目" },
+const TAB_ITEMS = {
+  contacts: {
+    activeIcon: IconBookFilled,
+    icon: IconBook,
+    label: "通讯录",
+  },
+  me: {
+    activeIcon: IconSettingsFilled,
+    icon: IconSettings,
+    label: "设置",
+  },
+  messages: {
+    activeIcon: IconMessageCircleFilled,
+    icon: IconMessageCircle,
+    label: "消息",
+  },
+  projects: {
+    activeIcon: IconBriefcaseFilled,
+    icon: IconBriefcase,
+    label: "办公",
+  },
 }
 
 type AppTabBarProps = Parameters<
@@ -27,13 +65,28 @@ type AppTabBarProps = Parameters<
 >[0]
 
 export default function AppTabsLayout() {
-  const router = useRouter()
+  const { conversations } = useClientData()
   const { colors } = useXGUITheme()
+  const unreadMessageCount = conversations.reduce(
+    (total, conversation) =>
+      conversation.notificationMuted
+        ? total
+        : total + conversation.unreadCount,
+    0
+  )
+  const messageTitle =
+    unreadMessageCount > 0
+      ? `消息 (${formatUnreadCount(unreadMessageCount)})`
+      : "消息"
 
   return (
     <RouterTabs
-      tabBar={(props) => <AppTabBar {...props} />}
+      detachInactiveScreens={false}
+      tabBar={(props) => (
+        <AppTabBar {...props} unreadMessageCount={unreadMessageCount} />
+      )}
       screenOptions={{
+        freezeOnBlur: true,
         headerShown: true,
         sceneStyle: {
           backgroundColor: colors.background0,
@@ -45,16 +98,7 @@ export default function AppTabsLayout() {
         name="messages"
         options={{
           header: () => (
-            <AppHeader
-              actions={[
-                {
-                  icon: Search,
-                  label: "搜索",
-                  onPress: () => router.push("/search" as Href),
-                },
-              ]}
-              title="消息"
-            />
+            <AppTabHeader title={messageTitle} titleFontSize={18} />
           ),
           title: "消息",
         }}
@@ -62,33 +106,101 @@ export default function AppTabsLayout() {
       <RouterTabs.Screen
         name="contacts"
         options={{
-          header: () => <AppHeader title="通讯录" />,
+          header: () => <AppTabHeader title="通讯录" />,
+          lazy: false,
           title: "通讯录",
         }}
       />
       <RouterTabs.Screen
         name="projects"
         options={{
-          header: () => <AppHeader title="项目" />,
-          title: "项目",
+          header: () => <AppTabHeader title="办公" />,
+          title: "办公",
         }}
       />
       <RouterTabs.Screen
         name="me"
         options={{
-          header: () => <AppHeader title="我" />,
-          title: "我",
+          header: () => <AppHeader title="设置" />,
+          title: "设置",
         }}
       />
     </RouterTabs>
   )
 }
 
-function AppTabBar({ insets, navigation, state }: AppTabBarProps) {
-  const activeRouteName = state.routes[state.index]?.name ?? "messages"
+function AppTabHeader({
+  title,
+  titleFontSize,
+}: {
+  title: string
+  titleFontSize?: number
+}) {
+  const anchorRef = useRef<View>(null)
+  const router = useRouter()
+  const [menuOpen, setMenuOpen] = useState(false)
   const { colors } = useXGUITheme()
 
-  function handleValueChange(routeName: string) {
+  return (
+    <>
+      <AppHeader
+        actions={[
+          {
+            buttonRef: anchorRef,
+            icon: IconCirclePlus,
+            iconColor: colors.textPrimary,
+            label: "新增",
+            onPress: () => setMenuOpen(true),
+            strokeWidth: 1,
+          },
+        ]}
+        title={title}
+        titleFontSize={titleFontSize}
+      />
+      <XGUIPopoverMenu
+        anchorRef={anchorRef}
+        items={[
+          {
+            icon: (props) => <IconMessageCircleFilled {...props} />,
+            label: "发起群聊",
+            onPress: () => router.push(buildCreateGroupConversationHref()),
+          },
+          {
+            icon: (props) => <IconUserFilled {...props} />,
+            label: "添加朋友",
+            onPress: () => {
+              setMenuOpen(false)
+              router.push({
+                params: { category: "new-friends" },
+                pathname: "/(app)/contacts/[category]",
+              } as unknown as Href)
+            },
+          },
+          {
+            icon: (props) => <IconZoomScanFilled {...props} />,
+            label: "扫一扫",
+            onPress: () => {
+              setMenuOpen(false)
+              router.push("/qr-scanner" as Href)
+            },
+          },
+        ]}
+        onOpenChange={setMenuOpen}
+        open={menuOpen}
+        width={140}
+      />
+    </>
+  )
+}
+
+function AppTabBar({
+  navigation,
+  state,
+  unreadMessageCount,
+}: AppTabBarProps & { unreadMessageCount: number }) {
+  const activeRouteName = state.routes[state.index]?.name ?? "messages"
+
+  function handlePress(routeName: string) {
     const route = state.routes.find((item) => item.name === routeName)
     if (!route) return
 
@@ -98,84 +210,38 @@ function AppTabBar({ insets, navigation, state }: AppTabBarProps) {
       type: "tabPress",
     })
 
-    if (!event.defaultPrevented && route.name !== activeRouteName) {
-      navigation.navigate(route.name, route.params)
+    if (event.defaultPrevented) return
+
+    if (route.name === activeRouteName) {
+      if (route.name === "messages" && unreadMessageCount > 0) {
+        notifyMessagesTabReselected()
+      }
+      return
     }
+
+    navigation.navigate(route.name, route.params)
   }
 
   return (
-    <YStack bg={colors.background2} pb={insets.bottom}>
-      <Tabs
-        onValueChange={handleValueChange}
-        size="$5"
-        value={activeRouteName}
-        width="100%"
-      >
-        <Tabs.List
-          bg="transparent"
-          borderWidth={0}
-          height={56}
-          rounded={0}
-          width="100%"
-        >
-          {state.routes.map((route) => {
-            const item = TAB_ITEMS[route.name]
-            if (!item) return null
+    <XGUITabbar>
+      {state.routes.map((route) => {
+        const item = TAB_ITEMS[route.name as keyof typeof TAB_ITEMS]
+        if (!item) return null
 
-            const focused = route.name === activeRouteName
-
-            return (
-              <AppTabItem
-                focused={focused}
-                item={item}
-                key={route.key}
-                routeName={route.name}
-              />
-            )
-          })}
-        </Tabs.List>
-      </Tabs>
-    </YStack>
-  )
-}
-
-function AppTabItem({
-  focused,
-  item,
-  routeName,
-}: {
-  focused: boolean
-  item: { icon: LucideIcon; label: string }
-  routeName: string
-}) {
-  const { colors } = useXGUITheme()
-  const [pressed, setPressed] = useState(false)
-  const color = pressed
-    ? colors.textSecondary
-    : focused
-      ? colors.brand
-      : colors.textSecondary
-  const Icon = item.icon
-
-  return (
-    <Tabs.Tab
-      accessibilityLabel={item.label}
-      bg="transparent"
-      flex={1}
-      height="100%"
-      items="center"
-      justify="center"
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      unstyled
-      value={routeName}
-    >
-      <YStack gap="$0.5" items="center">
-        <Icon color={color} size={20} />
-        <SizableText color={color} size="$2">
-          {item.label}
-        </SizableText>
-      </YStack>
-    </Tabs.Tab>
+        return (
+          <XGUITabbarItem
+            active={route.name === activeRouteName}
+            activeIcon={item.activeIcon}
+            icon={item.icon}
+            key={route.key}
+            label={item.label}
+            onPress={() => handlePress(route.name)}
+            unreadCount={
+              route.name === "messages" ? unreadMessageCount : undefined
+            }
+          />
+        )
+      })}
+    </XGUITabbar>
   )
 }

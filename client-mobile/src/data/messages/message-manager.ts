@@ -78,7 +78,7 @@ type RuntimeConversation = Map<string, ClientMessage>
 const MAX_RUNTIME_MESSAGES_PER_CONVERSATION = 3_000
 const runtimeMessages = new Map<string, RuntimeConversation>()
 const runtimePageState = new Map<string, ClientMessagePage>()
-const latestSynchronization = new Map<string, Promise<void>>()
+const latestSynchronization = new Map<string, Promise<ClientMessageList>>()
 const activeMessageCacheWrites = new Set<Promise<unknown>>()
 let messageCacheClearBarrier: Promise<void> | null = null
 let messageCacheClearOperation: Promise<void> | null = null
@@ -223,7 +223,7 @@ function synchronizeLatest(
   target: AuthenticatedTarget,
   conversationId: string,
   limit: number
-): Promise<void> {
+): Promise<ClientMessageList> {
   const key = createRuntimeConversationKey(target, conversationId)
   const current = latestSynchronization.get(key)
   if (current) return current
@@ -244,6 +244,7 @@ function synchronizeLatest(
         ),
         type: "latest-page",
       })
+      return result
     })
     .finally(() => {
       if (latestSynchronization.get(key) === operation) {

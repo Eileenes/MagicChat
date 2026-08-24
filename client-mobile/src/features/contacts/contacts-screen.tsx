@@ -1,60 +1,76 @@
-import { useRouter } from "expo-router"
-import { useMemo, useState } from "react"
-import { SizableText, Tabs, YStack } from "tamagui"
+import { useRouter, type Href } from "expo-router"
+import { useMemo } from "react"
 
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
-import { appConfig } from "@/config/app-config"
-import { useCachedAppInfo } from "@/data/auth/auth-hooks"
-import { useAuthenticatedSession } from "@/providers/auth-provider"
+import {
+  ContactDirectoryHomeHeader,
+  type ContactDirectoryHomeEntry,
+} from "@/features/contacts/contact-directory-home-header"
+import { ContactDirectoryList } from "@/features/contacts/contact-directory-list"
 import {
   buildDirectorySections,
+  type DirectoryCategory,
   type DirectoryItem,
-  type DirectoryTab,
 } from "@/features/contacts/contact-directory-model"
-import { ContactDirectoryList } from "@/features/contacts/contact-directory-list"
-import { useClientData } from "@/providers/client-data-provider"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
-
-const DIRECTORY_TABS: { label: string; value: DirectoryTab }[] = [
-  { label: "联系人", value: "user" },
-  { label: "应用", value: "app" },
-  { label: "群组", value: "group" },
-]
+import { useAuthenticatedSession } from "@/providers/auth-provider"
+import { useClientData } from "@/providers/client-data-provider"
+import { useXGUITheme } from "@/xgui"
 
 export function ContactsScreen() {
+  const { colors } = useXGUITheme()
   const router = useRouter()
   const session = useAuthenticatedSession()
-  const appInfoQuery = useCachedAppInfo(session)
   const {
     contacts,
     contactsError,
-    isContactsRefreshing,
-    refreshContacts,
   } = useClientData()
-  const [activeTab, setActiveTab] = useState<DirectoryTab>("user")
-  const organizationName =
-    appInfoQuery.data?.organizationName ?? appConfig.organizationName
   const sections = useMemo(
     () =>
       buildDirectorySections({
-        activeTab,
+        activeTab: "user",
         contacts,
         currentUserId: session.userId,
         keyword: "",
-        organizationName,
       }),
-    [activeTab, contacts, organizationName, session.userId]
+    [contacts, session.userId]
   )
-
-  function handleTabChange(value: string) {
-    if (value === "user" || value === "app" || value === "group") {
-      setActiveTab(value)
-    }
-  }
-
-  function handleRefresh() {
-    void refreshContacts().catch(() => undefined)
-  }
+  const entries = useMemo<ContactDirectoryHomeEntry[]>(
+    () => [
+      {
+        category: "new-friends",
+        count: 0,
+        label: "新朋友",
+      },
+      {
+        category: "my-apps",
+        count: contacts.apps.filter(
+          (app) =>
+            app.creatorUserId?.toLocaleLowerCase() ===
+            session.userId.toLocaleLowerCase()
+        ).length,
+        label: "我的应用",
+      },
+      {
+        category: "all-apps",
+        count: contacts.apps.length,
+        label: "所有应用",
+      },
+      {
+        category: "joined-groups",
+        count: contacts.groups.filter((group) => group.joined).length,
+        label: "我加入的群组",
+      },
+      {
+        category: "public-groups",
+        count: contacts.groups.filter(
+          (group) => group.visibility === "public"
+        ).length,
+        label: "公开群组",
+      },
+    ],
+    [contacts.apps, contacts.groups, session.userId]
+  )
 
   function handleItemPress(item: DirectoryItem) {
     router.push(
@@ -62,60 +78,35 @@ export function ContactsScreen() {
     )
   }
 
+  function handleEntryPress(category: DirectoryCategory) {
+    router.push({
+      params: { category },
+      pathname: "/(app)/contacts/[category]",
+    } as unknown as Href)
+  }
+
   return (
     <KeyboardAwareScreen
-      contentBackground="$color1"
+      contentBackground={colors.background0}
       edges={[]}
       scrollable={false}
     >
-      <YStack gap="$3" px="$4" py="$3">
-        <Tabs onValueChange={handleTabChange} size="$3" value={activeTab}>
-          <Tabs.List width="100%">
-            {DIRECTORY_TABS.map((tab) => {
-              const selected = tab.value === activeTab
-
-              return (
-                <Tabs.Tab
-                  bg={selected ? "$color3" : "$color2"}
-                  flex={1}
-                  key={tab.value}
-                  pressStyle={{ bg: selected ? "$color3" : "$color2" }}
-                  value={tab.value}
-                >
-                  <SizableText
-                    color={selected ? "$color10" : "$gray9"}
-                    size="$3"
-                  >
-                    {tab.label}
-                  </SizableText>
-                </Tabs.Tab>
-              )
-            })}
-          </Tabs.List>
-        </Tabs>
-      </YStack>
-
       <ContactDirectoryList
+        alphabetIndex
+        emptyLabel="联系人"
         errorMessage={contactsError?.message}
-        emptyLabel={getDirectoryTabLabel(activeTab)}
-        isRefreshing={isContactsRefreshing}
-        onRefresh={handleRefresh}
+        footerNoun="联系人"
+        listHeader={
+          <ContactDirectoryHomeHeader
+            entries={entries}
+            onEntryPress={handleEntryPress}
+            onSearchPress={() => router.push("/search")}
+          />
+        }
         onItemPress={handleItemPress}
         sections={sections}
         server={session}
       />
     </KeyboardAwareScreen>
   )
-}
-
-function getDirectoryTabLabel(tab: DirectoryTab) {
-  if (tab === "app") {
-    return "应用"
-  }
-
-  if (tab === "group") {
-    return "群组"
-  }
-
-  return "联系人"
 }

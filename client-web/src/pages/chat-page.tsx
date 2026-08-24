@@ -42,6 +42,7 @@ import { FriendManagementDialog } from "@/components/contacts/friend-management-
 import { CreateGroupConversationDialog } from "@/components/conversation/create-group-conversation-dialog"
 import { ForwardMessageDialog } from "@/components/conversation/forward-message-dialog"
 import { ConversationSidebar } from "@/components/conversation/conversation-sidebar"
+import { ConversationTopicsDialog } from "@/components/conversation/conversation-topics-dialog"
 import {
   TopicArchiveAction,
   TopicDrawer,
@@ -580,6 +581,11 @@ export function ChatPage() {
     },
     [activeConversationId, setMessageReaction]
   )
+  const respondToActiveChoice = React.useCallback(
+    (message: ConversationPanelMessage, optionIds: string[]) =>
+      respondToChoice(activeConversationId, message.id, optionIds),
+    [activeConversationId, respondToChoice]
+  )
 
   const openForwardOperation = React.useCallback(
     (messageIds: string[], mode: ConversationPanelForwardMode) => {
@@ -1008,9 +1014,15 @@ export function ChatPage() {
         historyNavigation={activeHistoryNavigation}
         historyHeader={activeHistoryHeader}
         headerActions={
-          activeConversation?.type === "topic" &&
-          activeConversation.canSend !== false ? (
-            <TopicArchiveAction conversationId={activeConversation.id} />
+          activeConversation?.type === "topic" ? (
+            activeConversation.canSend !== false ? (
+              <TopicArchiveAction conversationId={activeConversation.id} />
+            ) : undefined
+          ) : activeConversation ? (
+            <ConversationTopicsDialog
+              conversation={activeConversation}
+              onOpenTopic={openTopicDrawer}
+            />
           ) : undefined
         }
         mentionLabelResolver={activeMentionLabelResolver}
@@ -1038,9 +1050,7 @@ export function ChatPage() {
         onReplyToMessage={replyToMessage}
         onRevokeMessage={revokeMessage}
         onSetMessageReaction={updateMessageReaction}
-        onRespondToChoice={(message, optionIds) =>
-          respondToChoice(activeConversationId, message.id, optionIds)
-        }
+        onRespondToChoice={respondToActiveChoice}
         onRichTextModeChange={setRichTextMode}
         onSendFile={sendFileMessage}
         onSendImage={sendImageMessage}

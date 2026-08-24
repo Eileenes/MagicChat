@@ -13,8 +13,6 @@ import {
   ScrollView,
   Separator,
   SizableText,
-  useTheme,
-  useThemeName,
   XStack,
   YStack,
 } from "tamagui"
@@ -37,13 +35,11 @@ import {
   truncateChartLabel,
   type ChartDomain,
 } from "@/domain/messages/message-chart-geometry"
+import { useXGUITheme } from "@/xgui"
 
 const DEFAULT_CHART_HEIGHT = 220
 const DEFAULT_CHART_WIDTH = 320
 const MAX_VERTICAL_CHART_HEIGHT = 320
-
-const lightChartColors = ["#0369a1", "#0284c7", "#0ea5e9", "#38bdf8", "#7dd3fc"]
-const darkChartColors = ["#7dd3fc", "#38bdf8", "#0ea5e9", "#0284c7", "#0369a1"]
 
 type ChartPalette = {
   background: string
@@ -67,18 +63,23 @@ type ChartDetailItem = {
 
 export const MessageChart = memo(function MessageChart({
   chart,
+  onLongPress,
 }: {
   chart: ClientChartMessageBody
+  onLongPress: () => void
 }) {
   const palette = useChartPalette()
+  const { colors } = useXGUITheme()
 
   return (
-    <YStack gap="$2" width="100%">
-      <SizableText fontWeight="600">{chart.title}</SizableText>
-      <Separator />
+    <YStack gap="$2" onLongPress={onLongPress} width="100%">
+      <Paragraph color={colors.textPrimary} size="$4">
+        {chart.title}
+      </Paragraph>
+      <Separator borderColor={colors.foreground3} />
       <ChartBody chart={chart} palette={palette} />
-      <Separator />
-      <Paragraph color="$color10" size="$2">
+      <Separator borderColor={colors.foreground3} />
+      <Paragraph color={colors.textPrimary} size="$4">
         {chart.description}
       </Paragraph>
     </YStack>
@@ -761,7 +762,7 @@ function CartesianGrid({
           />
           <SvgText
             fill={palette.muted}
-            fontSize={9}
+            fontSize={10}
             textAnchor="middle"
             x={x}
             y={plot.bottom + 14}
@@ -785,7 +786,7 @@ function CartesianGrid({
         />
         <SvgText
           fill={palette.muted}
-          fontSize={9}
+          fontSize={10}
           textAnchor="end"
           x={plot.left - 6}
           y={y + 3}
@@ -847,6 +848,7 @@ function ChartLegend({
   items: ChartLegendItem[]
   onToggle: (key: string) => void
 }) {
+  const { colors } = useXGUITheme()
   if (!always && items.length <= 1) return null
 
   return (
@@ -871,7 +873,7 @@ function ChartLegend({
                 style={{ backgroundColor: item.color }}
                 width={8}
               />
-              <SizableText color="$color10" size="$1">
+              <SizableText color={colors.textSecondary} size="$3">
                 {item.label}
               </SizableText>
             </XStack>
@@ -889,17 +891,19 @@ function ChartTapResult({
   details: ChartDetailItem[]
   label: string | null
 }) {
-  if (!label || details.length === 0) {
-    return (
-      <SizableText color="$color10" size="$1" text="center">
-        点按图表查看数值
-      </SizableText>
-    )
-  }
+  const { colors } = useXGUITheme()
+  if (!label || details.length === 0) return null
 
   return (
-    <YStack bg="$background" borderColor="$borderColor" borderWidth={1} gap="$1" p="$2" rounded="$3">
-      <SizableText fontWeight="600" size="$2">
+    <YStack
+      bg={colors.background1}
+      borderColor={colors.foreground3}
+      borderWidth={1}
+      gap="$1"
+      p="$2"
+      rounded="$3"
+    >
+      <SizableText color={colors.textPrimary} fontWeight="600" size="$3">
         {label}
       </SizableText>
       {details.map((detail) => (
@@ -911,11 +915,19 @@ function ChartTapResult({
               style={{ backgroundColor: detail.color }}
               width={8}
             />
-            <SizableText color="$color10" numberOfLines={1} size="$1">
+            <SizableText
+              color={colors.textSecondary}
+              numberOfLines={1}
+              size="$3"
+            >
               {detail.label}
             </SizableText>
           </XStack>
-          <SizableText fontWeight="600" size="$1">
+          <SizableText
+            color={colors.textPrimary}
+            fontWeight="600"
+            size="$3"
+          >
             {detail.value}
           </SizableText>
         </XStack>
@@ -995,18 +1007,21 @@ function useHiddenChartItems() {
 }
 
 function useChartPalette(): ChartPalette {
-  const theme = useTheme()
-  const themeName = String(useThemeName())
+  const { colors } = useXGUITheme()
   return useMemo(
     () => ({
-      background: String(theme.background.val),
-      colors: themeName.startsWith("dark")
-        ? darkChartColors
-        : lightChartColors,
-      grid: String(theme.borderColor.val),
-      muted: String(theme.gray9.val),
-      text: String(theme.gray12.val),
+      background: colors.background2,
+      colors: [
+        colors.blue,
+        colors.indigo,
+        colors.purple,
+        colors.green,
+        colors.lightGreen,
+      ],
+      grid: colors.foreground3,
+      muted: colors.textSecondary,
+      text: colors.textPrimary,
     }),
-    [theme, themeName]
+    [colors]
   )
 }

@@ -1,21 +1,23 @@
+// Tabler exposes per-icon runtime entry points without per-icon declarations.
+// eslint-disable-next-line import/no-unresolved
+import IconDots from "@tabler/icons-react-native/IconDots"
+import * as Haptics from "expo-haptics"
 import {
   useIsFocused,
   useLocalSearchParams,
   useRouter,
 } from "expo-router"
-import { Ellipsis } from "lucide-react-native"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Alert } from "react-native"
+import { Alert, Platform } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { SizableText, useToastController, YStack } from "tamagui"
+import { SizableText, YStack } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import { ContentState } from "@/components/feedback/content-state"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import {
-  PAGE_HEADER_HEIGHT,
-  PageHeader,
-} from "@/components/navigation/page-header"
+  APP_HEADER_HEIGHT,
+  AppHeader,
+} from "@/components/navigation/app-header"
 import { ApiRequestError, isUnauthorizedError } from "@/data/api-client"
 import {
   useConversationMessages,
@@ -26,19 +28,18 @@ import {
   useMessageResources,
 } from "@/data/resources"
 import {
-  useArchiveConversationTopic,
   useConversationTopic,
+  useCreateConversationTopic,
 } from "@/data/conversations/topic-hooks"
-import {
-  type EntityReference,
-  getConversationEntityReference,
-} from "@/domain/entities/entity-profile"
+import { type EntityReference } from "@/domain/entities/entity-profile"
 import {
   buildPresentedMessages,
   collectMessageResources,
   collectMessageUserIds,
   createMessageMentionLabelResolver,
+  formatClientMessageBodySummary,
   type MessageMentionLabelResolver,
+  type PresentedMessage,
 } from "@/domain/messages/message-presenter"
 import { shouldShowMessageChoiceResponseCounts } from "@/domain/messages/message-choices"
 import {
@@ -48,7 +49,6 @@ import {
 import { ForwardMessageSheet } from "@/features/conversation/forward-message-sheet"
 import { MessageList } from "@/features/conversation/messages/message-list"
 import { createMentionCandidates } from "@/features/conversation/composer/mention-model"
-import { TopicArchiveDialog } from "@/features/conversation/topic/topic-archive-dialog"
 import { useConversationReadSync } from "@/features/conversation/use-conversation-read-sync"
 import { useConversationNavigation } from "@/features/conversation/use-conversation-navigation"
 import {
@@ -60,6 +60,9 @@ import {
   useAuth,
   useAuthenticatedSession,
 } from "@/providers/auth-provider"
+import {
+  buildConversationDetailsHref,
+} from "@/navigation/conversations"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
 import { buildAttachmentImagePreviewHref } from "@/navigation/image-preview"
 import {
@@ -67,6 +70,12 @@ import {
   useClientData,
 } from "@/providers/client-data-provider"
 import { useRealtime } from "@/realtime/realtime-context"
+import {
+  XGUIActionSheet,
+  XGUIBadge,
+  useXGUITheme,
+  useXGUIToast,
+} from "@/xgui"
 
 const EMPTY_MENTION_RESOLVER: MessageMentionLabelResolver = () => undefined
 
@@ -83,7 +92,8 @@ export function ConversationScreen() {
     ? (params.parentConversationId[0] ?? "")
     : (params.parentConversationId ?? "")
   const router = useRouter()
-  const toast = useToastController()
+  const { colors } = useXGUITheme()
+  const loadingToast = useXGUIToast()
   const isFocused = useIsFocused()
   const insets = useSafeAreaInsets()
   const { invalidateSession } = useAuth()
@@ -95,6 +105,9 @@ export function ConversationScreen() {
   const [forwardSheetOpen, setForwardSheetOpen] = useState(false)
   const [replyTargetState, setReplyTarget] =
     useState<ScopedMessageActionTarget | null>(null)
+  const [messageActionTarget, setMessageActionTarget] =
+    useState<ScopedMessageActionTarget | null>(null)
+  const [messageActionSheetOpen, setMessageActionSheetOpen] = useState(false)
   const forwardMessage =
     forwardMessageState?.conversationId === conversationId
       ? forwardMessageState
@@ -106,7 +119,6 @@ export function ConversationScreen() {
   const requestForwardSheetClose = useCallback(() => {
     setForwardSheetOpen(false)
   }, [])
-  const [topicArchiveDialogOpen, setTopicArchiveDialogOpen] = useState(false)
   const {
     contacts,
     conversations,
@@ -116,6 +128,13 @@ export function ConversationScreen() {
     isReady,
     usersById,
   } = useClientData()
+  const unreadOutsideCount = conversations.reduce(
+    (total, item) =>
+      item.id === conversationId || item.notificationMuted
+        ? total
+        : total + item.unreadCount,
+    0
+  )
   const listedConversation = conversations.find(
     (item) => item.id === conversationId
   )
@@ -164,14 +183,10 @@ export function ConversationScreen() {
   )
   const isTopicConversation = expectsTopic || conversation?.type === "topic"
   const topicArchived = Boolean(conversation?.topic?.archived)
-  const archiveTopicMutation = useArchiveConversationTopic(
+  const createTopicMutation = useCreateConversationTopic(
     session,
     conversationId
   )
-  const conversationEntity =
-    conversation && currentUser && conversation.type !== "topic"
-      ? getConversationEntityReference(conversation, currentUser.id)
-      : null
   const mentionCandidates = useMemo(
     () =>
       conversation?.type === "group" ||
@@ -251,6 +266,27 @@ export function ConversationScreen() {
     },
     []
   )
+  const handleMessageLongPress = useCallback(
+    (message: PresentedMessage) => {
+      void triggerMessageActionHaptic()
+      setMessageActionTarget({
+        author: message.author,
+        avatar: message.avatar,
+        canCreateTopic: !isTopicConversation && !message.topic,
+        canRevoke: message.canRevoke,
+        conversationId,
+        createdAt: message.createdAt,
+        id: message.id,
+        summary: formatClientMessageBodySummary(
+          message.body,
+          resolveMentionLabel
+        ),
+      })
+      setMessageActionSheetOpen(true)
+      composerRef.current?.dismissAccessory()
+    },
+    [conversationId, isTopicConversation, resolveMentionLabel]
+  )
   const handleMessageRevoked = useCallback((messageId: string) => {
     setReplyTarget((current) =>
       current?.id === messageId ? null : current
@@ -261,23 +297,40 @@ export function ConversationScreen() {
       current?.id === messageId ? null : current
     )
   }, [])
-  const closeTopicArchiveDialog = useCallback(
-    () => setTopicArchiveDialogOpen(false),
-    []
-  )
   const { goBack, openTopic } = useConversationNavigation({
     activateConversation,
-    archivePending: archiveTopicMutation.isPending,
     conversationId,
     isFocused,
-    onCloseArchiveDialog: closeTopicArchiveDialog,
     parentConversationId,
-    topicArchiveDialogOpen,
   })
-  useMessageSelectionActions({
+  const handleCreateTopic = useCallback(
+    async (target: ScopedMessageActionTarget) => {
+      if (!target.canCreateTopic || createTopicMutation.isPending) return
+      loadingToast.show({
+        duration: 0,
+        message: "正在创建话题",
+        type: "loading",
+      })
+      try {
+        const result = await createTopicMutation.mutateAsync(target.id)
+        loadingToast.hide()
+        openTopic(result.conversation.id)
+      } catch (error: unknown) {
+        loadingToast.hide()
+        Alert.alert(
+          "创建话题失败",
+          error instanceof ApiRequestError ? error.message : "请稍后重试。"
+        )
+      }
+    },
+    [createTopicMutation, loadingToast, openTopic]
+  )
+  const messageSelectionActions = useMessageSelectionActions({
+    canCreateTopic: !isTopicConversation,
     conversationId,
     isFocused,
     messages: presentedMessages,
+    onCreateTopic: handleCreateTopic,
     onForward: handleSelectionForward,
     onReply: handleSelectionReply,
     onRevoked: handleMessageRevoked,
@@ -297,19 +350,17 @@ export function ConversationScreen() {
     const error = messagesQuery.error ?? topicQuery.error ?? currentUserError
     if (isUnauthorizedError(error)) {
       void invalidateSession()
-      router.replace("/server-management")
     }
   }, [
     currentUserError,
     invalidateSession,
     messagesQuery.error,
-    router,
     topicQuery.error,
   ])
 
   useEffect(() => {
     if (isReady && !conversation && !expectsTopic) {
-      router.replace("/messages")
+      router.dismissTo("/messages")
     }
   }, [conversation, expectsTopic, isReady, router])
 
@@ -335,25 +386,10 @@ export function ConversationScreen() {
   }
 
   function handleConversationDetails() {
-    if (!conversationEntity) return
-    router.push(buildEntityDetailHref(conversationEntity))
-  }
-
-  async function handleArchiveTopic() {
-    if (archiveTopicMutation.isPending) return
-
-    try {
-      await archiveTopicMutation.mutateAsync()
-      setTopicArchiveDialogOpen(false)
-      toast.show("话题已关闭", {
-        customData: { tone: "success" satisfies AppToastTone },
-      })
-    } catch (error: unknown) {
-      Alert.alert(
-        "关闭话题失败",
-        error instanceof ApiRequestError ? error.message : "请稍后重试。"
-      )
-    }
+    if (!conversation) return
+    router.push(
+      buildConversationDetailsHref(conversationId, parentConversationId || undefined)
+    )
   }
 
   function handleAvatarLongPress(sender: EntityReference) {
@@ -407,30 +443,49 @@ export function ConversationScreen() {
     }
   }
 
+  const conversationTitle = conversation
+    ? conversation.type === "group"
+      ? `${conversation.name}(${conversation.memberCount || conversation.members?.length || 0})`
+      : conversation.name
+    : "对话"
+  const headerAction = conversation ? handleConversationDetails : undefined
+
   return (
-    <YStack bg="$background" flex={1}>
-      <PageHeader
-        actionLabel={isTopicConversation ? "关闭话题" : "查看对话详情"}
-        compactActionIcon={Ellipsis}
-        compactIconButtons
-        onActionPress={
-          isTopicConversation
-            ? topicQuery.data?.canArchive && !topicArchived
-              ? () => setTopicArchiveDialogOpen(true)
-              : undefined
-            : conversationEntity
-              ? handleConversationDetails
-              : undefined
+    <YStack bg={colors.background0} flex={1}>
+      <AppHeader
+        actions={
+          headerAction
+            ? [
+                {
+                  icon: IconDots,
+                  iconColor: colors.textPrimary,
+                  label: "查看对话详情",
+                  onPress: headerAction,
+                  strokeWidth: 2,
+                },
+              ]
+            : []
+        }
+        backAccessory={
+          unreadOutsideCount > 0 ? (
+            <XGUIBadge
+              accessibilityLabel={`${unreadOutsideCount} 条其他未读消息`}
+              backgroundColor={colors.foreground4}
+              count={unreadOutsideCount}
+              size="large"
+              textColor={colors.foreground0Half}
+            />
+          ) : undefined
         }
         onBackPress={goBack}
-        title={conversation?.name ?? "对话"}
+        title={conversationTitle}
       />
 
-      <YStack bg="$background" flex={1} pb={insets.bottom}>
+      <YStack bg={colors.background1} flex={1} pb={insets.bottom}>
         <KeyboardAwareScreen
-          contentBackground="$backgroundLight"
+          contentBackground={colors.background0}
           edges={[]}
-          keyboardVerticalOffset={insets.top + PAGE_HEADER_HEIGHT}
+          keyboardVerticalOffset={insets.top + APP_HEADER_HEIGHT}
           scrollable={false}
         >
           {!conversation ? (
@@ -449,6 +504,7 @@ export function ConversationScreen() {
             <>
               <MessageList
               canAddReaction={!topicArchived}
+              canCreateTopic={!isTopicConversation}
               canRespondToChoice={conversation.canSend && !topicArchived}
               conversationId={conversation.id}
               currentUserId={currentUser.id}
@@ -468,6 +524,7 @@ export function ConversationScreen() {
               }
               onImagePress={handleImagePress}
               onLoadOlder={handleLoadOlder}
+              onMessageLongPress={handleMessageLongPress}
               onRetry={handleRetryMessages}
               onResourceError={(fileId) =>
                 void resources.reload(fileId).catch(() => undefined)
@@ -488,14 +545,14 @@ export function ConversationScreen() {
               }
               />
               {topicArchived ? (
-                <YStack bg="$background" items="center" p="$4">
+                <YStack bg={colors.background1} items="center" p="$4">
                   <SizableText color="$color10" size="$3">
                     话题已关闭，无法继续发言
                   </SizableText>
                 </YStack>
               ) : (
                 <MessageComposer
-                  disabled={messageActions.isSending || !conversation.canSend}
+                  disabled={!conversation.canSend}
                   mentionCandidates={mentionCandidates}
                   onClearReply={() => setReplyTarget(null)}
                   onSend={messageActions.sendText}
@@ -504,6 +561,7 @@ export function ConversationScreen() {
                   ref={composerRef}
                   replyTarget={replyTarget}
                   server={session}
+                  sending={messageActions.isSending}
                 />
               )}
             </>
@@ -511,12 +569,58 @@ export function ConversationScreen() {
         </KeyboardAwareScreen>
       </YStack>
 
-      <TopicArchiveDialog
-        onConfirm={() => void handleArchiveTopic()}
-        onOpenChange={setTopicArchiveDialogOpen}
-        open={topicArchiveDialogOpen}
-        saving={archiveTopicMutation.isPending}
-      />
+      {messageActionTarget ? (
+        <XGUIActionSheet
+          actions={[
+            ...(messageActionTarget.canCreateTopic
+              ? [
+                  {
+                    deferUntilClosed: false,
+                    disabled: createTopicMutation.isPending,
+                    label: "创建话题",
+                    onPress: () => void handleCreateTopic(messageActionTarget),
+                  },
+                ]
+              : []),
+            ...(!topicArchived
+              ? [
+                  {
+                    deferUntilClosed: false,
+                    label: "回复",
+                    onPress: () => handleSelectionReply(messageActionTarget),
+                  },
+                ]
+              : []),
+            {
+              deferUntilClosed: false,
+              label: "转发",
+              onPress: () => handleSelectionForward(messageActionTarget),
+            },
+            ...(messageActionTarget.canRevoke
+              ? [
+                  {
+                    deferUntilClosed: false,
+                    destructive: true,
+                    disabled: messageSelectionActions.revoking,
+                    label: "撤回",
+                    onPress: () =>
+                      void messageSelectionActions.revoke(
+                        messageActionTarget.id
+                      ),
+                  },
+                ]
+              : []),
+          ]}
+          description={messageActionTarget.summary}
+          descriptionNumberOfLines={2}
+          onAnimationComplete={(open) => {
+            if (!open) setMessageActionTarget(null)
+          }}
+          onOpenChange={setMessageActionSheetOpen}
+          open={messageActionSheetOpen}
+          title="消息操作"
+        />
+      ) : null}
       {forwardMessage ? (
         <ForwardMessageSheet
           conversations={conversations}
@@ -532,4 +636,18 @@ export function ConversationScreen() {
       ) : null}
     </YStack>
   )
+}
+
+async function triggerMessageActionHaptic() {
+  try {
+    if (Platform.OS === "android") {
+      await Haptics.performAndroidHapticsAsync(
+        Haptics.AndroidHaptics.Long_Press
+      )
+      return
+    }
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+  } catch {
+    // Haptics must not prevent the message action sheet from opening.
+  }
 }

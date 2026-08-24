@@ -1,108 +1,134 @@
 import { FileText } from "lucide-react-native"
-import {
-  Dialog,
-  Image,
-  SizableText,
-  Spinner,
-  VisuallyHidden,
-  XStack,
-  YStack,
-} from "tamagui"
+import { Image, StyleSheet, Text, View } from "react-native"
 
-import { AppButton } from "@/components/forms/app-button"
-import { ThemedIcon } from "@/components/icons/themed-icon"
 import type { PreparedClientMessageUpload } from "@/data/messages/message-upload"
 import { formatFileSize } from "@/domain/messages/message-presenter"
+import { XGUIActionSheet, useXGUITheme } from "@/xgui"
 
 export function MessageUploadDialog({
   onCancel,
   onConfirm,
-  selection,
+  selections,
   sending,
 }: {
   onCancel: () => void
   onConfirm: () => void
-  selection: PreparedClientMessageUpload | null
+  selections: readonly PreparedClientMessageUpload[]
   sending: boolean
 }) {
-  if (!selection) return null
+  const { colors } = useXGUITheme()
+  if (selections.length === 0) return null
 
-  const isImage = selection.kind === "image"
+  const isImage = selections.every((selection) => selection.kind === "image")
+  const firstSelection = selections[0]
+  if (!firstSelection) return null
+  const title = isImage
+    ? selections.length > 1
+      ? `发送 ${selections.length} 张图片`
+      : "发送图片"
+    : "发送文件"
 
   return (
-    <Dialog
-      modal
+    <XGUIActionSheet
+      actions={[
+        {
+          accessibilityLabel: title,
+          closeOnPress: false,
+          disabled: sending,
+          label: sending ? "发送中…" : "发送",
+          onPress: onConfirm,
+        },
+      ]}
+      cancelDisabled={sending}
       onOpenChange={(open) => {
         if (!open && !sending) onCancel()
       }}
       open
+      title={title}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay bg="$shadow6" opacity={0.5} />
-        <Dialog.Content bordered elevate gap="$4" maxW={440} width="90%">
-          <Dialog.Title fontSize="$4" lineHeight="$5">
-            {isImage ? "发送图片" : "发送文件"}
-          </Dialog.Title>
-          <VisuallyHidden>
-            <Dialog.Description>
-              确认将所选{isImage ? "图片" : "文件"}发送到当前会话
-            </Dialog.Description>
-          </VisuallyHidden>
-
-          {isImage ? (
-            <Image
-              accessibilityLabel="待发送图片预览"
-              bg="$gray2"
-              height={220}
-              objectFit="contain"
-              rounded="$3"
-              src={selection.upload.uri}
-              width="100%"
-            />
-          ) : (
-            <XStack
-              borderColor="$borderColor"
-              borderWidth={1}
-              gap="$3"
-              items="center"
-              p="$3"
-              rounded="$3"
-            >
-              <ThemedIcon icon={FileText} size={24} />
-              <YStack flex={1} minW={0}>
-                <SizableText fontWeight="500" numberOfLines={1} size="$3">
-                  {selection.upload.name}
-                </SizableText>
-                <SizableText color="$gray9" size="$2">
-                  {formatFileSize(selection.upload.sizeBytes)}
-                </SizableText>
-              </YStack>
-            </XStack>
-          )}
-
-          <XStack gap="$3" width="100%">
-            <AppButton
-              accessibilityLabel="取消发送"
-              disabled={sending}
-              grow={1}
-              onPress={onCancel}
-              theme="gray"
-            >
-              取消
-            </AppButton>
-            <AppButton
-              accessibilityLabel={isImage ? "发送图片" : "发送文件"}
-              disabled={sending}
-              grow={1}
-              icon={sending ? <Spinner /> : undefined}
-              onPress={onConfirm}
-              theme="accent"
-            >
-              {sending ? "发送中…" : "发送"}
-            </AppButton>
-          </XStack>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog>
+      <View style={styles.content}>
+        {isImage ? (
+          <View style={styles.imageRow}>
+            {selections.map((selection, index) => (
+              <Image
+                accessibilityLabel={`待发送图片 ${index + 1}`}
+                key={`${selection.upload.uri}-${index}`}
+                resizeMode="contain"
+                source={{ uri: selection.upload.uri }}
+                style={[
+                  selections.length === 1 ? styles.image : styles.thumbnail,
+                  { backgroundColor: colors.background1 },
+                ]}
+              />
+            ))}
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.file,
+              {
+                backgroundColor: colors.background1,
+                borderColor: colors.separator,
+              },
+            ]}
+          >
+            <FileText color={colors.textSecondary} size={24} />
+            <View style={styles.fileText}>
+              <Text
+                numberOfLines={1}
+                style={[styles.fileName, { color: colors.textPrimary }]}
+              >
+                {firstSelection.upload.name}
+              </Text>
+              <Text style={[styles.fileSize, { color: colors.textPlaceholder }]}>
+                {formatFileSize(firstSelection.upload.sizeBytes)}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+    </XGUIActionSheet>
   )
 }
+
+const styles = StyleSheet.create({
+  content: {
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+  },
+  file: {
+    alignItems: "center",
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 12,
+    padding: 12,
+  },
+  fileName: {
+    fontSize: 16,
+    fontWeight: "500",
+    lineHeight: 22,
+  },
+  fileSize: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  fileText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  image: {
+    borderRadius: 8,
+    height: 180,
+    width: "100%",
+  },
+  imageRow: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  thumbnail: {
+    borderRadius: 4,
+    flex: 1,
+    height: 80,
+  },
+})

@@ -122,7 +122,7 @@ function TaskItem({
         <ItemContent className="min-w-0">
           <ItemTitle
             className={cn(
-              "line-clamp-none w-full transition-colors group-hover/item:text-sky-600",
+              "line-clamp-none w-full transition-colors group-hover/item:text-(--weui-link)",
               closed && "text-muted-foreground"
             )}
           >

@@ -1,15 +1,10 @@
 import { useRouter } from "expo-router"
-import { Search } from "lucide-react-native"
 import { useMemo, useState } from "react"
-import { Keyboard, StyleSheet } from "react-native"
+import { Keyboard } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { type ColorTokens, useTheme, XStack, YStack } from "tamagui"
+import { YStack } from "tamagui"
 
-import { ContentState } from "@/components/feedback/content-state"
-import { AppInput } from "@/components/forms/app-input"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
-import { HeaderButton } from "@/components/navigation/header-button"
-import { PAGE_HEADER_HEIGHT } from "@/components/navigation/page-header"
 import { useAuthenticatedSession } from "@/providers/auth-provider"
 import { SearchResultList } from "@/features/search/search-result-list"
 import {
@@ -19,13 +14,13 @@ import {
 import { buildConversationHref } from "@/navigation/conversations"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
 import { useClientData } from "@/providers/client-data-provider"
+import { XGUIFilledSearchBar, useXGUITheme } from "@/xgui"
 
 export function SearchScreen() {
   const insets = useSafeAreaInsets()
   const router = useRouter()
+  const { colors } = useXGUITheme()
   const session = useAuthenticatedSession()
-  const theme = useTheme()
-  const accentColor = theme.color10.val as ColorTokens
   const {
     contacts,
     conversations,
@@ -78,68 +73,22 @@ export function SearchScreen() {
   }
 
   return (
-    <KeyboardAwareScreen edges={[]} scrollable={false}>
-      <YStack bg="$background" pt={insets.top}>
-        <XStack
-          gap="$2"
-          height={PAGE_HEADER_HEIGHT}
-          items="center"
-          pl="$3"
-          pr="$2"
-        >
-          <XStack
-            bg="$background"
-            borderColor="$gray7"
-            borderWidth={1}
-            flex={1}
-            gap="$1.5"
-            height="$3"
-            items="center"
-            px="$2"
-            rounded="$3"
-          >
-            <Search color={String(theme.gray9.val)} size={16} />
-            <AppInput
-              accessibilityLabel="搜索"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocusNative
-              bg="transparent"
-              borderWidth={0}
-              clearButtonMode="while-editing"
-              color="$gray12"
-              cursorColor={accentColor}
-              flex={1}
-              fontFamily="$body"
-              fontSize="$4"
-              focusStyle={{
-                borderWidth: 0,
-                outlineWidth: 0,
-              }}
-              height="100%"
-              onChangeText={setKeyword}
-              p={0}
-              placeholder="搜索"
-              placeholderTextColor="$gray9"
-              returnKeyType="search"
-              selectionColor={accentColor}
-              style={styles.searchInput}
-              textAlignVertical="center"
-              unstyled
-              value={keyword}
-            />
-          </XStack>
-          <HeaderButton
-            accessibilityLabel="取消搜索"
-            onPress={handleCancel}
-            size="$3"
-          >
-            取消
-          </HeaderButton>
-        </XStack>
+    <KeyboardAwareScreen
+      contentBackground={colors.background0}
+      edges={[]}
+      scrollable={false}
+    >
+      <YStack bg={colors.background0} pt={insets.top}>
+        <XGUIFilledSearchBar
+          accessibilityLabel="搜索消息、联系人和项目"
+          autoFocus
+          onCancel={handleCancel}
+          onChangeText={setKeyword}
+          value={keyword}
+        />
       </YStack>
 
-      <YStack bg="$color1" flex={1} minH={0} pb={insets.bottom}>
+      <YStack bg={colors.background0} flex={1} minH={0} pb={insets.bottom}>
         {hasKeyword ? (
           <SearchResultList
             currentUser={currentUser}
@@ -147,17 +96,8 @@ export function SearchScreen() {
             results={results}
             server={session}
           />
-        ) : (
-          <ContentState message="输入关键词开始搜索" />
-        )}
+        ) : null}
       </YStack>
     </KeyboardAwareScreen>
   )
 }
-
-const styles = StyleSheet.create({
-  searchInput: {
-    includeFontPadding: false,
-    paddingVertical: 0,
-  },
-})

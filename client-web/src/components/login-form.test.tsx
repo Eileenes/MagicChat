@@ -9,6 +9,20 @@ describe("LoginForm", () => {
     window.localStorage.clear()
   })
 
+  it("applies the login-page brand color to a primary submit button", () => {
+    render(
+      <LoginForm
+        onLogin={vi.fn()}
+        submitClassName="bg-(--weui-brand-3) hover:bg-(--weui-brand-4)"
+      />
+    )
+
+    expect(screen.getByRole("button", { name: "登录" })).toHaveClass(
+      "bg-(--weui-brand-3)",
+      "hover:bg-(--weui-brand-4)"
+    )
+  })
+
   it("keeps account and password login available", async () => {
     const user = userEvent.setup()
     const onLogin = vi.fn()

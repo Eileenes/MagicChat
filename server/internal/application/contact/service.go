@@ -10,23 +10,25 @@ import (
 )
 
 type Dependencies struct {
-	DB            *gorm.DB
-	Apps          config.AppsConfig
-	UserPresence  UserPresencePort
-	AppPresence   AppPresencePort
-	Settings      DirectorySettings
-	Notifications FriendNotifications
-	Now           func() time.Time
+	DB                 *gorm.DB
+	Apps               config.AppsConfig
+	UserPresence       UserPresencePort
+	AppPresence        AppPresencePort
+	Settings           DirectorySettings
+	Notifications      FriendNotifications
+	FriendshipMessages FriendshipMessageRecorder
+	Now                func() time.Time
 }
 
 type Service struct {
-	db            *gorm.DB
-	apps          config.AppsConfig
-	userPresence  UserPresencePort
-	appPresence   AppPresencePort
-	settings      DirectorySettings
-	notifications FriendNotifications
-	now           func() time.Time
+	db                 *gorm.DB
+	apps               config.AppsConfig
+	userPresence       UserPresencePort
+	appPresence        AppPresencePort
+	settings           DirectorySettings
+	notifications      FriendNotifications
+	friendshipMessages FriendshipMessageRecorder
+	now                func() time.Time
 }
 
 func NewService(deps Dependencies) *Service {
@@ -37,7 +39,8 @@ func NewService(deps Dependencies) *Service {
 	return &Service{
 		db: deps.DB, apps: deps.Apps,
 		userPresence: deps.UserPresence, appPresence: deps.AppPresence,
-		settings: deps.Settings, notifications: deps.Notifications, now: now,
+		settings: deps.Settings, notifications: deps.Notifications,
+		friendshipMessages: deps.FriendshipMessages, now: now,
 	}
 }
 

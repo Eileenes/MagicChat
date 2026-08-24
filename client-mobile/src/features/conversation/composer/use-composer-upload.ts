@@ -1,7 +1,6 @@
+import { useXGUIToast } from "@/xgui"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useToastController } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import type { PreparedClientMessageUpload } from "@/data/messages/message-upload"
 
 type UploadPicker = () => Promise<PreparedClientMessageUpload | null>
@@ -13,7 +12,7 @@ export function useComposerUpload({
   disabled: boolean
   onSend: (selection: PreparedClientMessageUpload) => Promise<boolean>
 }) {
-  const toast = useToastController()
+  const toast = useXGUIToast()
   const mountedRef = useRef(true)
   const selectedRef = useRef<PreparedClientMessageUpload | null>(null)
   const uploadInFlightRef = useRef(false)
@@ -53,12 +52,10 @@ export function useComposerUpload({
           if (mountedRef.current) replaceSelected(selection)
           else selection.cleanup?.()
         }
+        return selection
       } catch (error: unknown) {
-        toast.show("无法选择文件", {
-          customData: { tone: "error" satisfies AppToastTone },
-          duration: 4000,
-          message: error instanceof Error ? error.message : "请稍后重试",
-        })
+        toast.show({ message: `${"无法选择文件"}：${error instanceof Error ? error.message : "请稍后重试"}`, type: "text", duration: 1_000 })
+        return null
       } finally {
         if (mountedRef.current) setPreparing(false)
       }
@@ -67,12 +64,14 @@ export function useComposerUpload({
   )
 
   const confirm = useCallback(async () => {
-    if (!selected || disabled) return
+    if (!selected || disabled) return false
 
     const selection = selected
     uploadInFlightRef.current = true
     try {
-      if (await onSend(selection)) replaceSelected(null)
+      const sent = await onSend(selection)
+      if (sent) replaceSelected(null)
+      return sent
     } finally {
       uploadInFlightRef.current = false
       if (!mountedRef.current && selectedRef.current === selection) {

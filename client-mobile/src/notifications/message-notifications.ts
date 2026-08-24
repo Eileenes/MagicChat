@@ -43,7 +43,6 @@ export async function prepareMessageNotifications() {
       importance: Notifications.AndroidImportance.HIGH,
       name: "消息通知",
       showBadge: true,
-      sound: "default",
       vibrationPattern: [0, 250, 150, 250],
     })
   }

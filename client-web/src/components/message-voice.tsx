@@ -121,7 +121,7 @@ export function MessageVoice({ voice }: MessageVoiceProps) {
             )}
           />
         )}
-        <span className="min-w-0 flex-1 text-sm transition-colors group-hover/voice-row:text-sky-500">
+        <span className="min-w-0 flex-1 text-sm transition-colors group-hover/voice-row:text-(--weui-link)">
           {error ? "加载失败" : `语音 ${formatVoiceDuration(voice.durationMS)}`}
         </span>
       </button>

@@ -1,6 +1,13 @@
 import * as React from "react"
 import { HocuspocusProvider, WebSocketStatus } from "@hocuspocus/provider"
-import { Ellipsis, FileText, Loader2, Send, Trash2 } from "lucide-react"
+import {
+  Ellipsis,
+  FileCode2,
+  FileText,
+  Loader2,
+  Send,
+  Trash2,
+} from "lucide-react"
 import { useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
 import * as Y from "yjs"
@@ -44,8 +51,10 @@ import { getCurrentClientUser, type ClientUser } from "@/lib/client-data-api"
 import {
   deleteClientDocument,
   getClientDocument,
+  getClientDocumentPath,
   updateCollaborativeDocumentTitle,
   type ClientDocument,
+  type ClientDocumentType,
 } from "@/lib/document-data-api"
 import {
   documentPresenceColor,
@@ -56,6 +65,12 @@ import {
   getClientProject,
   type ClientProjectDetail,
 } from "@/lib/project-data-api"
+
+const MarkdownDocumentEditor = React.lazy(() =>
+  import("@/components/documents/markdown-document-editor").then((module) => ({
+    default: module.MarkdownDocumentEditor,
+  }))
+)
 
 const maxDocumentCardTitleLength = 256
 
@@ -69,22 +84,29 @@ type LoadedDocumentState = {
 }
 
 export function DocumentPage() {
-  const { documentId } = useParams<{ documentId: string }>()
+  const { documentId, documentType } = useParams<{
+    documentId: string
+    documentType: string
+  }>()
   const [error, setError] = React.useState<{
     documentId: string
     message: string
   } | null>(null)
   const [loaded, setLoaded] = React.useState<LoadedDocumentState | null>(null)
   const requestedDocumentId = documentId ?? ""
+  const requestedDocumentType: ClientDocumentType | null =
+    documentType === "document" || documentType === "markdown"
+      ? documentType
+      : null
 
   React.useEffect(() => {
-    if (!requestedDocumentId) return
+    if (!requestedDocumentId || !requestedDocumentType) return
     let cancelled = false
     void getClientDocument(requestedDocumentId)
       .then(async (nextDocument) => {
         if (
           nextDocument.kind !== "document" ||
-          nextDocument.documentType !== "document"
+          nextDocument.documentType !== requestedDocumentType
         ) {
           throw new Error("该节点不是可编辑文档")
         }
@@ -114,22 +136,32 @@ export function DocumentPage() {
     return () => {
       cancelled = true
     }
-  }, [requestedDocumentId])
+  }, [requestedDocumentId, requestedDocumentType])
 
   if (!requestedDocumentId) return <DocumentNotFound message="文档 ID 不存在" />
+  if (!requestedDocumentType)
+    return <DocumentNotFound message="不支持该文档类型" />
   const currentError =
     error?.documentId === requestedDocumentId ? error.message : null
-  if (!loaded && currentError) return <DocumentNotFound message={currentError} />
+  if (!loaded && currentError)
+    return <DocumentNotFound message={currentError} />
   if (!loaded) return <DocumentLoading />
+  if (!loaded.document.documentType)
+    return <DocumentNotFound message="该节点不是可编辑文档" />
 
   return (
     <DocumentWorkspace
       contentError={currentError}
       currentUser={loaded.currentUser}
       documentId={loaded.document.id}
+      documentType={loaded.document.documentType}
       initialTitle={loaded.document.title}
       key={loaded.document.projectId}
-      loading={loaded.documentId !== requestedDocumentId && !currentError}
+      loading={
+        (loaded.documentId !== requestedDocumentId ||
+          loaded.document.documentType !== requestedDocumentType) &&
+        !currentError
+      }
       projectAvatar={loaded.project.avatar}
       projectId={loaded.document.projectId}
       projectIsPersonal={loaded.project.isPersonal}
@@ -142,6 +174,7 @@ function DocumentWorkspace({
   contentError,
   currentUser,
   documentId,
+  documentType,
   initialTitle,
   loading,
   projectAvatar,
@@ -152,6 +185,7 @@ function DocumentWorkspace({
   contentError: string | null
   currentUser: ClientUser
   documentId: string
+  documentType: ClientDocumentType
   initialTitle: string
   loading: boolean
   projectAvatar: string
@@ -204,6 +238,7 @@ function DocumentWorkspace({
         <DocumentSession
           currentUser={currentUser}
           documentId={documentId}
+          documentType={documentType}
           initialTitle={initialTitle}
           key={documentId}
           onLeaveGuardChange={handleLeaveGuardChange}
@@ -219,6 +254,7 @@ function DocumentWorkspace({
 function DocumentSession({
   currentUser,
   documentId,
+  documentType,
   initialTitle,
   onLeaveGuardChange,
   onSidebarTitleChange,
@@ -227,6 +263,7 @@ function DocumentSession({
 }: {
   currentUser: ClientUser
   documentId: string
+  documentType: ClientDocumentType
   initialTitle: string
   onLeaveGuardChange: (guard: (() => boolean) | null) => void
   onSidebarTitleChange: (title: string) => void
@@ -267,12 +304,14 @@ function DocumentSession({
   const savingRef = React.useRef(false)
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleRef = React.useRef(initialTitle)
-  const pageTitle = title.trim() || "无标题文档"
+  const untitledDocumentTitle =
+    documentType === "markdown" ? "无标题 Markdown" : "无标题文档"
+  const pageTitle = title.trim() || untitledDocumentTitle
   const documentCard = {
     description: `项目: ${projectName}`,
-    title: createDocumentCardTitle(pageTitle),
+    title: createDocumentCardTitle(pageTitle, documentType),
     type: "card",
-    url: `/documents/document/${encodeURIComponent(documentId)}`,
+    url: getClientDocumentPath(documentId, documentType),
   } as const
 
   async function saveTitle() {
@@ -284,7 +323,7 @@ function DocumentSession({
       pendingSaveRef.current = true
       return
     }
-    const nextTitle = titleRef.current.trim() || "无标题文档"
+    const nextTitle = titleRef.current.trim() || untitledDocumentTitle
     if (nextTitle === savedTitleRef.current) {
       saveFailedRef.current = false
       if (mountedRef.current) setTitleSaveState("saved")
@@ -304,7 +343,7 @@ function DocumentSession({
       savedTitleRef.current = storedTitle
       if (mountedRef.current) {
         setTitleSaveState("saved")
-        if ((titleRef.current.trim() || "无标题文档") === nextTitle) {
+        if ((titleRef.current.trim() || untitledDocumentTitle) === nextTitle) {
           titleRef.current = storedTitle
           setTitle(storedTitle)
           onSidebarTitleChange(storedTitle)
@@ -321,7 +360,8 @@ function DocumentSession({
       if (
         pendingSaveRef.current ||
         (saved &&
-          (titleRef.current.trim() || "无标题文档") !== savedTitleRef.current)
+          (titleRef.current.trim() || untitledDocumentTitle) !==
+            savedTitleRef.current)
       ) {
         pendingSaveRef.current = false
         if (mountedRef.current) void saveTitle()
@@ -399,23 +439,25 @@ function DocumentSession({
         savingRef.current ||
         saveFailedRef.current ||
         bodyUnsyncedChangesRef.current > 0 ||
-        (titleRef.current.trim() || "无标题文档") !== savedTitleRef.current
+        (titleRef.current.trim() || untitledDocumentTitle) !==
+          savedTitleRef.current
       if (!dirty) return
       event.preventDefault()
       event.returnValue = ""
     }
     window.addEventListener("beforeunload", handleBeforeUnload)
     return () => window.removeEventListener("beforeunload", handleBeforeUnload)
-  }, [])
+  }, [untitledDocumentTitle])
 
   const confirmLeaveWithUnsavedTitle = React.useCallback(() => {
     const dirty =
       savingRef.current ||
       saveFailedRef.current ||
       bodyUnsyncedChangesRef.current > 0 ||
-      (titleRef.current.trim() || "无标题文档") !== savedTitleRef.current
+      (titleRef.current.trim() || untitledDocumentTitle) !==
+        savedTitleRef.current
     return !dirty || window.confirm("文档尚未同步完成，确定要离开吗？")
-  }, [])
+  }, [untitledDocumentTitle])
 
   React.useEffect(() => {
     onLeaveGuardChange(confirmLeaveWithUnsavedTitle)
@@ -457,14 +499,18 @@ function DocumentSession({
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-teal-50/30 shadow-xs dark:bg-background/30">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4 sm:px-6">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300">
-            <FileText className="size-5" />
+            {documentType === "markdown" ? (
+              <FileCode2 className="size-5" />
+            ) : (
+              <FileText className="size-5" />
+            )}
           </span>
           <input
             aria-label="顶部文档标题"
             className="min-w-0 flex-1 bg-transparent text-base font-semibold outline-none placeholder:text-muted-foreground"
             onBlur={() => void saveTitle()}
             onChange={(event) => handleTitleChange(event.target.value)}
-            placeholder="无标题文档"
+            placeholder={untitledDocumentTitle}
             value={title}
           />
           <DocumentPresence users={onlineUsers} />
@@ -554,14 +600,33 @@ function DocumentSession({
           </AlertDialog>
         </header>
         {collaborationProvider ? (
-          <DocumentEditor
-            collaborationDocument={collaborationDocument}
-            collaborationProvider={collaborationProvider}
-            collaborationUser={collaborationUser}
-            onTitleBlur={() => void saveTitle()}
-            onTitleChange={handleTitleChange}
-            title={title}
-          />
+          documentType === "markdown" ? (
+            <React.Suspense
+              fallback={
+                <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  正在加载 Markdown 编辑器
+                </div>
+              }
+            >
+              <MarkdownDocumentEditor
+                collaborationDocument={collaborationDocument}
+                collaborationProvider={collaborationProvider}
+                onTitleBlur={() => void saveTitle()}
+                onTitleChange={handleTitleChange}
+                title={title}
+              />
+            </React.Suspense>
+          ) : (
+            <DocumentEditor
+              collaborationDocument={collaborationDocument}
+              collaborationProvider={collaborationProvider}
+              collaborationUser={collaborationUser}
+              onTitleBlur={() => void saveTitle()}
+              onTitleChange={handleTitleChange}
+              title={title}
+            />
+          )
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
@@ -644,8 +709,11 @@ function collaborationWebSocketURL() {
   return `${protocol}//${window.location.host}/api/client/document/collaboration`
 }
 
-function createDocumentCardTitle(title: string) {
-  const prefix = "文档 - "
+function createDocumentCardTitle(
+  title: string,
+  documentType: ClientDocumentType
+) {
+  const prefix = documentType === "markdown" ? "Markdown 文档 - " : "文档 - "
   const characters = Array.from(title.trim())
   const remaining = maxDocumentCardTitleLength - Array.from(prefix).length
   if (characters.length <= remaining) return prefix + characters.join("")

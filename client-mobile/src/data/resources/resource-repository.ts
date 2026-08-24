@@ -2,6 +2,13 @@ import { Platform } from "react-native"
 
 import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
 import {
+  clearAttachmentResourceMemory,
+  forgetAttachmentResource,
+  forgetServerAttachmentResources,
+  getRememberedAttachmentResource,
+  rememberAttachmentResource,
+} from "@/data/resources/attachment-resource-memory"
+import {
   clearResourceCache as clearResourceCacheStore,
   commitResourceCacheTarget,
   createResourceCacheTarget,
@@ -30,17 +37,26 @@ export async function getCachedAttachmentResource(
   server: ServerTarget,
   reference: AttachmentResourceReference
 ) {
+  if (Platform.OS !== "web") {
+    const remembered = getRememberedAttachmentResource(
+      server,
+      reference.fileId
+    )
+    if (remembered) return withMimeType(remembered, reference.mimeType)
+  }
+
   const identity = getAttachmentIdentity(reference.fileId)
-  const resource = await getCachedResource(
-    server,
-    identity
-  )
+  const resource = await getCachedResource(server, identity)
   if (!resource) return null
   if (!hasExpectedVoiceCacheExtension(reference, resource.uri)) {
     await removeCachedResource(server, identity)
     return null
   }
-  return withMimeType(resource, reference.mimeType)
+  const resolved = withMimeType(resource, reference.mimeType)
+  if (Platform.OS !== "web") {
+    rememberAttachmentResource(server, reference.fileId, resolved)
+  }
+  return resolved
 }
 
 export async function ensureAttachmentResource(
@@ -80,13 +96,18 @@ export async function ensureAttachmentResource(
     options.signal
   )
 
-  return withMimeType(resource, reference.mimeType)
+  const resolved = withMimeType(resource, reference.mimeType)
+  if (Platform.OS !== "web") {
+    rememberAttachmentResource(session, reference.fileId, resolved)
+  }
+  return resolved
 }
 
 export function invalidateAttachmentResource(
   server: ServerTarget,
   reference: AttachmentResourceReference
 ) {
+  forgetAttachmentResource(server, reference.fileId)
   return removeCachedResource(server, getAttachmentIdentity(reference.fileId))
 }
 
@@ -199,7 +220,10 @@ export function getResourceCacheSize() {
 }
 
 export function clearResourceCache() {
-  return downloadTasks.runExclusive(clearResourceCacheStore)
+  return downloadTasks.runExclusive(async () => {
+    await clearResourceCacheStore()
+    clearAttachmentResourceMemory()
+  })
 }
 
 export async function removeServerResourceCache(server: ServerTarget) {
@@ -208,6 +232,7 @@ export async function removeServerResourceCache(server: ServerTarget) {
 
   await Promise.allSettled(activeTasks)
   await removeServerResourceCacheStore(server)
+  forgetServerAttachmentResources(server)
 }
 
 async function downloadToCache({

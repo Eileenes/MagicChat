@@ -8,21 +8,33 @@ export type XGUIColors = {
   background3: string
   background4: string
   background5: string
+  blue: string
   brand: string
+  brand1: string
+  brand2: string
+  brand5: string
   destructive: string
+  foreground0Half: string
+  foreground3: string
   foreground4: string
   foreground5: string
   footerText: string
+  green: string
   informationBarTipsStrongBackground: string
   informationBarWarnWeakBackground: string
   indigo: string
+  lightGreen: string
   link: string
+  orange: string
+  purple: string
+  secondaryBackground: string
   separator: string
   textOnColor: string
   textPlaceholder: string
   textPrimary: string
   textSecondary: string
   toastForeground: string
+  yellow: string
 }
 
 export const xguiColors = {
@@ -34,21 +46,33 @@ export const xguiColors = {
     background3: "#F7F7F7",
     background4: "#4C4C4C",
     background5: "#FFFFFF",
+    blue: "#10AEFF",
     brand: "#07C160",
+    brand1: "#B4ECCE",
+    brand2: "#38CD7F",
+    brand5: "#059A4C",
     destructive: "#FA5151",
+    foreground0Half: "rgba(0,0,0,0.9)",
+    foreground3: "rgba(0,0,0,0.1)",
     foreground4: "rgba(0,0,0,0.15)",
     foreground5: "rgba(0,0,0,0.05)",
     footerText: "rgba(0,0,0,0.2)",
+    green: "#91D300",
     informationBarTipsStrongBackground: "#FA9D3B",
     informationBarWarnWeakBackground: "rgba(250,81,81,0.1)",
     indigo: "#1485EE",
+    lightGreen: "#95EC69",
     link: "#576B95",
+    orange: "#FA9D3B",
+    purple: "#6467F0",
+    secondaryBackground: "rgba(0,0,0,0.05)",
     separator: "rgba(0,0,0,0.1)",
     textOnColor: "#FFFFFF",
     textPlaceholder: "rgba(0,0,0,0.3)",
     textPrimary: "rgba(0,0,0,0.9)",
     textSecondary: "rgba(0,0,0,0.55)",
     toastForeground: "rgba(255,255,255,0.9)",
+    yellow: "#FFC300",
   },
   dark: {
     activeMask: "rgba(255,255,255,0.2)",
@@ -58,20 +82,32 @@ export const xguiColors = {
     background3: "#202020",
     background4: "#404040",
     background5: "#2C2C2C",
+    blue: "#10AEFF",
     brand: "#07C160",
+    brand1: "#023A1C",
+    brand2: "#059A4C",
+    brand5: "#38CD7F",
     destructive: "#FA5151",
+    foreground0Half: "rgba(255,255,255,0.6)",
+    foreground3: "rgba(255,255,255,0.1)",
     foreground4: "rgba(255,255,255,0.15)",
     foreground5: "rgba(255,255,255,0.1)",
     footerText: "rgba(255,255,255,0.2)",
+    green: "#74A800",
     informationBarTipsStrongBackground: "#C87D2F",
     informationBarWarnWeakBackground: "rgba(250,81,81,0.1)",
     indigo: "#1196FF",
+    lightGreen: "#3EB575",
     link: "#7D90A9",
+    orange: "#C87D2F",
+    purple: "#8183FF",
+    secondaryBackground: "rgba(255,255,255,0.1)",
     separator: "rgba(255,255,255,0.05)",
     textOnColor: "#FFFFFF",
     textPlaceholder: "rgba(255,255,255,0.3)",
     textPrimary: "rgba(255,255,255,0.8)",
     textSecondary: "rgba(255,255,255,0.5)",
     toastForeground: "rgba(255,255,255,0.9)",
+    yellow: "#CC9C00",
   },
 } as const satisfies Record<XGUIColorScheme, XGUIColors>

@@ -1,14 +1,12 @@
-import { Bot } from "lucide-react-native"
-import { Avatar, Circle, Text, YStack } from "tamagui"
+import { Circle, YStack } from "tamagui"
 
 import {
   GroupAvatar,
   type GroupAvatarMember,
 } from "@/components/avatar/group-avatar"
-import { CachedAvatarImage } from "@/components/avatar/cached-avatar-image"
-import { ThemedIcon } from "@/components/icons/themed-icon"
+import { AppAvatar } from "@/components/avatar/app-avatar"
 import type { ServerTarget } from "@/core/server-target"
-import { getContactInitial } from "@/features/contacts/contact-directory-model"
+import { useXGUITheme } from "@/xgui"
 
 export function ContactDirectoryAvatar({
   avatar,
@@ -25,6 +23,8 @@ export function ContactDirectoryAvatar({
   server: ServerTarget
   type: "user" | "app" | "group"
 }) {
+  const { colors } = useXGUITheme()
+
   return (
     <YStack height="$4" width="$4">
       {type === "group" ? (
@@ -35,26 +35,13 @@ export function ContactDirectoryAvatar({
           server={server}
         />
       ) : (
-        <Avatar rounded="$2" size="$4">
-          <CachedAvatarImage avatar={avatar} server={server} />
-          <Avatar.Fallback
-            bg="$backgroundFocus"
-            items="center"
-            justify="center"
-          >
-            {type === "app" ? (
-              <ThemedIcon icon={Bot} size={18} />
-            ) : (
-              <Text fontWeight="600">{getContactInitial(name)}</Text>
-            )}
-          </Avatar.Fallback>
-        </Avatar>
+        <AppAvatar accessibilityLabel={name} avatar={avatar} server={server} type={type} />
       )}
 
       {online !== undefined ? (
         <Circle
           bg={online ? "$green9" : "$gray8"}
-          borderColor="$background"
+          borderColor={colors.background2}
           borderWidth={2}
           b={-2}
           position="absolute"

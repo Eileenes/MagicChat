@@ -117,7 +117,7 @@ export function ProjectTaskGanttView({
                         )}
                         status={task.status}
                       />
-                      <span className="truncate transition-colors group-hover/task:text-sky-600">
+                      <span className="truncate transition-colors group-hover/task:text-(--weui-link)">
                         {task.title}
                       </span>
                     </button>
@@ -306,7 +306,7 @@ function GanttTaskLabel({
         status={task.status}
       />
       <span className="min-w-0">
-        <span className="block truncate text-xs font-medium transition-colors group-hover/task:text-sky-600">
+        <span className="block truncate text-xs font-medium transition-colors group-hover/task:text-(--weui-link)">
           {task.title}
         </span>
         <span className="block truncate text-[10px] text-muted-foreground">

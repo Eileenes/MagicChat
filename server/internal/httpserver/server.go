@@ -196,7 +196,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientExternalAuth = clientapi.NewExternalAuthAPI(server.externalAuth, cfg.Server.ClientOrigin())
 	server.contacts = contactapp.NewService(contactapp.Dependencies{
 		DB: db, Apps: cfg.Apps, UserPresence: server.realtime, AppPresence: server.appConnections,
-		Settings: server.settings, Notifications: server,
+		Settings: server.settings, Notifications: server, FriendshipMessages: server,
 	})
 	server.clientContacts = clientapi.NewContactAPI(server.contacts)
 	server.messageContents = messagecontentapp.NewService(messagecontentapp.Dependencies{

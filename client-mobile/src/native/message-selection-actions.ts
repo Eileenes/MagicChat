@@ -3,7 +3,12 @@ import {
   requireOptionalNativeModule,
 } from "expo-modules-core"
 
-export type MessageSelectionAction = "copy" | "forward" | "reply" | "revoke"
+export type MessageSelectionAction =
+  | "copy"
+  | "create_topic"
+  | "forward"
+  | "reply"
+  | "revoke"
 
 export type MessageSelectionActionEvent = {
   action: MessageSelectionAction

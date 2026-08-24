@@ -136,6 +136,15 @@ func TestPostgresPartitionedMessageServiceEnforcesOnlineWindowAndPreservesCurren
 	if listed.Page.HasMoreBefore {
 		t.Fatalf("window-excluded old message affected page bounds: %#v", listed.Page)
 	}
+	attachments, err := service.ListAttachments(context.Background(), ListAttachmentsCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+	})
+	if err != nil {
+		t.Fatalf("list attachments from partitioned messages: %v", err)
+	}
+	if len(attachments.Attachments) != 0 {
+		t.Fatalf("partitioned attachments = %#v, want empty", attachments.Attachments)
+	}
 	listedReply := listed.Messages[1].ReplyTo
 	if listedReply == nil || listedReply.ID != previousMessage.ID || listedReply.Summary != previousMessage.Summary || listedReply.Sender.Name != fixture.user.Name {
 		t.Fatalf("listed previous-year reply = %#v", listedReply)

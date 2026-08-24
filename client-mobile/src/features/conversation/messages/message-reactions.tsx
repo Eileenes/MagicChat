@@ -6,6 +6,7 @@ import type {
   ClientMessageReaction,
   ClientMessageReactionUser,
 } from "@/core/models"
+import { useXGUITheme } from "@/xgui"
 
 export function MessageReactionChips({
   align,
@@ -20,10 +21,10 @@ export function MessageReactionChips({
   onUserPress: (user: ClientMessageReactionUser) => void
   reactions: ClientMessageReaction[]
 }) {
+  const { colors } = useXGUITheme()
   const [pendingTexts, setPendingTexts] = useState<ReadonlySet<string>>(
     new Set()
   )
-  const [pressedText, setPressedText] = useState("")
 
   if (reactions.length === 0) return null
 
@@ -62,19 +63,10 @@ export function MessageReactionChips({
         const canToggle =
           Boolean(onSetReaction) && (canAdd || reaction.reactedByMe)
         const pending = pendingTexts.has(reaction.text)
-        const pressed = pressedText === reaction.text
 
         return (
           <XStack
-            bg={
-              pressed
-                ? reaction.reactedByMe
-                  ? "$color4"
-                  : "$color2"
-                : reaction.reactedByMe
-                  ? "$color3"
-                  : "$backgroundPress"
-            }
+            bg={colors.secondaryBackground}
             height={20}
             items="center"
             key={reaction.text}
@@ -90,14 +82,10 @@ export function MessageReactionChips({
               disabled={!canToggle || pending}
               hitSlop={4}
               onPress={() => void toggleReaction(reaction)}
-              onPressIn={(event) => {
-                event.stopPropagation()
-                setPressedText(reaction.text)
-              }}
-              onPressOut={() => setPressedText("")}
+              onPressIn={(event) => event.stopPropagation()}
               style={styles.inlineControl}
             >
-              <SizableText lineHeight={18} size="$2">
+              <SizableText color={colors.textPrimary} lineHeight={18} size="$2">
                 {reaction.text}
               </SizableText>
             </Pressable>
@@ -119,9 +107,11 @@ function ReactionParticipants({
   onUserPress: (user: ClientMessageReactionUser) => void
   reaction: ClientMessageReaction
 }) {
+  const { colors } = useXGUITheme()
+
   if (reaction.users.length === 0) {
     return (
-      <SizableText color="$color10" lineHeight={16} ml={2} size="$1">
+      <SizableText color={colors.textPrimary} lineHeight={16} ml={2} size="$1">
         {reaction.count}
       </SizableText>
     )
@@ -137,7 +127,7 @@ function ReactionParticipants({
       {reaction.users.map((user, index) => (
         <Fragment key={user.id}>
           {index > 0 ? (
-            <SizableText color="$color10" lineHeight={16} size="$1">
+            <SizableText color={colors.textPrimary} lineHeight={16} size="$1">
               、
             </SizableText>
           ) : null}
@@ -150,7 +140,7 @@ function ReactionParticipants({
             style={styles.inlineControl}
           >
             <SizableText
-              color="$color10"
+              color={colors.textPrimary}
               lineHeight={16}
               numberOfLines={1}
               size="$1"
@@ -161,7 +151,7 @@ function ReactionParticipants({
         </Fragment>
       ))}
       {reaction.count > reaction.users.length ? (
-        <SizableText color="$color10" lineHeight={16} size="$1">
+        <SizableText color={colors.textPrimary} lineHeight={16} size="$1">
           {`等 ${reaction.count} 人`}
         </SizableText>
       ) : null}

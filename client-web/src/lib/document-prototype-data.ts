@@ -128,6 +128,6 @@ export function findPrototypeDocumentNode(
 }
 
 export function getPrototypeDocumentPath(document: ProjectDocumentFile) {
-  if (document.type !== "document") return null
-  return `/documents/document/${encodeURIComponent(document.id)}`
+  if (document.type !== "document" && document.type !== "markdown") return null
+  return `/documents/${document.type}/${encodeURIComponent(document.id)}`
 }

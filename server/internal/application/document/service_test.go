@@ -113,6 +113,47 @@ func TestServiceDocumentTreeLifecycle(t *testing.T) {
 	}
 }
 
+func TestServiceCreatesMarkdownDocumentsAndValidatesDocumentType(t *testing.T) {
+	db := openDocumentTestDB(t)
+	now := time.Date(2026, 8, 5, 8, 0, 0, 0, time.UTC)
+	owner := insertDocumentTestUser(t, db, "document-markdown@example.com", now)
+	project := insertDocumentTestProject(t, db, owner, "Markdown", now)
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
+
+	markdown, err := service.Create(context.Background(), CreateCommand{
+		AccountID: owner.ID, ProjectID: project.ID,
+		Kind:         Field[string]{Present: true, Value: KindDocument},
+		DocumentType: Field[string]{Present: true, Value: store.DocumentTypeMarkdown},
+		Title:        Field[string]{Present: true, Value: "开发说明"},
+	})
+	if err != nil {
+		t.Fatalf("create markdown document: %v", err)
+	}
+	if markdown.DocumentType == nil || *markdown.DocumentType != store.DocumentTypeMarkdown {
+		t.Fatalf("markdown document = %#v", markdown)
+	}
+
+	_, err = service.Create(context.Background(), CreateCommand{
+		AccountID: owner.ID, ProjectID: project.ID,
+		Kind:         Field[string]{Present: true, Value: KindDocument},
+		DocumentType: Field[string]{Present: true, Value: "spreadsheet"},
+		Title:        Field[string]{Present: true, Value: "Unsupported"},
+	})
+	if ErrorCodeOf(err) != CodeInvalidRequest {
+		t.Fatalf("unsupported document type error = %v", err)
+	}
+
+	_, err = service.Create(context.Background(), CreateCommand{
+		AccountID: owner.ID, ProjectID: project.ID,
+		Kind:         Field[string]{Present: true, Value: KindFolder},
+		DocumentType: Field[string]{Present: true, Value: store.DocumentTypeMarkdown},
+		Title:        Field[string]{Present: true, Value: "Invalid folder"},
+	})
+	if ErrorCodeOf(err) != CodeInvalidRequest {
+		t.Fatalf("folder document type error = %v", err)
+	}
+}
+
 func TestServiceRejectsUnsupportedKindsAndInvalidParents(t *testing.T) {
 	db := openDocumentTestDB(t)
 	now := time.Date(2026, 8, 5, 8, 0, 0, 0, time.UTC)

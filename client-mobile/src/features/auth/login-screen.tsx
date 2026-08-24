@@ -8,11 +8,14 @@ import { Image, Paragraph, XStack, YStack } from "tamagui"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { PageHeader } from "@/components/navigation/page-header"
 import type { AuthenticatedUser } from "@/core/models"
+import { ApiRequestError } from "@/data/api-client"
 import { useAppInfoQuery } from "@/data/auth/auth-hooks"
 import { queryKeys } from "@/data/query"
+import { runLoginBootstrap } from "@/features/auth/login-bootstrap"
 import { LoginForm } from "@/features/auth/login-form"
 import { useAuth } from "@/providers/auth-provider"
 import { useServers } from "@/providers/server-provider"
+import { useRealtime } from "@/realtime/realtime-context"
 import { useXGUITheme, useXGUIToast } from "@/xgui"
 
 const CONNECTION_TIMEOUT_MS = 5_000
@@ -21,7 +24,14 @@ const MIN_CONNECTION_TOAST_MS = 300
 export function LoginScreen() {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const { isAuthenticated, signIn } = useAuth()
+  const {
+    beginSignIn,
+    commitSignIn,
+    isAuthenticated,
+    isPreparingSignIn,
+    rollbackSignIn,
+  } = useAuth()
+  const { waitUntilReady } = useRealtime()
   const {
     isHydrated,
     markServerAsRecentlyUsed,
@@ -38,12 +48,14 @@ export function LoginScreen() {
   const connectionLoading =
     isHydrated && appInfoQuery.isFetching && !connectionTimedOut
   const returnToServerSelection = useCallback(() => {
+    if (isPreparingSignIn) return
+
     if (router.canGoBack()) {
       router.back()
       return
     }
     router.replace("/server-management")
-  }, [router])
+  }, [isPreparingSignIn, router])
 
   useFocusEffect(
     useCallback(() => {
@@ -59,7 +71,7 @@ export function LoginScreen() {
   )
 
   useEffect(() => {
-    if (!connectionLoading) return
+    if (isPreparingSignIn || !connectionLoading) return
 
     const timeout = setTimeout(() => {
       setTimedOutServerKey(serverKey)
@@ -73,12 +85,15 @@ export function LoginScreen() {
   }, [
     connectionLoading,
     hideToast,
+    isPreparingSignIn,
     queryClient,
     selectedServer,
     serverKey,
   ])
 
   useEffect(() => {
+    if (isPreparingSignIn) return
+
     if (!connectionLoading) {
       hideToast()
       return
@@ -90,7 +105,13 @@ export function LoginScreen() {
       type: "loading",
     })
     return hideToast
-  }, [connectionLoading, hideToast, serverKey, showToast])
+  }, [
+    connectionLoading,
+    hideToast,
+    isPreparingSignIn,
+    serverKey,
+    showToast,
+  ])
 
   if (isAuthenticated) {
     return <Redirect href="/messages" />
@@ -135,14 +156,29 @@ export function LoginScreen() {
       url: selectedServer.url,
       userId: user.id,
     }
-    markServerAsRecentlyUsed(selectedServer.id)
-    await signIn(authenticatedTarget)
-    router.replace("/messages")
+    beginSignIn(authenticatedTarget)
+
+    try {
+      await runLoginBootstrap({
+        queryClient,
+        target: authenticatedTarget,
+        waitForRealtime: waitUntilReady,
+      })
+      markServerAsRecentlyUsed(selectedServer.id)
+      await commitSignIn(authenticatedTarget)
+      hideToast()
+    } catch (error: unknown) {
+      await rollbackSignIn(authenticatedTarget)
+      throw new ApiRequestError(
+        error instanceof Error ? error.message : "登录初始化失败"
+      )
+    }
   }
 
   return (
     <YStack bg={colors.background0} flex={1}>
       <PageHeader
+        backDisabled={isPreparingSignIn}
         backIcon={ChevronLeft}
         backIconColor={colors.textPrimary}
         background={colors.background0}

@@ -115,7 +115,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const [foregroundConversationId, setForegroundConversationId] = useState("")
   const shouldLoadConversations =
     !location.pathname.startsWith("/tasks") &&
-    !location.pathname.startsWith("/documents/document/")
+    !location.pathname.startsWith("/documents/")
   const routeConversationId =
     matchPath("/chat/:conversationId", location.pathname)?.params
       .conversationId ?? ""

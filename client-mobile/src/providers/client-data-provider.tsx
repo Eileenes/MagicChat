@@ -102,14 +102,14 @@ type ClientDataContextValue = {
 const ClientDataContext = createContext<ClientDataContextValue | null>(null)
 
 export function ClientDataProvider({ children }: React.PropsWithChildren) {
-  const { invalidateSession, session } = useAuth()
+  const { invalidateSession, isAuthenticated, session } = useAuth()
   const { ready: realtimeReady } = useRealtime()
   const target = session ?? INACTIVE_TARGET
   const targetKey = `${target.id}\u0000${target.url}\u0000${target.userId}`
 
   return (
     <TargetClientDataProvider
-      enabled={session !== null}
+      enabled={isAuthenticated}
       invalidateSession={invalidateSession}
       key={targetKey}
       realtimeReady={realtimeReady}

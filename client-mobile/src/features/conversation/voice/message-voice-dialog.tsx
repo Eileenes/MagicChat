@@ -1,17 +1,17 @@
 import { Mic } from "lucide-react-native"
-import {
-  Dialog,
-  SizableText,
-  Spinner,
-  VisuallyHidden,
-  YStack,
-} from "tamagui"
+import { useCallback } from "react"
+import { StyleSheet, Text, View } from "react-native"
 
-import { AppButton } from "@/components/forms/app-button"
 import type { PreparedClientVoiceMessage } from "@/data/messages/message-upload"
 import { formatVoiceDuration } from "@/domain/messages/message-presenter"
 import { VoiceRecordingPreviewButton } from "@/features/conversation/voice/voice-recording-preview-button"
 import type { VoiceMessageRecorderStatus } from "@/features/conversation/voice/use-voice-message-recorder"
+import {
+  XGUIActionSheet,
+  type XGUIActionSheetAction,
+  useXGUITheme,
+  useXGUIToast,
+} from "@/xgui"
 
 export function MessageVoiceDialog({
   elapsedMS,
@@ -38,129 +38,91 @@ export function MessageVoiceDialog({
   transcript: string
   transcriptionError: string
 }) {
+  const toast = useXGUIToast()
+  const { colors } = useXGUITheme()
   const recorded = status === "recorded"
+  const showPlaybackError = useCallback(
+    (message: string) => {
+      toast.show({
+        duration: 1_000,
+        message: `无法播放语音：${message}`,
+        type: "text",
+      })
+    },
+    [toast]
+  )
+  const actions: XGUIActionSheetAction[] = recorded
+    ? [
+        {
+          closeOnPress: false,
+          disabled: !recording || sending,
+          label: "发送语音",
+          onPress: onSendVoice,
+        },
+        {
+          closeOnPress: false,
+          disabled: !transcript.trim() || sending,
+          label: "发送文本",
+          onPress: onSendText,
+        },
+      ]
+    : status === "processing" || status === "transcribing"
+      ? [
+          {
+            closeOnPress: false,
+            disabled: true,
+            label: status === "transcribing" ? "正在识别" : "正在结束",
+            onPress: () => undefined,
+          },
+        ]
+      : []
 
   return (
-    <Dialog
-      modal
+    <XGUIActionSheet
+      actions={actions}
+      cancelDisabled={sending}
       onOpenChange={(nextOpen) => {
         if (!nextOpen && !sending) onCancel()
       }}
       open={open}
+      title="语音输入"
     >
-      <Dialog.Portal>
-        <Dialog.Overlay bg="$shadow6" opacity={0.5} />
-        <Dialog.Content bordered elevate gap="$4" maxW={440} width="90%">
-          <Dialog.Title fontSize="$4" lineHeight="$5">
-            语音输入
-          </Dialog.Title>
-          <VisuallyHidden>
-            <Dialog.Description>
-              录制语音并选择发送语音消息或识别后的文字消息
-            </Dialog.Description>
-          </VisuallyHidden>
+      <View style={styles.content}>
+        <View style={[styles.preview, { backgroundColor: colors.background1 }]}>
+          {recorded && recording ? (
+            <VoiceRecordingPreviewButton
+              disabled={sending}
+              onPlaybackError={showPlaybackError}
+              uri={recording.upload.uri}
+            />
+          ) : (
+            <Mic color={colors.brand} size={34} strokeWidth={1.7} />
+          )}
+          <Text style={[styles.status, { color: colors.textSecondary }]}>
+            {getStatusText(status, elapsedMS)}
+          </Text>
+        </View>
 
-          <YStack
-            bg="$backgroundPress"
-            gap="$3"
-            items="center"
-            justify="center"
-            minH={120}
-            rounded="$4"
-          >
-            {recorded && recording ? (
-              <VoiceRecordingPreviewButton
-                disabled={sending}
-                uri={recording.upload.uri}
-              />
-            ) : (
-              <Mic color="$color10" size={34} strokeWidth={1.7} />
-            )}
-            <SizableText color="$color10" size="$3">
-              {getStatusText(status, elapsedMS)}
-            </SizableText>
-          </YStack>
+        {error ? (
+          <Text style={[styles.message, { color: colors.destructive }]}>
+            {error}
+          </Text>
+        ) : null}
+        {transcriptionError ? (
+          <Text style={[styles.message, { color: colors.textSecondary }]}>
+            {transcriptionError}，仍可发送语音
+          </Text>
+        ) : null}
 
-          {error ? (
-            <SizableText color="$red10" size="$3">
-              {error}
-            </SizableText>
-          ) : null}
-          {transcriptionError ? (
-            <SizableText color="$color10" size="$3">
-              {transcriptionError}，仍可发送语音
-            </SizableText>
-          ) : null}
-
-          {status !== "idle" ? (
-            <YStack gap="$2">
-              <SizableText fontWeight="600" size="$3">
-                文字内容
-              </SizableText>
-              <SizableText color="$color11" lineHeight="$6" size="$4">
-                {getTranscriptText(status, transcript)}
-              </SizableText>
-            </YStack>
-          ) : null}
-
-          <YStack gap="$3" width="100%">
-            {status === "processing" || status === "transcribing" ? (
-              <>
-                <AppButton
-                  disabled
-                  icon={<Spinner size="small" />}
-                  width="100%"
-                >
-                  {status === "transcribing" ? "正在识别" : "正在结束"}
-                </AppButton>
-                <CancelButton disabled={sending} onPress={onCancel} />
-              </>
-            ) : null}
-            {recorded ? (
-              <>
-                <AppButton
-                  disabled={!recording || sending}
-                  icon={sending ? <Spinner size="small" /> : undefined}
-                  onPress={onSendVoice}
-                  theme="accent"
-                  width="100%"
-                >
-                  发送语音
-                </AppButton>
-                <AppButton
-                  disabled={!transcript.trim() || sending}
-                  onPress={onSendText}
-                  theme="accent"
-                  width="100%"
-                >
-                  发送文本
-                </AppButton>
-                <CancelButton disabled={sending} onPress={onCancel} />
-              </>
-            ) : null}
-          </YStack>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog>
-  )
-}
-
-function CancelButton({
-  disabled,
-  onPress,
-}: {
-  disabled: boolean
-  onPress: () => void
-}) {
-  return (
-    <AppButton
-      disabled={disabled}
-      onPress={onPress}
-      theme="gray"
-      width="100%"
-    >
-      取消
-    </AppButton>
+        {status !== "idle" ? (
+          <View style={styles.transcriptSection}>
+            <Text style={[styles.transcript, { color: colors.textSecondary }]}>
+              {getTranscriptText(status, transcript)}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </XGUIActionSheet>
   )
 }
 
@@ -184,3 +146,34 @@ function getStatusText(status: VoiceMessageRecorderStatus, elapsedMS: number) {
   if (status === "transcribing") return "正在完成语音识别"
   return `语音 ${formatVoiceDuration(elapsedMS)}`
 }
+
+const styles = StyleSheet.create({
+  content: {
+    gap: 12,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+  },
+  message: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  preview: {
+    alignItems: "center",
+    borderRadius: 8,
+    gap: 12,
+    justifyContent: "center",
+    minHeight: 112,
+  },
+  status: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  transcript: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+  },
+  transcriptSection: {
+    alignItems: "center",
+  },
+})

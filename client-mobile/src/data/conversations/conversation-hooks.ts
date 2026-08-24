@@ -5,16 +5,23 @@ import {
 } from "@tanstack/react-query"
 
 import {
+  addGroupConversationMembers as addGroupConversationMembersRequest,
+  createGroupConversation as createGroupConversationRequest,
   dismissConversation as dismissConversationRequest,
+  dissolveGroupConversation as dissolveGroupConversationRequest,
   joinGroupConversation,
+  leaveGroupConversation as leaveGroupConversationRequest,
   openAppConversation,
   openDirectConversation,
   setConversationMuted as setConversationMutedRequest,
   setConversationPinned as setConversationPinnedRequest,
+  updateGroupConversationAnnouncement as updateGroupConversationAnnouncementRequest,
+  updateGroupConversationName as updateGroupConversationNameRequest,
 } from "@/data/conversations/conversations-api"
 import type {
   ClientContactDirectory,
   ClientConversation,
+  ClientTopicDetail,
 } from "@/core/models"
 import { messageManager } from "@/data/messages"
 import type { AuthenticatedTarget } from "@/core/server-target"
@@ -76,15 +83,22 @@ export function useSetConversationPinned(target: AuthenticatedTarget) {
       const previous = queryClient.getQueryData<ClientConversation[]>(
         queryKeys.conversations(target)
       )
+      const previousTopic = queryClient.getQueryData<ClientTopicDetail>(
+        queryKeys.conversationTopic(target, input.conversationId)
+      )
       updateCachedConversation(queryClient, target, input.conversationId, {
         pinned: input.pinned,
       })
-      return { previous }
+      return { previous, previousTopic }
     },
-    onError: (_error, _input, context) => {
+    onError: (_error, input, context) => {
       queryClient.setQueryData(
         queryKeys.conversations(target),
         context?.previous
+      )
+      queryClient.setQueryData(
+        queryKeys.conversationTopic(target, input.conversationId),
+        context?.previousTopic
       )
     },
     onSuccess: (result) => {
@@ -118,15 +132,22 @@ export function useSetConversationMuted(target: AuthenticatedTarget) {
       const previous = queryClient.getQueryData<ClientConversation[]>(
         queryKeys.conversations(target)
       )
+      const previousTopic = queryClient.getQueryData<ClientTopicDetail>(
+        queryKeys.conversationTopic(target, input.conversationId)
+      )
       updateCachedConversation(queryClient, target, input.conversationId, {
         notificationMuted: input.muted,
       })
-      return { previous }
+      return { previous, previousTopic }
     },
-    onError: (_error, _input, context) => {
+    onError: (_error, input, context) => {
       queryClient.setQueryData(
         queryKeys.conversations(target),
         context?.previous
+      )
+      queryClient.setQueryData(
+        queryKeys.conversationTopic(target, input.conversationId),
+        context?.previousTopic
       )
     },
     onSuccess: (result) => {
@@ -142,33 +163,160 @@ export function useSetConversationMuted(target: AuthenticatedTarget) {
   })
 }
 
-export function useDismissConversation(target: AuthenticatedTarget) {
+export function useAddGroupConversationMembers(target: AuthenticatedTarget) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (conversationId: string) =>
-      dismissConversationRequest(target.url, conversationId),
-    onSuccess: async (result) => {
-      await messageManager.clearConversation(target, result.conversationId)
+    mutationFn: (input: { conversationId: string; memberIds: string[] }) =>
+      addGroupConversationMembersRequest(
+        target.url,
+        input.conversationId,
+        input.memberIds
+      ),
+    onSuccess: (conversation) =>
+      updateGroupConversationCache(queryClient, target, conversation),
+  })
+}
+
+export function useCreateGroupConversation(target: AuthenticatedTarget) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (memberIds: string[]) =>
+      createGroupConversationRequest(target.url, memberIds),
+    onSuccess: (conversation) => {
       queryClient.setQueryData<ClientConversation[]>(
         queryKeys.conversations(target),
-        (current) =>
-          current?.filter(
-            (conversation) => conversation.id !== result.conversationId
-          )
+        (current) => upsertConversation(current, conversation)
       )
-      queryClient.removeQueries({
+      void queryClient.invalidateQueries({
         exact: true,
-        queryKey: queryKeys.conversationMessages(
-          target,
-          result.conversationId
-        ),
+        queryKey: queryKeys.contacts(target),
       })
       void queryClient.invalidateQueries({
         exact: true,
         queryKey: queryKeys.conversations(target),
       })
     },
+  })
+}
+
+export function useUpdateGroupConversationName(target: AuthenticatedTarget) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: { conversationId: string; name: string }) =>
+      updateGroupConversationNameRequest(
+        target.url,
+        input.conversationId,
+        input.name
+      ),
+    onSuccess: (conversation) =>
+      updateGroupConversationCache(queryClient, target, conversation),
+  })
+}
+
+export function useUpdateGroupConversationAnnouncement(
+  target: AuthenticatedTarget
+) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: { announcement: string; conversationId: string }) =>
+      updateGroupConversationAnnouncementRequest(
+        target.url,
+        input.conversationId,
+        input.announcement
+      ),
+    onSuccess: (conversation) =>
+      updateGroupConversationCache(queryClient, target, conversation),
+  })
+}
+
+export function useLeaveGroupConversation(target: AuthenticatedTarget) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      leaveGroupConversationRequest(target.url, conversationId),
+    onSuccess: async (result) => {
+      await removeConversationFromCache(queryClient, target, result.conversationId)
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: queryKeys.contacts(target),
+      })
+    },
+  })
+}
+
+export function useDissolveGroupConversation(target: AuthenticatedTarget) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      dissolveGroupConversationRequest(target.url, conversationId),
+    onSuccess: async (result) => {
+      await removeConversationFromCache(queryClient, target, result.conversationId)
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: queryKeys.contacts(target),
+      })
+    },
+  })
+}
+
+export function useDismissConversation(target: AuthenticatedTarget) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      dismissConversationRequest(target.url, conversationId),
+    onSuccess: (result) =>
+      removeConversationFromCache(queryClient, target, result.conversationId),
+  })
+}
+
+function updateGroupConversationCache(
+  queryClient: QueryClient,
+  target: AuthenticatedTarget,
+  conversation: ClientConversation
+) {
+  queryClient.setQueryData<ClientConversation[]>(
+    queryKeys.conversations(target),
+    (current) => upsertConversation(current, conversation)
+  )
+  void queryClient.invalidateQueries({
+    exact: true,
+    queryKey: queryKeys.contacts(target),
+  })
+  void queryClient.invalidateQueries({
+    exact: true,
+    queryKey: queryKeys.conversationMessages(target, conversation.id),
+  })
+  void queryClient.invalidateQueries({
+    exact: true,
+    queryKey: queryKeys.conversations(target),
+  })
+}
+
+async function removeConversationFromCache(
+  queryClient: QueryClient,
+  target: AuthenticatedTarget,
+  conversationId: string
+) {
+  await messageManager.clearConversation(target, conversationId)
+  queryClient.setQueryData<ClientConversation[]>(
+    queryKeys.conversations(target),
+    (current) =>
+      current?.filter((conversation) => conversation.id !== conversationId)
+  )
+  queryClient.removeQueries({
+    exact: true,
+    queryKey: queryKeys.conversationMessages(target, conversationId),
+  })
+  void queryClient.invalidateQueries({
+    exact: true,
+    queryKey: queryKeys.conversations(target),
   })
 }
 
@@ -204,6 +352,16 @@ function updateCachedConversation(
           ? { ...conversation, ...updates }
           : conversation
       )
+  )
+  queryClient.setQueryData<ClientTopicDetail>(
+    queryKeys.conversationTopic(target, conversationId),
+    (current) =>
+      current
+        ? {
+            ...current,
+            conversation: { ...current.conversation, ...updates },
+          }
+        : current
   )
 }
 

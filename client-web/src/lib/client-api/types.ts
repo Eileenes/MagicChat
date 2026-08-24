@@ -199,6 +199,11 @@ export type TopicConversationResponse = {
   conversation?: ConversationResponse
 }
 
+export type ListConversationTopicsResponse = {
+  next_cursor?: string | null
+  topics?: ConversationResponse[]
+}
+
 export type ConversationProjectResponse = {
   avatar?: string
   description?: string
@@ -463,6 +468,11 @@ export type TopicClosedSystemEventBodyResponse = {
   type?: "system_event"
 }
 
+export type FriendshipCreatedSystemEventBodyResponse = {
+  event?: "friendship_created"
+  type?: "system_event"
+}
+
 export type MessageBodyResponse =
   | TextMessageBodyResponse
   | MarkdownMessageBodyResponse
@@ -484,6 +494,7 @@ export type MessageBodyResponse =
   | GroupAnnouncementUpdatedSystemEventBodyResponse
   | MessageRevokedSystemEventBodyResponse
   | TopicClosedSystemEventBodyResponse
+  | FriendshipCreatedSystemEventBodyResponse
 
 export type MessageResponse = {
   body?: MessageBodyResponse
@@ -599,6 +610,20 @@ export type MessagePageResponse = {
 export type ListConversationMessagesResponse = {
   messages?: MessageResponse[]
   page?: MessagePageResponse
+}
+
+export type ConversationAttachmentResponse = {
+  created_at?: string
+  file_id?: string
+  message_id?: string
+  name?: string
+  seq?: number
+  size_bytes?: number
+}
+
+export type ListConversationAttachmentsResponse = {
+  attachments?: ConversationAttachmentResponse[]
+  next_cursor?: string | null
 }
 
 export type CreateMessageResponse = {
@@ -854,6 +879,25 @@ export type ClientTopicDetail = {
     type: "direct" | "group" | "app"
   }
   sourceMessage: ClientTopicSourceMessage
+}
+
+export type ClientConversationTopicListStatus = "all" | "active" | "archived"
+
+export type ClientConversationTopicsPage = {
+  nextCursor: string | null
+  topics: ClientConversation[]
+}
+
+export type ClientConversationAttachment = {
+  createdAt: string
+  file: ClientFileMessageBody
+  messageId: string
+  seq: number
+}
+
+export type ClientConversationAttachmentsPage = {
+  attachments: ClientConversationAttachment[]
+  nextCursor: string | null
 }
 
 export type ClientConversationProject = {
@@ -1139,6 +1183,11 @@ export type ClientTopicClosedSystemEventBody = {
   type: "system_event"
 }
 
+export type ClientFriendshipCreatedSystemEventBody = {
+  event: "friendship_created"
+  type: "system_event"
+}
+
 export type ClientMessageBody =
   | ClientTextMessageBody
   | ClientMarkdownMessageBody
@@ -1162,6 +1211,7 @@ export type ClientMessageBody =
   | ClientGroupAnnouncementUpdatedSystemEventBody
   | ClientMessageRevokedSystemEventBody
   | ClientTopicClosedSystemEventBody
+  | ClientFriendshipCreatedSystemEventBody
 
 export type ClientMessage = {
   body: ClientMessageBody

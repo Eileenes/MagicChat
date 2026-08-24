@@ -1,7 +1,6 @@
 import type { ReactNode } from "react"
 import {
   Bot,
-  FolderClosed,
   MessagesSquare,
   Settings,
   UserRound,
@@ -10,6 +9,7 @@ import {
 import { type ClientConversation } from "@/lib/client-data-api"
 import { AddGroupMembersDialog } from "@/components/add-group-members-dialog"
 import { AppProfilePopover } from "@/components/app-profile-popover"
+import { ConversationAttachmentsDialog } from "@/components/conversation/conversation-attachments-dialog"
 import { ConversationAvatar } from "@/components/conversation/conversation-avatar"
 import { ConversationStatusIndicator } from "@/components/conversation/conversation-status-indicator"
 import { ConversationInfoDrawer } from "@/components/conversation-info-drawer"
@@ -90,16 +90,7 @@ export function ConversationPanelHeader({
           <AddGroupMembersDialog conversation={conversation} />
         )}
         {conversation.type !== "topic" && (
-          <Button
-            aria-label="历史附件"
-            disabled
-            size="icon-sm"
-            title="历史附件"
-            type="button"
-            variant="ghost"
-          >
-            <FolderClosed className="size-4" />
-          </Button>
+          <ConversationAttachmentsDialog conversation={conversation} />
         )}
         {conversation.type !== "topic" && (
           <ConversationInfoDrawer conversationId={conversation.id}>

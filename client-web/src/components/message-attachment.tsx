@@ -67,7 +67,7 @@ export function MessageAttachment({ file }: MessageAttachmentProps) {
             <AttachmentFileIcon fileName={file.name} />
           </div>
         )}
-        <div className="min-w-0 flex-1 truncate text-sm transition-colors group-hover/attachment-row:text-sky-500">
+        <div className="min-w-0 flex-1 truncate text-sm transition-colors group-hover/attachment-row:text-(--weui-link)">
           {file.name}
         </div>
       </button>

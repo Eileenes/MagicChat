@@ -28,9 +28,10 @@ type documentOptionalInt64 struct {
 }
 
 type createDocumentRequest struct {
-	Kind     documentOptionalString `json:"kind" swaggertype:"string" enums:"document,folder" binding:"required"`
-	Title    documentOptionalString `json:"title" swaggertype:"string" binding:"required"`
-	ParentID documentOptionalString `json:"parent_id" swaggertype:"string" extensions:"x-nullable"`
+	Kind         documentOptionalString `json:"kind" swaggertype:"string" enums:"document,folder" binding:"required"`
+	DocumentType documentOptionalString `json:"document_type" swaggertype:"string" enums:"document,markdown" extensions:"x-nullable"`
+	Title        documentOptionalString `json:"title" swaggertype:"string" binding:"required"`
+	ParentID     documentOptionalString `json:"parent_id" swaggertype:"string" extensions:"x-nullable"`
 }
 
 type updateDocumentRequest struct {
@@ -118,7 +119,7 @@ func (a *DocumentAPI) list(c echo.Context) error {
 // create godoc
 //
 // @Summary 创建文档或目录
-// @Description 在项目根目录或指定父目录下创建富文本文档或目录。
+// @Description 在项目根目录或指定父目录下创建富文本文档、Markdown 文档或目录；document_type 省略时默认为 document。
 // @Tags 客户端文档
 // @Accept json
 // @Produce json
@@ -141,11 +142,12 @@ func (a *DocumentAPI) create(c echo.Context) error {
 		return writeFailure(c, http.StatusBadRequest, string(document.CodeInvalidRequest), "请求格式错误")
 	}
 	value, err := a.documents.Create(c.Request().Context(), document.CreateCommand{
-		AccountID: current.ID,
-		ProjectID: c.Param("project_id"),
-		Kind:      documentStringField(req.Kind),
-		Title:     documentStringField(req.Title),
-		ParentID:  documentStringField(req.ParentID),
+		AccountID:    current.ID,
+		ProjectID:    c.Param("project_id"),
+		Kind:         documentStringField(req.Kind),
+		DocumentType: documentStringField(req.DocumentType),
+		Title:        documentStringField(req.Title),
+		ParentID:     documentStringField(req.ParentID),
 	})
 	if err != nil {
 		return writeDocumentError(c, err)

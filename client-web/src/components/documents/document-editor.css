@@ -202,7 +202,7 @@
 .document-editor .tiptap a {
   padding-right: 0.25rem;
   padding-left: 0.25rem;
-  color: var(--color-sky-500);
+  color: var(--weui-link);
   text-decoration: underline;
   text-underline-offset: 0.16em;
   cursor: pointer;

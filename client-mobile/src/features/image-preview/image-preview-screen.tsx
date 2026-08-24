@@ -1,18 +1,13 @@
 import { NavigationBar } from "expo-navigation-bar"
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router"
 import { StatusBar } from "expo-status-bar"
-import { Download } from "lucide-react-native"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
 import {
-  Button,
   SizableText,
   Spinner,
-  useToastController,
   YStack,
 } from "tamagui"
 
-import type { AppToastTone } from "@/components/feedback/app-toast"
 import type { AuthenticatedTarget } from "@/core/server-target"
 import { useConversationMessages } from "@/data/messages/message-hooks"
 import {
@@ -28,7 +23,6 @@ import {
 } from "@/data/resources"
 import { useAuth } from "@/providers/auth-provider"
 import { buildImagePreviewGallery } from "@/features/image-preview/image-preview-gallery"
-import { ZoomableImage } from "@/features/image-preview/zoomable-image"
 import {
   getImagePreviewSourceKey,
   parseImagePreviewGalleryContext,
@@ -36,6 +30,7 @@ import {
   type ImagePreviewGalleryContext,
   type ImagePreviewSource,
 } from "@/navigation/image-preview"
+import { XGUIButton, XGUIGallery, useXGUIToast } from "@/xgui"
 
 export function ImagePreviewScreen() {
   const params = useLocalSearchParams<{
@@ -208,14 +203,12 @@ function AuthenticatedImagePreview({
   session: AuthenticatedTarget
   source: ImagePreviewSource | null
 }) {
-  const insets = useSafeAreaInsets()
   const router = useRouter()
-  const toast = useToastController()
+  const toast = useXGUIToast()
   const [attempt, setAttempt] = useState(0)
   const [error, setError] = useState<Error | null>(() =>
     source ? null : new Error("图片信息不存在")
   )
-  const [imageReady, setImageReady] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [resource, setResource] = useState<ResolvedResource | null>(null)
 
@@ -239,7 +232,6 @@ function AuthenticatedImagePreview({
   async function handleRetry() {
     if (!source) return
     setError(null)
-    setImageReady(false)
     setResource(null)
     await invalidatePreviewResource(session, source).catch(() => undefined)
     setAttempt((current) => current + 1)
@@ -251,21 +243,13 @@ function AuthenticatedImagePreview({
 
     try {
       await saveImageToMediaLibrary(resource)
-      toast.show("图片已保存", {
-        customData: { tone: "success" satisfies AppToastTone },
-        message: "已保存到系统相册",
-      })
+      toast.show({ message: "图片已保存：已保存到系统相册", type: "text", duration: 1_000 })
     } catch (saveError: unknown) {
-      toast.show("保存失败", {
-        customData: { tone: "error" satisfies AppToastTone },
-        duration: 4000,
-        message:
-          saveError instanceof MediaLibraryPermissionError
+      toast.show({ message: `${"保存失败"}：${saveError instanceof MediaLibraryPermissionError
             ? "请在系统设置中允许即应访问相册"
             : saveError instanceof Error
               ? saveError.message
-              : "请稍后重试",
-      })
+              : "请稍后重试"}`, type: "text", duration: 1_000 })
     } finally {
       setIsSaving(false)
     }
@@ -276,18 +260,7 @@ function AuthenticatedImagePreview({
       <StatusBar hidden />
       <NavigationBar hidden={false} style="dark" />
 
-      {resource ? (
-        <ZoomableImage
-          onError={() => setError(new Error("图片无法显示，请重新加载"))}
-          onLoad={() => setImageReady(true)}
-          onPress={() => router.back()}
-          onSwipeLeft={onSwipeLeft}
-          onSwipeRight={onSwipeRight}
-          uri={resource.uri}
-        />
-      ) : null}
-
-      {!resource || !imageReady ? (
+      {!resource ? (
         <YStack
           b={0}
           gap="$4"
@@ -303,9 +276,13 @@ function AuthenticatedImagePreview({
               <SizableText color="#fff" maxW={280} text="center">
                 {error.message}
               </SizableText>
-              <Button onPress={() => void handleRetry()} theme="teal">
+              <XGUIButton
+                onPress={() => void handleRetry()}
+                size="mini"
+                variant="primary"
+              >
                 重新加载
-              </Button>
+              </XGUIButton>
             </>
           ) : (
             <Spinner color="#fff" size="large" />
@@ -313,27 +290,22 @@ function AuthenticatedImagePreview({
         </YStack>
       ) : null}
 
-      {resource && imageReady ? (
-        <Button
-          accessibilityLabel="保存图片到相册"
-          bg="rgba(0, 0, 0, 0.45)"
-          borderColor="rgba(255, 255, 255, 0.2)"
-          borderWidth={1}
-          b={Math.max(insets.bottom, 16)}
-          circular
-          disabled={isSaving}
-          icon={
-            isSaving ? (
-              <Spinner color="#fff" />
-            ) : (
-              <Download color="#fff" size={22} />
-            )
-          }
-          onPress={() => void handleSave()}
-          position="absolute"
-          pressStyle={{ bg: "rgba(255, 255, 255, 0.16)" }}
-          r={16}
-          size="$5"
+      {resource ? (
+        <XGUIGallery
+          accessibilityLabel="图片预览"
+          onError={() => {
+            setResource(null)
+            setError(new Error("图片无法显示，请重新加载"))
+          }}
+          onOpenChange={(open) => {
+            if (!open) router.back()
+          }}
+          onSwipeLeft={onSwipeLeft}
+          onSwipeRight={onSwipeRight}
+          onSave={() => void handleSave()}
+          open
+          saving={isSaving}
+          source={{ uri: resource.uri }}
         />
       ) : null}
     </YStack>

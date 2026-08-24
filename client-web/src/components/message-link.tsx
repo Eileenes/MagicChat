@@ -16,7 +16,7 @@ export function MessageLink({ link }: MessageLinkProps) {
     >
       <div className="flex min-w-0 items-center gap-3">
         <SquareArrowOutUpRight className="size-4.5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1 truncate text-sm leading-snug font-medium transition-colors group-hover/message-bubble:text-sky-500">
+        <div className="min-w-0 flex-1 truncate text-sm leading-snug font-medium transition-colors group-hover/message-bubble:text-(--weui-link)">
           {link.title}
         </div>
       </div>

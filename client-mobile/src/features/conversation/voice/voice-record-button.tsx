@@ -2,15 +2,13 @@ import { Pressable, StyleSheet } from "react-native"
 import { Button } from "tamagui"
 
 import type { VoiceMessageRecorderStatus } from "@/features/conversation/voice/use-voice-message-recorder"
-
-const VOICE_BUTTON_HEIGHT = 38
+import { useXGUITheme } from "@/xgui"
 
 export function VoiceRecordButton({
   disabled,
   elapsedMS,
   onPressIn,
   onPressOut,
-  recording,
   screenHeight,
   screenWidth,
   status,
@@ -19,11 +17,12 @@ export function VoiceRecordButton({
   elapsedMS: number
   onPressIn: () => void
   onPressOut: () => void
-  recording: boolean
   screenHeight: number
   screenWidth: number
   status: VoiceMessageRecorderStatus
 }) {
+  const { colors } = useXGUITheme()
+
   return (
     <Pressable
       accessibilityHint="按住开始录音，松开结束录音"
@@ -43,14 +42,15 @@ export function VoiceRecordButton({
       {({ pressed }) => (
         <Button
           accessible={false}
-          bg={recording ? "$color5" : "$color1"}
+          bg="transparent"
           borderWidth={0}
+          color={colors.textPrimary}
           disabled={disabled}
           forceStyle={pressed ? "press" : undefined}
-          height={VOICE_BUTTON_HEIGHT}
+          height="100%"
           minH={0}
           pointerEvents="none"
-          pressStyle={{ bg: "$color2" }}
+          pressStyle={{ bg: colors.background1 }}
           size="$4"
           width="100%"
         >

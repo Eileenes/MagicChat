@@ -10,31 +10,46 @@ import {
 import { useXGUITheme } from "@/xgui/theme/use-xgui-theme"
 
 export type XGUIListVariant = "default" | "form-radio"
+export type XGUIListSize = "default" | "large"
 
 export type XGUIListProps = {
   children: ReactNode
+  size?: XGUIListSize
   title?: string
   variant?: XGUIListVariant
 }
 
 export type XGUIListItemProps = {
   accessibilityLabel?: string
+  centerContent?: boolean
   description?: string
+  descriptionFontSize?: number
+  descriptionNumberOfLines?: number
   disabled?: boolean
+  destructive?: boolean
+  icon?: (props: { color: string; size: number; strokeWidth: number }) => ReactNode
+  leading?: ReactNode
   link?: boolean
+  minHeight?: number
   onLongPress?: () => void
   onPress?: () => void
   onPressIn?: () => void
   radio?: boolean
   separator?: boolean
   title: string
+  titleFontSize?: number
+  titleNumberOfLines?: number
+  trailing?: ReactNode
   value?: string
+  valuePlaceholder?: boolean
 }
 
 const XGUIListVariantContext = createContext<XGUIListVariant>("default")
+const XGUIListSizeContext = createContext<XGUIListSize>("default")
 
 export function XGUIList({
   children,
+  size = "default",
   title,
   variant = "default",
 }: XGUIListProps) {
@@ -49,38 +64,40 @@ export function XGUIList({
         </Text>
       ) : null}
       <XGUIListVariantContext.Provider value={variant}>
-        <View
-          style={[
-            styles.list,
-            !title && styles.listWithoutTitle,
-            formRadio && styles.formRadioList,
-            {
-              backgroundColor: colors.background2,
-            },
-          ]}
-        >
-          {!formRadio ? (
-            <View
-              pointerEvents="none"
-              style={[
-                styles.outerSeparator,
-                styles.topSeparator,
-                { backgroundColor: colors.separator },
-              ]}
-            />
-          ) : null}
-          {children}
-          {!formRadio ? (
-            <View
-              pointerEvents="none"
-              style={[
-                styles.outerSeparator,
-                styles.bottomSeparator,
-                { backgroundColor: colors.separator },
-              ]}
-            />
-          ) : null}
-        </View>
+        <XGUIListSizeContext.Provider value={size}>
+          <View
+            style={[
+              styles.list,
+              !title && styles.listWithoutTitle,
+              formRadio && styles.formRadioList,
+              {
+                backgroundColor: colors.background2,
+              },
+            ]}
+          >
+            {!formRadio ? (
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.outerSeparator,
+                  styles.topSeparator,
+                  { backgroundColor: colors.separator },
+                ]}
+              />
+            ) : null}
+            {children}
+            {!formRadio ? (
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.outerSeparator,
+                  styles.bottomSeparator,
+                  { backgroundColor: colors.separator },
+                ]}
+              />
+            ) : null}
+          </View>
+        </XGUIListSizeContext.Provider>
       </XGUIListVariantContext.Provider>
     </View>
   )
@@ -88,19 +105,31 @@ export function XGUIList({
 
 export function XGUIListItem({
   accessibilityLabel,
+  centerContent = false,
   description,
+  descriptionFontSize,
+  descriptionNumberOfLines = 1,
   disabled = false,
+  destructive = false,
+  icon,
+  leading,
   link = false,
+  minHeight,
   onLongPress,
   onPress,
   onPressIn,
   radio = false,
   separator = false,
   title,
+  titleFontSize,
+  titleNumberOfLines = 1,
+  trailing,
   value,
+  valuePlaceholder = false,
 }: XGUIListItemProps) {
   const { colors } = useXGUITheme()
   const formRadio = useContext(XGUIListVariantContext) === "form-radio"
+  const large = useContext(XGUIListSizeContext) === "large"
   const accessibilityRole: ViewProps["accessibilityRole"] = radio
     ? "radio"
     : onPress
@@ -121,7 +150,10 @@ export function XGUIListItem({
         <View
           style={[
             styles.item,
+            large && styles.largeItem,
             formRadio && styles.formRadioItem,
+            centerContent && styles.centeredItem,
+            minHeight ? { minHeight } : null,
             {
               backgroundColor: colors.background2,
             },
@@ -137,30 +169,88 @@ export function XGUIListItem({
               ]}
             />
           ) : null}
-          <View style={styles.body}>
+          {icon ? (
+            <View
+              style={[styles.leading, centerContent && styles.centeredLeading]}
+            >
+              {icon({
+                color: destructive ? colors.destructive : colors.textSecondary,
+                size: large ? 26 : 24,
+                strokeWidth: 1,
+              })}
+            </View>
+          ) : leading ? (
+            <View
+              style={[styles.leading, centerContent && styles.centeredLeading]}
+            >
+              {leading}
+            </View>
+          ) : null}
+          <View style={[styles.body, centerContent && styles.centeredBody]}>
             <Text
-              numberOfLines={1}
+              numberOfLines={titleNumberOfLines}
               style={[
                 styles.itemTitle,
-                { color: link ? colors.link : colors.textPrimary },
+                large && styles.largeItemTitle,
+                titleFontSize
+                  ? {
+                      fontSize: titleFontSize,
+                      lineHeight: Math.max(24, titleFontSize + 6),
+                    }
+                  : null,
+                {
+                  color: destructive
+                    ? colors.destructive
+                    : link
+                      ? colors.link
+                      : colors.textPrimary,
+                },
               ]}
             >
               {title}
             </Text>
             {description ? (
               <Text
-                numberOfLines={1}
-                style={[styles.description, { color: colors.textSecondary }]}
+                numberOfLines={descriptionNumberOfLines}
+                style={[
+                  styles.description,
+                  descriptionFontSize
+                    ? {
+                        fontSize: descriptionFontSize,
+                        lineHeight: Math.max(17, descriptionFontSize + 6),
+                      }
+                    : null,
+                  { color: colors.textPlaceholder },
+                ]}
               >
                 {description}
               </Text>
             ) : null}
           </View>
           {value ? (
-            <Text style={[styles.value, { color: colors.textSecondary }]}>
+            <Text
+              ellipsizeMode="tail"
+              numberOfLines={1}
+              style={[
+                styles.value,
+                large && styles.largeValue,
+                titleFontSize
+                  ? {
+                      fontSize: titleFontSize,
+                      lineHeight: Math.max(24, titleFontSize + 6),
+                    }
+                  : null,
+                {
+                  color: valuePlaceholder
+                    ? colors.textPlaceholder
+                    : colors.textSecondary,
+                },
+              ]}
+            >
               {value}
             </Text>
           ) : null}
+          {trailing ? <View style={styles.trailing}>{trailing}</View> : null}
           {pressed ? (
             <View
               pointerEvents="none"
@@ -188,6 +278,15 @@ const styles = StyleSheet.create({
   bottomSeparator: {
     bottom: 0,
   },
+  centeredBody: {
+    flex: 0,
+  },
+  centeredItem: {
+    justifyContent: "center",
+  },
+  centeredLeading: {
+    marginRight: 8,
+  },
   description: {
     fontSize: 12,
     lineHeight: 17,
@@ -212,6 +311,18 @@ const styles = StyleSheet.create({
   itemTitle: {
     fontSize: 17,
     lineHeight: 24,
+  },
+  largeItem: {
+    minHeight: 60,
+  },
+  largeItemTitle: {
+    fontSize: 18,
+  },
+  largeValue: {
+    fontSize: 18,
+  },
+  leading: {
+    marginRight: 16,
   },
   list: {
     overflow: "hidden",
@@ -244,9 +355,14 @@ const styles = StyleSheet.create({
   topSeparator: {
     top: 0,
   },
-  value: {
-    fontSize: 14,
-    lineHeight: 20,
+  trailing: {
     marginLeft: 16,
+  },
+  value: {
+    flexShrink: 1,
+    fontSize: 17,
+    lineHeight: 24,
+    marginLeft: 16,
+    maxWidth: "60%",
   },
 })

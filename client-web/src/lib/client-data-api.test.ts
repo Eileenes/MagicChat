@@ -1353,6 +1353,21 @@ describe("client data API", () => {
     })
   })
 
+  it("normalizes and summarizes friendship system events", () => {
+    const friendship = normalizeClientMessageBody({
+      event: "friendship_created",
+      type: "system_event",
+    })
+
+    expect(friendship).toEqual({
+      event: "friendship_created",
+      type: "system_event",
+    })
+    expect(formatClientMessageBodySummary(friendship)).toBe(
+      "你们已成为好友，现在可以开始聊天了"
+    )
+  })
+
   it("normalizes and summarizes group announcement system events", () => {
     const updated = normalizeClientMessageBody({
       actor: { display_name: "Alice", id: "user-1" },

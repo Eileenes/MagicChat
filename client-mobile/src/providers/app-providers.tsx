@@ -6,13 +6,9 @@ import {
   initialWindowMetrics,
   SafeAreaProvider,
 } from "react-native-safe-area-context"
-import { TamaguiProvider, ToastProvider, YStack } from "tamagui"
+import { TamaguiProvider, YStack } from "tamagui"
 
 import { tamaguiConfig } from "../../tamagui.config"
-import {
-  AppToastViewport,
-  CurrentAppToast,
-} from "@/components/feedback/app-toast"
 import { AppThemeProvider } from "@/providers/app-theme-provider"
 import { createClientQueryClient } from "@/data/query"
 import { AuthProvider } from "@/providers/auth-provider"
@@ -44,23 +40,17 @@ export function AppProviders({ children }: React.PropsWithChildren) {
                 defaultTheme={tamaguiTheme}
               >
                 <XGUIToastProvider>
-                  <ToastProvider duration={3000} label="通知">
-                    <AppBlurTargetProvider>
-                      <YStack bg="$background" flex={1}>
-                        <ServerProvider>
-                          <AuthProvider>
-                            <RealtimeProvider>
-                              <ClientDataProvider>
-                                {children}
-                              </ClientDataProvider>
-                            </RealtimeProvider>
-                          </AuthProvider>
-                        </ServerProvider>
-                      </YStack>
-                    </AppBlurTargetProvider>
-                    <CurrentAppToast />
-                    <AppToastViewport />
-                  </ToastProvider>
+                  <AppBlurTargetProvider>
+                    <YStack bg="$background" flex={1}>
+                      <ServerProvider>
+                        <AuthProvider>
+                          <RealtimeProvider>
+                            <ClientDataProvider>{children}</ClientDataProvider>
+                          </RealtimeProvider>
+                        </AuthProvider>
+                      </ServerProvider>
+                    </YStack>
+                  </AppBlurTargetProvider>
                 </XGUIToastProvider>
               </TamaguiProvider>
             </SafeAreaProvider>

@@ -3658,7 +3658,7 @@ const docTemplate = `{
         },
         "/api/client/conversations/groups/{conversation_id}/name": {
             "patch": {
-                "description": "群主或管理员修改 active 群聊名称，并生成系统消息。",
+                "description": "任意当前群成员均可修改 active 群聊名称，并生成系统消息。",
                 "consumes": [
                     "application/json"
                 ],
@@ -3901,6 +3901,89 @@ const docTemplate = `{
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/client.dismissConversationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/attachments": {
+            "get": {
+                "description": "获取当前用户在会话历史可见范围内的文件消息，按消息序号从新到旧分页返回，不包含已撤回或已删除消息。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "获取会话历史附件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "下一页游标",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回数量，默认 50，最大 100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.listConversationAttachmentsResponse"
                                         }
                                     }
                                 }
@@ -5880,6 +5963,96 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/conversations/{conversation_id}/topics": {
+            "get": {
+                "description": "按最后活动时间倒序列出当前用户有权查看的全部下属话题，包括未参与和已关闭话题。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "列出会话下属话题",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "父会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "all",
+                        "description": "话题状态：all、active 或 archived",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "话题分页游标",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 50，最大 100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.listConversationTopicsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/documents/{document_id}": {
             "get": {
                 "security": [
@@ -6235,6 +6408,7 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "description": "若对方已有一条反向待处理申请，则自动建立好友关系；好友通讯录模式下同时创建或更新双方私聊，并写入好友建立系统消息。",
                 "consumes": [
                     "application/json"
                 ],
@@ -6344,6 +6518,7 @@ const docTemplate = `{
         },
         "/api/client/friend-requests/{request_id}/accept": {
             "post": {
+                "description": "建立好友关系；好友通讯录模式下同时创建或更新双方私聊，并写入好友建立系统消息。",
                 "produces": [
                     "application/json"
                 ],
@@ -7231,7 +7406,7 @@ const docTemplate = `{
                         "UserSession": []
                     }
                 ],
-                "description": "在项目根目录或指定父目录下创建富文本文档或目录。",
+                "description": "在项目根目录或指定父目录下创建富文本文档、Markdown 文档或目录；document_type 省略时默认为 document。",
                 "consumes": [
                     "application/json"
                 ],
@@ -9552,6 +9727,30 @@ const docTemplate = `{
                 }
             }
         },
+        "client.conversationAttachmentResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "file_id": {
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "seq": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                }
+            }
+        },
         "client.conversationLastMessageSenderResponse": {
             "type": "object",
             "properties": {
@@ -9798,6 +9997,14 @@ const docTemplate = `{
                 "title"
             ],
             "properties": {
+                "document_type": {
+                    "type": "string",
+                    "enum": [
+                        "document",
+                        "markdown"
+                    ],
+                    "x-nullable": true
+                },
                 "kind": {
                     "type": "string",
                     "enum": [
@@ -10463,6 +10670,20 @@ const docTemplate = `{
                 }
             }
         },
+        "client.listConversationAttachmentsResponse": {
+            "type": "object",
+            "properties": {
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.conversationAttachmentResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "string"
+                }
+            }
+        },
         "client.listConversationMessagesResponse": {
             "type": "object",
             "properties": {
@@ -10474,6 +10695,21 @@ const docTemplate = `{
                 },
                 "page": {
                     "$ref": "#/definitions/client.listMessagesPageResponse"
+                }
+            }
+        },
+        "client.listConversationTopicsResponse": {
+            "type": "object",
+            "properties": {
+                "next_cursor": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "topics": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.conversationListItemResponse"
+                    }
                 }
             }
         },

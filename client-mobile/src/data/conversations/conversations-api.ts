@@ -48,6 +48,7 @@ type ConversationLastMessageSenderResponse = {
 }
 
 type ConversationResponse = {
+  announcement?: string
   avatar?: string
   can_send?: boolean
   created_at?: string
@@ -80,6 +81,10 @@ type ConversationActionResponse = {
   conversation?: ConversationResponse
 }
 
+type ConversationCreateTopicResponse = ConversationActionResponse & {
+  created?: boolean
+}
+
 type ConversationPinResponse = {
   conversation_id?: string
   pinned?: boolean
@@ -91,6 +96,10 @@ type ConversationMuteResponse = {
 }
 
 type ConversationDismissResponse = {
+  conversation_id?: string
+}
+
+type GroupConversationActionResponse = {
   conversation_id?: string
 }
 
@@ -195,6 +204,137 @@ export async function dismissConversation(
   return { conversationId: data.conversation_id }
 }
 
+export async function leaveGroupConversation(
+  serverUrl: string,
+  conversationId: string,
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    GroupConversationActionResponse
+  >(
+    `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/leave`,
+    {
+      errorMessage: "退出群聊失败",
+      method: "POST",
+      signal: options.signal,
+    }
+  )
+
+  if (!data?.conversation_id?.trim()) {
+    throw new ApiRequestError("退出群聊响应格式不正确")
+  }
+
+  return { conversationId: data.conversation_id }
+}
+
+export async function dissolveGroupConversation(
+  serverUrl: string,
+  conversationId: string,
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    GroupConversationActionResponse
+  >(`/api/client/conversations/groups/${encodeURIComponent(conversationId)}`, {
+    errorMessage: "解散群聊失败",
+    method: "DELETE",
+    signal: options.signal,
+  })
+
+  if (!data?.conversation_id?.trim()) {
+    throw new ApiRequestError("解散群聊响应格式不正确")
+  }
+
+  return { conversationId: data.conversation_id }
+}
+
+export async function addGroupConversationMembers(
+  serverUrl: string,
+  conversationId: string,
+  memberIds: string[],
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    ConversationActionResponse
+  >(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/members`,
+    {
+      body: JSON.stringify({ app_ids: [], member_ids: memberIds }),
+      errorMessage: "添加群成员失败",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: options.signal,
+    }
+  )
+
+  return normalizeConversationAction(data, "添加群成员响应格式不正确")
+}
+
+export async function createGroupConversation(
+  serverUrl: string,
+  memberIds: string[],
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    ConversationActionResponse
+  >("/api/client/conversations/groups", {
+    body: JSON.stringify({
+      app_ids: [],
+      member_ids: memberIds,
+      name: "新建群聊",
+    }),
+    errorMessage: "创建群聊失败",
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+    signal: options.signal,
+  })
+
+  return normalizeConversationAction(data, "创建群聊响应格式不正确")
+}
+
+export async function updateGroupConversationName(
+  serverUrl: string,
+  conversationId: string,
+  name: string,
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    ConversationActionResponse
+  >(
+    `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/name`,
+    {
+      body: JSON.stringify({ name }),
+      errorMessage: "修改群聊名称失败",
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      signal: options.signal,
+    }
+  )
+
+  return normalizeConversationAction(data, "修改群聊名称响应格式不正确")
+}
+
+export async function updateGroupConversationAnnouncement(
+  serverUrl: string,
+  conversationId: string,
+  announcement: string,
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    ConversationActionResponse
+  >(
+    `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/announcement`,
+    {
+      body: JSON.stringify({ announcement }),
+      errorMessage: "修改群公告失败",
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      signal: options.signal,
+    }
+  )
+
+  return normalizeConversationAction(data, "修改群公告响应格式不正确")
+}
+
 export async function openDirectConversation(
   serverUrl: string,
   userId: string,
@@ -274,6 +414,32 @@ export async function fetchConversationTopic(
   }
 }
 
+export async function createConversationTopic(
+  serverUrl: string,
+  conversationId: string,
+  messageId: string,
+  options: ConversationRequestOptions = {}
+) {
+  const data = await createApiClient(serverUrl, options.fetcher).request<
+    ConversationCreateTopicResponse
+  >(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/topic`,
+    {
+      errorMessage: "创建话题失败",
+      method: "POST",
+      signal: options.signal,
+    }
+  )
+
+  return {
+    conversation: normalizeConversationAction(
+      data,
+      "创建话题响应格式不正确"
+    ),
+    created: Boolean(data?.created),
+  }
+}
+
 export async function archiveConversationTopic(
   serverUrl: string,
   conversationId: string,
@@ -312,6 +478,7 @@ function normalizeConversation(
   }
 
   const normalized: ClientConversation = {
+    announcement: conversation.announcement?.trim() ?? "",
     avatar: conversation.avatar ?? "",
     canSend: conversation.can_send !== false,
     createdAt: conversation.created_at,

@@ -1,41 +1,28 @@
-import { BellOff, Pin } from "lucide-react-native"
-import { useTheme, XStack } from "tamagui"
+// Tabler exposes per-icon runtime entry points without per-icon declarations.
+// eslint-disable-next-line import/no-unresolved
+import IconBellOff from "@tabler/icons-react-native/IconBellOff"
+import { XStack } from "tamagui"
 
 import type { ClientConversation } from "@/core/models"
+import { useXGUITheme } from "@/xgui"
 
 export function ConversationPreferenceIndicators({
   conversation,
-  showPinned = true,
 }: {
   conversation: ClientConversation
-  showPinned?: boolean
 }) {
-  const theme = useTheme()
-  const color = String(theme.gray10.val)
-  const pinned = showPinned && conversation.pinned
+  const { colors } = useXGUITheme()
 
-  if (!pinned && !conversation.notificationMuted) {
-    return null
-  }
+  if (!conversation.notificationMuted) return null
 
   return (
-    <XStack gap={2} items="center" shrink={0}>
-      {pinned ? (
-        <Pin
-          accessibilityLabel="已置顶"
-          color={color}
-          size={11}
-          strokeWidth={1.7}
-        />
-      ) : null}
-      {conversation.notificationMuted ? (
-        <BellOff
-          accessibilityLabel="消息免打扰"
-          color={color}
-          size={11}
-          strokeWidth={1.7}
-        />
-      ) : null}
+    <XStack items="center" shrink={0}>
+      <IconBellOff
+        accessibilityLabel="消息免打扰"
+        color={colors.textPlaceholder}
+        size={14}
+        strokeWidth={1.5}
+      />
     </XStack>
   )
 }

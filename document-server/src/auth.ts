@@ -100,7 +100,7 @@ export class DocumentAuthorizer {
         JOIN projects p ON p.id = d.project_id
         WHERE d.id = $1
           AND d.kind = 'document'
-          AND d.document_type = 'document'
+          AND d.document_type IN ('document', 'markdown')
           AND d.deleted_at IS NULL
           AND p.deleted_at IS NULL
           AND (

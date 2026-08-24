@@ -4377,6 +4377,28 @@ func TestFriendModeLifecycleAndExactUserSearch(t *testing.T) {
 	if acceptResp.StatusCode != http.StatusOK {
 		t.Fatalf("accept friend request status = %d, body = %#v", acceptResp.StatusCode, acceptBody)
 	}
+	lowID, highID := alice.ID, bob.ID
+	if lowID > highID {
+		lowID, highID = highID, lowID
+	}
+	var direct store.DirectConversation
+	if err := db.First(&direct, "user_low_id = ? AND user_high_id = ?", lowID, highID).Error; err != nil {
+		t.Fatalf("load friendship direct conversation: %v", err)
+	}
+	var friendshipMessage store.Message
+	if err := db.First(&friendshipMessage, "conversation_id = ? AND seq = ?", direct.ConversationID, 1).Error; err != nil {
+		t.Fatalf("load friendship system message: %v", err)
+	}
+	if friendshipMessage.Summary != "你们已成为好友，现在可以开始聊天了" {
+		t.Fatalf("friendship message summary = %q", friendshipMessage.Summary)
+	}
+	var friendshipBody map[string]any
+	if err := json.Unmarshal(friendshipMessage.Body, &friendshipBody); err != nil {
+		t.Fatalf("decode friendship system message: %v", err)
+	}
+	if friendshipBody["type"] != "system_event" || friendshipBody["event"] != "friendship_created" {
+		t.Fatalf("friendship system body = %#v", friendshipBody)
+	}
 
 	contactsResp, contactsBody := getJSON(t, server, "/api/client/contacts", aliceCookie)
 	if contactsResp.StatusCode != http.StatusOK {
@@ -10113,7 +10135,7 @@ func TestUpdateGroupConversationNameCreatesSystemMessage(t *testing.T) {
 	}
 }
 
-func TestUpdateGroupConversationNameRejectsMember(t *testing.T) {
+func TestUpdateGroupConversationNameAllowsMember(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()
 
@@ -10131,10 +10153,17 @@ func TestUpdateGroupConversationNameRejectsMember(t *testing.T) {
 	resp, body := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/name", map[string]any{
 		"name": "新产品讨论组",
 	}, loginAsUser(t, server, bob.Email))
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403, body = %#v", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %#v", resp.StatusCode, body)
 	}
-	requireError(t, body, "forbidden")
+	data := requireSuccess(t, body)
+	updatedConversation := data["conversation"].(map[string]any)
+	if updatedConversation["name"] != "新产品讨论组" {
+		t.Fatalf("conversation.name = %v, want 新产品讨论组", updatedConversation["name"])
+	}
+	if updatedConversation["last_message_summary"] != "Bob 修改群聊名称为 新产品讨论组" {
+		t.Fatalf("last_message_summary = %v, want member rename summary", updatedConversation["last_message_summary"])
+	}
 }
 
 func TestLeaveGroupConversationCreatesSystemMessage(t *testing.T) {

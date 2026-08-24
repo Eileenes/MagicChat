@@ -6,6 +6,7 @@ import {
   View,
   type PressableProps,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from "react-native"
 
@@ -25,6 +26,7 @@ export type XGUIButtonProps = Omit<
   loading?: boolean
   size?: XGUIButtonSize
   style?: StyleProp<ViewStyle>
+  textStyle?: StyleProp<TextStyle>
   variant?: XGUIButtonVariant
 }
 
@@ -35,6 +37,7 @@ export function XGUIButton({
   loading = false,
   size = "default",
   style,
+  textStyle,
   variant = "primary",
   ...pressableProps
 }: XGUIButtonProps) {
@@ -80,6 +83,7 @@ export function XGUIButton({
                 size === "mini" && styles.miniText,
                 size === "xmini" && styles.xminiText,
                 { color: textColor },
+                textStyle,
               ]}
             >
               {children}

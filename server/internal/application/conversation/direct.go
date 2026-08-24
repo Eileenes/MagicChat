@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (s *Service) CreateDirect(ctx context.Context, cmd CreateDirectCommand) (OpenResult, error) {
@@ -70,6 +71,59 @@ func (s *Service) OpenDirectForUsers(ctx context.Context, current, target Identi
 		return Reference{}, false, err
 	}
 	return newReference(conversation), created, nil
+}
+
+func (s *Service) RecordFriendshipCreated(ctx context.Context, db *gorm.DB, cmd RecordFriendshipCreatedCommand) (RecordFriendshipCreatedResult, error) {
+	db = db.WithContext(ctx)
+	userIDs := []string{cmd.RequesterUserID, cmd.AddresseeUserID}
+	var users []store.User
+	if err := db.Where("id IN ? AND status = ?", userIDs, store.UserStatusActive).Find(&users).Error; err != nil {
+		return RecordFriendshipCreatedResult{}, err
+	}
+	usersByID := make(map[string]store.User, len(users))
+	for _, user := range users {
+		usersByID[user.ID] = user
+	}
+	requester, requesterFound := usersByID[cmd.RequesterUserID]
+	addressee, addresseeFound := usersByID[cmd.AddresseeUserID]
+	if !requesterFound || !addresseeFound {
+		return RecordFriendshipCreatedResult{}, gorm.ErrRecordNotFound
+	}
+	conversation, _, err := s.getOrCreateDirect(db, requester, addressee)
+	if err != nil {
+		return RecordFriendshipCreatedResult{}, err
+	}
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).First(&conversation, "id = ?", conversation.ID).Error; err != nil {
+		return RecordFriendshipCreatedResult{}, err
+	}
+	storedMessage, err := createFriendshipCreatedSystemMessage(db, &conversation, cmd.CreatedAt)
+	if err != nil {
+		return RecordFriendshipCreatedResult{}, err
+	}
+	if err := advanceReadSeq(db, conversation.ID, cmd.ActorUserID, storedMessage.Seq); err != nil {
+		return RecordFriendshipCreatedResult{}, err
+	}
+	restoredUserIDs := make([]string, 0, len(userIDs))
+	for _, userID := range userIDs {
+		if _, restored, err := s.restoreConversationPreference(db, userID, conversation.ID); err != nil {
+			return RecordFriendshipCreatedResult{}, err
+		} else if restored {
+			restoredUserIDs = append(restoredUserIDs, userID)
+		}
+	}
+	return RecordFriendshipCreatedResult{
+		Message: newMessage(storedMessage), RestoredUserIDs: restoredUserIDs, UserIDs: userIDs,
+	}, nil
+}
+
+func (s *Service) PublishFriendshipCreated(ctx context.Context, result RecordFriendshipCreatedResult) {
+	if s.notifications == nil {
+		return
+	}
+	for _, userID := range result.RestoredUserIDs {
+		s.notifications.PublishConversationRestored(ctx, []string{userID}, result.Message.ConversationID)
+	}
+	s.notifications.PublishConversationMessage(ctx, result.UserIDs, result.Message)
 }
 
 func (s *Service) getOrCreateDirect(db *gorm.DB, current, target store.User) (store.Conversation, bool, error) {

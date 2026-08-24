@@ -39,6 +39,9 @@ import type {
   CreateTopicResponse,
   TopicConversationResponse,
   TopicDetailResponse,
+  ListConversationTopicsResponse,
+  ClientConversationTopicListStatus,
+  ClientConversationTopicsPage,
   ClientTopicDetail,
   SetConversationPinResponse,
   ConversationPinUpdatedEventPayloadResponse,
@@ -363,6 +366,56 @@ export async function createConversationTopic(
   return {
     conversation: normalizeConversation(data.conversation),
     created: Boolean(data.created),
+  }
+}
+
+export async function listConversationTopics(
+  conversationId: string,
+  options: {
+    cursor?: string
+    limit?: number
+    status?: ClientConversationTopicListStatus
+  } = {},
+  fetcher: ClientDataFetch = fetch
+): Promise<ClientConversationTopicsPage> {
+  const query = new URLSearchParams()
+  const cursor = options.cursor?.trim()
+  if (cursor) query.set("cursor", cursor)
+  if (options.limit !== undefined) query.set("limit", String(options.limit))
+  if (options.status && options.status !== "all") {
+    query.set("status", options.status)
+  }
+  const suffix = query.size > 0 ? `?${query.toString()}` : ""
+  const response = await fetcher(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/topics${suffix}`,
+    { credentials: "include", method: "GET" }
+  )
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<ListConversationTopicsResponse>
+  >(response)
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "加载话题列表失败")
+  }
+  const data = (
+    payload as
+      ClientDataSuccessEnvelope<ListConversationTopicsResponse> | undefined
+  )?.data
+  if (
+    !Array.isArray(data?.topics) ||
+    (data.next_cursor !== undefined &&
+      data.next_cursor !== null &&
+      typeof data.next_cursor !== "string")
+  ) {
+    throw new ClientDataRequestError("话题列表响应格式不正确")
+  }
+  const topics = data.topics.map(normalizeConversation)
+  if (topics.some((topic) => topic.type !== "topic")) {
+    throw new ClientDataRequestError("话题列表响应格式不正确")
+  }
+  return {
+    nextCursor: data.next_cursor?.trim() || null,
+    topics,
   }
 }
 

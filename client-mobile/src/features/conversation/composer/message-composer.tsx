@@ -2,7 +2,6 @@ import {
   CirclePlus,
   Keyboard as KeyboardIcon,
   Mic,
-  Send,
   Smile,
 } from "lucide-react-native"
 import {
@@ -12,7 +11,15 @@ import {
   useRef,
   useState,
 } from "react"
-import { Keyboard, Platform, useWindowDimensions } from "react-native"
+import {
+  Keyboard,
+  Platform,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+} from "react-native"
+import * as MediaLibrary from "expo-media-library/legacy"
+import { useRouter, type Href } from "expo-router"
 import {
   type TamaguiElement,
   XStack,
@@ -45,7 +52,6 @@ import { MentionPickerSheet } from "@/features/conversation/composer/mention-pic
 import {
   pickCameraImageMessage,
   pickFileMessage,
-  pickLibraryImageMessage,
 } from "@/features/conversation/composer/message-upload-picker"
 import { MessageUploadDialog } from "@/features/conversation/composer/message-upload-dialog"
 import { useComposerUpload } from "@/features/conversation/composer/use-composer-upload"
@@ -57,6 +63,9 @@ import {
 } from "@/features/conversation/composer/message-reply-preview"
 import { useComposerVoice } from "@/features/conversation/voice/use-composer-voice"
 import { VoiceRecordButton } from "@/features/conversation/voice/voice-record-button"
+import { XGUIButton, useXGUITheme } from "@/xgui"
+import { createMediaPickerRequest } from "@/features/media-picker/media-picker-registry"
+import { prepareImageMessage } from "@/data/messages/message-image"
 
 export type MessageComposerHandle = {
   dismissAccessory: () => void
@@ -64,14 +73,16 @@ export type MessageComposerHandle = {
   insertMention: (target: MentionSelection) => void
 }
 
-const COMPOSER_CONTROL_HEIGHT = 38
+const COMPOSER_CONTROL_HEIGHT = 40
+const COMPOSER_ICON_BUTTON_SIZE = 34
+const COMPOSER_ICON_SIZE = 28
 const COMPOSER_INPUT_GAP = 8
 const COMPOSER_INPUT_HORIZONTAL_PADDING = "$3"
 const COMPOSER_LINE_HEIGHT = 22
 const COMPOSER_MAX_LINES = 4
 const COMPOSER_MAX_CONTROL_HEIGHT =
   COMPOSER_CONTROL_HEIGHT + COMPOSER_LINE_HEIGHT * (COMPOSER_MAX_LINES - 1)
-const COMPOSER_PANEL_HEIGHT = 56
+const COMPOSER_PANEL_HEIGHT = 58
 const COMPOSER_EXTRA_BOTTOM_PADDING = 4
 const COMPOSER_PANEL_VERTICAL_CHROME =
   COMPOSER_PANEL_HEIGHT - COMPOSER_CONTROL_HEIGHT
@@ -88,6 +99,7 @@ export const MessageComposer = forwardRef<
     onSendUpload: (selection: PreparedClientMessageUpload) => Promise<boolean>
     onSendVoice: (recording: PreparedClientVoiceMessage) => Promise<boolean>
     replyTarget: MessageReplyTarget | null
+    sending: boolean
     server: ServerTarget
   }
 >(function MessageComposer(
@@ -99,10 +111,13 @@ export const MessageComposer = forwardRef<
     onSendUpload,
     onSendVoice,
     replyTarget,
+    sending,
     server,
   },
   ref
 ) {
+  const { colors } = useXGUITheme()
+  const router = useRouter()
   const windowDimensions = useWindowDimensions()
   const inputRef = useRef<TamaguiElement>(null)
   const contentRef = useRef("")
@@ -110,16 +125,26 @@ export const MessageComposer = forwardRef<
   const mentionTriggerRef = useRef<TextSelection | null>(null)
   const selectionRef = useRef<TextSelection>({ end: 0, start: 0 })
   const shouldFocusAfterPickerCloseRef = useRef(false)
+  const restoreKeyboardAfterMediaPickerRef = useRef(false)
+  const pendingImageUploadsRef = useRef<PreparedClientMessageUpload[]>([])
+  const imageConfirmationPendingRef = useRef(false)
   const [content, setContent] = useState("")
   const [inputHeight, setInputHeight] = useState(COMPOSER_CONTROL_HEIGHT)
   const [accessoryMode, setAccessoryMode] =
     useState<ComposerAccessoryMode>(null)
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false)
+  const [pendingImageUploads, setPendingImageUploads] = useState<
+    PreparedClientMessageUpload[]
+  >([])
+  const [imageBatchSending, setImageBatchSending] = useState(false)
   const [pendingSelection, setPendingSelection] =
     useState<TextSelection>()
-  const upload = useComposerUpload({ disabled, onSend: onSendUpload })
+  const upload = useComposerUpload({
+    disabled: disabled || sending,
+    onSend: onSendUpload,
+  })
   const voice = useComposerVoice({
-    disabled: disabled || upload.preparing,
+    disabled: disabled || sending || upload.preparing,
     onBeforeModeToggle: () => {
       setAccessoryMode(null)
       setMentionPickerOpen(false)
@@ -129,7 +154,7 @@ export const MessageComposer = forwardRef<
     onSendVoice,
     serverUrl: server.url,
   })
-  const canSend = content.trim().length > 0 && !disabled
+  const canSend = content.trim().length > 0 && !disabled && !sending
   const interactionDisabled = voice.interactionDisabled
   const visibleControlHeight = voice.mode
     ? COMPOSER_CONTROL_HEIGHT
@@ -149,6 +174,15 @@ export const MessageComposer = forwardRef<
     const frame = requestAnimationFrame(() => setPendingSelection(undefined))
     return () => cancelAnimationFrame(frame)
   }, [pendingSelection])
+
+  useEffect(() => {
+    return () => {
+      pendingImageUploadsRef.current.forEach((selection) =>
+        selection.cleanup?.()
+      )
+      pendingImageUploadsRef.current = []
+    }
+  }, [])
 
   useImperativeHandle(ref, () => ({
     dismissAccessory() {
@@ -242,15 +276,30 @@ export const MessageComposer = forwardRef<
     target: MentionSelection,
     explicitSelection?: TextSelection
   ) {
-    const result = insertDraftMention({
-      mentions: mentionsRef.current,
-      selection: explicitSelection ?? selectionRef.current,
-      target,
-      value: contentRef.current,
-    })
-    const nextSelection = { end: result.cursor, start: result.cursor }
+    insertMentionTargets([target], explicitSelection)
+  }
 
-    updateDraft(result.value, result.mentions)
+  function insertMentionTargets(
+    targets: MentionSelection[],
+    explicitSelection?: TextSelection
+  ) {
+    let nextValue = contentRef.current
+    let nextMentions = mentionsRef.current
+    let nextSelection = explicitSelection ?? selectionRef.current
+
+    for (const target of targets) {
+      const result = insertDraftMention({
+        mentions: nextMentions,
+        selection: nextSelection,
+        target,
+        value: nextValue,
+      })
+      nextValue = result.value
+      nextMentions = result.mentions
+      nextSelection = { end: result.cursor, start: result.cursor }
+    }
+
+    updateDraft(nextValue, nextMentions)
     voice.leaveMode()
     requestSelection(nextSelection)
     mentionTriggerRef.current = null
@@ -271,6 +320,13 @@ export const MessageComposer = forwardRef<
     )
   }
 
+  function handleMultipleMentionSelect(candidates: MentionCandidate[]) {
+    insertMentionTargets(
+      candidates,
+      mentionTriggerRef.current ?? selectionRef.current
+    )
+  }
+
   function handleMentionPickerOpenChange(open: boolean) {
     setMentionPickerOpen(open)
     if (open) {
@@ -287,31 +343,54 @@ export const MessageComposer = forwardRef<
     if (open || !shouldFocusAfterPickerCloseRef.current) return
 
     shouldFocusAfterPickerCloseRef.current = false
-    if (!disabled) inputRef.current?.focus()
+    // Android ignores focus requests until the native modal finishes detaching.
+    setTimeout(() => {
+      if (!disabled) inputRef.current?.focus()
+    }, 100)
   }
 
   function focusInputAfterRender() {
     requestAnimationFrame(() => inputRef.current?.focus())
   }
 
+  function restoreKeyboardAfterMediaPicker() {
+    if (!restoreKeyboardAfterMediaPickerRef.current) return
+
+    restoreKeyboardAfterMediaPickerRef.current = false
+    setTimeout(() => {
+      if (!disabled) inputRef.current?.focus()
+    }, 100)
+  }
+
   async function handleSend() {
+    const draftValue = contentRef.current
+    const draftMentions = mentionsRef.current
+    const draftSelection = selectionRef.current
     const message = createDraftMentionTemplate(
-      contentRef.current,
-      mentionsRef.current
+      draftValue,
+      draftMentions
     ).trim()
-    if (!message || disabled) return
-    if (await onSend(message)) {
-      mentionTriggerRef.current = null
-      setMentionPickerOpen(false)
-      updateDraft("", [])
-      setInputHeight(COMPOSER_CONTROL_HEIGHT)
-      requestSelection({ end: 0, start: 0 })
+    if (!message || disabled || sending) return
+
+    mentionTriggerRef.current = null
+    setMentionPickerOpen(false)
+    updateDraft("", [])
+    setInputHeight(COMPOSER_CONTROL_HEIGHT)
+    requestSelection({ end: 0, start: 0 })
+    inputRef.current?.focus()
+
+    if (!(await onSend(message)) && contentRef.current.length === 0) {
+      updateDraft(draftValue, draftMentions)
+      requestSelection(draftSelection)
     }
   }
 
   function handleAccessoryToggle(mode: Exclude<ComposerAccessoryMode, null>) {
     if (interactionDisabled) return
 
+    if (mode === "attachments" && accessoryMode !== "attachments") {
+      restoreKeyboardAfterMediaPickerRef.current = Keyboard.isVisible()
+    }
     Keyboard.dismiss()
     voice.leaveMode()
     setMentionPickerOpen(false)
@@ -345,12 +424,106 @@ export const MessageComposer = forwardRef<
     if (interactionDisabled) return
 
     setAccessoryMode(null)
-    await upload.pick(picker)
+    const selection = await upload.pick(picker)
+    if (!selection) restoreKeyboardAfterMediaPicker()
+  }
+
+  function handleUploadCancel() {
+    if (pendingImageUploadsRef.current.length > 0) {
+      pendingImageUploadsRef.current.forEach((selection) =>
+        selection.cleanup?.()
+      )
+      pendingImageUploadsRef.current = []
+      imageConfirmationPendingRef.current = false
+      setPendingImageUploads([])
+    } else {
+      upload.cancel()
+    }
+    restoreKeyboardAfterMediaPicker()
+  }
+
+  async function handleUploadConfirm() {
+    if (pendingImageUploadsRef.current.length === 0) {
+      if (await upload.confirm()) restoreKeyboardAfterMediaPicker()
+      return
+    }
+    if (imageBatchSending) return
+
+    setImageBatchSending(true)
+    try {
+      while (pendingImageUploadsRef.current.length > 0) {
+        const selection = pendingImageUploadsRef.current[0]
+        if (!selection || !(await onSendUpload(selection))) break
+
+        selection.cleanup?.()
+        pendingImageUploadsRef.current = pendingImageUploadsRef.current.slice(1)
+        setPendingImageUploads(pendingImageUploadsRef.current)
+      }
+    } finally {
+      setImageBatchSending(false)
+    }
+
+    if (pendingImageUploadsRef.current.length === 0) {
+      imageConfirmationPendingRef.current = false
+      restoreKeyboardAfterMediaPicker()
+    }
+  }
+
+  function handleLibraryPick() {
+    if (interactionDisabled) return
+    setAccessoryMode(null)
+    const requestId = createMediaPickerRequest({
+      confirmLabel: "发送",
+      maxSelection: 4,
+      mode: "multiple",
+      onClose: () => {
+        if (!imageConfirmationPendingRef.current) {
+          restoreKeyboardAfterMediaPicker()
+        }
+      },
+      onSelect: async (assets) => {
+        const preparedUploads: PreparedClientMessageUpload[] = []
+        try {
+          for (const asset of assets) {
+            const uri =
+              Platform.OS === "android"
+                ? await MediaLibrary.getAssetContentUriAsync(asset)
+                : await MediaLibrary.getAssetInfoAsync(asset).then(
+                    (info) => info.localUri ?? info.uri
+                  )
+            preparedUploads.push(
+              await prepareImageMessage({
+                height: asset.height,
+                mimeType: imageMimeType(asset.filename),
+                name: asset.filename,
+                uri,
+                width: asset.width,
+              })
+            )
+          }
+        } catch (error: unknown) {
+          preparedUploads.forEach((selection) => selection.cleanup?.())
+          throw error
+        }
+
+        pendingImageUploadsRef.current.forEach((selection) =>
+          selection.cleanup?.()
+        )
+        pendingImageUploadsRef.current = preparedUploads
+        imageConfirmationPendingRef.current = true
+        setPendingImageUploads(preparedUploads)
+      },
+    })
+    router.push({ pathname: "/media-picker", params: { requestId } } as unknown as Href)
   }
 
   return (
     <>
-      <YStack bg="$background">
+      <YStack
+        bg={colors.background1}
+        borderTopColor={colors.separator}
+        borderTopWidth={StyleSheet.hairlineWidth}
+      >
         {replyTarget ? (
           <MessageReplyPreview onClear={onClearReply} target={replyTarget} />
         ) : null}
@@ -362,18 +535,20 @@ export const MessageComposer = forwardRef<
         >
           <CompactIconButton
             accessibilityLabel={voice.mode ? "切换到文字输入" : "切换到语音输入"}
+            buttonSize={COMPOSER_ICON_BUTTON_SIZE}
             disabled={interactionDisabled}
             icon={voice.mode ? KeyboardIcon : Mic}
-            iconSize={26}
+            iconColor={colors.textPrimary}
+            iconSize={COMPOSER_ICON_SIZE}
             onPress={voice.toggleMode}
             strokeWidth={1.5}
           />
           <YStack
-            bg={voice.interactionActive ? "$color5" : "$color1"}
+            bg={voice.interactionActive ? "$color5" : colors.background2}
             flex={1}
             height={visibleControlHeight}
             mx={COMPOSER_INPUT_GAP}
-            rounded="$4"
+            style={{ borderRadius: 6 }}
           >
             {voice.mode ? (
               <VoiceRecordButton
@@ -381,7 +556,6 @@ export const MessageComposer = forwardRef<
                 elapsedMS={voice.elapsedMS}
                 onPressIn={voice.pressIn}
                 onPressOut={voice.pressOut}
-                recording={voice.interactionActive}
                 screenHeight={windowDimensions.height}
                 screenWidth={windowDimensions.width}
                 status={voice.status}
@@ -391,7 +565,7 @@ export const MessageComposer = forwardRef<
                 autoCapitalize="sentences"
                 bg="transparent"
                 borderWidth={0}
-                color="$gray12"
+                color={colors.textPrimary}
                 disabled={disabled}
                 fontFamily="$body"
                 fontSize="$4"
@@ -423,28 +597,42 @@ export const MessageComposer = forwardRef<
           <XStack gap="$1" items="center">
             <CompactIconButton
               accessibilityLabel="选择表情"
+              buttonSize={COMPOSER_ICON_BUTTON_SIZE}
               disabled={interactionDisabled}
               icon={Smile}
-              iconSize={26}
+              iconColor={colors.textPrimary}
+              iconSize={COMPOSER_ICON_SIZE}
               onPress={() => handleAccessoryToggle("emoji")}
               strokeWidth={1.5}
             />
             {!voice.mode && content.trim().length > 0 ? (
-              <CompactIconButton
+              <XGUIButton
                 accessibilityLabel="发送消息"
                 disabled={!canSend}
-                icon={Send}
-                iconSize={26}
-                loading={disabled}
+                loading={sending}
                 onPress={() => void handleSend()}
-                strokeWidth={1.5}
-              />
+                size="mini"
+                style={{ height: COMPOSER_ICON_BUTTON_SIZE }}
+              >
+                <Text
+                  style={{
+                    color: colors.textOnColor,
+                    fontSize: 16,
+                    fontWeight: "500",
+                    lineHeight: 22,
+                  }}
+                >
+                  发送
+                </Text>
+              </XGUIButton>
             ) : (
               <CompactIconButton
                 accessibilityLabel="添加图片或附件"
+                buttonSize={COMPOSER_ICON_BUTTON_SIZE}
                 disabled={interactionDisabled}
                 icon={CirclePlus}
-                iconSize={26}
+                iconColor={colors.textPrimary}
+                iconSize={COMPOSER_ICON_SIZE}
                 loading={upload.preparing}
                 onPress={() => handleAccessoryToggle("attachments")}
                 strokeWidth={1.5}
@@ -458,9 +646,7 @@ export const MessageComposer = forwardRef<
           onCameraPress={() => void handleUploadPick(pickCameraImageMessage)}
           onEmojiPress={handleEmojiPress}
           onFilePress={() => void handleUploadPick(pickFileMessage)}
-          onLibraryPress={() =>
-            void handleUploadPick(pickLibraryImageMessage)
-          }
+          onLibraryPress={handleLibraryPick}
         />
       </YStack>
 
@@ -469,14 +655,21 @@ export const MessageComposer = forwardRef<
         onAnimationComplete={handleMentionPickerAnimationComplete}
         onOpenChange={handleMentionPickerOpenChange}
         onSelect={handleMentionSelect}
+        onSelectMultiple={handleMultipleMentionSelect}
         open={mentionPickerOpen}
         server={server}
       />
       <MessageUploadDialog
-        onCancel={upload.cancel}
-        onConfirm={() => void upload.confirm()}
-        selection={upload.selected}
-        sending={disabled}
+        onCancel={handleUploadCancel}
+        onConfirm={() => void handleUploadConfirm()}
+        selections={
+          pendingImageUploads.length > 0
+            ? pendingImageUploads
+            : upload.selected
+              ? [upload.selected]
+              : []
+        }
+        sending={disabled || sending || imageBatchSending}
       />
       <MessageVoiceGestureOverlay
         active={voice.gestureActive}
@@ -501,6 +694,14 @@ export const MessageComposer = forwardRef<
     </>
   )
 })
+
+function imageMimeType(name: string) {
+  const extension = name.split(".").pop()?.toLowerCase()
+  if (extension === "png") return "image/png"
+  if (extension === "webp") return "image/webp"
+  if (extension === "heic" || extension === "heif") return "image/heic"
+  return "image/jpeg"
+}
 
 function clampSelection(selection: TextSelection, valueLength: number) {
   const start = Math.max(0, Math.min(selection.start, valueLength))

@@ -3,20 +3,19 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import {
   FlatList,
   StyleSheet,
+  Text,
+  View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native"
 import {
-  Button,
   SizableText,
-  Spinner,
   XStack,
   YStack,
 } from "tamagui"
 
 import { ContentState } from "@/components/feedback/content-state"
 import { AppButton } from "@/components/forms/app-button"
-import { ThemedIcon } from "@/components/icons/themed-icon"
 import { MessageBubble } from "@/features/conversation/messages/message-bubble"
 import type { EntityReference } from "@/domain/entities/entity-profile"
 import type {
@@ -29,9 +28,11 @@ import {
 } from "@/domain/messages/message-presenter"
 import type { ServerTarget } from "@/core/server-target"
 import type { ResourceLoadState } from "@/data/resources"
+import { XGUIButton, XGUILoadmore, useXGUITheme } from "@/xgui"
 
 export function MessageList({
   canAddReaction,
+  canCreateTopic,
   canRespondToChoice,
   conversationId,
   currentUserId,
@@ -45,6 +46,7 @@ export function MessageList({
   onContentTouch,
   onImagePress,
   onLoadOlder,
+  onMessageLongPress,
   onRetry,
   onResourceError,
   onResourcePress,
@@ -59,6 +61,7 @@ export function MessageList({
   showChoiceResponseCounts,
 }: {
   canAddReaction: boolean
+  canCreateTopic: boolean
   canRespondToChoice: boolean
   conversationId: string
   currentUserId: string
@@ -72,6 +75,7 @@ export function MessageList({
   onContentTouch: () => void
   onImagePress: (fileId: string, messageId: string) => void
   onLoadOlder: () => void
+  onMessageLongPress: (message: PresentedMessage) => void
   onRetry: () => void
   onResourceError: (fileId: string) => void
   onResourcePress: (fileId: string) => void
@@ -89,6 +93,7 @@ export function MessageList({
   server: ServerTarget
   showChoiceResponseCounts: boolean
 }) {
+  const { colors } = useXGUITheme()
   const listItems = useMemo(() => buildMessageListItems(messages), [messages])
   const listRef = useRef<FlatList<MessageListItem>>(null)
   const nearBottomRef = useRef(true)
@@ -187,11 +192,11 @@ export function MessageList({
   }
 
   if (messages.length === 0) {
-    return <ContentState message="暂无消息，发送第一条消息开始对话" />
+    return <YStack bg={colors.background0} flex={1} />
   }
 
   return (
-    <YStack flex={1} position="relative">
+    <YStack bg={colors.background0} flex={1} position="relative">
       <FlatList
         ref={listRef}
         contentContainerStyle={styles.content}
@@ -203,12 +208,7 @@ export function MessageList({
         keyExtractor={(item) => item.key}
         ListFooterComponent={
           isFetchingOlder ? (
-            <XStack gap="$2" items="center" justify="center" pb="$3" py="$2">
-              <Spinner size="small" />
-              <SizableText color="$color10" size="$2">
-                正在加载
-              </SizableText>
-            </XStack>
+            <XGUILoadmore accessibilityLabel="正在加载更早的消息" />
           ) : null
         }
         maintainVisibleContentPosition={{
@@ -222,10 +222,14 @@ export function MessageList({
         onTouchStart={onContentTouch}
         renderItem={({ item }) =>
           item.type === "time" ? (
-            <MessageTimeMarker createdAt={item.createdAt} />
+            <MessageTimeMarker
+              color={colors.textPlaceholder}
+              createdAt={item.createdAt}
+            />
           ) : (
             <MessageBubble
               canAddReaction={canAddReaction}
+              canCreateTopic={canCreateTopic}
               canRespondToChoice={canRespondToChoice}
               currentUserId={currentUserId}
               message={item.message}
@@ -233,6 +237,7 @@ export function MessageList({
               onAvatarPress={onAvatarPress}
               onImagePress={onImagePress}
               onMentionPress={onMentionPress}
+              onMessageLongPress={onMessageLongPress}
               onOpenTopic={onOpenTopic}
               onResourceError={onResourceError}
               onResourcePress={onResourcePress}
@@ -248,19 +253,26 @@ export function MessageList({
         }
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        style={styles.list}
+        style={[styles.list, { backgroundColor: colors.background0 }]}
       />
 
       {pendingNewMessageCount > 0 ? (
         <XStack b="$4" justify="center" l={0} position="absolute" r={0}>
-          <Button
-            icon={<ThemedIcon icon={ArrowDown} size={18} />}
+          <XGUIButton
             onPress={handleJumpToLatest}
-            rounded="$10"
-            size="$3"
+            size="mini"
+            style={styles.newMessagesButton}
+            variant="secondary"
           >
-            {pendingNewMessageCount} 条新消息
-          </Button>
+            <View style={styles.newMessagesContent}>
+              <ArrowDown color={colors.textPrimary} size={18} />
+              <Text
+                style={[styles.newMessagesText, { color: colors.textPrimary }]}
+              >
+                {`${pendingNewMessageCount} 条新消息`}
+              </Text>
+            </View>
+          </XGUIButton>
         </XStack>
       ) : null}
     </YStack>
@@ -308,13 +320,19 @@ function buildMessageListItems(messages: PresentedMessage[]): MessageListItem[] 
   return items
 }
 
-function MessageTimeMarker({ createdAt }: { createdAt: string }) {
+function MessageTimeMarker({
+  color,
+  createdAt,
+}: {
+  color: ReturnType<typeof useXGUITheme>["colors"]["textPlaceholder"]
+  createdAt: string
+}) {
   const label = formatMessageTimeMarker(createdAt)
   if (!label) return null
 
   return (
     <XStack justify="center">
-      <SizableText color="$color10" size="$2">
+      <SizableText color={color} size="$2">
         {label}
       </SizableText>
     </XStack>
@@ -364,10 +382,27 @@ function getNewMessages(
 
 const styles = StyleSheet.create({
   content: {
+    flexGrow: 1,
+    justifyContent: "flex-end",
     paddingBottom: 16,
     paddingTop: 16,
   },
   list: {
     flex: 1,
+  },
+  newMessagesButton: {
+    borderRadius: 18,
+    height: 36,
+    minHeight: 36,
+  },
+  newMessagesContent: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+  },
+  newMessagesText: {
+    fontSize: 14,
+    fontWeight: "500",
+    lineHeight: 20,
   },
 })

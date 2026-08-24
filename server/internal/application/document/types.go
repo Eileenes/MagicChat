@@ -45,11 +45,12 @@ type ListCommand struct {
 }
 
 type CreateCommand struct {
-	AccountID string
-	ProjectID string
-	Kind      Field[string]
-	Title     Field[string]
-	ParentID  Field[string]
+	AccountID    string
+	ProjectID    string
+	Kind         Field[string]
+	DocumentType Field[string]
+	Title        Field[string]
+	ParentID     Field[string]
 }
 
 type GetCommand struct {

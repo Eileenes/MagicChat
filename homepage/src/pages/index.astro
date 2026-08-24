@@ -119,38 +119,131 @@ const faqs = [
   ['我们团队可以基于即应进行二次开发吗？', '完全可以！即应采用模块化架构与开源代码库，欢迎开发者根据自身业务需求定制 UI、扩展 Agent 插件或接入特定的企业工作流。'],
 ];
 
-const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
 ---
 
-<BaseLayout title={title} description={description} schema={schema}>
+<BaseLayout title={title} description={description} schema={schema} bodyClass="page-scene">
   <SiteHeader />
-  <main id="main-content" class="scene-page" style={`--scene-background: url('${asset('footer-meeting-room.webp')}')`}>
-    <section class="scene scene-hero" style={`--scene-image: url('${asset('footer-meeting-room.webp')}')`} aria-labelledby="hero-title">
-      <div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span>即应</span>{' '}<span class="hero-title-accent">AI 时代的团队协作入口</span></h1><p class="scene-lead">即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。</p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><a class="scene-button scene-button-outline" href="#download">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></a></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持私有化部署</span></div></div>
+  <main id="main-content" class="scene-page">
+    <section class="scene scene-hero" aria-labelledby="hero-title">
+      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span class="hero-title-name">即应</span><span class="hero-title-accent">AI 时代的团队协作入口</span></h1><p class="scene-lead"><span class="scene-lead-line">即应是一款开源的即时通讯工具，连接消息、知识与任务</span><span class="scene-lead-line">让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工</span></p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><details class="scene-download-menu download-menu"><summary class="scene-button scene-button-outline scene-install-toggle" aria-label="免费安装" data-tooltip="免费安装">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></summary><div class="download-menu-panel scene-download-menu-panel"><article class="download-option"><div><h3>Windows 下载</h3><p>Windows 桌面客户端</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.exe" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>Mac 下载</h3><p>macOS 桌面客户端</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.dmg" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>iOS 下载</h3><p>iPhone 与 iPad</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.dmg" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>安卓 下载</h3><p>Android 手机和平板</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.apk" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article></div></details></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持私有化部署</span></div></div>
     </section>
 
-    <section class="scene scene-why" style={`--scene-image: url('${asset('team-collaboration.webp')}')`} id="why" aria-labelledby="why-title">
-      <div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow">为什么需要即应</span><h2 id="why-title"><span class="title-line">一个空间，连接</span><span class="title-line title-accent">团队与 AI</span></h2><p>在即应中不仅可以提供完整的团队协作能力，让沟通与执行在同一个空间完成。同时也内置了 AI 智能体能自然接入相关流程，让每个人都能轻松定义专属智能体，完成更多定制化工作。</p></div><section class="pain-carousel" data-pain-carousel aria-label="团队协作痛点轮播" aria-roledescription="carousel"><div class="pain-carousel-viewport"><div class="pain-carousel-track" data-pain-track>{painPoints.map(([number, itemTitle, body], index) => <article class="pain-banner" id={`pain-slide-${number}`} data-pain-slide role="group" aria-roledescription="slide" aria-label={`${index + 1} / ${painPoints.length}`} aria-hidden={index === 0 ? 'false' : 'true'}><div class="pain-banner-content"><p class="pain-banner-meta"><span>{number}</span><i></i><span>需求与痛点</span></p><h3>{itemTitle}</h3><p>{body}</p></div><span class="pain-banner-ordinal" aria-hidden="true">{number}</span></article>)}</div></div><div class="pain-carousel-controls"><div class="pain-carousel-pagination" role="tablist" aria-label="选择协作痛点">{painPoints.map(([number, itemTitle], index) => <button class:list={['pain-carousel-page', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`pain-slide-${number}`} data-pain-pagination={index} aria-label={`查看第 ${number} 项：${itemTitle}`} title={itemTitle}><span class="sr-only">{itemTitle}</span></button>)}</div><div class="pain-carousel-nav"><button class="pain-carousel-arrow pain-carousel-previous" type="button" data-pain-previous aria-label="查看上一项协作痛点" title="上一项"><Icon name="tabler:arrow-left" size={16} aria-hidden="true" /></button><button class="pain-carousel-arrow pain-carousel-next" type="button" data-pain-next aria-label="查看下一项协作痛点" title="下一项"><Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></button></div></div></section></div>
+    <section class="scene scene-why" id="why" aria-labelledby="why-title">
+      <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow">为什么需要即应</span><h2 id="why-title"><span class="title-line">一个空间，连接</span><span class="title-line title-accent">团队与 AI</span></h2><p>在即应中不仅可以提供完整的团队协作能力，让沟通与执行在同一个空间完成。同时也内置了 AI 智能体能自然接入相关流程，让每个人都能轻松定义专属智能体，完成更多定制化工作。</p></div><section class="pain-mosaic" aria-label="团队协作痛点">{painPoints.map(([number, itemTitle, body], index) => <article class:list={['pain-banner', `pain-tile-${index + 1}`]} id={`pain-slide-${number}`} tabindex="0" aria-label={`${index + 1} / ${painPoints.length}`}><div class="pain-banner-content"><p class="pain-banner-meta"><span>{number}</span><i></i><span>需求与痛点</span></p><h3>{itemTitle}</h3><p>{body}</p></div><span class="pain-banner-ordinal" aria-hidden="true">{number}</span></article>)}</section></div>
     </section>
 
-    <section class="scene scene-solution" style={`--scene-image: url('${asset('workspace-detail.webp')}')`} id="solution" aria-labelledby="solution-title">
-      <div class="scene-shade scene-shade-heavy"></div>
+    <section class="scene scene-solution" id="solution" aria-labelledby="solution-title">
       <div class="scene-content scene-content-top scene-solution-content">
-        <div class="scene-text-block"><span class="scene-eyebrow">功能介绍</span><h2 id="solution-title"><span class="title-line">让 AI 真正成为</span><span class="title-line title-accent">团队的一员</span></h2><p>即应希望 AI 不是与工作割裂的聊天机器人，而是能接手实际流程的数字员工——沟通、项目、时间、文档，处处替你分担；团队进展一目了然，人的精力回归真正重要的判断与创造。</p></div>
+        <div class="scene-text-block"><span class="scene-eyebrow">功能介绍</span><h2 id="solution-title"><span class="title-line">让 AI 真正成为<span class="title-accent">团队的一员</span></span></h2><p>即应希望 AI 不是与工作割裂的聊天机器人，而是能接手实际流程的数字员工——沟通、项目、时间、文档，处处替你分担；团队进展一目了然，人的精力回归真正重要的判断与创造。</p></div>
         <section class="feature-explorer" aria-label="即应核心能力">
-          <div class="feature-previews">
-            <article class="feature-preview-empty" data-feature-empty aria-label="即应团队工作台预览" hidden><div class="product-window"><div class="product-app"><aside class="app-dock" aria-hidden="true"><span class="app-dock-logo">即</span><Icon name="tabler:message-circle" size={14} /><Icon name="tabler:users" size={14} /><Icon name="tabler:checkbox" size={14} /></aside><aside class="app-inbox"><header><strong>消息</strong><Icon name="tabler:search" size={15} /></header><div class="app-inbox-tabs"><b>全部</b><span>未读</span><span>群聊</span></div><div class="app-thread"><i class="app-avatar app-avatar-assistant">AI</i><span><strong>AI 助理</strong><small>正在整理团队上下文</small></span></div><div class="app-thread"><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>项目讨论与任务动态</small></span></div></aside><section class="app-chat app-chat-empty"><header><i class="app-avatar app-avatar-team">团</i><span><strong>创新产品</strong><small>15 人</small></span><Icon name="tabler:users" size={15} /></header><div class="app-chat-ghost" aria-hidden="true"><i></i><i></i><i></i></div><footer><span>输入消息</span><Icon name="tabler:send" size={14} /></footer></section></div></div></article>
-            {capabilities.map(([itemTitle, body, label, icon, status], index) => <article class:list={['feature-preview-screen', `feature-preview-${index + 1}`, index === 0 && 'is-active']} id={`feature-preview-${index + 1}`} data-feature-preview={index} data-feature-prompt={featureVisuals[index].prompt} data-feature-process={featureVisuals[index].processLabel} data-feature-response={featureVisuals[index].response} data-feature-result={featureVisuals[index].responseStatus} data-feature-stream={featureVisuals[index].streamResponse} aria-label={label} hidden={index !== 0}><div class="product-window"><div class="product-app"><aside class="app-dock" aria-hidden="true"><span class="app-dock-logo">即</span><span class:list={['app-dock-item', index === 0 && 'is-current']}><Icon name="tabler:message-circle" size={14} /></span><span class:list={['app-dock-item', index === 1 && 'is-current']}><Icon name="tabler:checkbox" size={14} /></span><span class:list={['app-dock-item', index === 2 && 'is-current']}><Icon name="tabler:shield-check" size={14} /></span><span class:list={['app-dock-item', index === 3 && 'is-current']}><Icon name="tabler:plug-connected" size={14} /></span></aside><aside class="app-inbox"><header><strong>{featureVisuals[index].inboxTitle}</strong><Icon name="tabler:search" size={15} /></header><div class="app-inbox-tabs">{featureVisuals[index].inboxTabs.map((tab, tabIndex) => tabIndex === 0 ? <b>{tab}</b> : <span>{tab}</span>)}</div>{featureVisuals[index].threads.map(([threadName, avatar, avatarText, threadStatus, current]) => <div class:list={['app-thread', current && 'is-current']}><i class:list={['app-avatar', `app-avatar-${avatar}`]}>{avatarText}</i><span><strong>{threadName}</strong><small>{threadStatus}</small></span></div>)}</aside><section class="app-chat"><header><i class:list={['app-avatar', `app-avatar-${featureVisuals[index].chat[1]}`]}>{featureVisuals[index].chat[2]}</i><span><strong>{featureVisuals[index].chat[0]}</strong><small>{featureVisuals[index].chat[3]}</small></span><Icon name={featureVisuals[index].chat[4]} size={15} /></header><div class="app-chat-history"><time>今天 17:19</time><div class="app-message app-message-assistant" data-assistant-message><i class="app-avatar app-avatar-assistant">AI</i><div><small data-assistant-label>{featureVisuals[index].assistant}</small><article data-assistant-card><div class="app-message-heading"><Icon name={icon} size={14} /><strong>{label}</strong><b data-assistant-result>{status}</b></div><p data-assistant-response>{featureVisuals[index].response}</p>{index === 0 && <div class="app-context-sources"><span>客户反馈</span><span>项目看板</span><span>历史会话</span></div>}{index === 1 && <div class="app-task-list"><span><i></i>销售报表制作 <b>进行中</b></span><span><i></i>任务创建成功 <b>已完成</b></span></div>}{index === 2 && <div class="app-permission-list"><span><Icon name="tabler:eye" size={11} />读取上下文</span><span><Icon name="tabler:edit" size={11} />创建任务待确认</span></div>}{index === 3 && <div class="app-integration-list"><span><i></i>团队知识库 <b>已连接</b></span><span><i></i>模型服务 API <b>已连接</b></span></div>}</article></div></div><div class="app-message app-message-brief" data-user-message><i class="app-avatar app-avatar-user">你</i><div><small>你 · 刚刚</small><span data-user-request>{featureVisuals[index].prompt}</span></div></div><div class="app-typing" data-assistant-typing aria-label={`${featureVisuals[index].assistant} ${featureVisuals[index].processLabel}`}><span data-assistant-status>{featureVisuals[index].assistant} {featureVisuals[index].processLabel}</span><i></i><i></i><i></i></div></div><footer class="app-composer" data-feature-composer><span class="app-typing-text" data-composer-text>{featureVisuals[index].prompt}</span><span class="app-composer-send" data-send-control aria-hidden="true"><Icon name="tabler:send" size={14} /></span><span class="app-mouse-pointer" data-mouse-pointer aria-hidden="true"><Icon name="tabler:pointer-2" size={17} /></span></footer></section></div></div><div class="feature-preview-copy"><h3 class="feature-preview-title">{itemTitle}</h3><p>{body}</p></div></article>)}
+          <div class="feature-pagination" role="tablist" aria-label="选择核心能力">
+            {capabilities.map(([itemTitle, body], index) => (
+              <div
+                class:list={['feature-page']}
+                role="tab"
+                tabindex="0"
+                aria-selected="false"
+                aria-label={`查看第 ${index + 1} 项：${itemTitle}`}
+                title={itemTitle}
+                data-feature-page={index}
+              >
+                <div class="feature-page-summary">
+                  <strong>{itemTitle}</strong>
+                  <span>{body}</span>
+                </div>
+              </div>
+            ))}
           </div>
-          <div class="feature-pagination" role="tablist" aria-label="选择核心能力">{capabilities.map(([itemTitle], index) => <button class:list={['feature-page', index === 0 && 'is-active']} type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-label={`查看第 ${index + 1} 项：${itemTitle}`} title={itemTitle} data-feature-page={index}></button>)}</div>
+          <template data-feature-template>
+            {capabilities.map(([_itemTitle, _body, label, icon, status], index) => (
+              <article
+                class:list={['feature-preview-screen', `feature-preview-${index + 1}`]}
+                id={`feature-preview-${index + 1}`}
+                data-feature-preview={index}
+                data-feature-prompt={featureVisuals[index].prompt}
+                data-feature-process={featureVisuals[index].processLabel}
+                data-feature-response={featureVisuals[index].response}
+                data-feature-result={featureVisuals[index].responseStatus}
+                data-feature-stream={featureVisuals[index].streamResponse}
+                aria-label={label}
+                aria-expanded="false"
+                tabindex="-1"
+              >
+                <div class="product-window">
+                    <div class="product-app">
+                      <aside class="app-dock" aria-hidden="true">
+                        <span class="app-dock-logo">即</span>
+                        <span class:list={['app-dock-item', index === 0 && 'is-current']}><Icon name="tabler:message-circle" size={14} /></span>
+                        <span class:list={['app-dock-item', index === 1 && 'is-current']}><Icon name="tabler:checkbox" size={14} /></span>
+                        <span class:list={['app-dock-item', index === 2 && 'is-current']}><Icon name="tabler:shield-check" size={14} /></span>
+                        <span class:list={['app-dock-item', index === 3 && 'is-current']}><Icon name="tabler:plug-connected" size={14} /></span>
+                      </aside>
+                      <aside class="app-inbox">
+                        <header>
+                          <strong>{featureVisuals[index].inboxTitle}</strong>
+                          <Icon name="tabler:search" size={15} />
+                        </header>
+                        <div class="app-inbox-tabs">
+                          {featureVisuals[index].inboxTabs.map((tab, tabIndex) => tabIndex === 0 ? <b>{tab}</b> : <span>{tab}</span>)}
+                        </div>
+                        {featureVisuals[index].threads.map(([threadName, avatar, avatarText, threadStatus, current]) => <div class:list={['app-thread', current && 'is-current']}><i class:list={['app-avatar', `app-avatar-${avatar}`]}>{avatarText}</i><span><strong>{threadName}</strong><small>{threadStatus}</small></span></div>)}
+                      </aside>
+                      <section class="app-chat">
+                        <header>
+                          <i class:list={['app-avatar', `app-avatar-${featureVisuals[index].chat[1]}`]}>{featureVisuals[index].chat[2]}</i>
+                          <span><strong>{featureVisuals[index].chat[0]}</strong><small>{featureVisuals[index].chat[3]}</small></span>
+                          <Icon name={featureVisuals[index].chat[4]} size={15} />
+                        </header>
+                        <div class="app-chat-history">
+                          <time>今天 17:19</time>
+                          <div class="app-message app-message-assistant" data-assistant-message>
+                            <i class="app-avatar app-avatar-assistant">AI</i>
+                            <div>
+                              <small data-assistant-label>{featureVisuals[index].assistant}</small>
+                              <article data-assistant-card>
+                                <div class="app-message-heading">
+                                  <Icon name={icon} size={14} />
+                                  <strong>{label}</strong>
+                                  <b data-assistant-result>{status}</b>
+                                </div>
+                                <p data-assistant-response>{featureVisuals[index].response}</p>
+                                {index === 0 && <div class="app-context-sources"><span>客户反馈</span><span>项目看板</span><span>历史会话</span></div>}
+                                {index === 1 && <div class="app-task-list"><span><i></i>销售报表制作 <b>进行中</b></span><span><i></i>任务创建成功 <b>已完成</b></span></div>}
+                                {index === 2 && <div class="app-permission-list"><span><Icon name="tabler:eye" size={11} />读取上下文</span><span><Icon name="tabler:edit" size={11} />创建任务待确认</span></div>}
+                                {index === 3 && <div class="app-integration-list"><span><i></i>团队知识库 <b>已连接</b></span><span><i></i>模型服务 API <b>已连接</b></span></div>}
+                              </article>
+                            </div>
+                          </div>
+                          <div class="app-message app-message-brief" data-user-message>
+                            <i class="app-avatar app-avatar-user">你</i>
+                            <div>
+                              <small>你 · 刚刚</small>
+                              <span data-user-request>{featureVisuals[index].prompt}</span>
+                            </div>
+                          </div>
+                          <div class="app-typing" data-assistant-typing aria-label={`${featureVisuals[index].assistant} ${featureVisuals[index].processLabel}`}>
+                            <span data-assistant-status>{featureVisuals[index].assistant} {featureVisuals[index].processLabel}</span>
+                            <i></i>
+                            <i></i>
+                            <i></i>
+                          </div>
+                        </div>
+                        <footer class="app-composer" data-feature-composer>
+                          <span class="app-typing-text" data-composer-text>{featureVisuals[index].prompt}</span>
+                          <span class="app-composer-send" data-send-control aria-hidden="true"><Icon name="tabler:send" size={14} /></span>
+                          <span class="app-mouse-pointer" data-mouse-pointer aria-hidden="true"><Icon name="tabler:pointer-2" size={17} /></span>
+                        </footer>
+                      </section>
+                    </div>
+                  </div>
+                </article>
+            ))}
+          </template>
         </section>
       </div>
     </section>
 
-    <section class="dual-section dual-section-comparison" style={`--scene-image: url('${asset('team-meeting.webp')}')`} id="capabilities" aria-labelledby="capability-title">
-      <div class="scene-shade scene-shade-heavy"></div>
+    <section class="dual-section dual-section-comparison" id="capabilities" aria-labelledby="capability-title">
       <div class="comparison-inner" id="comparison">
         <div class="comparison-heading"><span class="scene-eyebrow">竞品对比</span><h2 id="capability-title">产品能力，一目了然</h2><p>围绕团队协作、部署方式与 AI 接入能力，快速了解即应与常见协作产品的覆盖范围。</p></div>
         <div class="comparison-panel comparison-panel-full" aria-label="同类产品对比">
@@ -160,77 +253,36 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
       </div>
     </section>
 
-    <section class="scene scene-faq" style={`--scene-image: url('${asset('faq-collaboration.webp')}')`} id="faq" aria-labelledby="faq-title">
-      <div class="scene-shade scene-shade-heavy"></div>
+    <section class="scene scene-faq" id="faq" aria-labelledby="faq-title">
       <div class="faq-inner">
         <div class="faq-heading"><span class="scene-eyebrow">FAQ</span><h2 id="faq-title">常见问题</h2><p class="faq-intro">从产品能力、部署方式到 AI 助理的使用边界，这里整理了团队最常关心的问题。</p></div>
-        <div class="faq-list">{faqs.map(([question, answer]) => <details><summary>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></summary><p>{answer}</p></details>)}</div>
-      </div>
-    </section>
-
-    <section class="scene scene-download" style={`--scene-image: url('${asset('download-workspace.webp')}')`} id="download" aria-labelledby="download-title">
-      <div class="scene-shade scene-shade-heavy"></div>
-      <div class="scene-content scene-content-center">
-        <span class="scene-eyebrow">开始使用</span>
-        <h2 id="download-title">下载安装</h2>
-        <p class="download-intro">在线体验即刻进入工作空间，也可下载客户端或基于开源代码部署属于团队自己的即应。</p>
-        <div class="download-links">
-          <a class="download-link download-link-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">
-            <span><strong>在线体验</strong><small>直接进入即应空间</small></span>
-            <Icon name="tabler:arrow-right" size={20} aria-hidden="true" />
-          </a>
-          <details class="download-menu">
-            <summary class="download-link">
-              <span><strong>PC 端</strong><small>MacOS客户端 / Windows客户端</small></span>
-              <Icon name="tabler:arrow-down" size={20} aria-hidden="true" />
-            </summary>
-            <div class="download-menu-panel">
-              <article class="download-option">
-                <div><h3>Mac客户端</h3><p>macOS 桌面客户端</p></div>
-                <a class="download-option-action" href="https://jiying.chat/releases/jiying.dmg" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a>
-              </article>
-              <article class="download-option">
-                <div><h3>Windows客户端</h3><p>Windows 桌面客户端</p></div>
-                <a class="download-option-action" href="https://jiying.chat/releases/jiying.exe" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a>
-              </article>
-            </div>
-          </details>
-          <details class="download-menu">
-            <summary class="download-link">
-              <span><strong>移动端</strong><small>iOS / Android</small></span>
-              <Icon name="tabler:arrow-down" size={20} aria-hidden="true" />
-            </summary>
-            <div class="download-menu-panel">
-              <article class="download-option">
-                <div><h3>iOS</h3><p>iPhone 与 iPad</p></div>
-                <a class="download-option-action" href="https://jiying.chat/releases/jiying.dmg" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a>
-              </article>
-              <article class="download-option">
-                <div><h3>Android</h3><p>Android 手机和平板</p></div>
-                <a class="download-option-action" href="https://jiying.chat/releases/jiying.apk" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a>
-              </article>
-            </div>
-          </details>
-          <a class="download-link" href="https://github.com/chaitin/MagicChat" target="_blank" rel="noopener noreferrer">
-            <span><strong>GitHub 源码</strong><small>AGPL-3.0 · 私有化部署</small></span>
-            <Icon name="tabler:brand-github-filled" size={20} aria-hidden="true" />
-          </a>
+        <div class="faq-list" aria-label="常见问题走马灯">
+          <div class="faq-marquee-track">
+            {faqs.map(([question, answer]) => <article class="faq-card" tabindex="0" aria-label={question}><h3>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></h3><p>{answer}</p></article>)}
+            {faqs.map(([question, answer]) => <article class="faq-card" aria-hidden="true"><h3>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></h3><p>{answer}</p></article>)}
+          </div>
         </div>
       </div>
     </section>
+
   </main>
   <SiteFooter />
   <script>
-    const revealItems = Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>('.scene-hero .scene-content > *, .scene-why .scene-text-block, .scene-why .pain-carousel, .scene-solution .scene-text-block, .feature-explorer, .comparison-heading, .comparison-panel, .faq-inner, .scene-download .scene-content > *, .footer-grid > *'))));
+    const revealItems = Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>('.scene-hero .scene-content > *, .scene-why .scene-text-block, .scene-why .pain-mosaic, .scene-solution .scene-text-block, .feature-explorer, .comparison-heading, .comparison-panel, .faq-inner, .footer-grid > *'))));
     revealItems.forEach((item, index) => { item.classList.add('motion-reveal'); item.style.setProperty('--reveal-delay', `${(index % 5) * 70}ms`); });
     if ('IntersectionObserver' in window) { const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target); } }), { threshold: 0.16 }); revealItems.forEach((item) => observer.observe(item)); } else revealItems.forEach((item) => item.classList.add('is-visible'));
-    const featurePreviews = Array.from(document.querySelectorAll<HTMLElement>('[data-feature-preview]'));
-    const featurePages = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-feature-page]'));
-    const featureEmpty = document.querySelector<HTMLElement>('[data-feature-empty]');
+    const featureTemplate = document.querySelector<HTMLTemplateElement>('template[data-feature-template]');
+    const featurePages = Array.from(document.querySelectorAll<HTMLElement>('[data-feature-page]'));
     const featureExplorer = document.querySelector<HTMLElement>('.feature-explorer');
-    let activeFeatureIndex = 0;
-    let featureAutoplay: number | undefined;
-    let featureVisible = !('IntersectionObserver' in window);
+    const featurePagination = document.querySelector<HTMLElement>('.feature-pagination');
+    const faqMarqueeTrack = document.querySelector<HTMLElement>('.faq-marquee-track');
+    let shownFeatureIndex = -1;
+    let mountedPreview: HTMLElement | null = null;
+    let featureAutoTimer = 0;
+    let featureHovering = false;
+    let featureInView = true;
+    let faqInView = true;
+    const featureAutoInterval = 5000;
     const featureDemoTimers = new WeakMap<HTMLElement, number[]>();
     const featureDemoStartDelay = 1000;
     const featureDemoClasses = ['is-demo-clicking', 'is-demo-sent', 'is-demo-processing', 'is-demo-streaming', 'is-demo-complete'];
@@ -305,93 +357,152 @@ const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
         streamResponse(0);
       }, featureDemoStartDelay + 1850);
     };
-    const showFeature = (index: number) => {
-      activeFeatureIndex = (index + featurePreviews.length) % featurePreviews.length;
-      featurePreviews.forEach((preview, previewIndex) => { const active = previewIndex === activeFeatureIndex; preview.classList.toggle('is-active', active); preview.hidden = !active; if (active) runFeatureDemo(preview); else stopFeatureDemo(preview); });
-      featurePages.forEach((page, pageIndex) => { const active = pageIndex === activeFeatureIndex; page.classList.toggle('is-active', active); page.setAttribute('aria-selected', String(active)); });
-      if (featureEmpty) featureEmpty.hidden = true;
+    const unmountFeature = () => {
+      if (!mountedPreview) return;
+      stopFeatureDemo(mountedPreview);
+      featureTemplate?.content.appendChild(mountedPreview);
+      mountedPreview = null;
     };
-    const stopFeatureAutoplay = () => { if (featureAutoplay !== undefined) { window.clearInterval(featureAutoplay); featureAutoplay = undefined; } };
-    const startFeatureAutoplay = () => {
-      stopFeatureAutoplay();
-      if (!featureVisible || window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden || featureExplorer?.matches(':hover, :focus-within')) return;
-      featureAutoplay = window.setInterval(() => showFeature(activeFeatureIndex + 1), 5000);
+    const pauseFeatureDemo = () => {
+      if (!mountedPreview) return;
+      stopFeatureDemo(mountedPreview);
     };
-    featurePages.forEach((page, index) => page.addEventListener('click', () => { showFeature(index); startFeatureAutoplay(); }));
-    featureExplorer?.addEventListener('mouseenter', stopFeatureAutoplay);
-    featureExplorer?.addEventListener('mouseleave', startFeatureAutoplay);
-    featureExplorer?.addEventListener('focusin', stopFeatureAutoplay);
-    featureExplorer?.addEventListener('focusout', () => window.setTimeout(startFeatureAutoplay));
-    document.addEventListener('visibilitychange', () => { if (document.hidden) stopFeatureAutoplay(); else startFeatureAutoplay(); });
-    window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) stopFeatureAutoplay(); else startFeatureAutoplay(); });
-    if (featureExplorer && 'IntersectionObserver' in window) new IntersectionObserver((entries) => entries.forEach((entry) => { featureVisible = entry.isIntersecting; if (featureVisible) startFeatureAutoplay(); else stopFeatureAutoplay(); }), { threshold: 0.3 }).observe(featureExplorer);
-    showFeature(0);
-    startFeatureAutoplay();
-    const painCarousel = document.querySelector<HTMLElement>('[data-pain-carousel]');
-    const painViewport = painCarousel?.querySelector<HTMLElement>('.pain-carousel-viewport');
-    const painTrack = painCarousel?.querySelector<HTMLElement>('[data-pain-track]');
-    const painSlides = Array.from(painCarousel?.querySelectorAll<HTMLElement>('[data-pain-slide]') ?? []);
-    const painPages = Array.from(painCarousel?.querySelectorAll<HTMLButtonElement>('[data-pain-pagination]') ?? []);
-    const painPrevious = painCarousel?.querySelector<HTMLButtonElement>('[data-pain-previous]');
-    const painNext = painCarousel?.querySelector<HTMLButtonElement>('[data-pain-next]');
-    if (painCarousel && painTrack && painSlides.length > 1) {
-      let activePainIndex = 0;
-      let painAutoplay: number | undefined;
-      let painPointerStart: number | undefined;
-      let painPointerControl = false;
-      let painCarouselVisible = !('IntersectionObserver' in window);
-      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-      const showPainSlide = (index: number) => {
-        activePainIndex = (index + painSlides.length) % painSlides.length;
-        painTrack.style.setProperty('--pain-slide-index', String(activePainIndex));
-        painSlides.forEach((slide, slideIndex) => { slide.setAttribute('aria-hidden', String(slideIndex !== activePainIndex)); });
-        painPages.forEach((page, pageIndex) => { const active = pageIndex === activePainIndex; page.classList.toggle('is-active', active); page.setAttribute('aria-selected', String(active)); });
-      };
-      const stopPainAutoplay = () => { if (painAutoplay) window.clearInterval(painAutoplay); painAutoplay = undefined; painCarousel.classList.remove('is-autoplaying'); };
-      const startPainAutoplay = () => {
-        stopPainAutoplay();
-        if (reduceMotion.matches || document.hidden || !painCarouselVisible || painCarousel.matches(':focus-within')) return;
-        void painCarousel.offsetWidth;
-        painCarousel.classList.add('is-autoplaying');
-        painAutoplay = window.setInterval(() => showPainSlide(activePainIndex + 1), 3000);
-      };
-      const selectPainSlide = (index: number) => {
-        if (painPointerControl && document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        painPointerControl = false;
-        showPainSlide(index);
-        startPainAutoplay();
-      };
-      const markPainPointerControl = () => { painPointerControl = true; };
-      painPrevious?.addEventListener('pointerdown', markPainPointerControl);
-      painNext?.addEventListener('pointerdown', markPainPointerControl);
-      painPages.forEach((page) => page.addEventListener('pointerdown', markPainPointerControl));
-      painPrevious?.addEventListener('click', () => selectPainSlide(activePainIndex - 1));
-      painNext?.addEventListener('click', () => selectPainSlide(activePainIndex + 1));
-      painPages.forEach((page, index) => page.addEventListener('click', () => selectPainSlide(index)));
-      painCarousel.addEventListener('focusin', stopPainAutoplay);
-      painCarousel.addEventListener('focusout', () => window.setTimeout(startPainAutoplay));
-      painViewport?.addEventListener('pointerdown', (event) => { if (!event.isPrimary) return; painPointerStart = event.clientX; stopPainAutoplay(); });
-      painViewport?.addEventListener('pointerup', (event) => {
-        if (painPointerStart === undefined || !event.isPrimary) return;
-        const distance = event.clientX - painPointerStart;
-        painPointerStart = undefined;
-        if (Math.abs(distance) >= 48) showPainSlide(activePainIndex + (distance < 0 ? 1 : -1));
-        startPainAutoplay();
-      });
-      painViewport?.addEventListener('pointercancel', () => { painPointerStart = undefined; startPainAutoplay(); });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) stopPainAutoplay(); else startPainAutoplay(); });
-      reduceMotion.addEventListener('change', startPainAutoplay);
-      if ('IntersectionObserver' in window) new IntersectionObserver((entries) => entries.forEach((entry) => { painCarouselVisible = entry.isIntersecting; if (painCarouselVisible) startPainAutoplay(); else stopPainAutoplay(); }), { threshold: 0.35 }).observe(painCarousel);
-      showPainSlide(0);
-      startPainAutoplay();
+    const resumeFeatureDemo = () => {
+      if (!mountedPreview) return;
+      runFeatureDemo(mountedPreview);
+    };
+    const mountFeature = (index: number) => {
+      unmountFeature();
+      if (index < 0 || !featureTemplate) return;
+      const preview = featureTemplate.content.querySelector<HTMLElement>(`[data-feature-preview="${index}"]`);
+      if (!preview) return;
+      preview.classList.add('is-active');
+      preview.setAttribute('aria-expanded', 'true');
+      featurePages[index]?.appendChild(preview);
+      mountedPreview = preview;
+      runFeatureDemo(preview);
+    };
+    const applyFeature = (index: number) => {
+      if (document.documentElement.classList.contains('is-resizing')) return;
+      if (index === shownFeatureIndex) return;
+      shownFeatureIndex = index;
+      mountFeature(index);
+      featurePagination?.classList.toggle('has-active', index >= 0);
+      featurePages.forEach((page, pageIndex) => { const active = pageIndex === index; page.classList.toggle('is-active', active); page.setAttribute('aria-selected', String(active)); });
+    };
+    const stopFeatureAuto = () => {
+      window.clearTimeout(featureAutoTimer);
+      featureAutoTimer = 0;
+    };
+    const startFeatureAuto = () => {
+      stopFeatureAuto();
+      if (featurePages.length === 0 || featureHovering || !featureInView || document.documentElement.classList.contains('is-resizing')) return;
+      featureAutoTimer = window.setTimeout(() => {
+        const nextIndex = shownFeatureIndex < 0 ? 0 : (shownFeatureIndex + 1) % featurePages.length;
+        applyFeature(nextIndex);
+        startFeatureAuto();
+      }, featureAutoInterval);
+    };
+    const isNearViewport = (element: HTMLElement, offset = 180) => {
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const rect = element.getBoundingClientRect();
+      return rect.bottom >= -offset && rect.top <= viewportHeight + offset;
+    };
+    const syncFeatureVisibility = () => {
+      if (featureInView) {
+        resumeFeatureDemo();
+        startFeatureAuto();
+      } else {
+        stopFeatureAuto();
+        pauseFeatureDemo();
+      }
+    };
+    let resizeTimer = 0;
+    window.addEventListener('resize', () => {
+      if (!document.documentElement.classList.contains('is-resizing')) {
+        document.documentElement.classList.add('is-resizing');
+        stopFeatureAuto();
+        pauseFeatureDemo();
+      }
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        document.documentElement.classList.remove('is-resizing');
+        if (!featureHovering) {
+          resumeFeatureDemo();
+          startFeatureAuto();
+        }
+      }, 360);
+    }, { passive: true });
+    if ('IntersectionObserver' in window) {
+      if (featureExplorer) {
+        const featureObserver = new IntersectionObserver((entries) => {
+          featureInView = entries.some((entry) => entry.isIntersecting);
+          syncFeatureVisibility();
+        }, { threshold: 0.28 });
+        featureObserver.observe(featureExplorer);
+      }
+      if (faqMarqueeTrack) {
+        const faqObserver = new IntersectionObserver((entries) => {
+          faqInView = entries.some((entry) => entry.isIntersecting);
+          faqMarqueeTrack.classList.toggle('is-in-view', faqInView);
+        }, { threshold: 0.18 });
+        faqObserver.observe(faqMarqueeTrack);
+      }
+    } else {
+      faqMarqueeTrack?.classList.add('is-in-view');
     }
-    if (window.matchMedia('(hover: hover)').matches) document.querySelectorAll<HTMLDetailsElement>('.faq-list details').forEach((item) => {
-      item.addEventListener('mouseenter', () => { item.open = true; });
-      item.addEventListener('mouseleave', () => { if (!item.matches(':focus-within')) item.open = false; });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        featureInView = false;
+        stopFeatureAuto();
+        pauseFeatureDemo();
+        faqMarqueeTrack?.classList.remove('is-in-view');
+      } else {
+        featureInView = featureExplorer ? isNearViewport(featureExplorer) : true;
+        faqInView = faqMarqueeTrack ? isNearViewport(faqMarqueeTrack) : true;
+        syncFeatureVisibility();
+        if (faqInView) faqMarqueeTrack?.classList.add('is-in-view');
+      }
     });
-    if (window.matchMedia('(hover: hover)').matches) document.querySelectorAll<HTMLDetailsElement>('.download-menu').forEach((item) => {
-      item.addEventListener('mouseenter', () => { item.open = true; });
-      item.addEventListener('mouseleave', () => { if (!item.matches(':focus-within')) item.open = false; });
+    if (window.matchMedia('(hover: hover)').matches) {
+      featurePages.forEach((page, index) => page.addEventListener('mouseenter', () => {
+        featureHovering = true;
+        stopFeatureAuto();
+        applyFeature(index);
+      }));
+      featureExplorer?.addEventListener('mouseleave', () => {
+        featureHovering = false;
+        syncFeatureVisibility();
+      });
+    }
+    applyFeature(0);
+    syncFeatureVisibility();
+    const downloadMenus = Array.from(document.querySelectorAll<HTMLDetailsElement>('.download-menu'));
+    const scenePage = document.querySelector<HTMLElement>('.scene-page');
+    const syncDownloadOpenState = () => {
+      const openSceneMenu = document.querySelector<HTMLDetailsElement>('.scene-download-menu[open]');
+      const anyOpenMenu = downloadMenus.some((menu) => menu.open);
+      scenePage?.classList.toggle('is-download-open', anyOpenMenu);
+      document.querySelectorAll<HTMLElement>('.scene-actions.is-download-open, .scene.is-download-open').forEach((element) => element.classList.remove('is-download-open'));
+      if (openSceneMenu) {
+        openSceneMenu.closest<HTMLElement>('.scene-actions')?.classList.add('is-download-open');
+        openSceneMenu.closest<HTMLElement>('.scene')?.classList.add('is-download-open');
+      }
+    };
+    const closeDownloadMenus = () => downloadMenus.forEach((menu) => { menu.open = false; });
+    downloadMenus.forEach((menu) => {
+      menu.addEventListener('toggle', () => {
+        if (menu.open) downloadMenus.forEach((other) => { if (other !== menu) other.open = false; });
+        window.requestAnimationFrame(syncDownloadOpenState);
+      });
+    });
+    document.addEventListener('pointerdown', (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('.download-menu')) return;
+      closeDownloadMenus();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeDownloadMenus();
     });
   </script>
 </BaseLayout>

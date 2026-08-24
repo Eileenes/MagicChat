@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { type Href, useRouter } from "expo-router"
+import { Redirect, type Href, useRouter } from "expo-router"
 import { useRef, useState } from "react"
 import {
   ScrollView,
@@ -26,7 +26,7 @@ import {
 export function ServerManagementScreen() {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const { invalidateSession, session } = useAuth()
+  const { invalidateSession, isAuthenticated, session } = useAuth()
   const {
     recentServerId,
     removeServer,
@@ -40,6 +40,8 @@ export function ServerManagementScreen() {
   const [serverToDelete, setServerToDelete] = useState<ServerConfig | null>(null)
   const closeOpenSwipeableRef = useRef<(() => void) | null>(null)
   const selectionAttemptRef = useRef(0)
+
+  if (isAuthenticated) return <Redirect href="/messages" />
 
   function closeOpenSwipeable() {
     closeOpenSwipeableRef.current?.()
@@ -96,7 +98,7 @@ export function ServerManagementScreen() {
       queryKey: queryKeys.appInfo(server),
     })
     selectServer(server.id)
-    router.push("/login")
+    router.replace("/login")
   }
 
   async function handleDelete(server: ServerConfig) {

@@ -2,14 +2,14 @@
   "expo": {
     "name": "即应",
     "slug": "magicchat-mobile",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "magicchat",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "cloud.baizhi.chat",
-      "buildNumber": "5",
+      "buildNumber": "8",
       "icon": "./assets/images/icon.png",
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "cloud.baizhi.chat",
-      "versionCode": 5,
+      "versionCode": 8,
       "permissions": [
         "android.permission.REQUEST_INSTALL_PACKAGES"
       ],
@@ -37,12 +37,19 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "允许即应使用相机扫描二维码"
+        }
+      ],
       "./plugins/with-message-selection-menu",
+      "./plugins/with-animated-webp",
       "expo-notifications",
       [
         "expo-media-library",
         {
-          "granularPermissions": [],
+          "granularPermissions": ["photo"],
           "photosPermission": "允许即应访问相册",
           "savePhotosPermission": "允许即应将图片保存到相册"
         }
@@ -64,9 +71,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#04C9BD",
-          "image": "./assets/images/icon.png",
-          "imageWidth": 160
+          "backgroundColor": "#EDEDED",
+          "dark": {
+            "backgroundColor": "#111111",
+            "image": "./assets/images/splash-logo.png"
+          },
+          "image": "./assets/images/splash-logo.png",
+          "imageWidth": 56
         }
       ],
       "expo-secure-store",

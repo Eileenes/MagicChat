@@ -1,7 +1,9 @@
 import { Camera, Images, Paperclip } from "lucide-react-native"
-import { Button, ScrollView, Separator, SizableText, XStack, YStack } from "tamagui"
+import { Pressable, StyleSheet, Text } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { Button, ScrollView, SizableText, XStack, YStack } from "tamagui"
 
-import { ThemedIcon } from "@/components/icons/themed-icon"
+import { useXGUITheme } from "@/xgui"
 
 export type ComposerAccessoryMode = "attachments" | "emoji" | null
 
@@ -87,11 +89,16 @@ export function ComposerAccessoryPanel({
   onFilePress: () => void
   onLibraryPress: () => void
 }) {
+  const insets = useSafeAreaInsets()
+  const { colors } = useXGUITheme()
   if (!mode) return null
 
   return (
-    <YStack bg="$background">
-      <Separator />
+    <YStack
+      bg={colors.background0}
+      mb={-insets.bottom}
+      pb={insets.bottom}
+    >
       {mode === "attachments" ? (
         <XStack flexWrap="wrap" minH={132} px="$3" py="$4">
           <AccessoryAction
@@ -117,18 +124,21 @@ export function ComposerAccessoryPanel({
         <ScrollView maxH={184} showsVerticalScrollIndicator={false}>
           <XStack flexWrap="wrap" px="$3" py="$3">
             {emojiItems.map((emoji) => (
-              <Button
+              <Pressable
                 accessibilityLabel={emoji.label}
-                chromeless
+                accessibilityRole="button"
+                accessibilityState={{ disabled }}
                 disabled={disabled}
-                height="$4"
                 key={emoji.value}
                 onPress={() => onEmojiPress(emoji.value)}
-                p={0}
-                width="12.5%"
+                pressRetentionOffset={0}
+                style={({ pressed }) => [
+                  styles.emojiButton,
+                  pressed ? { backgroundColor: colors.background2 } : null,
+                ]}
               >
-                <SizableText size="$5">{emoji.value}</SizableText>
-              </Button>
+                <Text style={styles.emojiText}>{emoji.value}</Text>
+              </Pressable>
             ))}
           </XStack>
         </ScrollView>
@@ -148,21 +158,54 @@ function AccessoryAction({
   label: string
   onPress: () => void
 }) {
+  const { colors } = useXGUITheme()
+  const Icon = icon
+
   return (
     <YStack gap="$2" items="center" width="25%">
-      <Button
+      <Pressable
         accessibilityLabel={label}
-        bg="$color4"
+        accessibilityRole="button"
+        accessibilityState={{ disabled }}
         disabled={disabled}
-        height={64}
-        icon={<ThemedIcon icon={icon} size={22} />}
         onPress={onPress}
-        rounded="$5"
-        width={64}
-      />
+        pressRetentionOffset={0}
+        style={{ height: 64, width: 64 }}
+      >
+        {({ pressed }) => (
+          <Button
+            accessible={false}
+            bg={pressed ? colors.background1 : colors.background2}
+            disabled={disabled}
+            height={64}
+            icon={
+              <Icon color={colors.textPrimary} size={28} strokeWidth={1.8} />
+            }
+            pointerEvents="none"
+            rounded="$5"
+            width={64}
+          />
+        )}
+      </Pressable>
       <SizableText color="$gray10" size="$2">
         {label}
       </SizableText>
     </YStack>
   )
 }
+
+const styles = StyleSheet.create({
+  emojiButton: {
+    alignItems: "center",
+    borderRadius: 6,
+    height: 44,
+    justifyContent: "center",
+    width: "12.5%",
+  },
+  emojiText: {
+    fontSize: 28,
+    includeFontPadding: false,
+    lineHeight: 36,
+    textAlign: "center",
+  },
+})

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
   archiveConversationTopic,
+  createConversationTopic,
   fetchConversationTopic,
 } from "@/data/conversations/conversations-api"
 import { messageManager } from "@/data/messages"
@@ -22,6 +23,37 @@ export function useConversationTopic(
     queryFn: ({ signal }) =>
       fetchConversationTopic(target.url, conversationId, { signal }),
     queryKey: queryKeys.conversationTopic(target, conversationId),
+  })
+}
+
+export function useCreateConversationTopic(
+  target: AuthenticatedTarget,
+  conversationId: string
+) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (messageId: string) =>
+      createConversationTopic(target.url, conversationId, messageId),
+    onSuccess: ({ conversation }, messageId) => {
+      const topic = conversation.topic
+      if (topic) {
+        void messageManager.updateMessageTopic(target, {
+          archived: false,
+          conversationId: conversation.id,
+          parentConversationId: conversationId,
+          sourceMessageId: messageId,
+        })
+      }
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: queryKeys.conversations(target),
+      })
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: queryKeys.conversationMessages(target, conversationId),
+      })
+    },
   })
 }
 

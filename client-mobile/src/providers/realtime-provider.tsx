@@ -28,11 +28,15 @@ import { realtimeEvents } from "@/realtime/realtime-protocol"
 
 export function RealtimeProvider({ children }: React.PropsWithChildren) {
   const queryClient = useQueryClient()
-  const { invalidateSession, session } = useAuth()
+  const { invalidateSession, isPreparingSignIn, session } = useAuth()
   const [snapshot, setSnapshot] = useState<RealtimeSnapshot>(
     DISCONNECTED_REALTIME_SNAPSHOT
   )
   const activeConversationIdRef = useRef("")
+  const clientRef = useRef<{
+    client: RealtimeClient
+    targetKey: string
+  } | null>(null)
   const activateConversation = useCallback((conversationId: string) => {
     activeConversationIdRef.current = conversationId
 
@@ -42,6 +46,37 @@ export function RealtimeProvider({ children }: React.PropsWithChildren) {
       }
     }
   }, [])
+  const waitUntilReady = useCallback(
+    async (
+      target: AuthenticatedTarget,
+      options: { attempts: number; timeoutMs: number }
+    ) => {
+      const targetKey = createTargetKey(target)
+      const client = await waitForRealtimeClient(
+        clientRef,
+        targetKey,
+        options.timeoutMs
+      )
+
+      let lastError: unknown
+      for (let attempt = 0; attempt < options.attempts; attempt += 1) {
+        if (attempt > 0) {
+          client.disconnect()
+          client.connect()
+        }
+
+        try {
+          await waitForClientReady(client, options.timeoutMs)
+          return
+        } catch (error) {
+          lastError = error
+        }
+      }
+
+      throw lastError
+    },
+    []
+  )
   const server = useMemo<AuthenticatedTarget | null>(
     () =>
       session
@@ -76,8 +111,14 @@ export function RealtimeProvider({ children }: React.PropsWithChildren) {
       onUnauthorized: () => {
         void invalidateSession()
       },
+      reconnectDelaysMs: isPreparingSignIn ? [30_000] : undefined,
       url: buildRealtimeWebSocketUrl(activeServer.url),
     })
+    const clientRecord = {
+      client,
+      targetKey: createTargetKey(activeServer),
+    }
+    clientRef.current = clientRecord
 
     const unsubscribeSnapshot = client.subscribe(() => {
       if (isActive) {
@@ -86,11 +127,13 @@ export function RealtimeProvider({ children }: React.PropsWithChildren) {
     })
     const unsubscribeEvents = client.subscribeEvent((event, payload) => {
       if (event === realtimeEvents.systemReady) {
-        enqueueSynchronization(() =>
-          synchronizeRealtimeData(queryClient, activeServer, {
-            activeConversationId: activeConversationIdRef.current,
-          })
-        )
+        if (!isPreparingSignIn) {
+          enqueueSynchronization(() =>
+            synchronizeRealtimeData(queryClient, activeServer, {
+              activeConversationId: activeConversationIdRef.current,
+            })
+          )
+        }
         return
       }
 
@@ -153,19 +196,29 @@ export function RealtimeProvider({ children }: React.PropsWithChildren) {
 
     return () => {
       isActive = false
+      if (clientRef.current === clientRecord) {
+        clientRef.current = null
+      }
       activeConversationIdRef.current = ""
       appStateSubscription.remove()
       unsubscribeEvents()
       unsubscribeSnapshot()
       client.disconnect()
     }
-  }, [invalidateSession, queryClient, realtimeEnabled, server])
+  }, [
+    invalidateSession,
+    isPreparingSignIn,
+    queryClient,
+    realtimeEnabled,
+    server,
+  ])
 
   const value = useMemo(() => {
     if (!realtimeEnabled) {
       return {
         ...DISCONNECTED_REALTIME_SNAPSHOT,
         activateConversation,
+        waitUntilReady,
       }
     }
 
@@ -173,14 +226,72 @@ export function RealtimeProvider({ children }: React.PropsWithChildren) {
       activateConversation,
       ready: snapshot.ready,
       status: snapshot.status,
+      waitUntilReady,
     }
-  }, [activateConversation, realtimeEnabled, snapshot.ready, snapshot.status])
+  }, [
+    activateConversation,
+    realtimeEnabled,
+    snapshot.ready,
+    snapshot.status,
+    waitUntilReady,
+  ])
 
   return (
     <RealtimeContext.Provider value={value}>
       {children}
     </RealtimeContext.Provider>
   )
+}
+
+function createTargetKey(target: AuthenticatedTarget) {
+  return `${target.id}\u0000${target.url}\u0000${target.userId}`
+}
+
+function waitForRealtimeClient(
+  clientRef: {
+    current: { client: RealtimeClient; targetKey: string } | null
+  },
+  targetKey: string,
+  timeoutMs: number
+) {
+  const current = clientRef.current
+  if (current?.targetKey === targetKey) {
+    return Promise.resolve(current.client)
+  }
+
+  return new Promise<RealtimeClient>((resolve, reject) => {
+    const deadline = Date.now() + timeoutMs
+    const check = () => {
+      const next = clientRef.current
+      if (next?.targetKey === targetKey) {
+        resolve(next.client)
+        return
+      }
+      if (Date.now() >= deadline) {
+        reject(new Error("实时连接初始化超时"))
+        return
+      }
+      setTimeout(check, 25)
+    }
+    check()
+  })
+}
+
+function waitForClientReady(client: RealtimeClient, timeoutMs: number) {
+  if (client.getSnapshot().ready) return Promise.resolve()
+
+  return new Promise<void>((resolve, reject) => {
+    const unsubscribe = client.subscribe(() => {
+      if (!client.getSnapshot().ready) return
+      clearTimeout(timeout)
+      unsubscribe()
+      resolve()
+    })
+    const timeout = setTimeout(() => {
+      unsubscribe()
+      reject(new Error("实时连接超时"))
+    }, timeoutMs)
+  })
 }
 
 function canConnectFromCurrentPlatform(serverUrl: string) {

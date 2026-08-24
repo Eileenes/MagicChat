@@ -1,7 +1,10 @@
-import { X } from "lucide-react-native"
-import { Paragraph, SizableText, XStack, YStack } from "tamagui"
+// Tabler exposes per-icon runtime entry points without per-icon declarations.
+// eslint-disable-next-line import/no-unresolved
+import IconCircleXFilled from "@tabler/icons-react-native/IconCircleXFilled"
+import { Pressable, StyleSheet, Text } from "react-native"
+import { XStack } from "tamagui"
 
-import { CompactIconButton } from "@/components/buttons/compact-icon-button"
+import { useXGUITheme } from "@/xgui"
 
 export type MessageReplyTarget = {
   author: string
@@ -16,29 +19,54 @@ export function MessageReplyPreview({
   onClear: () => void
   target: MessageReplyTarget
 }) {
+  const { colors } = useXGUITheme()
+
   return (
-    <XStack bg="$background" gap="$2" items="center" px="$3" pt="$2">
-      <YStack
-        borderColor="$color8"
-        borderLeftWidth={2}
-        flex={1}
-        minW={0}
-        pl="$2"
+    <XStack
+      bg={colors.foreground5}
+      height={36}
+      items="center"
+      mb="$1"
+      mt="$2"
+      mx="$3"
+      pl="$2"
+      rounded="$2"
+    >
+      <Text
+        numberOfLines={1}
+        style={[styles.message, { color: colors.textSecondary }]}
       >
-        <SizableText fontWeight="600" numberOfLines={1} size="$2">
-          回复 {target.author}
-        </SizableText>
-        <Paragraph color="$color10" numberOfLines={2} size="$2">
-          {target.summary}
-        </Paragraph>
-      </YStack>
-      <CompactIconButton
+        {target.author}： {target.summary}
+      </Text>
+      <Pressable
         accessibilityLabel="取消回复"
-        icon={X}
-        iconSize={18}
+        accessibilityRole="button"
+        hitSlop={8}
         onPress={onClear}
-        strokeWidth={1.5}
-      />
+        style={styles.clearButton}
+      >
+        {({ pressed }) => (
+          <IconCircleXFilled
+            color={pressed ? colors.textSecondary : colors.textPlaceholder}
+            size={18}
+          />
+        )}
+      </Pressable>
     </XStack>
   )
 }
+
+const styles = StyleSheet.create({
+  clearButton: {
+    alignItems: "center",
+    height: 36,
+    justifyContent: "center",
+    marginLeft: 8,
+    width: 28,
+  },
+  message: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+})

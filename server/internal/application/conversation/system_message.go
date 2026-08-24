@@ -22,6 +22,7 @@ const (
 	systemEventGroupNameUpdated         = "group_name_updated"
 	systemEventGroupAnnouncementUpdated = "group_announcement_updated"
 	systemEventTopicClosed              = "topic_closed"
+	systemEventFriendshipCreated        = "friendship_created"
 	groupMembersInvitedSummarySeparator = ","
 )
 
@@ -88,6 +89,11 @@ type topicClosedSystemEventBody struct {
 	Actor systemEventUserRef `json:"actor"`
 	Event string             `json:"event"`
 	Type  string             `json:"type"`
+}
+
+type friendshipCreatedSystemEventBody struct {
+	Event string `json:"event"`
+	Type  string `json:"type"`
 }
 
 func createGroupMembersInvitedSystemMessage(db *gorm.DB, conversation *store.Conversation, inviter store.User, invitees []systemEventUserRef, now time.Time) (store.Message, error) {
@@ -180,6 +186,17 @@ func createGroupAnnouncementUpdatedSystemMessage(db *gorm.DB, conversation *stor
 		return store.Message{}, err
 	}
 	return createSystemMessage(db, conversation, body, summary, now)
+}
+
+func createFriendshipCreatedSystemMessage(db *gorm.DB, conversation *store.Conversation, now time.Time) (store.Message, error) {
+	body, err := json.Marshal(friendshipCreatedSystemEventBody{
+		Event: systemEventFriendshipCreated,
+		Type:  messageTypeSystemEvent,
+	})
+	if err != nil {
+		return store.Message{}, err
+	}
+	return createSystemMessage(db, conversation, body, "你们已成为好友，现在可以开始聊天了", now)
 }
 
 func createTopicClosedSystemMessage(db *gorm.DB, conversation *store.Conversation, actor store.User, now time.Time) (store.Message, error) {

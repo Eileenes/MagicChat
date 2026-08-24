@@ -324,8 +324,8 @@ describe("ConversationPanel", () => {
       expect(reedit.parentElement).toHaveTextContent("重新编辑已撤回的消息")
       expect(reedit).toHaveClass(
         "cursor-pointer",
-        "text-sky-500",
-        "hover:text-sky-600"
+        "text-(--weui-link)",
+        "hover:text-(--weui-link)"
       )
 
       await user.click(reedit)

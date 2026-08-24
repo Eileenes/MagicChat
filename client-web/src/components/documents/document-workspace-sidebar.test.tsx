@@ -12,11 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/components/projects/project-avatar", () => ({
-  ProjectAvatar: ({
-    project,
-  }: {
-    project: { avatar: string; id: string }
-  }) => (
+  ProjectAvatar: ({ project }: { project: { avatar: string; id: string } }) => (
     <span
       data-avatar={project.avatar}
       data-testid={`project-avatar-${project.id}`}
@@ -45,6 +41,8 @@ vi.mock("@/lib/client-data-context", () => ({
 vi.mock("@/lib/document-data-api", () => ({
   createClientDocument: (...args: unknown[]) =>
     mocks.createClientDocument(...args),
+  getClientDocumentPath: (documentId: string, documentType: string) =>
+    `/documents/${documentType}/${documentId}`,
   listClientDocuments: (...args: unknown[]) =>
     mocks.listClientDocuments(...args),
 }))
@@ -71,10 +69,13 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
-  mocks.createClientDocument.mockReset().mockResolvedValue({ id: "new-document" })
+  mocks.createClientDocument
+    .mockReset()
+    .mockResolvedValue({ id: "new-document" })
   mocks.listClientDocuments.mockReset().mockImplementation((projectId) =>
     Promise.resolve([
       {
+        documentType: "document",
         id: `document-${projectId}`,
         kind: "document",
         parentId: null,
@@ -128,10 +129,12 @@ describe("DocumentWorkspaceSidebar", () => {
     expect(onBeforeNavigate).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole("button", { name: "新建文档" }))
+    await user.click(screen.getByRole("menuitem", { name: "Markdown 文档" }))
     await waitFor(() =>
       expect(mocks.createClientDocument).toHaveBeenCalledWith("project-2", {
+        documentType: "markdown",
         kind: "document",
-        title: "无标题文档",
+        title: "无标题 Markdown",
       })
     )
   })

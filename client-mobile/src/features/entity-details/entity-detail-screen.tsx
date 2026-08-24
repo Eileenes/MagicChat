@@ -1,10 +1,10 @@
 import { useLocalSearchParams, useRouter } from "expo-router"
-import { useEffect, useMemo } from "react"
-import { Alert } from "react-native"
-import { Card, Paragraph, ScrollView, XStack, YStack } from "tamagui"
+import { useEffect, useMemo, useState } from "react"
+import { Alert, ScrollView, StyleSheet, View } from "react-native"
 
 import { ContentState } from "@/components/feedback/content-state"
-import { PageHeader } from "@/components/navigation/page-header"
+import { isSvgUrl } from "@/components/avatar/cached-avatar-image"
+import { AppHeader } from "@/components/navigation/app-header"
 import { ApiRequestError } from "@/data/api-client"
 import { useOpenEntityConversation } from "@/data/conversations/conversation-hooks"
 import type { ServerTarget } from "@/core/server-target"
@@ -19,8 +19,19 @@ import { EntityDetailAction } from "@/features/entity-details/entity-detail-acti
 import { EntityDetailAvatar } from "@/features/entity-details/entity-detail-avatar"
 import { EntityDetailFields } from "@/features/entity-details/entity-detail-fields"
 import { useClientData } from "@/providers/client-data-provider"
+import {
+  MediaLibraryPermissionError,
+  saveImageToMediaLibrary,
+  useCachedAvatar,
+} from "@/data/resources"
 import { buildConversationHref } from "@/navigation/conversations"
-import { buildAvatarImagePreviewHref } from "@/navigation/image-preview"
+import {
+  XGUIGallery,
+  XGUIList,
+  XGUIListItem,
+  useXGUITheme,
+  useXGUIToast,
+} from "@/xgui"
 
 export function EntityDetailScreen() {
   const params = useLocalSearchParams<{
@@ -28,6 +39,8 @@ export function EntityDetailScreen() {
     entityType: string
   }>()
   const router = useRouter()
+  const { colors } = useXGUITheme()
+  const toast = useXGUIToast()
   const session = useAuthenticatedSession()
   const {
     contacts,
@@ -73,13 +86,21 @@ export function EntityDetailScreen() {
       return
     }
 
+    toast.show({
+      duration: 0,
+      message: profile.type === "group" ? "正在加入群聊" : "正在发起会话",
+      type: "loading",
+    })
+
     try {
       const conversation = await openConversationMutation.mutateAsync({
         id: profile.id,
         type: profile.type,
       })
+      toast.hide()
       router.push(buildConversationHref(conversation.id))
     } catch (error: unknown) {
+      toast.hide()
       Alert.alert(
         getActionErrorTitle(profile),
         error instanceof ApiRequestError ? error.message : "操作失败，请重试。"
@@ -87,14 +108,9 @@ export function EntityDetailScreen() {
     }
   }
 
-  function handleAvatarPress() {
-    if (!profile?.avatar.trim()) return
-    router.push(buildAvatarImagePreviewHref(profile.avatar))
-  }
-
   return (
-    <YStack bg="$background" flex={1}>
-      <PageHeader
+    <View style={{ backgroundColor: colors.background0, flex: 1 }}>
+      <AppHeader
         onBackPress={() => router.back()}
         title={getPageTitle(entityType)}
       />
@@ -106,14 +122,13 @@ export function EntityDetailScreen() {
           currentUserId={currentUser?.id ?? null}
           isActionPending={openConversationMutation.isPending}
           onActionPress={() => void handlePrimaryAction()}
-          onAvatarPress={profile.avatar.trim() ? handleAvatarPress : undefined}
           profile={profile}
           server={session}
         />
       ) : (
         <ContentState message="资料不存在或已不可访问" />
       )}
-    </YStack>
+    </View>
   )
 }
 
@@ -121,42 +136,74 @@ function EntityProfileContent({
   currentUserId,
   isActionPending,
   onActionPress,
-  onAvatarPress,
   profile,
   server,
 }: {
   currentUserId: string | null
   isActionPending: boolean
   onActionPress: () => void
-  onAvatarPress?: () => void
   profile: EntityProfile
   server: ServerTarget
 }) {
+  const { colors } = useXGUITheme()
+  const toast = useXGUIToast()
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false)
+  const avatarResource = useCachedAvatar(server, profile.avatar)
+  const canPreviewAvatar = Boolean(profile.avatar.trim() && avatarResource.uri)
+
+  async function handleSaveAvatar() {
+    if (!avatarResource.resource || isSavingAvatar) return
+    setIsSavingAvatar(true)
+
+    try {
+      await saveImageToMediaLibrary(avatarResource.resource)
+      toast.show({
+        duration: 1_000,
+        message: "头像已保存到系统相册",
+        type: "text",
+      })
+    } catch (error: unknown) {
+      toast.show({
+        duration: 1_000,
+        message:
+          error instanceof MediaLibraryPermissionError
+            ? "请在系统设置中允许即应访问相册"
+            : error instanceof Error
+              ? error.message
+              : "头像保存失败，请稍后重试",
+        type: "text",
+      })
+    } finally {
+      setIsSavingAvatar(false)
+    }
+  }
+
   return (
-    <ScrollView>
-      <YStack gap="$4" maxW={440} p="$4" self="center" width="100%">
-        <Card size="$5">
-          <XStack gap="$4" items="center">
+    <>
+      <ScrollView
+      contentContainerStyle={styles.scrollContent}
+      style={{ backgroundColor: colors.background0 }}
+    >
+      <View style={styles.content}>
+        <XGUIList>
+          <XGUIListItem
+            description={getProfileDescription(profile)}
+            descriptionFontSize={16}
+            descriptionNumberOfLines={3}
+            leading={
             <EntityDetailAvatar
-              onPress={onAvatarPress}
+              onPress={canPreviewAvatar ? () => setGalleryOpen(true) : undefined}
               profile={profile}
               server={server}
             />
-            <YStack flex={1} gap="$1">
-              <Paragraph
-                fontSize="$5"
-                fontWeight="600"
-                lineHeight="$6"
-                numberOfLines={2}
-              >
-                {profile.displayName}
-              </Paragraph>
-              <Paragraph color="$color10" numberOfLines={3} size="$3">
-                {getProfileDescription(profile)}
-              </Paragraph>
-            </YStack>
-          </XStack>
-        </Card>
+            }
+            minHeight={60}
+            title={profile.displayName}
+            titleFontSize={20}
+            titleNumberOfLines={2}
+          />
+        </XGUIList>
 
         <EntityDetailFields profile={profile} />
         <EntityDetailAction
@@ -165,10 +212,35 @@ function EntityProfileContent({
           onPress={onActionPress}
           profile={profile}
         />
-      </YStack>
-    </ScrollView>
+      </View>
+      </ScrollView>
+      {avatarResource.uri ? (
+        <XGUIGallery
+          accessibilityLabel={`${profile.displayName}的头像`}
+          onOpenChange={setGalleryOpen}
+          onSave={() => void handleSaveAvatar()}
+          open={galleryOpen}
+          saving={isSavingAvatar}
+          source={{
+            uri: avatarResource.uri,
+            svg: isSvgUrl(avatarResource.sourceUrl),
+          }}
+        />
+      ) : null}
+    </>
   )
 }
+
+const styles = StyleSheet.create({
+  content: {
+    alignSelf: "center",
+    maxWidth: 440,
+    width: "100%",
+  },
+  scrollContent: {
+    paddingBottom: 24,
+  },
+})
 
 function getProfileDescription(profile: EntityProfile) {
   if (profile.type === "user") return "用户资料"

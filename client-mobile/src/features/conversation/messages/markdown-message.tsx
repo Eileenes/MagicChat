@@ -16,6 +16,7 @@ import type { EntityReference } from "@/domain/entities/entity-profile"
 import type { MessageMentionLabelResolver } from "@/domain/messages/message-presenter"
 import { MessageMentionText } from "@/features/conversation/messages/message-mention-text"
 import { buildUrlImagePreviewHref } from "@/navigation/image-preview"
+import { useXGUITheme } from "@/xgui"
 
 type MarkdownNode = {
   children: MarkdownNode[]
@@ -24,9 +25,12 @@ type MarkdownNode = {
 
 type MarkdownRenderContext = {
   currentUserId: string
+  linkColor: ReturnType<typeof useXGUITheme>["colors"]["link"]
   onMentionPress: (target: EntityReference) => void
   resolveMentionLabel: MessageMentionLabelResolver
+  selectable: boolean
   serverUrl: string
+  textColor: ReturnType<typeof useXGUITheme>["colors"]["textPrimary"]
 }
 
 const markdownParser = new MarkdownIt({
@@ -43,14 +47,17 @@ export function MarkdownMessage({
   currentUserId,
   onMentionPress,
   resolveMentionLabel,
+  selectable = true,
   serverUrl,
 }: {
   content: string
   currentUserId: string
   onMentionPress: (target: EntityReference) => void
   resolveMentionLabel: MessageMentionLabelResolver
+  selectable?: boolean
   serverUrl: string
 }) {
+  const { colors } = useXGUITheme()
   const nodes = useMemo(() => {
     try {
       return buildTokenTree(markdownParser.parse(content, {}))
@@ -61,7 +68,11 @@ export function MarkdownMessage({
 
   if (nodes.length === 0) {
     return (
-      <Paragraph selectable>
+      <Paragraph
+        color={colors.textPrimary}
+        selectable={selectable}
+        size="$4"
+      >
         <MessageMentionText
           content={content}
           currentUserId={currentUserId}
@@ -74,9 +85,12 @@ export function MarkdownMessage({
 
   const context: MarkdownRenderContext = {
     currentUserId,
+    linkColor: colors.link,
     onMentionPress,
     resolveMentionLabel,
+    selectable,
     serverUrl,
+    textColor: colors.textPrimary,
   }
 
   return (
@@ -134,13 +148,13 @@ function renderBlockNode(
   }
 
   if (token.type === "heading_open") {
-    const level = Number(token.tag.slice(1)) || 3
     return (
       <SizableText
+        color={context.textColor}
         fontWeight="700"
         key={key}
-        lineHeight={getHeadingLineHeight(level)}
-        size={getHeadingSize(level)}
+        lineHeight={23}
+        size="$4"
       >
         {renderNodeInlineContent(node, context)}
       </SizableText>
@@ -181,7 +195,7 @@ function renderBlockNode(
   }
 
   if (token.type === "fence" || token.type === "code_block") {
-    return <MarkdownCodeBlock key={key} token={token} />
+    return <MarkdownCodeBlock context={context} key={key} token={token} />
   }
 
   if (token.type === "hr") {
@@ -200,7 +214,7 @@ function renderBlockNode(
 
   if (token.type === "inline") {
     return (
-      <Paragraph key={key} selectable>
+      <Paragraph color={context.textColor} key={key} selectable={context.selectable} size="$4">
         {renderInlineTokens(
           token.children ?? [],
           context
@@ -218,7 +232,7 @@ function renderBlockNode(
   }
 
   return token.content ? (
-    <Paragraph key={key} selectable>
+    <Paragraph color={context.textColor} key={key} selectable={context.selectable} size="$4">
       <MessageMentionText
         content={token.content}
         currentUserId={context.currentUserId}
@@ -248,7 +262,7 @@ function renderParagraph(
   return (
     <YStack gap="$2" key={key}>
       {hasText || imageTokens.length === 0 ? (
-        <Paragraph lineHeight={22} selectable>
+        <Paragraph color={context.textColor} lineHeight={23} selectable={context.selectable} size="$4">
           {renderInlineTokens(inlineTokens, context)}
         </Paragraph>
       ) : null}
@@ -283,7 +297,12 @@ function renderList(
           key={`${key}:item:${index}`}
           maxW="100%"
         >
-          <SizableText minW={ordered ? 22 : 10} text="right">
+          <SizableText
+            color={context.textColor}
+            minW={ordered ? 22 : 10}
+            size="$4"
+            text="right"
+          >
             {ordered ? `${start + index}.` : "•"}
           </SizableText>
           <YStack gap="$2" minW={0} shrink={1}>
@@ -295,7 +314,13 @@ function renderList(
   )
 }
 
-function MarkdownCodeBlock({ token }: { token: Token }) {
+function MarkdownCodeBlock({
+  context,
+  token,
+}: {
+  context: MarkdownRenderContext
+  token: Token
+}) {
   const language = token.info.trim().split(/\s+/, 1)[0]
 
   return (
@@ -308,7 +333,7 @@ function MarkdownCodeBlock({ token }: { token: Token }) {
       rounded="$3"
     >
       {language ? (
-        <SizableText color="$color10" px="$3" pt="$2" size="$1">
+        <SizableText color="$color10" px="$3" pt="$2" size="$4">
           {language}
         </SizableText>
       ) : null}
@@ -318,7 +343,7 @@ function MarkdownCodeBlock({ token }: { token: Token }) {
         showsHorizontalScrollIndicator
         style={horizontalScrollStyle}
       >
-        <SizableText p="$3" selectable size="$2" style={{ fontFamily: "monospace" }}>
+        <SizableText p="$3" selectable={context.selectable} size="$4" style={{ fontFamily: "monospace" }}>
           {token.content.replace(/\n$/, "")}
         </SizableText>
       </ScrollView>
@@ -364,7 +389,7 @@ function MarkdownTable({
                 >
                   <SizableText
                     fontWeight={cell.token.type === "th_open" ? "600" : "400"}
-                    size="$2"
+                    size="$4"
                   >
                     {renderNodeInlineContent(
                       cell,
@@ -387,7 +412,7 @@ function MarkdownImage({ serverUrl, token }: { serverUrl: string; token: Token }
   const alt = token.content.trim() || "图片"
 
   if (!source || !/^https?:/i.test(source)) {
-    return <Paragraph color="$color10">{alt}</Paragraph>
+    return <Paragraph color="$color10" size="$4">{alt}</Paragraph>
   }
 
   return (
@@ -424,7 +449,8 @@ function renderInlineTokens(
     renderInlineNode(
       node,
       `${node.token.type}:${index}`,
-      context
+      context,
+      context.textColor
     )
   )
 }
@@ -432,14 +458,19 @@ function renderInlineTokens(
 function renderInlineNode(
   node: MarkdownNode,
   key: string,
-  context: MarkdownRenderContext
+  context: MarkdownRenderContext,
+  color:
+    | MarkdownRenderContext["linkColor"]
+    | MarkdownRenderContext["textColor"]
 ): ReactNode {
   const { token } = node
+  const childColor = token.type === "link_open" ? context.linkColor : color
   const children = node.children.map((child, index) =>
     renderInlineNode(
       child,
       `${key}:${child.token.type}:${index}`,
-      context
+      context,
+      childColor
     )
   )
 
@@ -465,6 +496,7 @@ function renderInlineNode(
       <SizableText
         color="$color10"
         key={key}
+        size="$4"
         style={{ fontFamily: "monospace" }}
       >
         {token.content}
@@ -473,21 +505,26 @@ function renderInlineNode(
   }
   if (token.type === "strong_open") {
     return (
-      <SizableText fontWeight="700" key={key}>
+      <SizableText color={color} fontWeight="700" key={key} size="$4">
         {children}
       </SizableText>
     )
   }
   if (token.type === "em_open") {
     return (
-      <SizableText fontStyle="italic" key={key}>
+      <SizableText color={color} fontStyle="italic" key={key} size="$4">
         {children}
       </SizableText>
     )
   }
   if (token.type === "s_open") {
     return (
-      <SizableText key={key} textDecorationLine="line-through">
+      <SizableText
+        color={color}
+        key={key}
+        size="$4"
+        textDecorationLine="line-through"
+      >
         {children}
       </SizableText>
     )
@@ -499,9 +536,10 @@ function renderInlineNode(
     )
     return (
       <SizableText
-        color="$color10"
+        color={context.linkColor}
         key={key}
         onPress={url ? () => void openMarkdownUrl(url) : undefined}
+        size="$4"
         textDecorationLine="underline"
       >
         {children}
@@ -513,7 +551,7 @@ function renderInlineNode(
   }
 
   if (children.length > 0) {
-    return <SizableText key={key}>{children}</SizableText>
+    return <SizableText color={color} key={key} size="$4">{children}</SizableText>
   }
 
   return token.content ? (
@@ -539,19 +577,6 @@ function formatTaskMarker(value: string) {
   return value
     .replace(/^\[ \]\s+/, "☐ ")
     .replace(/^\[[xX]]\s+/, "☑ ")
-}
-
-function getHeadingSize(level: number): "$3" | "$4" | "$5" | "$6" {
-  if (level === 1) return "$6"
-  if (level === 2) return "$5"
-  if (level === 3) return "$4"
-  return "$3"
-}
-
-function getHeadingLineHeight(level: number) {
-  if (level === 1) return 30
-  if (level === 2) return 26
-  return 22
 }
 
 function resolveMarkdownUrl(value: string, serverUrl: string) {

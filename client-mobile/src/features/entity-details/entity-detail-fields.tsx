@@ -1,22 +1,8 @@
-import {
-  Activity,
-  Bot,
-  Mail,
-  Phone,
-  UserPen,
-  UserRound,
-  UsersRound,
-  type LucideIcon,
-} from "lucide-react-native"
-import { Fragment } from "react"
-import { ListItem, Separator, SizableText, XStack, YGroup } from "tamagui"
-
-import { ThemedIcon } from "@/components/icons/themed-icon"
 import { formatContactPhone } from "@/domain/contacts/contact-display"
 import type { EntityProfile } from "@/domain/entities/entity-profile"
+import { XGUIList, XGUIListItem } from "@/xgui"
 
 type ProfileField = {
-  icon: LucideIcon
   label: string
   value: string
 }
@@ -25,70 +11,38 @@ export function EntityDetailFields({ profile }: { profile: EntityProfile }) {
   const fields = buildProfileFields(profile)
 
   return (
-    <YGroup bg="$backgroundLight" overflow="hidden" rounded="$4" size="$5">
+    <XGUIList>
       {fields.map((field, index) => (
-        <Fragment key={field.label}>
-          <YGroup.Item>
-            <ListItem
-              bg="$backgroundLight"
-              icon={<ThemedIcon icon={field.icon} />}
-              minH="$5"
-              title={
-                <XStack gap="$3" items="flex-start" minW={0} width="100%">
-                  <SizableText shrink={0} size="$4">
-                    {field.label}
-                  </SizableText>
-                  <SizableText
-                    color="$gray9"
-                    flex={1}
-                    minW={0}
-                    shrink={1}
-                    size="$3"
-                    text="right"
-                  >
-                    {field.value.trim() || "未设置"}
-                  </SizableText>
-                </XStack>
-              }
-            />
-          </YGroup.Item>
-          {index < fields.length - 1 ? (
-            <Separator borderColor="$background" />
-          ) : null}
-        </Fragment>
+        <XGUIListItem
+          key={field.label}
+          minHeight={60}
+          separator={index > 0}
+          title={field.label}
+          titleFontSize={18}
+          value={field.value.trim() || "未设置"}
+        />
       ))}
-    </YGroup>
+    </XGUIList>
   )
 }
 
 function buildProfileFields(profile: EntityProfile): ProfileField[] {
   if (profile.type === "user") {
     return [
-      { icon: UserRound, label: "姓名", value: profile.name },
-      { icon: UserPen, label: "昵称", value: profile.nickname },
-      { icon: Mail, label: "邮箱", value: profile.email },
-      {
-        icon: Phone,
-        label: "手机",
-        value: formatContactPhone(profile.phone),
-      },
+      { label: "姓名", value: profile.name },
+      { label: "昵称", value: profile.nickname },
+      { label: "邮箱", value: profile.email },
+      { label: "手机", value: formatContactPhone(profile.phone) },
     ]
   }
 
   if (profile.type === "app") {
     return [
-      { icon: Bot, label: "类型", value: "应用" },
+      { label: "类型", value: "应用" },
       ...(profile.developerName
-        ? [
-            {
-              icon: UserRound,
-              label: "开发者",
-              value: profile.developerName,
-            },
-          ]
+        ? [{ label: "开发者", value: profile.developerName }]
         : []),
       {
-        icon: Activity,
         label: "状态",
         value:
           profile.online === null ? "未知" : profile.online ? "在线" : "离线",
@@ -97,16 +51,8 @@ function buildProfileFields(profile: EntityProfile): ProfileField[] {
   }
 
   return [
-    { icon: UsersRound, label: "类型", value: "群聊" },
-    {
-      icon: UserRound,
-      label: "成员",
-      value: `${profile.memberCount} 人群聊`,
-    },
-    {
-      icon: Activity,
-      label: "状态",
-      value: profile.joined ? "已加入" : "未加入",
-    },
+    { label: "类型", value: "群聊" },
+    { label: "成员", value: `${profile.memberCount} 人群聊` },
+    { label: "状态", value: profile.joined ? "已加入" : "未加入" },
   ]
 }

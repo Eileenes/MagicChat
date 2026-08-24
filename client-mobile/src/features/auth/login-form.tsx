@@ -98,6 +98,7 @@ export function LoginForm({
     serverKey: "",
   })
   const [passwordVisible, setPasswordVisible] = useState(false)
+  const [isLoginInitializing, setIsLoginInitializing] = useState(false)
   const isCurrentServer = formState.serverKey === serverKey
   const account = isCurrentServer ? formState.account : ""
   const emailCode = isCurrentServer ? formState.emailCode : ""
@@ -111,10 +112,13 @@ export function LoginForm({
     preferredMethod: preferredLoginMethod,
   })
   const isPending =
+    isLoginInitializing ||
     passwordLoginMutation.isPending ||
     emailCodeLoginMutation.isPending ||
     requestEmailCodeMutation.isPending
   const isFormUnavailable = isCredentialsLoading || isPending
+  const areInputsUnavailable =
+    isCredentialsLoading || requestEmailCodeMutation.isPending
   const canSignIn =
     !isCredentialsLoading &&
     account.trim().length > 0 &&
@@ -228,6 +232,7 @@ export function LoginForm({
         serverKey,
       })
       toast.show({
+        duration: 1_000,
         message: "验证码已发送",
         type: "success",
       })
@@ -250,20 +255,29 @@ export function LoginForm({
       return
     }
 
-    toast.hide()
+    toast.show({
+      duration: 0,
+      message: "正在登录",
+      type: "loading",
+    })
+    setIsLoginInitializing(true)
 
     try {
       let user: AuthenticatedUser
       if (method === "password") {
-        user = await passwordLoginMutation.mutateAsync({ account, password })
+        user = await attemptLoginRequest(() =>
+          passwordLoginMutation.mutateAsync({ account, password })
+        )
         await saveLoginCredentials(server, { account, password }).catch(() => {
           // A successful login must not be blocked by local credential storage.
         })
       } else {
-        user = await emailCodeLoginMutation.mutateAsync({
-          code: emailCode,
-          email: account,
-        })
+        user = await attemptLoginRequest(() =>
+          emailCodeLoginMutation.mutateAsync({
+            code: emailCode,
+            email: account,
+          })
+        )
         await saveLoginAccount(server, account).catch(() => {
           // A successful login must not be blocked by local credential storage.
         })
@@ -277,6 +291,8 @@ export function LoginForm({
           ? message.replace("邮箱或密码错误", "账号或密码错误")
           : message
       )
+    } finally {
+      setIsLoginInitializing(false)
     }
   }
 
@@ -295,7 +311,7 @@ export function LoginForm({
                     autoCapitalize="none"
                     autoComplete="email"
                     autoCorrect={false}
-                    disabled={isFormUnavailable}
+                    disabled={areInputsUnavailable}
                     id={ACCOUNT_INPUT_ID}
                     keyboardType="email-address"
                     label="邮箱"
@@ -312,7 +328,7 @@ export function LoginForm({
                     accessibilityLabel="邮箱验证码"
                     autoCapitalize="none"
                     autoComplete="one-time-code"
-                    disabled={isFormUnavailable}
+                    disabled={areInputsUnavailable}
                     id={EMAIL_CODE_INPUT_ID}
                     keyboardType="number-pad"
                     label="验证码"
@@ -380,7 +396,7 @@ export function LoginForm({
                     autoCapitalize="none"
                     autoComplete="email"
                     autoCorrect={false}
-                    disabled={isFormUnavailable}
+                    disabled={areInputsUnavailable}
                     id={ACCOUNT_INPUT_ID}
                     keyboardType="email-address"
                     label="账号"
@@ -397,7 +413,7 @@ export function LoginForm({
                     accessibilityLabel="密码"
                     autoCapitalize="none"
                     autoComplete="password"
-                    disabled={isFormUnavailable}
+                    disabled={areInputsUnavailable}
                     id={PASSWORD_INPUT_ID}
                     label="密码"
                     onChangeText={handlePasswordChange}
@@ -442,6 +458,28 @@ export function LoginForm({
         </YStack>
     </View>
   )
+}
+
+async function attemptLoginRequest<T>(operation: () => Promise<T>) {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error: unknown) {
+      lastError = error
+      if (
+        error instanceof ApiRequestError &&
+        error.status !== undefined &&
+        error.status < 500 &&
+        error.status !== 429
+      ) {
+        throw error
+      }
+    }
+  }
+
+  throw lastError
 }
 
 function EmailCodeAction({

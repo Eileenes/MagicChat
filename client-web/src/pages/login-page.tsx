@@ -12,6 +12,9 @@ import {
   requestClientEmailCode,
 } from "@/lib/client-auth"
 
+const loginPrimaryButtonClass =
+  "bg-(--weui-brand-3) text-white hover:bg-(--weui-brand-4) dark:text-white"
+
 export function LoginPage() {
   const {
     appName,
@@ -73,6 +76,9 @@ export function LoginPage() {
             onLogin={handleLogin}
             onRequestEmailCode={handleRequestEmailCode}
             passwordLoginEnabled={passwordLoginEnabled}
+            submitClassName={
+              hasThirdPartyProviders ? undefined : loginPrimaryButtonClass
+            }
             submitVariant={hasThirdPartyProviders ? "outline" : "default"}
           >
             {hasThirdPartyProviders && (
@@ -86,6 +92,9 @@ export function LoginPage() {
                   {thirdPartyProviders.map((provider, index) => (
                     <Button
                       asChild
+                      className={
+                        index === 0 ? loginPrimaryButtonClass : undefined
+                      }
                       key={provider.key}
                       variant={index === 0 ? "default" : "outline"}
                     >

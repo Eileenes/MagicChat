@@ -1,36 +1,31 @@
-import { AlertDialog, Spinner } from "tamagui"
-
-import { AppButton } from "@/components/forms/app-button"
+import { XGUIDialog } from "@/xgui"
 
 export function NetworkFailureDialog({
   onRetry,
+  onRelogin,
   open,
-  retrying,
 }: {
   onRetry: () => void
+  onRelogin: () => void
   open: boolean
-  retrying: boolean
 }) {
   return (
-    <AlertDialog onOpenChange={() => undefined} open={open}>
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay bg="$shadow6" opacity={0.5} />
-        <AlertDialog.Content bordered elevate gap="$4" maxW={440} width="90%">
-          <AlertDialog.Title fontSize="$4" lineHeight="$5">
-            网络链接失败
-          </AlertDialog.Title>
-          <AppButton
-            accessibilityLabel="重新加载对话数据"
-            disabled={retrying}
-            icon={retrying ? <Spinner /> : undefined}
-            onPress={onRetry}
-            theme="teal"
-            width="100%"
-          >
-            {retrying ? "重试中…" : "重试"}
-          </AppButton>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog>
+    <XGUIDialog
+      actions={[
+        {
+          label: "重新登录",
+          onPress: onRelogin,
+          variant: "destructive",
+        },
+        {
+          accessibilityLabel: "刷新服务器数据",
+          label: "刷新",
+          onPress: onRetry,
+        },
+      ]}
+      description="无法连接到服务器，请检查网络后重试。"
+      open={open}
+      title="网络连接失败"
+    />
   )
 }

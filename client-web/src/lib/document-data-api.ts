@@ -47,6 +47,7 @@ type CollaborativeTitleResponse = {
 }
 
 export type ClientDocumentKind = "document" | "folder"
+export type ClientDocumentType = "document" | "markdown"
 
 export type ClientDocumentUser = {
   avatar: string
@@ -60,7 +61,7 @@ export type ClientDocument = {
   contributors: ClientDocumentUser[]
   createdAt: string
   creator: ClientDocumentUser
-  documentType: "document" | null
+  documentType: ClientDocumentType | null
   id: string
   kind: ClientDocumentKind
   parentId: string | null
@@ -72,11 +73,18 @@ export type ClientDocument = {
   updatedBy: ClientDocumentUser
 }
 
-export type CreateClientDocumentInput = {
-  kind: ClientDocumentKind
-  parentId?: string | null
-  title: string
-}
+export type CreateClientDocumentInput =
+  | {
+      documentType?: ClientDocumentType
+      kind: "document"
+      parentId?: string | null
+      title: string
+    }
+  | {
+      kind: "folder"
+      parentId?: string | null
+      title: string
+    }
 
 export type UpdateClientDocumentInput = {
   parentId?: string | null
@@ -114,6 +122,9 @@ export async function createClientDocument(
     await request<DocumentResponse>(
       `/api/client/projects/${encodeURIComponent(projectId)}/documents`,
       jsonRequest("POST", {
+        ...(input.kind === "document"
+          ? { document_type: input.documentType ?? "document" }
+          : {}),
         kind: input.kind,
         parent_id: input.parentId ?? null,
         title: input.title,
@@ -252,6 +263,14 @@ async function readJson<T>(response: Response): Promise<T | undefined> {
   }
 }
 
+export function getClientDocumentPath(
+  documentId: string,
+  documentType: ClientDocumentType | null
+) {
+  if (!documentType) throw new Error("文档类型不存在")
+  return `/documents/${documentType}/${encodeURIComponent(documentId)}`
+}
+
 function normalizeDocument(value: DocumentResponse): ClientDocument {
   if (
     typeof value.id !== "string" ||
@@ -270,10 +289,12 @@ function normalizeDocument(value: DocumentResponse): ClientDocument {
   ) {
     throw new ClientDataRequestError("文档响应格式不正确")
   }
-  const documentType: "document" | null =
-    value.document_type === "document" ? "document" : null
+  const documentType: ClientDocumentType | null =
+    value.document_type === "document" || value.document_type === "markdown"
+      ? value.document_type
+      : null
   if (
-    (value.kind === "document" && value.document_type !== "document") ||
+    (value.kind === "document" && documentType === null) ||
     (value.kind === "folder" && value.document_type != null)
   ) {
     throw new ClientDataRequestError("文档类型响应格式不正确")

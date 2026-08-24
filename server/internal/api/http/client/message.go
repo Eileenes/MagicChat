@@ -191,11 +191,26 @@ type listConversationMessagesResponse struct {
 	Page     listMessagesPageResponse `json:"page"`
 }
 
+type conversationAttachmentResponse struct {
+	CreatedAt time.Time `json:"created_at" format:"date-time"`
+	FileID    string    `json:"file_id"`
+	MessageID string    `json:"message_id"`
+	Name      string    `json:"name"`
+	Seq       int64     `json:"seq"`
+	SizeBytes int64     `json:"size_bytes"`
+}
+
+type listConversationAttachmentsResponse struct {
+	Attachments []conversationAttachmentResponse `json:"attachments"`
+	NextCursor  *string                          `json:"next_cursor"`
+}
+
 func NewMessageAPI(messages messageapp.ClientService, files fileapp.TemporaryFileService) *MessageAPI {
 	return &MessageAPI{messages: messages, files: files}
 }
 
 func (a *MessageAPI) RegisterRoutes(group *echo.Group) {
+	group.GET("/conversations/:conversation_id/attachments", a.listAttachments)
 	group.GET("/conversations/:conversation_id/messages", a.list)
 	group.POST("/conversations/:conversation_id/messages", a.create)
 	group.POST("/conversations/:conversation_id/messages/files", a.createFile)
@@ -268,6 +283,59 @@ func (a *MessageAPI) list(c echo.Context) error {
 			HasMoreAfter: result.Page.HasMoreAfter, HasMoreBefore: result.Page.HasMoreBefore,
 			Limit: result.Page.Limit, NewestSeq: result.Page.NewestSeq, OldestSeq: result.Page.OldestSeq,
 		},
+	})
+}
+
+// listAttachments godoc
+//
+// @Summary 获取会话历史附件
+// @Description 获取当前用户在会话历史可见范围内的文件消息，按消息序号从新到旧分页返回，不包含已撤回或已删除消息。
+// @Tags 客户端消息
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param cursor query string false "下一页游标"
+// @Param limit query int false "返回数量，默认 50，最大 100"
+// @Success 200 {object} successEnvelope{data=listConversationAttachmentsResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/attachments [get]
+func (a *MessageAPI) listAttachments(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
+	}
+	conversationID, err := normalizeMessageConversationID(c.Param("conversation_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	limit, err := normalizeAttachmentListLimit(c.QueryParam("limit"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	result, err := a.messages.ListAttachments(c.Request().Context(), messageapp.ListAttachmentsCommand{
+		AccountID: current.ID, ConversationID: conversationID,
+		Cursor: strings.TrimSpace(c.QueryParam("cursor")), Limit: limit,
+	})
+	if err != nil {
+		return writeMessageError(c, err)
+	}
+	attachments := make([]conversationAttachmentResponse, 0, len(result.Attachments))
+	for _, attachment := range result.Attachments {
+		attachments = append(attachments, conversationAttachmentResponse{
+			CreatedAt: attachment.CreatedAt, FileID: attachment.FileID,
+			MessageID: attachment.MessageID, Name: attachment.Name,
+			Seq: attachment.Seq, SizeBytes: attachment.SizeBytes,
+		})
+	}
+	var nextCursor *string
+	if result.NextCursor != "" {
+		nextCursor = &result.NextCursor
+	}
+	return writeSuccess(c, http.StatusOK, listConversationAttachmentsResponse{
+		Attachments: attachments, NextCursor: nextCursor,
 	})
 }
 
@@ -682,6 +750,18 @@ func normalizeOptionalPositiveInt64(raw, field string) (*int64, error) {
 		return nil, errors.New(field + " 必须是正整数")
 	}
 	return &parsed, nil
+}
+
+func normalizeAttachmentListLimit(raw string) (int, error) {
+	limit := messageapp.DefaultAttachmentListLimit
+	if strings.TrimSpace(raw) != "" {
+		parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || parsed < 1 || parsed > messageapp.MaxAttachmentListLimit {
+			return 0, errors.New("limit 必须为 1 到 100 的整数")
+		}
+		limit = parsed
+	}
+	return limit, nil
 }
 
 func normalizeMessageHistoryLimit(raw string) (int, error) {
