@@ -261,13 +261,16 @@ export function MessageList({
           <XGUIButton
             onPress={handleJumpToLatest}
             size="mini"
-            style={styles.newMessagesButton}
+            style={[
+              styles.newMessagesButton,
+              { backgroundColor: colors.background4 },
+            ]}
             variant="secondary"
           >
             <View style={styles.newMessagesContent}>
-              <ArrowDown color={colors.textPrimary} size={18} />
+              <ArrowDown color={colors.textOnColor} size={18} />
               <Text
-                style={[styles.newMessagesText, { color: colors.textPrimary }]}
+                style={[styles.newMessagesText, { color: colors.textOnColor }]}
               >
                 {`${pendingNewMessageCount} 条新消息`}
               </Text>
@@ -392,8 +395,13 @@ const styles = StyleSheet.create({
   },
   newMessagesButton: {
     borderRadius: 18,
+    elevation: 4,
     height: 36,
     minHeight: 36,
+    shadowColor: "#000000",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   newMessagesContent: {
     alignItems: "center",
