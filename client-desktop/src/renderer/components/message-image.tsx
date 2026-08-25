@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useLocale } from "@/components/locale-provider"
-import { ImageOff } from "lucide-react"
+import { ImageOff, XIcon } from "lucide-react"
 
 import { readTemporaryFileURLs, type ClientImageMessageBody } from "@/lib/client-data-api"
 import { cn } from "@/lib/utils"
@@ -9,11 +9,13 @@ import { getImageThumbnailFrame } from "@/lib/image-message"
 import { clampPreviewZoom } from "@/lib/message-image-preview"
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 
@@ -42,6 +44,7 @@ export function MessageImage({ hasCaption = false, image }: MessageImageProps) {
     x: number
     y: number
   } | null>(null)
+  const previewImageRef = React.useRef<HTMLImageElement | null>(null)
   const [open, setOpen] = React.useState(false)
   const [source, setSource] = React.useState<{
     error: boolean
@@ -281,6 +284,30 @@ export function MessageImage({ hasCaption = false, image }: MessageImageProps) {
     setPreviewDragging(false)
   }
 
+  function handlePreviewAreaClick(event: React.MouseEvent<HTMLDivElement>) {
+    if (previewZoom > 1) {
+      return
+    }
+
+    const previewImage = previewImageRef.current
+    const isImageClicked =
+      previewImage &&
+      isPointInsidePreviewImage(
+        event.clientX,
+        event.clientY,
+        event.currentTarget.getBoundingClientRect(),
+        {
+          height: previewImage.naturalHeight,
+          width: previewImage.naturalWidth,
+        },
+        previewZoom,
+      )
+
+    if (!isImageClicked) {
+      setOpen(false)
+    }
+  }
+
   if (currentSource?.error) {
     return (
       <MessageImageStatus
@@ -335,12 +362,24 @@ export function MessageImage({ hasCaption = false, image }: MessageImageProps) {
             <DialogTitle>{t("imageMsg.previewTitle")}</DialogTitle>
             <DialogDescription>{t("imageMsg.previewDesc")}</DialogDescription>
           </DialogHeader>
+          <DialogClose asChild>
+            <Button
+              aria-label={t("imageMsg.closePreview")}
+              className="no-drag absolute top-3 right-3 z-10"
+              size="icon-sm"
+              type="button"
+              variant="ghost"
+            >
+              <XIcon />
+            </Button>
+          </DialogClose>
           <div
             ref={setPreviewAreaElement}
             className={cn(
               "relative h-full w-full touch-none overflow-hidden bg-background select-none",
               previewZoom > 1 && (previewDragging ? "cursor-grabbing" : "cursor-grab"),
             )}
+            onClick={handlePreviewAreaClick}
             onPointerCancel={handlePreviewPointerEnd}
             onPointerDown={handlePreviewPointerDown}
             onPointerMove={handlePreviewPointerMove}
@@ -355,6 +394,7 @@ export function MessageImage({ hasCaption = false, image }: MessageImageProps) {
                   : "h-full w-full object-contain",
               )}
               draggable={false}
+              ref={previewImageRef}
               onError={handleImageError}
               onLoad={handlePreviewImageLoad}
               src={resolveHostResourceUrl(currentSource.url)}
@@ -451,6 +491,29 @@ function getContainedPreviewSize(
     height: imageSize.height * scale,
     width: imageSize.width * scale,
   }
+}
+
+function isPointInsidePreviewImage(
+  clientX: number,
+  clientY: number,
+  areaBounds: DOMRect,
+  imageSize: PreviewSize,
+  zoom: number,
+): boolean {
+  const previewSize = getContainedPreviewSize(imageSize, {
+    height: areaBounds.height,
+    width: areaBounds.width,
+  })
+  if (!previewSize) {
+    return false
+  }
+
+  const width = previewSize.width * zoom
+  const height = previewSize.height * zoom
+  const left = areaBounds.left + (areaBounds.width - width) / 2
+  const top = areaBounds.top + (areaBounds.height - height) / 2
+
+  return clientX >= left && clientX <= left + width && clientY >= top && clientY <= top + height
 }
 
 function clampPreviewOffset(
