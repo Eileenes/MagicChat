@@ -1,7 +1,8 @@
 @import "@fontsource-variable/noto-sans-sc";
 
 :root {
-  --body-font: "Noto Sans SC Variable", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-sans: "Noto Sans SC Variable", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --body-font: var(--font-sans);
   --green: #14b8a6;
   --green-dark: #0f766e;
   --green-deep: #063d3a;
