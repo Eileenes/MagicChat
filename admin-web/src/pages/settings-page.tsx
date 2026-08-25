@@ -650,6 +650,7 @@ function PasswordLoginSettingsCard() {
 
 const defaultEmailLoginSettings: EmailLoginSettings = {
   enabled: false,
+  registrationEnabled: false,
   fromEmail: "",
   fromName: "",
   smtpHost: "",
@@ -662,6 +663,7 @@ const defaultEmailLoginSettings: EmailLoginSettings = {
 
 function EmailLoginSettingsCard() {
   const enabledId = useId()
+  const registrationEnabledId = useId()
   const fromEmailId = useId()
   const fromNameId = useId()
   const hostId = useId()
@@ -778,6 +780,21 @@ function EmailLoginSettingsCard() {
               id={enabledId}
               onCheckedChange={(enabled) =>
                 setSettings((current) => ({ ...current, enabled }))
+              }
+            />
+          </Field>
+
+          <Field orientation="horizontal">
+            <div className="flex flex-1 flex-col gap-1">
+              <FieldLabel htmlFor={registrationEnabledId}>允许新用户通过邮箱验证码注册</FieldLabel>
+              <FieldDescription>关闭后，仅已有的正常用户可以接收验证码并登录。</FieldDescription>
+            </div>
+            <Switch
+              checked={settings.registrationEnabled}
+              disabled={!settings.enabled || isLoading || isSaving}
+              id={registrationEnabledId}
+              onCheckedChange={(checked) =>
+                setSettings((current) => ({ ...current, registrationEnabled: checked }))
               }
             />
           </Field>

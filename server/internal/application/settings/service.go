@@ -157,14 +157,15 @@ func (s *Service) UpdateEmailLogin(ctx context.Context, cmd UpdateEmailLoginComm
 	}
 
 	value := EmailLoginSettings{
-		Enabled:      cmd.Enabled,
-		SMTPHost:     strings.TrimSpace(cmd.SMTPHost),
-		SMTPPort:     cmd.SMTPPort,
-		SMTPSecurity: strings.ToLower(strings.TrimSpace(cmd.SMTPSecurity)),
-		SMTPUsername: strings.TrimSpace(cmd.SMTPUsername),
-		SMTPPassword: stored.SMTPPassword,
-		FromEmail:    strings.ToLower(strings.TrimSpace(cmd.FromEmail)),
-		FromName:     strings.TrimSpace(cmd.FromName),
+		Enabled:             cmd.Enabled,
+		RegistrationEnabled: cmd.RegistrationEnabled,
+		SMTPHost:            strings.TrimSpace(cmd.SMTPHost),
+		SMTPPort:            cmd.SMTPPort,
+		SMTPSecurity:        strings.ToLower(strings.TrimSpace(cmd.SMTPSecurity)),
+		SMTPUsername:        strings.TrimSpace(cmd.SMTPUsername),
+		SMTPPassword:        stored.SMTPPassword,
+		FromEmail:           strings.ToLower(strings.TrimSpace(cmd.FromEmail)),
+		FromName:            strings.TrimSpace(cmd.FromName),
 	}
 	if cmd.SMTPPassword != nil {
 		value.SMTPPassword = *cmd.SMTPPassword
@@ -182,15 +183,16 @@ func (s *Service) UpdateEmailLogin(ctx context.Context, cmd UpdateEmailLoginComm
 	if err := s.db.WithContext(ctx).Model(&store.AppSettings{}).
 		Where("id = ?", store.AppSettingsID).
 		Updates(map[string]any{
-			"email_code_login_enabled": value.Enabled,
-			"smtp_host":                value.SMTPHost,
-			"smtp_port":                value.SMTPPort,
-			"smtp_security":            value.SMTPSecurity,
-			"smtp_username":            value.SMTPUsername,
-			"smtp_password":            value.SMTPPassword,
-			"smtp_from_email":          value.FromEmail,
-			"smtp_from_name":           value.FromName,
-			"updated_at":               s.now().UTC(),
+			"email_code_login_enabled":        value.Enabled,
+			"email_code_registration_enabled": value.RegistrationEnabled,
+			"smtp_host":                       value.SMTPHost,
+			"smtp_port":                       value.SMTPPort,
+			"smtp_security":                   value.SMTPSecurity,
+			"smtp_username":                   value.SMTPUsername,
+			"smtp_password":                   value.SMTPPassword,
+			"smtp_from_email":                 value.FromEmail,
+			"smtp_from_name":                  value.FromName,
+			"updated_at":                      s.now().UTC(),
 		}).Error; err != nil {
 		return EmailLoginSettings{}, internalError(err)
 	}
@@ -238,14 +240,15 @@ func newSettings(value store.AppSettings) Settings {
 
 func newEmailLoginSettings(value store.AppSettings) EmailLoginSettings {
 	return EmailLoginSettings{
-		Enabled:      value.EmailCodeLoginEnabled,
-		SMTPHost:     value.SMTPHost,
-		SMTPPort:     value.SMTPPort,
-		SMTPSecurity: value.SMTPSecurity,
-		SMTPUsername: value.SMTPUsername,
-		SMTPPassword: value.SMTPPassword,
-		FromEmail:    value.SMTPFromEmail,
-		FromName:     value.SMTPFromName,
+		Enabled:             value.EmailCodeLoginEnabled,
+		RegistrationEnabled: value.EmailCodeRegistrationEnabled,
+		SMTPHost:            value.SMTPHost,
+		SMTPPort:            value.SMTPPort,
+		SMTPSecurity:        value.SMTPSecurity,
+		SMTPUsername:        value.SMTPUsername,
+		SMTPPassword:        value.SMTPPassword,
+		FromEmail:           value.SMTPFromEmail,
+		FromName:            value.SMTPFromName,
 	}
 }
 

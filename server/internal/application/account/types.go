@@ -47,9 +47,10 @@ type LoginResult struct {
 }
 
 type VerifiedEmailLoginCommand struct {
-	Email     string
-	UserAgent string
-	IP        string
+	Email             string
+	UserAgent         string
+	IP                string
+	AllowRegistration bool
 }
 
 type LogoutCommand struct {
@@ -81,7 +82,7 @@ type SessionAuthenticator interface {
 }
 
 type VerifiedEmailLoginService interface {
-	CanLoginWithEmail(context.Context, string) (bool, error)
+	CanLoginWithEmail(context.Context, string, bool) (bool, error)
 	LoginWithVerifiedEmail(context.Context, VerifiedEmailLoginCommand) (LoginResult, error)
 }
 

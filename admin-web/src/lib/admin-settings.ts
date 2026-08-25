@@ -30,6 +30,7 @@ type PasswordLoginSettingsResponse = {
 
 type EmailLoginSettingsResponse = {
   enabled?: boolean
+  registration_enabled?: boolean
   from_email?: string
   from_name?: string
   smtp_host?: string
@@ -70,6 +71,7 @@ export type SMTPSecurity = "none" | "starttls" | "tls"
 
 export type EmailLoginSettings = {
   enabled: boolean
+  registrationEnabled: boolean
   fromEmail: string
   fromName: string
   smtpHost: string
@@ -271,6 +273,7 @@ export async function updateEmailLoginSettings(
   const response = await fetcher("/api/admin/settings/email-login", {
     body: JSON.stringify({
       enabled: input.enabled,
+      registration_enabled: input.registrationEnabled,
       from_email: input.fromEmail.trim(),
       from_name: input.fromName.trim(),
       smtp_host: input.smtpHost.trim(),
@@ -577,6 +580,7 @@ function normalizeEmailLoginSettings(
   if (
     !settings ||
     typeof settings.enabled !== "boolean" ||
+    typeof settings.registration_enabled !== "boolean" ||
     typeof settings.smtp_host !== "string" ||
     typeof settings.smtp_port !== "number" ||
     !isSMTPSecurity(settings.smtp_security) ||
@@ -591,6 +595,7 @@ function normalizeEmailLoginSettings(
 
   return {
     enabled: settings.enabled,
+    registrationEnabled: settings.registration_enabled,
     fromEmail: settings.from_email,
     fromName: settings.from_name,
     smtpHost: settings.smtp_host,

@@ -99,7 +99,12 @@ func (s *Service) deliverCode(email string) {
 	defer cancel()
 	recipientHash := hashRecipient(email)
 
-	allowed, err := s.accounts.CanLoginWithEmail(ctx, email)
+	settings, err := s.settings.GetEmailLogin(ctx)
+	if err != nil {
+		slog.Error("deliver email login code", "stage", "settings", "recipient_hash", recipientHash, "error", err)
+		return
+	}
+	allowed, err := s.accounts.CanLoginWithEmail(ctx, email, settings.RegistrationEnabled)
 	if err != nil {
 		slog.Error("deliver email login code", "stage", "account_lookup", "recipient_hash", recipientHash, "error", err)
 		return
@@ -185,7 +190,7 @@ func (s *Service) Login(ctx context.Context, cmd LoginCommand) (account.LoginRes
 		return account.LoginResult{}, err
 	}
 	result, err := s.accounts.LoginWithVerifiedEmail(ctx, account.VerifiedEmailLoginCommand{
-		Email: email, UserAgent: cmd.UserAgent, IP: cmd.IP,
+		Email: email, UserAgent: cmd.UserAgent, IP: cmd.IP, AllowRegistration: settings.RegistrationEnabled,
 	})
 	if err != nil {
 		s.releaseCode(email, hash, account.ErrorCodeOf(err) == account.CodeInternal)

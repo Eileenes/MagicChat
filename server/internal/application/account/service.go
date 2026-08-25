@@ -115,7 +115,7 @@ func (s *Service) Login(ctx context.Context, cmd LoginCommand) (LoginResult, err
 	return s.createLoginSession(ctx, user, cmd.UserAgent, cmd.IP)
 }
 
-func (s *Service) CanLoginWithEmail(ctx context.Context, rawEmail string) (bool, error) {
+func (s *Service) CanLoginWithEmail(ctx context.Context, rawEmail string, allowRegistration bool) (bool, error) {
 	email, err := normalizeEmail(rawEmail)
 	if err != nil {
 		return false, nil
@@ -123,7 +123,7 @@ func (s *Service) CanLoginWithEmail(ctx context.Context, rawEmail string) (bool,
 	var user store.User
 	err = s.db.WithContext(ctx).Where("email = ?", email).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return true, nil
+		return allowRegistration, nil
 	}
 	if err != nil {
 		return false, internalError(err)
@@ -149,6 +149,9 @@ func (s *Service) LoginWithVerifiedEmail(ctx context.Context, cmd VerifiedEmailL
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+		if !cmd.AllowRegistration {
+			return invalidCredentials()
 		}
 
 		password, err := auth.GenerateSessionToken()

@@ -111,12 +111,12 @@ func TestServiceVerifiedEmailLoginCreatesMissingAccountAndPersonalWorkspace(t *t
 		RandomAvatar:         func() string { return "/assets/avatars/builtin/07.webp" },
 	})
 
-	allowed, err := service.CanLoginWithEmail(context.Background(), " New.User@Example.com ")
+	allowed, err := service.CanLoginWithEmail(context.Background(), " New.User@Example.com ", true)
 	if err != nil || !allowed {
 		t.Fatalf("missing email allowed = %t, error = %v", allowed, err)
 	}
 	result, err := service.LoginWithVerifiedEmail(context.Background(), VerifiedEmailLoginCommand{
-		Email: "New.User@Example.com", UserAgent: "verified-email-test", IP: "127.0.0.1",
+		Email: "New.User@Example.com", UserAgent: "verified-email-test", IP: "127.0.0.1", AllowRegistration: true,
 	})
 	if err != nil {
 		t.Fatalf("verified registration: %v", err)
@@ -143,7 +143,7 @@ func TestServiceIssuesSessionOnlyForVerifiedActiveEmail(t *testing.T) {
 		GenerateSessionToken: func() (string, error) { return "verified-session-token", nil },
 	})
 
-	allowed, err := service.CanLoginWithEmail(context.Background(), " Alice@Example.com ")
+	allowed, err := service.CanLoginWithEmail(context.Background(), " Alice@Example.com ", true)
 	if err != nil || !allowed {
 		t.Fatalf("active email allowed = %t, error = %v", allowed, err)
 	}
@@ -160,7 +160,7 @@ func TestServiceIssuesSessionOnlyForVerifiedActiveEmail(t *testing.T) {
 	if err := db.Model(&user).Update("status", store.UserStatusDisabled).Error; err != nil {
 		t.Fatalf("disable user: %v", err)
 	}
-	allowed, err = service.CanLoginWithEmail(context.Background(), user.Email)
+	allowed, err = service.CanLoginWithEmail(context.Background(), user.Email, true)
 	if err != nil || allowed {
 		t.Fatalf("disabled email allowed = %t, error = %v", allowed, err)
 	}

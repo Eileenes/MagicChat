@@ -514,21 +514,22 @@ func (AppEventAck) TableName() string {
 }
 
 type AppSettings struct {
-	ID                    int       `gorm:"primaryKey"`
-	AppName               string    `gorm:"size:120;not null"`
-	OrganizationName      string    `gorm:"size:160;not null"`
-	ContactDirectoryMode  string    `gorm:"size:32;not null;default:organization"`
-	PasswordLoginEnabled  bool      `gorm:"not null;default:true"`
-	EmailCodeLoginEnabled bool      `gorm:"not null;default:false"`
-	SMTPHost              string    `gorm:"size:255;not null;default:''"`
-	SMTPPort              int       `gorm:"not null;default:465"`
-	SMTPSecurity          string    `gorm:"size:16;not null;default:tls"`
-	SMTPUsername          string    `gorm:"size:320;not null;default:''"`
-	SMTPPassword          string    `gorm:"not null;default:''"`
-	SMTPFromEmail         string    `gorm:"size:320;not null;default:''"`
-	SMTPFromName          string    `gorm:"size:120;not null;default:''"`
-	CreatedAt             time.Time `gorm:"not null"`
-	UpdatedAt             time.Time `gorm:"not null"`
+	ID                           int       `gorm:"primaryKey"`
+	AppName                      string    `gorm:"size:120;not null"`
+	OrganizationName             string    `gorm:"size:160;not null"`
+	ContactDirectoryMode         string    `gorm:"size:32;not null;default:organization"`
+	PasswordLoginEnabled         bool      `gorm:"not null;default:true"`
+	EmailCodeLoginEnabled        bool      `gorm:"not null;default:false"`
+	EmailCodeRegistrationEnabled bool      `gorm:"not null;default:false"`
+	SMTPHost                     string    `gorm:"size:255;not null;default:''"`
+	SMTPPort                     int       `gorm:"not null;default:465"`
+	SMTPSecurity                 string    `gorm:"size:16;not null;default:tls"`
+	SMTPUsername                 string    `gorm:"size:320;not null;default:''"`
+	SMTPPassword                 string    `gorm:"not null;default:''"`
+	SMTPFromEmail                string    `gorm:"size:320;not null;default:''"`
+	SMTPFromName                 string    `gorm:"size:120;not null;default:''"`
+	CreatedAt                    time.Time `gorm:"not null"`
+	UpdatedAt                    time.Time `gorm:"not null"`
 }
 
 type ThirdPartyLoginProvider struct {

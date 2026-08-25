@@ -46,25 +46,27 @@ const (
 )
 
 type EmailLoginSettings struct {
-	Enabled      bool
-	SMTPHost     string
-	SMTPPort     int
-	SMTPSecurity string
-	SMTPUsername string
-	SMTPPassword string
-	FromEmail    string
-	FromName     string
+	Enabled             bool
+	RegistrationEnabled bool
+	SMTPHost            string
+	SMTPPort            int
+	SMTPSecurity        string
+	SMTPUsername        string
+	SMTPPassword        string
+	FromEmail           string
+	FromName            string
 }
 
 type UpdateEmailLoginCommand struct {
-	Enabled      bool
-	SMTPHost     string
-	SMTPPort     int
-	SMTPSecurity string
-	SMTPUsername string
-	SMTPPassword *string
-	FromEmail    string
-	FromName     string
+	Enabled             bool
+	RegistrationEnabled bool
+	SMTPHost            string
+	SMTPPort            int
+	SMTPSecurity        string
+	SMTPUsername        string
+	SMTPPassword        *string
+	FromEmail           string
+	FromName            string
 }
 
 type Notifications interface {

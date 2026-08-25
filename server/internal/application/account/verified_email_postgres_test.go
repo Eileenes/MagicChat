@@ -52,7 +52,7 @@ func TestPostgresVerifiedEmailLoginCreatesAccountWithExpressionEmailIndex(t *tes
 		GenerateSessionToken: func() (string, error) { return "postgres-verified-email-session", nil },
 	})
 	result, err := service.LoginWithVerifiedEmail(context.Background(), VerifiedEmailLoginCommand{
-		Email: "New.User@Example.com", UserAgent: "postgres-test", IP: "127.0.0.1",
+		Email: "New.User@Example.com", UserAgent: "postgres-test", IP: "127.0.0.1", AllowRegistration: true,
 	})
 	if err != nil {
 		t.Fatalf("verified email registration: %v", err)

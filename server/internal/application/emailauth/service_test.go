@@ -231,7 +231,7 @@ type fakeAccounts struct {
 	loginErr     error
 }
 
-func (a *fakeAccounts) CanLoginWithEmail(_ context.Context, email string) (bool, error) {
+func (a *fakeAccounts) CanLoginWithEmail(_ context.Context, email string, _ bool) (bool, error) {
 	a.checkedEmail = email
 	return a.allowed, nil
 }

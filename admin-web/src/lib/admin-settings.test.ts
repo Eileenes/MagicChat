@@ -184,6 +184,7 @@ describe("admin settings", () => {
   it("loads and updates email login settings with the SMTP password", async () => {
     const responseData = {
       enabled: true,
+      registration_enabled: false,
       from_email: "mailer@example.com",
       from_name: "即应通知",
       smtp_host: "smtp.example.com",
@@ -204,6 +205,7 @@ describe("admin settings", () => {
 
     await expect(getEmailLoginSettings(fetcher)).resolves.toEqual({
       enabled: true,
+      registrationEnabled: false,
       fromEmail: "mailer@example.com",
       fromName: "即应通知",
       smtpHost: "smtp.example.com",
@@ -216,6 +218,7 @@ describe("admin settings", () => {
     await updateEmailLoginSettings(
       {
         enabled: true,
+        registrationEnabled: false,
         fromEmail: " mailer@example.com ",
         fromName: " 即应通知 ",
         smtpHost: " smtp.example.com ",
@@ -233,6 +236,7 @@ describe("admin settings", () => {
       {
         body: JSON.stringify({
           enabled: true,
+          registration_enabled: false,
           from_email: "mailer@example.com",
           from_name: "即应通知",
           smtp_host: "smtp.example.com",

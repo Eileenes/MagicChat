@@ -16,6 +16,7 @@ type EmailLoginSettingsAPI struct {
 
 type emailLoginSettingsResponse struct {
 	Enabled                bool   `json:"enabled"`
+	RegistrationEnabled    bool   `json:"registration_enabled"`
 	SMTPHost               string `json:"smtp_host" example:"smtp.example.com"`
 	SMTPPort               int    `json:"smtp_port" example:"587"`
 	SMTPSecurity           string `json:"smtp_security" example:"starttls"`
@@ -27,14 +28,15 @@ type emailLoginSettingsResponse struct {
 }
 
 type updateEmailLoginSettingsRequest struct {
-	Enabled      bool    `json:"enabled"`
-	SMTPHost     string  `json:"smtp_host"`
-	SMTPPort     int     `json:"smtp_port"`
-	SMTPSecurity string  `json:"smtp_security"`
-	SMTPUsername string  `json:"smtp_username"`
-	SMTPPassword *string `json:"smtp_password"`
-	FromEmail    string  `json:"from_email"`
-	FromName     string  `json:"from_name"`
+	Enabled             bool    `json:"enabled"`
+	RegistrationEnabled bool    `json:"registration_enabled"`
+	SMTPHost            string  `json:"smtp_host"`
+	SMTPPort            int     `json:"smtp_port"`
+	SMTPSecurity        string  `json:"smtp_security"`
+	SMTPUsername        string  `json:"smtp_username"`
+	SMTPPassword        *string `json:"smtp_password"`
+	FromEmail           string  `json:"from_email"`
+	FromName            string  `json:"from_name"`
 }
 
 type testEmailLoginSettingsRequest struct {
@@ -113,7 +115,7 @@ func (a *EmailLoginSettingsAPI) update(c echo.Context) error {
 		return writeFailure(c, http.StatusBadRequest, string(settingsapp.CodeInvalidRequest), "请求格式错误")
 	}
 	value, err := a.settings.UpdateEmailLogin(c.Request().Context(), settingsapp.UpdateEmailLoginCommand{
-		Enabled: req.Enabled, SMTPHost: req.SMTPHost, SMTPPort: req.SMTPPort,
+		Enabled: req.Enabled, RegistrationEnabled: req.RegistrationEnabled, SMTPHost: req.SMTPHost, SMTPPort: req.SMTPPort,
 		SMTPSecurity: req.SMTPSecurity, SMTPUsername: req.SMTPUsername,
 		SMTPPassword: req.SMTPPassword, FromEmail: req.FromEmail, FromName: req.FromName,
 	})
@@ -125,7 +127,7 @@ func (a *EmailLoginSettingsAPI) update(c echo.Context) error {
 
 func newEmailLoginSettingsResponse(value settingsapp.EmailLoginSettings) emailLoginSettingsResponse {
 	return emailLoginSettingsResponse{
-		Enabled: value.Enabled, SMTPHost: value.SMTPHost, SMTPPort: value.SMTPPort,
+		Enabled: value.Enabled, RegistrationEnabled: value.RegistrationEnabled, SMTPHost: value.SMTPHost, SMTPPort: value.SMTPPort,
 		SMTPSecurity: value.SMTPSecurity, SMTPUsername: value.SMTPUsername,
 		SMTPPassword: value.SMTPPassword, SMTPPasswordConfigured: value.SMTPPassword != "",
 		FromEmail: value.FromEmail, FromName: value.FromName,
