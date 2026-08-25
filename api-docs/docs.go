@@ -9028,6 +9028,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "即应"
                 },
+                "registration_enabled": {
+                    "type": "boolean"
+                },
                 "smtp_host": {
                     "type": "string",
                     "example": "smtp.example.com"
@@ -9317,6 +9320,9 @@ const docTemplate = `{
                 },
                 "from_name": {
                     "type": "string"
+                },
+                "registration_enabled": {
+                    "type": "boolean"
                 },
                 "smtp_host": {
                     "type": "string"
