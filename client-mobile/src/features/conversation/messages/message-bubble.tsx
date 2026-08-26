@@ -26,6 +26,7 @@ import { useXGUITheme } from "@/xgui"
 export function MessageBubble({
   currentUserId,
   message,
+  messageActionsEnabled = true,
   canAddReaction,
   canCreateTopic,
   canRespondToChoice,
@@ -50,6 +51,7 @@ export function MessageBubble({
   canRespondToChoice: boolean
   currentUserId: string
   message: PresentedMessage
+  messageActionsEnabled?: boolean
   onAvatarLongPress?: (sender: EntityReference) => void
   onAvatarPress: (sender: EntityReference) => void
   onImagePress: (fileId: string, messageId: string) => void
@@ -89,9 +91,10 @@ export function MessageBubble({
   const allowsTextSelection =
     message.body.type === "text" || message.body.type === "markdown"
   const allowsTopicCreation = canCreateTopic && !message.topic
-  const messageSelectionNativeId = allowsTextSelection
-    ? `magicchat-message:${message.canRevoke ? "1" : "0"}:${allowsTopicCreation ? "1" : "0"}:${message.id}`
-    : undefined
+  const messageSelectionNativeId =
+    allowsTextSelection && messageActionsEnabled
+      ? `magicchat-message:${message.canRevoke ? "1" : "0"}:${allowsTopicCreation ? "1" : "0"}:${message.id}`
+      : undefined
   const sender = message.sender
   const flushImageBubble =
     message.body.type === "image" && !message.replyTo && !message.topic

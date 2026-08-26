@@ -160,6 +160,7 @@ type topicSourceMessageResponse struct {
 	Body      json.RawMessage           `json:"body,omitempty"`
 	CreatedAt time.Time                 `json:"created_at"`
 	ID        string                    `json:"id"`
+	ReplyTo   *messageReplyToResponse   `json:"reply_to,omitempty"`
 	RevokedAt *time.Time                `json:"revoked_at,omitempty"`
 	Sender    topicSourceSenderResponse `json:"sender"`
 	Seq       int64                     `json:"seq"`
@@ -1162,16 +1163,27 @@ func newConversationItemResponse(value conversationapp.Item) conversationListIte
 }
 
 func newTopicDetailResponse(value conversationapp.TopicDetail) topicDetailResponse {
+	sourceMessage := topicSourceMessageResponse{
+		Body: value.SourceMessage.Body, CreatedAt: value.SourceMessage.CreatedAt, ID: value.SourceMessage.ID,
+		RevokedAt: value.SourceMessage.RevokedAt,
+		Sender:    topicSourceSenderResponse{Avatar: value.SourceMessage.Sender.Avatar, ID: value.SourceMessage.Sender.ID, Name: value.SourceMessage.Sender.Name, Type: value.SourceMessage.Sender.Type},
+		Seq:       value.SourceMessage.Seq, Summary: value.SourceMessage.Summary,
+	}
+	if value.SourceMessage.ReplyTo != nil {
+		sourceMessage.ReplyTo = &messageReplyToResponse{
+			ID: value.SourceMessage.ReplyTo.ID,
+			Sender: messageReplyToSenderResponse{
+				ID: value.SourceMessage.ReplyTo.Sender.ID, Name: value.SourceMessage.ReplyTo.Sender.Name,
+				Type: value.SourceMessage.ReplyTo.Sender.Type,
+			},
+			Seq: value.SourceMessage.ReplyTo.Seq, Summary: value.SourceMessage.ReplyTo.Summary,
+		}
+	}
 	return topicDetailResponse{
 		CanArchive: value.CanArchive, CanParticipate: value.CanParticipate,
 		Conversation:       newConversationItemResponse(value.Conversation),
 		ParentConversation: topicReferenceResponse{ID: value.ParentConversation.ID, Name: value.ParentConversation.Name, Type: value.ParentConversation.Type},
-		SourceMessage: topicSourceMessageResponse{
-			Body: value.SourceMessage.Body, CreatedAt: value.SourceMessage.CreatedAt, ID: value.SourceMessage.ID,
-			RevokedAt: value.SourceMessage.RevokedAt,
-			Sender:    topicSourceSenderResponse{Avatar: value.SourceMessage.Sender.Avatar, ID: value.SourceMessage.Sender.ID, Name: value.SourceMessage.Sender.Name, Type: value.SourceMessage.Sender.Type},
-			Seq:       value.SourceMessage.Seq, Summary: value.SourceMessage.Summary,
-		},
+		SourceMessage:      sourceMessage,
 	}
 }
 

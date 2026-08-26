@@ -129,10 +129,18 @@ type TopicMetadata struct {
 	SourceSender           MessageIdentity
 }
 
+type TopicSourceReply struct {
+	ID      string
+	Sender  MessageIdentity
+	Seq     int64
+	Summary string
+}
+
 type TopicSourceMessage struct {
 	Body      json.RawMessage
 	CreatedAt time.Time
 	ID        string
+	ReplyTo   *TopicSourceReply
 	RevokedAt *time.Time
 	Sender    MessageIdentity
 	Seq       int64

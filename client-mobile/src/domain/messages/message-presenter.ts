@@ -5,6 +5,7 @@ import type {
   ClientMessageBody,
   ClientMessageChoiceState,
   ClientMessageReaction,
+  ClientTopicSourceMessage,
   ClientUser,
 } from "@/core/models"
 import type { AttachmentResourceReference } from "@/core/resource-models"
@@ -199,6 +200,93 @@ export function buildPresentedMessages({
   })
 }
 
+export function buildPresentedTopicSourceMessage({
+  contacts,
+  currentUser,
+  fallbackSender,
+  resolveMentionLabel,
+  sourceMessage,
+}: {
+  contacts: ClientContacts
+  currentUser: ClientUser
+  fallbackSender?: ClientTopicSourceMessage["sender"]
+  resolveMentionLabel: MessageMentionLabelResolver
+  sourceMessage: ClientTopicSourceMessage
+}): PresentedMessage {
+  const senderId = sourceMessage.sender.id.toLowerCase()
+  const fromCurrentUser =
+    sourceMessage.sender.type === "user" &&
+    sourceMessage.sender.id === currentUser.id
+  const fallback =
+    fallbackSender?.id === sourceMessage.sender.id ? fallbackSender : undefined
+  const user =
+    sourceMessage.sender.type === "user"
+      ? contacts.users.find((candidate) => candidate.id.toLowerCase() === senderId)
+      : undefined
+  const app =
+    sourceMessage.sender.type === "app"
+      ? contacts.apps.find((candidate) => candidate.id.toLowerCase() === senderId)
+      : undefined
+  const author = fromCurrentUser
+    ? getContactDisplayName(currentUser)
+    : user
+      ? getContactDisplayName(user)
+      : app?.name || fallback?.name || sourceMessage.sender.name ||
+        (sourceMessage.sender.type === "app" ? "应用" : "成员")
+  const avatar = fromCurrentUser
+    ? currentUser.avatar || fallback?.avatar || sourceMessage.sender.avatar
+    : user?.avatar ||
+      app?.avatar ||
+      fallback?.avatar ||
+      sourceMessage.sender.avatar
+
+  const replySender = sourceMessage.replyTo?.sender
+  const replyUser =
+    replySender?.type === "user"
+      ? contacts.users.find(
+          (candidate) => candidate.id.toLowerCase() === replySender.id.toLowerCase()
+        )
+      : undefined
+  const replyApp =
+    replySender?.type === "app"
+      ? contacts.apps.find(
+          (candidate) => candidate.id.toLowerCase() === replySender.id.toLowerCase()
+        )
+      : undefined
+  const replyAuthor = !replySender
+    ? ""
+    : replySender.type === "system"
+      ? "系统"
+      : replySender.type === "user" && replySender.id === currentUser.id
+        ? getContactDisplayName(currentUser)
+        : replyUser
+          ? getContactDisplayName(replyUser)
+          : replyApp?.name || replySender.name ||
+            (replySender.type === "app" ? "应用" : "成员")
+
+  return {
+    author,
+    avatar,
+    body: sourceMessage.body,
+    canRevoke: false,
+    createdAt: sourceMessage.createdAt,
+    delegatedByName: "",
+    id: sourceMessage.id,
+    reactions: [],
+    replyTo: sourceMessage.replyTo
+      ? {
+          author: replyAuthor,
+          summary: formatMentionTemplateText(
+            sourceMessage.replyTo.summary,
+            resolveMentionLabel
+          ),
+        }
+      : undefined,
+    role: fromCurrentUser ? "me" : "other",
+    sender: { id: sourceMessage.sender.id, type: sourceMessage.sender.type },
+  }
+}
+
 function canRevokeMessage(
   message: ClientMessage,
   conversation: ClientConversation,
@@ -340,7 +428,9 @@ export function formatClientMessageBodySummary(
   return "系统消息"
 }
 
-export function collectMessageResources(messages: ClientMessage[]) {
+export function collectMessageResources(
+  messages: readonly Pick<ClientMessage, "body">[]
+) {
   const resources = new Map<string, AttachmentResourceReference>()
 
   for (const message of messages) {

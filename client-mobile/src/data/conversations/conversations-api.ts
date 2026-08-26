@@ -1,4 +1,9 @@
 import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-client"
+import {
+  normalizeClientMessage,
+  normalizeClientMessageBody,
+  normalizeClientMessageReply,
+} from "@/data/messages/message-normalizer"
 import type {
   ClientConversation,
   ClientConversationMember,
@@ -107,6 +112,26 @@ type ConversationTopicDetailResponse = {
   can_archive?: boolean
   can_participate?: boolean
   conversation?: ConversationResponse
+  parent_conversation?: {
+    id?: string
+    name?: string
+    type?: string
+  }
+  source_message?: {
+    body?: unknown
+    created_at?: string
+    id?: string
+    reply_to?: unknown
+    revoked_at?: string | null
+    sender?: {
+      avatar?: string
+      id?: string
+      name?: string
+      type?: string
+    }
+    seq?: number
+    summary?: string
+  }
 }
 
 type ConversationRequestOptions = {
@@ -403,14 +428,69 @@ export async function fetchConversationTopic(
     signal: options.signal,
   })
 
-  if (!data?.conversation) {
+  const parent = data?.parent_conversation
+  const source = data?.source_message
+  const senderType = source?.sender?.type
+  if (
+    !data?.conversation ||
+    !parent?.id ||
+    !parent.name ||
+    !source?.created_at ||
+    !source.id ||
+    !source.sender?.id ||
+    (senderType !== "user" && senderType !== "app") ||
+    typeof source.seq !== "number" ||
+    typeof source.summary !== "string"
+  ) {
     throw new ApiRequestError("话题详情响应格式不正确")
+  }
+
+  let sourceReply = normalizeClientMessageReply(source.reply_to)
+  if (!sourceReply && !source.revoked_at) {
+    const sourcePage = await createApiClient(serverUrl, options.fetcher).request<{
+      messages?: unknown[]
+    }>(
+      `/api/client/conversations/${encodeURIComponent(parent.id)}/messages?before_seq=${source.seq + 1}&limit=1`,
+      {
+        errorMessage: "加载话题来源消息失败",
+        method: "GET",
+        signal: options.signal,
+      }
+    )
+    if (!Array.isArray(sourcePage?.messages)) {
+      throw new ApiRequestError("消息列表响应格式不正确")
+    }
+    sourceReply = sourcePage.messages
+      .map(normalizeClientMessage)
+      .find((message) => message.id === source.id)?.replyTo
   }
 
   return {
     canArchive: Boolean(data.can_archive),
     canParticipate: Boolean(data.can_participate),
     conversation: normalizeConversation(data.conversation),
+    parentConversation: {
+      id: parent.id,
+      name: parent.name,
+      type: normalizeParentConversationType(parent.type),
+    },
+    sourceMessage: {
+      body: source.revoked_at
+        ? { type: "revoked" }
+        : normalizeClientMessageBody(source.body),
+      createdAt: source.created_at,
+      id: source.id,
+      replyTo: sourceReply,
+      revokedAt: source.revoked_at ?? null,
+      sender: {
+        avatar: source.sender.avatar ?? "",
+        id: source.sender.id,
+        name: source.sender.name ?? "",
+        type: senderType,
+      },
+      seq: source.seq,
+      summary: source.summary,
+    },
   }
 }
 

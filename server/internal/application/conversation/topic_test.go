@@ -119,6 +119,51 @@ func TestTopicLifecycleKeepsGroupVisibilityParticipantScoped(t *testing.T) {
 	}
 }
 
+func TestTopicDetailIncludesSourceMessageReply(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 20, 4, 20, 0, 0, time.UTC)
+	owner := insertConversationTestUser(t, db, "topic-reply-owner@example.com", "Owner", now)
+	member := insertConversationTestUser(t, db, "topic-reply-member@example.com", "Member", now)
+	parent, quoted := insertConversationTopicFixture(t, db, owner, member, now)
+	ownerID := owner.ID
+	source := store.Message{
+		ID: uuid.NewString(), ConversationID: parent.ID, Seq: 2,
+		SenderType: store.MessageSenderTypeUser, SenderID: &ownerID,
+		ReplyToMessageID: &quoted.ID,
+		Body:             json.RawMessage(`{"type":"text","content":"带引用的来源消息"}`),
+		Summary:          "带引用的来源消息", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second),
+	}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatalf("create source reply: %v", err)
+	}
+	if err := db.Model(&store.Conversation{}).Where("id = ?", parent.ID).Updates(map[string]any{
+		"last_message_at": source.CreatedAt, "last_message_id": source.ID,
+		"last_message_seq": source.Seq, "last_message_summary": source.Summary,
+	}).Error; err != nil {
+		t.Fatalf("advance parent conversation: %v", err)
+	}
+
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now.Add(2 * time.Second) }})
+	created, err := service.CreateTopic(context.Background(), CreateTopicCommand{
+		Actor: actorFromTestUser(owner), ParentConversationID: parent.ID, SourceMessageID: source.ID,
+	})
+	if err != nil {
+		t.Fatalf("create topic: %v", err)
+	}
+	detail, err := service.GetTopic(context.Background(), GetTopicCommand{
+		Actor: actorFromTestUser(member), TopicConversationID: created.Conversation.ID,
+	})
+	if err != nil {
+		t.Fatalf("get topic: %v", err)
+	}
+	if detail.SourceMessage.ReplyTo == nil ||
+		detail.SourceMessage.ReplyTo.ID != quoted.ID ||
+		detail.SourceMessage.ReplyTo.Sender.Name != owner.Name ||
+		detail.SourceMessage.ReplyTo.Summary != quoted.Summary {
+		t.Fatalf("source reply = %#v", detail.SourceMessage.ReplyTo)
+	}
+}
+
 func TestListTopicsPaginatesByLatestActivity(t *testing.T) {
 	db := openConversationTestDB(t)
 	now := time.Date(2026, 7, 20, 4, 30, 0, 0, time.UTC)

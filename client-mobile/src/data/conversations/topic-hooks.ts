@@ -78,11 +78,7 @@ export function useArchiveConversationTopic(
                 canParticipate: false,
                 conversation,
               }
-            : {
-                canArchive: false,
-                canParticipate: false,
-                conversation,
-              }
+            : current
       )
       queryClient.setQueryData<ClientConversation[]>(
         queryKeys.conversations(target),

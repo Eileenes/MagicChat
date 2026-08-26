@@ -482,10 +482,32 @@ export type ClientMessage = {
   topic?: ClientMessageTopic
 }
 
+export type ClientTopicSourceMessage = {
+  body: ClientMessageBody
+  createdAt: string
+  id: string
+  replyTo?: NonNullable<ClientMessage["replyTo"]>
+  revokedAt: string | null
+  sender: {
+    avatar: string
+    id: string
+    name: string
+    type: "user" | "app"
+  }
+  seq: number
+  summary: string
+}
+
 export type ClientTopicDetail = {
   canArchive: boolean
   canParticipate: boolean
   conversation: ClientConversation
+  parentConversation: {
+    id: string
+    name: string
+    type: "direct" | "group" | "app"
+  }
+  sourceMessage: ClientTopicSourceMessage
 }
 
 export type ClientMessagePage = {

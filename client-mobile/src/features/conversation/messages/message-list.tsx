@@ -59,6 +59,7 @@ export function MessageList({
   resourceStates,
   server,
   showChoiceResponseCounts,
+  topicSourceMessage,
 }: {
   canAddReaction: boolean
   canCreateTopic: boolean
@@ -92,6 +93,7 @@ export function MessageList({
   resourceStates: ReadonlyMap<string, ResourceLoadState>
   server: ServerTarget
   showChoiceResponseCounts: boolean
+  topicSourceMessage?: PresentedMessage
 }) {
   const { colors } = useXGUITheme()
   const listItems = useMemo(() => buildMessageListItems(messages), [messages])
@@ -191,7 +193,7 @@ export function MessageList({
     )
   }
 
-  if (messages.length === 0) {
+  if (messages.length === 0 && !topicSourceMessage) {
     return <YStack bg={colors.background0} flex={1} />
   }
 
@@ -207,9 +209,35 @@ export function MessageList({
         keyboardShouldPersistTaps="handled"
         keyExtractor={(item) => item.key}
         ListFooterComponent={
-          isFetchingOlder ? (
-            <XGUILoadmore accessibilityLabel="正在加载更早的消息" />
-          ) : null
+          <>
+            {isFetchingOlder ? (
+              <XGUILoadmore accessibilityLabel="正在加载更早的消息" />
+            ) : null}
+            {!hasOlder && topicSourceMessage ? (
+              <YStack pb="$3" pt="$2">
+                <MessageBubble
+                  canAddReaction={false}
+                  canCreateTopic={false}
+                  canRespondToChoice={false}
+                  currentUserId={currentUserId}
+                  message={topicSourceMessage}
+                  messageActionsEnabled={false}
+                  onAvatarPress={onAvatarPress}
+                  onImagePress={onImagePress}
+                  onMentionPress={onMentionPress}
+                  onMessageLongPress={() => undefined}
+                  onOpenTopic={onOpenTopic}
+                  onResourceError={onResourceError}
+                  onResourcePress={onResourcePress}
+                  onVoiceResourcePress={onVoiceResourcePress}
+                  resolveMentionLabel={resolveMentionLabel}
+                  resourceStates={resourceStates}
+                  server={server}
+                  showChoiceResponseCounts={false}
+                />
+              </YStack>
+            ) : null}
+          </>
         }
         maintainVisibleContentPosition={{
           autoscrollToTopThreshold: 80,

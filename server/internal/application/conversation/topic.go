@@ -314,15 +314,18 @@ func (s *Service) GetTopic(ctx context.Context, cmd GetTopicCommand) (TopicDetai
 	}
 	canArchive := isUserCreator || isSourceSender || isSourceRequester || member.Role == store.ConversationMemberRoleOwner || member.Role == store.ConversationMemberRoleAdmin
 	var revokedAt *time.Time
-	if store.MessagePartitioningEnabled(s.db) {
-		var registry store.MessageRegistry
-		if result := db.Select("revoked_at").Where("id = ?", access.Topic.SourceMessageID).Limit(1).Find(&registry); result.Error == nil && result.RowsAffected > 0 {
-			revokedAt = registry.RevokedAt
-		}
-	} else {
-		var message store.Message
-		if result := db.Select("revoked_at").Where("id = ?", access.Topic.SourceMessageID).Limit(1).Find(&message); result.Error == nil && result.RowsAffected > 0 {
-			revokedAt = message.RevokedAt
+	var sourceReply *TopicSourceReply
+	storedSource, err := loadTopicSourceMessage(db, access.Topic.ParentConversationID, access.Topic.SourceMessageID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return TopicDetail{}, internalError(err)
+	}
+	if err == nil {
+		revokedAt = storedSource.RevokedAt
+		if revokedAt == nil {
+			sourceReply, err = loadTopicSourceReply(db, storedSource, member.HistoryVisibleFromSeq)
+			if err != nil {
+				return TopicDetail{}, internalError(err)
+			}
 		}
 	}
 	sourceBody := access.Topic.SourceMessageBody
@@ -343,7 +346,7 @@ func (s *Service) GetTopic(ctx context.Context, cmd GetTopicCommand) (TopicDetai
 		},
 		SourceMessage: TopicSourceMessage{
 			Body: sourceBody, CreatedAt: access.Topic.SourceMessageCreatedAt, ID: access.Topic.SourceMessageID,
-			RevokedAt: revokedAt, Sender: MessageIdentity{Avatar: senderAvatar, ID: dereferenceString(access.Topic.SourceSenderID), Name: access.Topic.SourceSenderName, Type: access.Topic.SourceSenderType},
+			ReplyTo: sourceReply, RevokedAt: revokedAt, Sender: MessageIdentity{Avatar: senderAvatar, ID: dereferenceString(access.Topic.SourceSenderID), Name: access.Topic.SourceSenderName, Type: access.Topic.SourceSenderType},
 			Seq: access.Topic.SourceMessageSeq, Summary: access.Topic.SourceMessageSummary,
 		},
 	}, nil
@@ -741,6 +744,51 @@ func loadTopicSourceMessage(db *gorm.DB, conversationID, messageID string) (stor
 	var message store.Message
 	err := db.First(&message, "id = ? AND conversation_id = ?", messageID, conversationID).Error
 	return message, err
+}
+
+func loadTopicSourceReply(db *gorm.DB, source store.Message, visibleFromSeq int64) (*TopicSourceReply, error) {
+	if source.ReplyToMessageID == nil {
+		return nil, nil
+	}
+	quoted, err := loadTopicSourceMessage(db, source.ConversationID, *source.ReplyToMessageID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if quoted.DeletedAt != nil || quoted.Seq < visibleFromSeq {
+		return nil, nil
+	}
+
+	senderID := dereferenceString(quoted.SenderID)
+	senderName := ""
+	switch quoted.SenderType {
+	case store.MessageSenderTypeSystem:
+		senderName = "系统"
+	case store.MessageSenderTypeUser, store.MessageSenderTypeApp:
+		if quoted.SenderID == nil {
+			return nil, nil
+		}
+		senderName, err = loadTopicSourceSenderName(db, quoted)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, nil
+	}
+
+	summary := quoted.Summary
+	if quoted.RevokedAt != nil {
+		summary = "该消息已被撤回"
+	}
+	return &TopicSourceReply{
+		ID: quoted.ID, Sender: MessageIdentity{ID: senderID, Name: senderName, Type: quoted.SenderType},
+		Seq: quoted.Seq, Summary: summary,
+	}, nil
 }
 
 func loadAppTopicOriginMessage(db *gorm.DB, conversationID string, source store.Message, creator topicCreator) (store.Message, error) {

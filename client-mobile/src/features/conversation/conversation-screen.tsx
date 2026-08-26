@@ -34,6 +34,7 @@ import {
 import { type EntityReference } from "@/domain/entities/entity-profile"
 import {
   buildPresentedMessages,
+  buildPresentedTopicSourceMessage,
   collectMessageResources,
   collectMessageUserIds,
   createMessageMentionLabelResolver,
@@ -148,6 +149,7 @@ export function ConversationScreen() {
     expectsTopic
   )
   const conversationSource = topicQuery.data?.conversation ?? listedConversation
+  const topicSourceMessage = topicQuery.data?.sourceMessage
   const conversationUserIds = useMemo(
     () =>
       conversationSource
@@ -161,9 +163,12 @@ export function ConversationScreen() {
             ...(conversationSource.topic?.sourceSender.type === "user"
               ? [conversationSource.topic.sourceSender.id]
               : []),
+            ...(topicSourceMessage?.sender.type === "user"
+              ? [topicSourceMessage.sender.id]
+              : []),
           ]
         : [],
-    [conversationSource]
+    [conversationSource, topicSourceMessage]
   )
   const conversationUserIdsKey = conversationUserIds.slice().sort().join("\u0000")
   useEffect(() => {
@@ -203,8 +208,12 @@ export function ConversationScreen() {
     conversationId
   )
   const messageResources = useMemo(
-    () => collectMessageResources(messagesQuery.messages),
-    [messagesQuery.messages]
+    () =>
+      collectMessageResources([
+        ...messagesQuery.messages,
+        ...(topicSourceMessage ? [{ body: topicSourceMessage.body }] : []),
+      ]),
+    [messagesQuery.messages, topicSourceMessage]
   )
   const messageUserIds = useMemo(
     () => collectMessageUserIds(messagesQuery.messages),
@@ -248,6 +257,26 @@ export function ConversationScreen() {
       messagesQuery.messages,
       profileContacts,
       resolveMentionLabel,
+    ]
+  )
+
+  const presentedTopicSourceMessage = useMemo(
+    () =>
+      currentUser && topicSourceMessage
+        ? buildPresentedTopicSourceMessage({
+            contacts,
+            currentUser,
+            fallbackSender: conversation?.topic?.sourceSender,
+            resolveMentionLabel,
+            sourceMessage: topicSourceMessage,
+          })
+        : undefined,
+    [
+      contacts,
+      conversation?.topic?.sourceSender,
+      currentUser,
+      resolveMentionLabel,
+      topicSourceMessage,
     ]
   )
 
@@ -498,6 +527,12 @@ export function ConversationScreen() {
               }
               tone={topicQuery.error ? "error" : undefined}
             />
+          ) : expectsTopic && !topicQuery.data ? (
+            <ContentState
+              loading={topicQuery.isLoading}
+              message={topicQuery.error?.message ?? "正在加载话题"}
+              tone={topicQuery.error ? "error" : undefined}
+            />
           ) : !currentUser ? (
             <ContentState loading message="正在加载用户信息" />
           ) : (
@@ -543,6 +578,7 @@ export function ConversationScreen() {
               showChoiceResponseCounts={
                 shouldShowMessageChoiceResponseCounts(conversation)
               }
+              topicSourceMessage={presentedTopicSourceMessage}
               />
               {topicArchived ? (
                 <YStack bg={colors.background1} items="center" p="$4">

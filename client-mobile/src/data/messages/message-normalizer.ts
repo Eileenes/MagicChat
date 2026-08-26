@@ -259,6 +259,10 @@ export function normalizeClientMessagePage(value: unknown): ClientMessagePage {
   }
 }
 
+export function normalizeClientMessageBody(value: unknown): ClientMessageBody {
+  return normalizeMessageBodyOrUnsupported(value)
+}
+
 function normalizeMessageBodyOrUnsupported(value: unknown): ClientMessageBody {
   try {
     return normalizeMessageBody(value)
@@ -525,6 +529,12 @@ function normalizeDelegatedBy(value: unknown) {
     throw new ApiRequestError("消息代发信息响应格式不正确")
   }
   return { id, name, type: type as "user" | "app" }
+}
+
+export function normalizeClientMessageReply(
+  value: unknown
+): ClientMessageReplyTo | undefined {
+  return normalizeReplyTo(value)
 }
 
 function normalizeReplyTo(value: unknown): ClientMessageReplyTo | undefined {
