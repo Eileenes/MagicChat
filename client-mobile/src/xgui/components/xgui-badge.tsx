@@ -12,6 +12,7 @@ export type XGUIBadgeProps = {
   accessibilityLabel?: string
   backgroundColor?: string
   count: number
+  dot?: boolean
   size?: "default" | "large"
   style?: StyleProp<ViewStyle>
   textColor?: string
@@ -21,6 +22,7 @@ export function XGUIBadge({
   accessibilityLabel,
   backgroundColor,
   count,
+  dot = false,
   size = "default",
   style,
   textColor,
@@ -39,20 +41,22 @@ export function XGUIBadge({
       }
       style={[
         styles.badge,
-        size === "large" ? styles.largeBadge : null,
+        dot ? styles.dot : size === "large" ? styles.largeBadge : null,
         { backgroundColor: backgroundColor ?? colors.destructive },
         style,
       ]}
     >
-      <Text
-        style={[
-          styles.text,
-          size === "large" ? styles.largeText : null,
-          textColor ? { color: textColor } : null,
-        ]}
-      >
-        {count > 99 ? "99+" : count}
-      </Text>
+      {dot ? null : (
+        <Text
+          style={[
+            styles.text,
+            size === "large" ? styles.largeText : null,
+            textColor ? { color: textColor } : null,
+          ]}
+        >
+          {count > 99 ? "99+" : count}
+        </Text>
+      )}
     </View>
   )
 }
@@ -66,6 +70,13 @@ const styles = StyleSheet.create({
     minWidth: 18,
     paddingHorizontal: 5,
     paddingVertical: 2,
+  },
+  dot: {
+    borderRadius: 5,
+    minHeight: 10,
+    minWidth: 10,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   largeBadge: {
     borderRadius: 22,

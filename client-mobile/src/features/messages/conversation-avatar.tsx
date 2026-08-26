@@ -26,7 +26,21 @@ export function ConversationAvatar({ conversation, server, surroundingBackground
           <AppAvatar avatar={sourceSender.avatar} rounded server={server} size={18} type={sourceSender.type === "app" ? "app" : "user"} />
         </YStack>
       ) : null}
-      {conversation.unreadCount > 0 && !topicSourceOnly ? <XGUIBadge count={conversation.unreadCount} style={styles.unreadBadge} /> : null}
+      {conversation.unreadCount > 0 ? (
+        <XGUIBadge
+          accessibilityLabel={
+            conversation.notificationMuted
+              ? "有未读消息"
+              : `${conversation.unreadCount} 条未读消息`
+          }
+          count={conversation.unreadCount}
+          dot={conversation.notificationMuted}
+          style={[
+            styles.unreadBadge,
+            conversation.notificationMuted ? styles.unreadDot : null,
+          ]}
+        />
+      ) : null}
     </YStack>
   )
 }
@@ -40,4 +54,7 @@ function BaseConversationAvatar({ avatarName, avatarType, compact, conversation,
   return <AppAvatar accessibilityLabel={avatarName} avatar={conversation.avatar} members={avatarType === "group" ? conversation.members : []} rounded={compact} server={server} size={compact ? 28 : "$4"} type={type} />
 }
 
-const styles = StyleSheet.create({ unreadBadge: { position: "absolute", right: -7, top: -7, zIndex: 1 } })
+const styles = StyleSheet.create({
+  unreadBadge: { position: "absolute", right: -7, top: -7, zIndex: 1 },
+  unreadDot: { right: -4, top: -4 },
+})
