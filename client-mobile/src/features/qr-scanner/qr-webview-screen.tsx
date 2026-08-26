@@ -1,12 +1,12 @@
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { Ellipsis, ExternalLink } from "lucide-react-native"
 import { useMemo, useRef, useState } from "react"
-import { ActivityIndicator, Alert, Linking, StyleSheet, Text, View } from "react-native"
+import { Alert, Linking, StyleSheet, Text, View } from "react-native"
 import { WebView, type WebViewNavigation } from "react-native-webview"
 
 import { AppHeader } from "@/components/navigation/app-header"
 import { classifyQrContent } from "@/features/qr-scanner/qr-content-classifier"
-import { XGUIPopoverMenu, useXGUITheme } from "@/xgui"
+import { XGUILoadingIcon, XGUIPopoverMenu, useXGUITheme } from "@/xgui"
 
 export function QrWebViewScreen() {
   const router = useRouter()
@@ -90,7 +90,7 @@ export function QrWebViewScreen() {
           />
           {loading ? (
             <View pointerEvents="none" style={[styles.loading, { backgroundColor: colors.background0 }]}>
-              <ActivityIndicator color={colors.textPrimary} size="large" />
+              <XGUILoadingIcon color={colors.textPlaceholder} size={40} />
             </View>
           ) : null}
         </View>

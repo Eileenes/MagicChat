@@ -408,11 +408,16 @@ function MarkdownTable({
 
 function MarkdownImage({ serverUrl, token }: { serverUrl: string; token: Token }) {
   const router = useRouter()
+  const { colors } = useXGUITheme()
   const source = resolveMarkdownUrl(token.attrGet("src") ?? "", serverUrl)
   const alt = token.content.trim() || "图片"
 
   if (!source || !/^https?:/i.test(source)) {
-    return <Paragraph color="$color10" size="$4">{alt}</Paragraph>
+    return (
+      <Paragraph color={colors.textPlaceholder} size="$4">
+        {alt}
+      </Paragraph>
+    )
   }
 
   return (

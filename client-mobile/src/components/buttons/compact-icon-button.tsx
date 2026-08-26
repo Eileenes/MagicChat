@@ -2,7 +2,9 @@ import type { Icon as TablerIcon } from "@tabler/icons-react-native"
 import type { LucideIcon } from "lucide-react-native"
 import type { Ref } from "react"
 import { Pressable, type View } from "react-native"
-import { Button, Spinner, useTheme } from "tamagui"
+import { Button, useTheme } from "tamagui"
+
+import { XGUILoadingIcon, useXGUITheme } from "@/xgui"
 
 const DEFAULT_BUTTON_SIZE = 30
 const HIT_SLOP = 7
@@ -31,6 +33,7 @@ export function CompactIconButton({
   strokeWidth?: number
 }) {
   const theme = useTheme()
+  const { colors } = useXGUITheme()
   const Icon = icon
   const resolvedButtonSize = Math.max(buttonSize, iconSize)
 
@@ -55,7 +58,7 @@ export function CompactIconButton({
           height={resolvedButtonSize}
           icon={
             loading ? (
-              <Spinner color="$color10" size="small" />
+              <XGUILoadingIcon color={colors.textPlaceholder} size={20} />
             ) : (
               <Icon
                 color={String(

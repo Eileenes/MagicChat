@@ -9,7 +9,6 @@ import {
   Button,
   Paragraph,
   SizableText,
-  Spinner,
   XStack,
   YStack,
 } from "tamagui"
@@ -21,7 +20,7 @@ import {
   activateVoicePlayer,
   deactivateVoicePlayer,
 } from "@/features/conversation/voice/voice-message-player-state"
-import { useXGUITheme, useXGUIToast } from "@/xgui"
+import { XGUILoadingIcon, useXGUITheme, useXGUIToast } from "@/xgui"
 
 export function VoiceMessagePlayer({
   durationMS,
@@ -157,7 +156,7 @@ export function VoiceMessagePlayer({
           disabled={isLoading}
           icon={
             isLoading ? (
-              <Spinner color={colors.brand5} size="small" />
+              <XGUILoadingIcon color={colors.brand5} size={18} />
             ) : (
               <ThemedIcon
                 color={colors.brand5}

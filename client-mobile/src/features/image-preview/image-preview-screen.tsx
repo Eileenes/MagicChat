@@ -4,7 +4,6 @@ import { StatusBar } from "expo-status-bar"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   SizableText,
-  Spinner,
   YStack,
 } from "tamagui"
 
@@ -30,7 +29,12 @@ import {
   type ImagePreviewGalleryContext,
   type ImagePreviewSource,
 } from "@/navigation/image-preview"
-import { XGUIButton, XGUIGallery, useXGUIToast } from "@/xgui"
+import {
+  XGUIButton,
+  XGUIGallery,
+  XGUILoadingIcon,
+  useXGUIToast,
+} from "@/xgui"
 
 export function ImagePreviewScreen() {
   const params = useLocalSearchParams<{
@@ -285,7 +289,7 @@ function AuthenticatedImagePreview({
               </XGUIButton>
             </>
           ) : (
-            <Spinner color="#fff" size="large" />
+            <XGUILoadingIcon color="#fff" size={40} />
           )}
         </YStack>
       ) : null}

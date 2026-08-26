@@ -582,7 +582,7 @@ export function ConversationScreen() {
               />
               {topicArchived ? (
                 <YStack bg={colors.background1} items="center" p="$4">
-                  <SizableText color="$color10" size="$3">
+                  <SizableText color={colors.textPlaceholder} size="$3">
                     话题已关闭，无法继续发言
                   </SizableText>
                 </YStack>

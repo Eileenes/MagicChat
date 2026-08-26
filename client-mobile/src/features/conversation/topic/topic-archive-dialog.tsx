@@ -1,6 +1,7 @@
-import { AlertDialog, Spinner, XStack } from "tamagui"
+import { AlertDialog, XStack } from "tamagui"
 
 import { AppButton } from "@/components/forms/app-button"
+import { XGUILoadingIcon, useXGUITheme } from "@/xgui"
 
 export function TopicArchiveDialog({
   onConfirm,
@@ -13,6 +14,8 @@ export function TopicArchiveDialog({
   open: boolean
   saving: boolean
 }) {
+  const { colors } = useXGUITheme()
+
   return (
     <AlertDialog
       onOpenChange={(nextOpen) => {
@@ -43,7 +46,11 @@ export function TopicArchiveDialog({
               accessibilityLabel="确认关闭话题"
               disabled={saving}
               grow={1}
-              icon={saving ? <Spinner /> : undefined}
+              icon={
+                saving ? (
+                  <XGUILoadingIcon color={colors.textOnColor} size={20} />
+                ) : undefined
+              }
               onPress={onConfirm}
               theme="red"
             >

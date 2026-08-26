@@ -5,13 +5,14 @@ import {
 } from "expo-audio"
 import { AudioLines, Pause } from "lucide-react-native"
 import { useCallback, useEffect, useRef } from "react"
-import { Button, Spinner } from "tamagui"
+import { Button } from "tamagui"
 
 import { ThemedIcon } from "@/components/icons/themed-icon"
 import {
   activateVoicePlayer,
   deactivateVoicePlayer,
 } from "@/features/conversation/voice/voice-message-player-state"
+import { XGUILoadingIcon, useXGUITheme } from "@/xgui"
 
 export function VoiceRecordingPreviewButton({
   disabled,
@@ -22,6 +23,7 @@ export function VoiceRecordingPreviewButton({
   onPlaybackError: (message: string) => void
   uri: string
 }) {
+  const { colors } = useXGUITheme()
   const player = useAudioPlayer(uri, { updateInterval: 100 })
   const status = useAudioPlayerStatus(player)
   const shownErrorRef = useRef("")
@@ -100,7 +102,7 @@ export function VoiceRecordingPreviewButton({
       disabled={disabled || status.isBuffering}
       icon={
         status.isBuffering ? (
-          <Spinner size="small" />
+          <XGUILoadingIcon color={colors.textPlaceholder} size={20} />
         ) : (
           <ThemedIcon icon={status.playing ? Pause : AudioLines} size={30} />
         )

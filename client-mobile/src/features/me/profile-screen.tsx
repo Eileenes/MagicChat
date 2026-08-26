@@ -4,11 +4,7 @@ import * as ImagePicker from "expo-image-picker"
 import * as MediaLibrary from "expo-media-library/legacy"
 import { useRouter, type Href } from "expo-router"
 import { StyleSheet, View } from "react-native"
-import {
-  Spinner,
-  XStack,
-  YStack,
-} from "tamagui"
+import { XStack, YStack } from "tamagui"
 
 import { AppAvatar } from "@/components/avatar/app-avatar"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
@@ -21,6 +17,7 @@ import { useClientData } from "@/providers/client-data-provider"
 import { createMediaPickerRequest } from "@/features/media-picker/media-picker-registry"
 import {
   XGUIActionSheet,
+  XGUILoadingIcon,
   XGUIList,
   XGUIListItem,
   useXGUITheme,
@@ -134,7 +131,9 @@ export function ProfileScreen() {
               trailing={
                 <XStack gap="$3" items="center">
                   <AppAvatar accessibilityLabel={displayName} avatar={currentUser?.avatar} server={session} size="$7" type="user" />
-                  {savingAvatar ? <Spinner size="small" /> : null}
+                  {savingAvatar ? (
+                    <XGUILoadingIcon color={colors.textPlaceholder} size={20} />
+                  ) : null}
                 </XStack>
               }
             />

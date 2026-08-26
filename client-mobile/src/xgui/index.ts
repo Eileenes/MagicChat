@@ -52,6 +52,7 @@ export {
   type XGUILoadmoreProps,
   type XGUILoadmoreVariant,
 } from "@/xgui/components/xgui-loadmore"
+export { XGUILoadingIcon } from "@/xgui/components/xgui-loading-icon"
 export {
   XGUIPicker,
   type XGUIPickerColumn,

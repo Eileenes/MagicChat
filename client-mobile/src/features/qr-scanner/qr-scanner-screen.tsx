@@ -6,11 +6,11 @@ import {
 } from "expo-camera"
 import { type Href, useIsFocused, useRouter } from "expo-router"
 import { useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Linking, StyleSheet, Text, View } from "react-native"
+import { Linking, StyleSheet, Text, View } from "react-native"
 
 import { AppHeader } from "@/components/navigation/app-header"
 import { classifyQrContent } from "@/features/qr-scanner/qr-content-classifier"
-import { XGUIActionSheet, useXGUITheme } from "@/xgui"
+import { XGUIActionSheet, XGUILoadingIcon, useXGUITheme } from "@/xgui"
 
 export function QrScannerScreen() {
   const router = useRouter()
@@ -55,7 +55,7 @@ export function QrScannerScreen() {
 
   let content
   if (!permission) {
-    content = <ActivityIndicator color={colors.textPrimary} size="large" />
+    content = <XGUILoadingIcon color={colors.textPlaceholder} size={40} />
   } else if (!permission.granted) {
     content = (
       <View style={styles.messagePanel}>

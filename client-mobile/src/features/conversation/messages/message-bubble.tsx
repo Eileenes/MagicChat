@@ -297,7 +297,7 @@ export function MessageBubble({
         </View>
 
         {message.delegatedByName ? (
-          <SizableText color="$color10" size="$1">
+          <SizableText color={colors.textPlaceholder} size="$1">
             由 {message.delegatedByName} 代发
           </SizableText>
         ) : null}

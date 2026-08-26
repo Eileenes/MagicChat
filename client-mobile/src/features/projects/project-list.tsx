@@ -6,7 +6,7 @@ import {
   StyleSheet,
   View,
 } from "react-native"
-import { Spinner, useTheme, YStack } from "tamagui"
+import { useTheme, YStack } from "tamagui"
 
 import { ContentState } from "@/components/feedback/content-state"
 import { InlineError } from "@/components/feedback/inline-error"
@@ -17,7 +17,7 @@ import type { ServerTarget } from "@/core/server-target"
 import { formatActivityTime } from "@/domain/time/activity-time"
 import { ProjectAvatar } from "@/features/projects/project-avatar"
 import type { ProjectListSection } from "@/features/projects/project-list-model"
-import { useXGUITheme, useXGUIToast } from "@/xgui"
+import { XGUILoadingIcon, useXGUITheme, useXGUIToast } from "@/xgui"
 
 export function ProjectList({
   currentUser,
@@ -70,7 +70,11 @@ export function ProjectList({
             <AppButton
               accessibilityLabel="加载更多项目"
               disabled={isLoadingMore}
-              icon={isLoadingMore ? <Spinner /> : undefined}
+              icon={
+                isLoadingMore ? (
+                  <XGUILoadingIcon color={colors.textSecondary} size={20} />
+                ) : undefined
+              }
               onPress={onLoadMore}
               theme="gray"
               variant="outlined"

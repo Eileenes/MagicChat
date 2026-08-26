@@ -1,7 +1,8 @@
-import { Dialog, Progress, SizableText, Spinner, VisuallyHidden, XStack, YStack } from "tamagui"
+import { Dialog, Progress, SizableText, VisuallyHidden, XStack, YStack } from "tamagui"
 
 import { AppButton } from "@/components/forms/app-button"
 import type { AppRelease } from "@/features/updates/app-update-model"
+import { XGUILoadingIcon, useXGUITheme } from "@/xgui"
 
 export type AppUpdateDialogStatus =
   | "idle"
@@ -23,6 +24,7 @@ export function AppUpdateDialog({
   release: AppRelease | null
   status: AppUpdateDialogStatus
 }) {
+  const { colors } = useXGUITheme()
   const open =
     Boolean(release) && (status === "downloading" || status === "installing")
   const busy = status === "downloading" || status === "installing"
@@ -78,7 +80,7 @@ export function AppUpdateDialog({
 
           {status === "installing" ? (
             <XStack gap="$2" items="center">
-              <Spinner size="small" />
+              <XGUILoadingIcon color={colors.textPlaceholder} size={20} />
               <SizableText color="$gray10" size="$3">
                 正在打开系统安装器…
               </SizableText>

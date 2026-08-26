@@ -13,7 +13,6 @@ import {
   Image,
   Paragraph,
   SizableText,
-  Spinner,
   XStack,
   YStack,
 } from "tamagui"
@@ -37,7 +36,7 @@ import { MessageChart } from "@/features/conversation/messages/message-chart"
 import { CollapsibleMessageContent } from "@/features/conversation/messages/collapsible-message-content"
 import { MessageMentionText } from "@/features/conversation/messages/message-mention-text"
 import { VoiceMessagePlayer } from "@/features/conversation/voice/voice-message-player"
-import { useXGUITheme } from "@/xgui"
+import { XGUILoadingIcon, useXGUITheme } from "@/xgui"
 
 export function MessageBody({
   body,
@@ -161,7 +160,7 @@ export function MessageBody({
             disabled={isLoading}
             icon={
               isLoading ? (
-                <Spinner color={colors.brand5} size="small" />
+                <XGUILoadingIcon color={colors.brand5} size={18} />
               ) : (
                 <ThemedIcon
                   color={colors.brand5}
@@ -280,7 +279,11 @@ export function MessageBody({
   }
 
   if (body.type === "unsupported") {
-    return <Paragraph color="$color10" size="$4">暂不支持查看该消息</Paragraph>
+    return (
+      <Paragraph color={colors.textPlaceholder} size="$4">
+        暂不支持查看该消息
+      </Paragraph>
+    )
   }
 
   return (
