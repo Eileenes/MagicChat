@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import Svg, { Path } from "react-native-svg"
 
 import {
   calculateXGUIPopoverLayout,
@@ -49,7 +50,7 @@ export type XGUIPopoverMenuProps = {
 
 const ANIMATION_DURATION = 150
 const ARROW_HEIGHT = 8
-const ARROW_WIDTH = 10
+const ARROW_WIDTH = 16
 const ITEM_HEIGHT = 48
 
 export function XGUIPopoverMenu({
@@ -155,6 +156,9 @@ export function XGUIPopoverMenu({
         <Pressable accessibilityRole="button" onPress={close} style={styles.fill} />
         {layout ? (
           <Animated.View
+            needsOffscreenAlphaCompositing
+            renderToHardwareTextureAndroid
+            shouldRasterizeIOS
             style={[
               styles.positioned,
               {
@@ -167,24 +171,25 @@ export function XGUIPopoverMenu({
               },
             ]}
           >
-            <View
+            <Svg
+              height={ARROW_HEIGHT}
               pointerEvents="none"
               style={[
                 styles.arrow,
                 {
-                  borderBottomColor: isBottom
-                    ? menuBackground
-                    : "transparent",
-                  borderBottomWidth: isBottom ? ARROW_HEIGHT : 0,
-                  borderTopColor: isBottom
-                    ? "transparent"
-                    : menuBackground,
-                  borderTopWidth: isBottom ? 0 : ARROW_HEIGHT,
                   left: layout.arrowX,
+                  transform: [{ rotate: isBottom ? "0deg" : "180deg" }],
                   [isBottom ? "top" : "bottom"]: 0,
                 },
               ]}
-            />
+              viewBox={`0 0 ${ARROW_WIDTH} ${ARROW_HEIGHT}`}
+              width={ARROW_WIDTH}
+            >
+              <Path
+                d="M0 8 L7.2 0.8 Q8 0 8.8 0.8 L16 8 Z"
+                fill={menuBackground}
+              />
+            </Svg>
             <View
               accessibilityRole="menu"
               style={[styles.menu, { backgroundColor: menuBackground }]}
@@ -222,13 +227,7 @@ export function XGUIPopoverMenu({
 
 const styles = StyleSheet.create({
   arrow: {
-    borderLeftColor: "transparent",
-    borderLeftWidth: ARROW_WIDTH / 2,
-    borderRightColor: "transparent",
-    borderRightWidth: ARROW_WIDTH / 2,
-    height: 0,
     position: "absolute",
-    width: 0,
     zIndex: 1,
   },
   disabled: { opacity: 0.4 },

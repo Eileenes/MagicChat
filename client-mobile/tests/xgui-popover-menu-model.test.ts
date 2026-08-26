@@ -15,7 +15,7 @@ const base = {
 
 test("positions bottom-end against the anchor end", () => {
   assert.deepEqual(calculateXGUIPopoverLayout(base), {
-    arrowX: 195,
+    arrowX: 192,
     menuX: 120,
     menuY: 154,
     placement: "bottom-end",
@@ -56,13 +56,13 @@ test("clamps the triangle away from menu corners", () => {
     anchor: { ...base.anchor, width: 4, x: -20 },
     placement: "bottom-start",
   })
-  assert.equal(left.arrowX, 8)
+  assert.equal(left.arrowX, 7)
 
   const right = calculateXGUIPopoverLayout({
     ...base,
     anchor: { ...base.anchor, width: 4, x: 380 },
   })
-  assert.equal(right.arrowX, 202)
+  assert.equal(right.arrowX, 197)
 })
 
 test("aligns a compact header anchor with the triangle center", () => {
@@ -73,6 +73,6 @@ test("aligns a compact header anchor with the triangle center", () => {
     windowWidth: 393,
   })
   const anchorCenter = 347 + 30 / 2
-  const arrowCenter = result.menuX + result.arrowX + 10 / 2
+  const arrowCenter = result.menuX + result.arrowX + 16 / 2
   assert.equal(arrowCenter, anchorCenter)
 })

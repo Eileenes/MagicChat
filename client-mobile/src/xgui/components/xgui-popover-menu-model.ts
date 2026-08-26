@@ -28,8 +28,8 @@ export type XGUIPopoverLayout = {
 const EDGE_GAP = 8
 const ANCHOR_GAP = 6
 const ARROW_HEIGHT = 8
-const ARROW_WIDTH = 10
-const ARROW_EDGE_GAP = 8
+const ARROW_WIDTH = 16
+const ARROW_EDGE_GAP = 7
 
 export function calculateXGUIPopoverLayout({
   anchor,
