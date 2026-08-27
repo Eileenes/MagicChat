@@ -122,6 +122,7 @@ export type ClientDataContextValue = {
   getConversationMessageState: (
     conversationId: string
   ) => ClientConversationMessageState
+  getLatestCachedMessage?: (conversationId: string) => ClientMessage | undefined
   loadBeforeConversationMessages: (conversationId: string) => void
   loadAfterConversationMessages: (conversationId: string) => void
   returnToLatestConversationMessages: (conversationId: string) => void

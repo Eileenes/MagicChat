@@ -36,6 +36,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatActivityTime } from "@/lib/activity-time"
 import type {
   ClientConversation,
+  ClientMessage,
   ClientMessageSearchResult,
   ClientUser,
   ContactApp,
@@ -48,6 +49,7 @@ import {
   isBuiltinAssistantConversation,
   isConversationTopicVisibleInList,
   orderConversations,
+  getMessageSummary,
 } from "@/lib/client-data-state"
 import { createConversationMentionLabelResolver } from "@/lib/conversation-mention-labels"
 import type { ConversationDrafts } from "@/lib/conversation-drafts"
@@ -72,6 +74,25 @@ type ConversationListRow = {
   nested: boolean
 }
 
+type ConversationSidebarRowProps = {
+  appsById: ReadonlyMap<string, ContactApp>
+  contactsById: ReadonlyMap<string, ContactUser>
+  conversation: ClientConversation
+  currentUser: ClientUser
+  dismissing: boolean
+  draftText?: string
+  lastCachedMessage?: ClientMessage
+  muting: boolean
+  nested: boolean
+  onDismiss: (conversation: ClientConversation) => void
+  onMutedChange: (conversation: ClientConversation, muted: boolean) => void
+  onPinnedChange: (conversation: ClientConversation, pinned: boolean) => void
+  onRender?: (conversationId: string) => void
+  onSelect: (conversationId: string) => void
+  pinning: boolean
+  selected: boolean
+}
+
 export function ConversationSidebar({
   activeConversationId,
   appsById,
@@ -82,6 +103,7 @@ export function ConversationSidebar({
   conversations,
   currentUser,
   drafts,
+  getLatestCachedMessage = () => undefined,
   onCreateGroup,
   onManageFriends,
   onDismissConversation,
@@ -91,6 +113,7 @@ export function ConversationSidebar({
   onSelectMessageResult,
   onSetConversationMuted,
   onSetConversationPinned,
+  onRowRender,
 }: {
   activeConversationId: string
   appsById: ReadonlyMap<string, ContactApp>
@@ -101,6 +124,7 @@ export function ConversationSidebar({
   conversations: ClientConversation[]
   currentUser: ClientUser
   drafts: ConversationDrafts
+  getLatestCachedMessage?: (conversationId: string) => ClientMessage | undefined
   onCreateGroup: () => void
   onManageFriends?: () => void
   onDismissConversation?: (conversationId: string) => Promise<void>
@@ -116,6 +140,7 @@ export function ConversationSidebar({
     conversationId: string,
     pinned: boolean
   ) => Promise<void>
+  onRowRender?: (conversationId: string) => void
 }) {
   const [conversationFilter, setConversationFilter] =
     React.useState<ConversationFilter>("all")
@@ -141,51 +166,51 @@ export function ConversationSidebar({
     [activeConversationId, conversationFilter, conversations, listNow]
   )
 
-  async function handlePinnedChange(
-    conversation: ClientConversation,
-    pinned: boolean
-  ) {
-    if (pinningConversationId) {
-      return
-    }
-    setPinningConversationId(conversation.id)
-    try {
-      await onSetConversationPinned(conversation.id, pinned)
-      toast.success(pinned ? "会话已置顶" : "已取消置顶")
-    } catch (error) {
-      toast.error(
-        getClientDataErrorMessage(
-          error,
-          pinned ? "置顶会话失败" : "取消置顶失败"
+  const handlePinnedChange = React.useCallback(
+    async (conversation: ClientConversation, pinned: boolean) => {
+      if (pinningConversationId) {
+        return
+      }
+      setPinningConversationId(conversation.id)
+      try {
+        await onSetConversationPinned(conversation.id, pinned)
+        toast.success(pinned ? "会话已置顶" : "已取消置顶")
+      } catch (error) {
+        toast.error(
+          getClientDataErrorMessage(
+            error,
+            pinned ? "置顶会话失败" : "取消置顶失败"
+          )
         )
-      )
-    } finally {
-      setPinningConversationId("")
-    }
-  }
+      } finally {
+        setPinningConversationId("")
+      }
+    },
+    [onSetConversationPinned, pinningConversationId]
+  )
 
-  async function handleMutedChange(
-    conversation: ClientConversation,
-    muted: boolean
-  ) {
-    if (mutingConversationId || !onSetConversationMuted) {
-      return
-    }
-    setMutingConversationId(conversation.id)
-    try {
-      await onSetConversationMuted(conversation.id, muted)
-      toast.success(muted ? "已开启消息免打扰" : "已取消消息免打扰")
-    } catch (error) {
-      toast.error(
-        getClientDataErrorMessage(
-          error,
-          muted ? "开启消息免打扰失败" : "取消消息免打扰失败"
+  const handleMutedChange = React.useCallback(
+    async (conversation: ClientConversation, muted: boolean) => {
+      if (mutingConversationId || !onSetConversationMuted) {
+        return
+      }
+      setMutingConversationId(conversation.id)
+      try {
+        await onSetConversationMuted(conversation.id, muted)
+        toast.success(muted ? "已开启消息免打扰" : "已取消消息免打扰")
+      } catch (error) {
+        toast.error(
+          getClientDataErrorMessage(
+            error,
+            muted ? "开启消息免打扰失败" : "取消消息免打扰失败"
+          )
         )
-      )
-    } finally {
-      setMutingConversationId("")
-    }
-  }
+      } finally {
+        setMutingConversationId("")
+      }
+    },
+    [mutingConversationId, onSetConversationMuted]
+  )
 
   async function handleDismissConversation() {
     if (
@@ -226,15 +251,52 @@ export function ConversationSidebar({
   function getSearchConversationDescription(conversation: ClientConversation) {
     return getConversationListDescription(
       conversation,
+      getLatestCachedMessage(conversation.id),
       createConversationMentionLabelResolver({
         appsById,
         contactsById,
         conversation,
         currentUser,
       }),
-      currentUser.id
+      currentUser,
+      contactsById,
+      appsById
     )
   }
+
+  const rowActionsRef = React.useRef({
+    dismiss: setDismissCandidate,
+    mute: handleMutedChange,
+    pin: handlePinnedChange,
+    select: onSelectConversation,
+  })
+  React.useEffect(() => {
+    rowActionsRef.current = {
+      dismiss: setDismissCandidate,
+      mute: handleMutedChange,
+      pin: handlePinnedChange,
+      select: onSelectConversation,
+    }
+  }, [handleMutedChange, handlePinnedChange, onSelectConversation])
+  const dismissRow = React.useCallback(
+    (conversation: ClientConversation) =>
+      rowActionsRef.current.dismiss(conversation),
+    []
+  )
+  const muteRow = React.useCallback(
+    (conversation: ClientConversation, muted: boolean) =>
+      void rowActionsRef.current.mute(conversation, muted),
+    []
+  )
+  const pinRow = React.useCallback(
+    (conversation: ClientConversation, pinned: boolean) =>
+      void rowActionsRef.current.pin(conversation, pinned),
+    []
+  )
+  const selectRow = React.useCallback(
+    (conversationId: string) => rowActionsRef.current.select(conversationId),
+    []
+  )
 
   return (
     <Sidebar className="border-r bg-background" collapsible="none">
@@ -306,129 +368,31 @@ export function ConversationSidebar({
               </div>
             </SidebarMenuItem>
           )}
-          {visibleRows.map(({ conversation, nested }) => {
-            const selected = conversation.id === activeConversationId
-            const lastMessageTime = formatActivityTime(
-              conversation.lastMessageAt ?? conversation.createdAt
-            )
-            const mentionLabelResolver = createConversationMentionLabelResolver(
-              {
-                appsById,
-                contactsById,
-                conversation,
-                currentUser,
+          {visibleRows.map(({ conversation, nested }) => (
+            <ConversationSidebarRow
+              appsById={appsById}
+              contactsById={contactsById}
+              conversation={conversation}
+              currentUser={currentUser}
+              dismissing={dismissingConversationId === conversation.id}
+              draftText={
+                conversation.topic?.archived
+                  ? undefined
+                  : drafts[conversation.id]?.text
               }
-            )
-            const hasUnreadMention =
-              conversation.lastMentionedSeq > conversation.lastReadSeq
-            const hasUnreadChoice =
-              conversation.lastChoiceSeq > conversation.lastReadSeq
-            const preview = getConversationListPreview({
-              draftText: conversation.topic?.archived
-                ? undefined
-                : drafts[conversation.id]?.text,
-              hasUnreadMention,
-              hasUnreadChoice,
-              lastChoiceSeq: conversation.lastChoiceSeq,
-              lastMentionedSeq: conversation.lastMentionedSeq,
-              messageDescription: getConversationListDescription(
-                conversation,
-                mentionLabelResolver,
-                currentUser.id
-              ),
-              selected,
-            })
-
-            return (
-              <ConversationListItemMenu
-                dismissing={dismissingConversationId === conversation.id}
-                key={conversation.id}
-                muted={Boolean(conversation.notificationMuted)}
-                muting={mutingConversationId === conversation.id}
-                onDismiss={() => setDismissCandidate(conversation)}
-                onMutedChange={(muted) =>
-                  void handleMutedChange(conversation, muted)
-                }
-                onPinnedChange={(pinned) =>
-                  void handlePinnedChange(conversation, pinned)
-                }
-                pinned={!nested && Boolean(conversation.pinned)}
-                pinning={pinningConversationId === conversation.id}
-                showPinAction={
-                  !nested && !isBuiltinAssistantConversation(conversation)
-                }
-              >
-                <SidebarMenuItem
-                  className={cn(nested && "ml-4 w-[calc(100%-1rem)]")}
-                  data-conversation-list-item-trigger
-                >
-                  <SidebarMenuButton
-                    className={cn(
-                      "gap-3 data-active:bg-(--weui-brand-1) data-active:hover:bg-(--weui-brand-1)",
-                      nested ? "h-14 py-1.5" : "h-16 py-2",
-                      !nested &&
-                        conversation.pinned &&
-                        "bg-neutral-100 hover:bg-neutral-100 dark:bg-neutral-900 dark:hover:bg-neutral-900"
-                    )}
-                    isActive={selected}
-                    onClick={() => onSelectConversation(conversation.id)}
-                    size="lg"
-                    type="button"
-                  >
-                    <ConversationListAvatar conversation={conversation} />
-                    <div className="min-w-0 flex-1 overflow-hidden">
-                      <div className="flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden text-sm leading-snug font-medium underline-offset-4">
-                        <span className="flex min-w-0 flex-1 items-center overflow-hidden">
-                          <span className="block min-w-0 flex-1 truncate">
-                            {nested
-                              ? conversation.name
-                              : getConversationDisplayName(conversation)}
-                          </span>
-                          {conversation.topic?.archived && (
-                            <span className="ml-1.5 shrink-0 text-[10px] font-normal text-muted-foreground">
-                              已关闭
-                            </span>
-                          )}
-                        </span>
-                        {lastMessageTime && (
-                          <span className="shrink-0 pr-2 text-xs font-normal text-muted-foreground">
-                            {lastMessageTime}
-                          </span>
-                        )}
-                      </div>
-                      <p className="flex w-full min-w-0 items-center gap-0.5 text-left text-xs leading-normal font-normal text-muted-foreground">
-                        <span className="min-w-0 flex-1 truncate">
-                          {preview.alertLabel && (
-                            <span className="mr-1 font-medium text-rose-700 dark:text-rose-300">
-                              {preview.alertLabel}
-                            </span>
-                          )}
-                          <span>{preview.description}</span>
-                        </span>
-                        {((!nested && conversation.pinned) ||
-                          conversation.notificationMuted) && (
-                          <span className="mr-2 flex shrink-0 items-center gap-0.5">
-                            {!nested && conversation.pinned && (
-                              <Pin
-                                aria-label="已置顶"
-                                className="size-3! shrink-0"
-                              />
-                            )}
-                            {conversation.notificationMuted && (
-                              <BellOff
-                                aria-label="消息免打扰"
-                                className="size-3! shrink-0"
-                              />
-                            )}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </ConversationListItemMenu>
-            )
-          })}
+              key={conversation.id}
+              lastCachedMessage={getLatestCachedMessage(conversation.id)}
+              muting={mutingConversationId === conversation.id}
+              nested={nested}
+              onDismiss={dismissRow}
+              onMutedChange={muteRow}
+              onPinnedChange={pinRow}
+              onRender={onRowRender}
+              onSelect={selectRow}
+              pinning={pinningConversationId === conversation.id}
+              selected={conversation.id === activeConversationId}
+            />
+          ))}
         </SidebarMenu>
       </SidebarContent>
       <AlertDialog
@@ -543,6 +507,133 @@ function hasUnreadMessages(conversation: ClientConversation) {
 
 function noopSelectDirectoryItem() {}
 
+export const ConversationSidebarRow = React.memo(
+  function ConversationSidebarRow({
+    appsById,
+    contactsById,
+    conversation,
+    currentUser,
+    dismissing,
+    draftText,
+    lastCachedMessage,
+    muting,
+    nested,
+    onDismiss,
+    onMutedChange,
+    onPinnedChange,
+    onRender,
+    onSelect,
+    pinning,
+    selected,
+  }: ConversationSidebarRowProps) {
+    onRender?.(conversation.id)
+    const lastMessageTime = formatActivityTime(
+      conversation.lastMessageAt ?? conversation.createdAt
+    )
+    const preview = getConversationListPreview({
+      draftText,
+      hasUnreadMention:
+        conversation.lastMentionedSeq > conversation.lastReadSeq,
+      hasUnreadChoice: conversation.lastChoiceSeq > conversation.lastReadSeq,
+      lastChoiceSeq: conversation.lastChoiceSeq,
+      lastMentionedSeq: conversation.lastMentionedSeq,
+      messageDescription: getConversationListDescription(
+        conversation,
+        lastCachedMessage,
+        createConversationMentionLabelResolver({
+          appsById,
+          contactsById,
+          conversation,
+          currentUser,
+        }),
+        currentUser,
+        contactsById,
+        appsById
+      ),
+      selected,
+    })
+    return (
+      <ConversationListItemMenu
+        dismissing={dismissing}
+        muted={Boolean(conversation.notificationMuted)}
+        muting={muting}
+        onDismiss={() => onDismiss(conversation)}
+        onMutedChange={(muted) => onMutedChange(conversation, muted)}
+        onPinnedChange={(pinned) => onPinnedChange(conversation, pinned)}
+        pinned={!nested && Boolean(conversation.pinned)}
+        pinning={pinning}
+        showPinAction={!nested && !isBuiltinAssistantConversation(conversation)}
+      >
+        <SidebarMenuItem
+          className={cn(nested && "ml-4 w-[calc(100%-1rem)]")}
+          data-conversation-list-item-trigger
+        >
+          <SidebarMenuButton
+            className={cn(
+              "gap-3 data-active:bg-(--weui-brand-1) data-active:hover:bg-(--weui-brand-1)",
+              nested ? "h-14 py-1.5" : "h-16 py-2",
+              !nested &&
+                conversation.pinned &&
+                "bg-neutral-100 hover:bg-neutral-100 dark:bg-neutral-900 dark:hover:bg-neutral-900"
+            )}
+            isActive={selected}
+            onClick={() => onSelect(conversation.id)}
+            size="lg"
+            type="button"
+          >
+            <ConversationListAvatar conversation={conversation} />
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden text-sm leading-snug font-medium underline-offset-4">
+                <span className="flex min-w-0 flex-1 items-center overflow-hidden">
+                  <span className="block min-w-0 flex-1 truncate">
+                    {nested
+                      ? conversation.name
+                      : getConversationDisplayName(conversation)}
+                  </span>
+                  {conversation.topic?.archived && (
+                    <span className="ml-1.5 shrink-0 text-[10px] font-normal text-muted-foreground">
+                      已关闭
+                    </span>
+                  )}
+                </span>
+                {lastMessageTime && (
+                  <span className="shrink-0 pr-2 text-xs font-normal text-muted-foreground">
+                    {lastMessageTime}
+                  </span>
+                )}
+              </div>
+              <p className="flex w-full min-w-0 items-center gap-0.5 text-left text-xs leading-normal font-normal text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate">
+                  {preview.alertLabel && (
+                    <span className="mr-1 font-medium text-rose-700 dark:text-rose-300">
+                      {preview.alertLabel}
+                    </span>
+                  )}
+                  <span>{preview.description}</span>
+                </span>
+                {((!nested && conversation.pinned) ||
+                  conversation.notificationMuted) && (
+                  <span className="mr-2 flex shrink-0 items-center gap-0.5">
+                    {!nested && conversation.pinned && (
+                      <Pin aria-label="已置顶" className="size-3! shrink-0" />
+                    )}
+                    {conversation.notificationMuted && (
+                      <BellOff
+                        aria-label="消息免打扰"
+                        className="size-3! shrink-0"
+                      />
+                    )}
+                  </span>
+                )}
+              </p>
+            </div>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </ConversationListItemMenu>
+    )
+  }
+)
+
 function getEmptyConversationFilterMessage(filter: ConversationFilter) {
   const label = conversationFilterOptions.find(
     (option) => option.value === filter
@@ -553,15 +644,20 @@ function getEmptyConversationFilterMessage(filter: ConversationFilter) {
 
 function getConversationListDescription(
   conversation: ClientConversation,
+  message: ClientMessage | undefined,
   mentionLabelResolver: MentionLabelResolver,
-  currentUserId: string
+  currentUser: ClientUser,
+  contactsById: ReadonlyMap<string, ContactUser>,
+  appsById: ReadonlyMap<string, ContactApp>
 ) {
-  const summary = conversation.lastMessageSummary.trim()
-  if (!summary) {
+  if (!message) {
     return "暂无消息"
   }
 
-  const description = formatMentionTemplateText(summary, mentionLabelResolver)
+  const description = formatMentionTemplateText(
+    getMessageSummary(message),
+    mentionLabelResolver
+  )
   const showsSender =
     conversation.type === "group" ||
     (conversation.type === "topic" &&
@@ -569,25 +665,29 @@ function getConversationListDescription(
   if (!showsSender) {
     return description
   }
-  const senderName = getLastMessageSenderName(conversation, currentUserId)
+  const senderName = getCachedMessageSenderName(
+    message,
+    currentUser,
+    contactsById,
+    appsById
+  )
   return senderName ? `${senderName}：${description}` : description
 }
 
-function getLastMessageSenderName(
-  conversation: ClientConversation,
-  currentUserId: string
+function getCachedMessageSenderName(
+  message: ClientMessage,
+  currentUser: ClientUser,
+  contactsById: ReadonlyMap<string, ContactUser>,
+  appsById: ReadonlyMap<string, ContactApp>
 ) {
-  const sender = conversation.lastMessageSender
-  if (!sender) {
-    return ""
+  const sender = message.sender
+  if (sender.type === "system") return "系统"
+  if (sender.type === "user" && sender.id === currentUser.id) return "我"
+  if (sender.type === "user") {
+    const user = contactsById.get(sender.id)
+    return user?.nickname.trim() || user?.name.trim() || ""
   }
-  if (sender.type === "system") {
-    return "系统"
-  }
-  if (sender.type === "user" && sender.id === currentUserId) {
-    return "我"
-  }
-  return sender.nickname.trim() || sender.name.trim()
+  return appsById.get(sender.id)?.name.trim() || ""
 }
 
 function getConversationListPreview({

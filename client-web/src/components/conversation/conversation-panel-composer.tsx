@@ -49,6 +49,15 @@ import type {
   ConversationPanelReplyTarget,
 } from "@/lib/conversation-panel-types"
 
+const draftSyncDelayMs = 400
+
+function areDraftMentionsEqual(
+  left: ConversationDraftMention[],
+  right: ConversationDraftMention[]
+) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 export const ConversationPanelComposer = React.forwardRef<
   ConversationPanelComposerHandle,
   {
@@ -68,7 +77,7 @@ export const ConversationPanelComposer = React.forwardRef<
     ) => Promise<ClientMessage | null>
     onSendVoice: (voice: VoiceMessageRecording) => Promise<ClientMessage | null>
     onRichTextModeChange: (richTextMode: boolean) => void
-    onSendMessage: (content?: string) => void
+    onSendMessage: (content?: string) => Promise<boolean>
     richTextMode: boolean
     sending: boolean
   }
@@ -97,6 +106,23 @@ export const ConversationPanelComposer = React.forwardRef<
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
   const previousSendingRef = React.useRef(sending)
   const shouldFocusAfterSendingRef = React.useRef(false)
+  const [localDraft, setLocalDraft] = React.useState(draft)
+  const [localDraftMentions, setLocalDraftMentions] =
+    React.useState(draftMentions)
+  const localDraftRef = React.useRef({ mentions: draftMentions, text: draft })
+  const draftSyncTimerRef = React.useRef<number | null>(null)
+  const onDraftChangeRef = React.useRef(onDraftChange)
+  const lastEmittedDraftRef = React.useRef<{
+    mentions: ConversationDraftMention[]
+    text: string
+  } | null>(null)
+  const externalDraftRef = React.useRef({
+    mentions: draftMentions,
+    text: draft,
+  })
+  const previousConversationIdRef = React.useRef(conversation.id)
+  const sendInFlightRef = React.useRef(false)
+  onDraftChangeRef.current = onDraftChange
   const [expressionPickerOpen, setExpressionPickerOpen] = React.useState(false)
   const [fileDialogOpen, setFileDialogOpen] = React.useState(false)
   const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
@@ -160,9 +186,86 @@ export const ConversationPanelComposer = React.forwardRef<
     },
   }))
 
+  const cancelScheduledDraftSync = React.useCallback(() => {
+    if (draftSyncTimerRef.current !== null) {
+      window.clearTimeout(draftSyncTimerRef.current)
+      draftSyncTimerRef.current = null
+    }
+  }, [])
+
+  const flushLocalDraft = React.useCallback(() => {
+    cancelScheduledDraftSync()
+    const current = localDraftRef.current
+    lastEmittedDraftRef.current = current
+    onDraftChangeRef.current(current.text, current.mentions)
+  }, [cancelScheduledDraftSync])
+
+  const setLocalDraftContent = React.useCallback(
+    (text: string, mentions: ConversationDraftMention[]) => {
+      localDraftRef.current = { mentions, text }
+      setLocalDraft(text)
+      setLocalDraftMentions(mentions)
+      cancelScheduledDraftSync()
+      draftSyncTimerRef.current = window.setTimeout(
+        flushLocalDraft,
+        draftSyncDelayMs
+      )
+    },
+    [cancelScheduledDraftSync, flushLocalDraft]
+  )
+
   React.useEffect(() => {
     textareaRef.current?.focus()
   }, [])
+
+  React.useEffect(() => {
+    // Flush the old conversation before adopting the next conversation's draft.
+    return flushLocalDraft
+  }, [conversation.id, flushLocalDraft])
+
+  React.useEffect(() => {
+    if (previousConversationIdRef.current === conversation.id) return
+    previousConversationIdRef.current = conversation.id
+    cancelScheduledDraftSync()
+    const incoming = { mentions: draftMentions, text: draft }
+    externalDraftRef.current = incoming
+    lastEmittedDraftRef.current = null
+    localDraftRef.current = incoming
+    setLocalDraft(draft)
+    setLocalDraftMentions(draftMentions)
+  }, [cancelScheduledDraftSync, conversation.id, draft, draftMentions])
+
+  React.useEffect(() => {
+    const previous = externalDraftRef.current
+    const externallyChanged =
+      previous.text !== draft ||
+      !areDraftMentionsEqual(previous.mentions, draftMentions)
+    if (!externallyChanged) return
+
+    const incoming = { mentions: draftMentions, text: draft }
+    externalDraftRef.current = incoming
+    const emitted = lastEmittedDraftRef.current
+    if (
+      emitted &&
+      emitted.text === draft &&
+      areDraftMentionsEqual(emitted.mentions, draftMentions)
+    ) {
+      return
+    }
+    cancelScheduledDraftSync()
+    localDraftRef.current = incoming
+    setLocalDraft(draft)
+    setLocalDraftMentions(draftMentions)
+  }, [cancelScheduledDraftSync, draft, draftMentions])
+
+  React.useEffect(() => {
+    function handlePageHide() {
+      flushLocalDraft()
+      onDraftBlur?.()
+    }
+    window.addEventListener("pagehide", handlePageHide)
+    return () => window.removeEventListener("pagehide", handlePageHide)
+  }, [flushLocalDraft, onDraftBlur])
 
   React.useEffect(() => {
     if (!replyTarget) {
@@ -198,9 +301,13 @@ export const ConversationPanelComposer = React.forwardRef<
   function handleDraftChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
     const nextDraft = event.target.value
     const cursor = event.target.selectionStart
-    const nextMentions = syncDraftMentions(draftMentions, draft, nextDraft)
+    const nextMentions = syncDraftMentions(
+      localDraftMentions,
+      localDraft,
+      nextDraft
+    )
 
-    onDraftChange(nextDraft, nextMentions)
+    setLocalDraftContent(nextDraft, nextMentions)
     updateMentionTrigger(nextDraft, cursor)
   }
 
@@ -219,15 +326,40 @@ export const ConversationPanelComposer = React.forwardRef<
     setSelectedMentionIndex(0)
   }
 
-  function handleSendMessage() {
-    if (sending || !draft.trim()) {
-      return
-    }
+  async function handleSendMessage() {
+    if (!localDraft.trim() || sendInFlightRef.current) return
 
+    const submitted = localDraftRef.current
+    sendInFlightRef.current = true
     shouldFocusAfterSendingRef.current = true
-    onSendMessage(createDraftMentionTemplate(draft, draftMentions))
-    setMentionTrigger(null)
-    setSelectedMentionIndex(0)
+    flushLocalDraft()
+    try {
+      let accepted = false
+      try {
+        accepted = await onSendMessage(
+          createDraftMentionTemplate(submitted.text, submitted.mentions)
+        )
+      } catch {
+        // The page owns error presentation; a rejected send keeps the draft.
+      }
+      if (!accepted) return
+      // Do not erase text typed while this send was awaiting acceptance; make
+      // sure the parent stores that newer text instead of the submitted text.
+      if (localDraftRef.current !== submitted) {
+        flushLocalDraft()
+        return
+      }
+      const empty = { mentions: [] as ConversationDraftMention[], text: "" }
+      localDraftRef.current = empty
+      lastEmittedDraftRef.current = empty
+      setLocalDraft("")
+      setLocalDraftMentions([])
+      onDraftChangeRef.current("", [])
+      setMentionTrigger(null)
+      setSelectedMentionIndex(0)
+    } finally {
+      sendInFlightRef.current = false
+    }
   }
 
   function handleComposerKeyDown(
@@ -278,11 +410,6 @@ export const ConversationPanelComposer = React.forwardRef<
       return
     }
 
-    if (sending) {
-      event.preventDefault()
-      return
-    }
-
     if (event.shiftKey || event.ctrlKey) {
       event.preventDefault()
       insertTextareaText(event.currentTarget, "\n", handleTextareaValueChange)
@@ -294,7 +421,10 @@ export const ConversationPanelComposer = React.forwardRef<
   }
 
   function handleTextareaValueChange(value: string, cursor?: number) {
-    onDraftChange(value, syncDraftMentions(draftMentions, draft, value))
+    setLocalDraftContent(
+      value,
+      syncDraftMentions(localDraftMentions, localDraft, value)
+    )
     updateMentionTrigger(value, cursor ?? value.length)
   }
 
@@ -304,8 +434,8 @@ export const ConversationPanelComposer = React.forwardRef<
     }
 
     const textarea = textareaRef.current
-    const cursor = textarea?.selectionStart ?? draft.length
-    const trigger = getMentionTrigger(draft, cursor)
+    const cursor = textarea?.selectionStart ?? localDraft.length
+    const trigger = getMentionTrigger(localDraft, cursor)
 
     insertMentionTarget(candidate, {
       end: cursor,
@@ -322,18 +452,18 @@ export const ConversationPanelComposer = React.forwardRef<
   ) {
     const textarea = textareaRef.current
     const selectionStart =
-      range?.start ?? textarea?.selectionStart ?? draft.length
+      range?.start ?? textarea?.selectionStart ?? localDraft.length
     const selectionEnd = range?.end ?? textarea?.selectionEnd ?? selectionStart
 
     const inserted = insertDraftMention(
-      draft,
-      draftMentions,
+      localDraft,
+      localDraftMentions,
       target,
       selectionStart,
       selectionEnd
     )
 
-    onDraftChange(inserted.value, inserted.mentions)
+    setLocalDraftContent(inserted.value, inserted.mentions)
     setMentionTrigger(null)
     setSelectedMentionIndex(0)
 
@@ -355,7 +485,7 @@ export const ConversationPanelComposer = React.forwardRef<
     const textarea = textareaRef.current
 
     if (!textarea) {
-      handleTextareaValueChange(draft + item.value)
+      handleTextareaValueChange(localDraft + item.value)
       setExpressionPickerOpen(false)
       return
     }
@@ -557,9 +687,11 @@ export const ConversationPanelComposer = React.forwardRef<
           <InputGroup>
             <InputGroupTextarea
               ref={textareaRef}
-              value={draft}
-              aria-disabled={sending}
-              onBlur={onDraftBlur}
+              value={localDraft}
+              onBlur={() => {
+                flushLocalDraft()
+                onDraftBlur?.()
+              }}
               onFocus={onDraftFocus}
               onChange={handleDraftChange}
               onKeyDown={handleComposerKeyDown}
@@ -571,7 +703,6 @@ export const ConversationPanelComposer = React.forwardRef<
               }
               onPaste={handleComposerPaste}
               placeholder={richTextMode ? "输入 Markdown 消息" : "输入消息"}
-              readOnly={sending}
               className="max-h-48 min-h-24"
             />
             <InputGroupAddon
@@ -644,12 +775,10 @@ export const ConversationPanelComposer = React.forwardRef<
                 <InputGroupButton
                   aria-label="发送消息"
                   className="bg-(--weui-brand-3) text-white hover:bg-(--weui-brand-4) dark:text-white"
-                  disabled={sending}
                   onClick={handleSendMessage}
                   size="sm"
                   variant="default"
                 >
-                  {sending && <LoaderCircle className="size-4 animate-spin" />}
                   <span aria-hidden="true">发送</span>
                 </InputGroupButton>
               </div>

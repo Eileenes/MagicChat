@@ -18,7 +18,6 @@ import { DocumentPage } from "@/pages/document-page"
 import { LoginPage } from "@/pages/login-page"
 import { ProjectDefaultRedirect } from "@/pages/projects/project-default-redirect"
 import { ProjectDetailLayout } from "@/pages/projects/project-detail-layout"
-import { ProjectDiscussionsPage } from "@/pages/projects/project-discussions-page"
 import { ProjectDocumentsPage } from "@/pages/projects/project-documents-page"
 import { ProjectEmptyPage } from "@/pages/projects/project-empty-page"
 import { ProjectGoalsPage } from "@/pages/projects/project-goals-page"
@@ -116,7 +115,6 @@ export function App() {
               <Route index element={<ProjectDefaultRedirect />} />
               <Route path="tasks" element={<ProjectTasksPage />} />
               <Route path="goals" element={<ProjectGoalsPage />} />
-              <Route path="discussions" element={<ProjectDiscussionsPage />} />
               <Route path="documents" element={<ProjectDocumentsPage />} />
               <Route path="members" element={<ProjectMembersPage />} />
               <Route path="*" element={<ProjectDefaultRedirect />} />

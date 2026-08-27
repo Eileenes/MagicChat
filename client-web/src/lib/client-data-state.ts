@@ -220,8 +220,14 @@ export function mergeConversationMessages(
     }
   }
 
-  const overlapsCurrentMessages = normalizedNextMessages.some((message) =>
-    currentMessageIds.has(message.id)
+  const currentClientMessageIds = new Set(
+    currentMessages.map((message) => message.clientMessageId).filter(Boolean)
+  )
+  const overlapsCurrentMessages = normalizedNextMessages.some(
+    (message) =>
+      currentMessageIds.has(message.id) ||
+      (message.clientMessageId &&
+        currentClientMessageIds.has(message.clientMessageId))
   )
 
   if (currentMessagesAreSortedAndUnique && !overlapsCurrentMessages) {
@@ -248,15 +254,30 @@ export function mergeConversationMessages(
 
 function deduplicateAndSortMessages(messages: ClientMessage[]) {
   const messagesById = new Map<string, ClientMessage>()
+  const idByClientMessageId = new Map<string, string>()
 
   for (const message of messages) {
-    const existing = messagesById.get(message.id)
+    const optimisticId = message.clientMessageId
+      ? idByClientMessageId.get(message.clientMessageId)
+      : undefined
+    const existing = messagesById.get(optimisticId ?? message.id)
+    // A realtime/HTTP persisted message is authoritative. A late failure from
+    // the optimistic request must never turn it back into a failed temporary.
+    if (existing && !existing.deliveryStatus && message.deliveryStatus) {
+      continue
+    }
+    if (optimisticId && optimisticId !== message.id) {
+      messagesById.delete(optimisticId)
+    }
     messagesById.set(
       message.id,
       existing?.topic && !message.topic
         ? { ...message, topic: existing.topic }
         : message
     )
+    if (message.clientMessageId) {
+      idByClientMessageId.set(message.clientMessageId, message.id)
+    }
   }
 
   return Array.from(messagesById.values()).sort(compareMessages)

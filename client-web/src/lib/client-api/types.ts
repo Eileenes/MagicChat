@@ -1230,6 +1230,8 @@ export type ClientMessage = {
   sender: ClientMessageSender
   seq: number
   topic?: ClientMessageTopic
+  deliveryStatus?: "sending" | "failed"
+  retry?: () => void
 }
 
 export type ClientMessageChoiceState = {

@@ -12,9 +12,11 @@ export type ConversationPanelMessage = {
   canRevoke: boolean
   createdAt: string
   delegatedByName: string
+  deliveryStatus?: "sending" | "failed"
   mentionTarget: ConversationPanelMentionTarget | null
   reactionVersion: number
   reactions: ClientMessage["reactions"]
+  retry?: () => void
   replyTo?: ConversationPanelReplyTarget
   time: string
   topic?: ConversationPanelMessageTopic

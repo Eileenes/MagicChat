@@ -10,9 +10,64 @@ import { describe, expect, it, vi } from "vitest"
 
 import { ConversationSidebar } from "@/components/conversation/conversation-sidebar"
 import { SidebarProvider } from "@/components/ui/sidebar"
-import type { ClientConversation, ClientUser } from "@/lib/client-data-api"
+import type {
+  ClientConversation,
+  ClientMessage,
+  ClientUser,
+  ContactApp,
+  ContactUser,
+} from "@/lib/client-data-api"
 
 describe("ConversationSidebar", () => {
+  it("memoizes rows and updates only the row whose draft changed", () => {
+    const conversations = [
+      createAppConversation({ id: "first", name: "一" }),
+      createAppConversation({ id: "second", name: "二" }),
+    ]
+    const renders = vi.fn()
+    const props = {
+      activeConversationId: "",
+      appsById: new Map<string, ContactApp>(),
+      contactsById: new Map<string, ContactUser>(),
+      conversations,
+      currentUser: createCurrentUser(),
+      getLatestCachedMessage: () => undefined,
+      onCreateGroup: vi.fn(),
+      onRowRender: renders,
+      onSelectConversation: vi.fn(),
+      onSetConversationPinned: async () => undefined,
+    }
+    const { rerender } = render(
+      <SidebarProvider>
+        <ConversationSidebar {...props} drafts={{}} />
+      </SidebarProvider>
+    )
+    expect(renders.mock.calls.map(([id]) => id)).toEqual(["first", "second"])
+    renders.mockClear()
+    rerender(
+      <SidebarProvider>
+        <ConversationSidebar {...props} drafts={{}} />
+      </SidebarProvider>
+    )
+    expect(renders).not.toHaveBeenCalled()
+    rerender(
+      <SidebarProvider>
+        <ConversationSidebar
+          {...props}
+          drafts={{
+            first: {
+              mentions: [],
+              replyTarget: null,
+              text: "草稿",
+              updatedAt: 1,
+            },
+          }}
+        />
+      </SidebarProvider>
+    )
+    expect(renders.mock.calls.map(([id]) => id)).toEqual(["first"])
+  })
+
   it("filters conversations by type", async () => {
     const user = userEvent.setup()
     const conversations = [
@@ -58,10 +113,13 @@ describe("ConversationSidebar", () => {
         <ConversationSidebar
           activeConversationId=""
           appsById={new Map()}
-          contactsById={new Map()}
+          contactsById={contactsFor(conversations)}
           conversations={conversations}
           currentUser={createCurrentUser()}
           drafts={{}}
+          getLatestCachedMessage={(id) =>
+            cachedMessagesFor(conversations, id).at(-1)
+          }
           onCreateGroup={vi.fn()}
           onSelectConversation={vi.fn()}
           onSetConversationPinned={vi.fn()}
@@ -183,10 +241,13 @@ describe("ConversationSidebar", () => {
         <ConversationSidebar
           activeConversationId=""
           appsById={new Map()}
-          contactsById={new Map()}
+          contactsById={contactsFor(conversations)}
           conversations={conversations}
           currentUser={createCurrentUser()}
           drafts={{}}
+          getLatestCachedMessage={(id) =>
+            cachedMessagesFor(conversations, id).at(-1)
+          }
           onCreateGroup={vi.fn()}
           onSelectConversation={vi.fn()}
           onSetConversationPinned={vi.fn()}
@@ -202,6 +263,57 @@ describe("ConversationSidebar", () => {
     expect(screen.getByText("应用话题消息")).toBeInTheDocument()
     expect(screen.queryByText("小张：应用话题消息")).not.toBeInTheDocument()
     expect(screen.getByText("小张：群聊话题消息")).toBeInTheDocument()
+  })
+
+  it("uses only cached messages for the summary and group sender", () => {
+    const conversation = createAppConversation({
+      id: "group",
+      lastMessageSender: {
+        id: "app-1",
+        name: "错误发送者",
+        nickname: "",
+        type: "app",
+      },
+      lastMessageSummary: "服务端摘要",
+      name: "群聊",
+      type: "group",
+    })
+    const cached = {
+      body: { content: "缓存摘要", type: "text" },
+      conversationId: "group",
+      sender: { id: "user-2", type: "user" },
+    } as ClientMessage
+    render(
+      <SidebarProvider>
+        <ConversationSidebar
+          activeConversationId=""
+          appsById={new Map()}
+          contactsById={
+            new Map([
+              ["user-2", { name: "缓存用户", nickname: "小张" } as ContactUser],
+            ])
+          }
+          conversations={[
+            conversation,
+            createAppConversation({
+              id: "empty",
+              lastMessageSummary: "不能回退",
+            }),
+          ]}
+          currentUser={createCurrentUser()}
+          drafts={{}}
+          getLatestCachedMessage={(id) => (id === "group" ? cached : undefined)}
+          onCreateGroup={vi.fn()}
+          onSelectConversation={vi.fn()}
+          onSetConversationPinned={vi.fn()}
+        />
+      </SidebarProvider>
+    )
+
+    expect(screen.getByText("小张：缓存摘要")).toBeInTheDocument()
+    expect(screen.getByText("暂无消息")).toBeInTheDocument()
+    expect(screen.queryByText("服务端摘要")).not.toBeInTheDocument()
+    expect(screen.queryByText("不能回退")).not.toBeInTheDocument()
   })
 
   it("keeps mention and draft preview priority", () => {
@@ -236,9 +348,12 @@ describe("ConversationSidebar", () => {
         <ConversationSidebar
           activeConversationId=""
           appsById={new Map()}
-          contactsById={new Map()}
+          contactsById={contactsFor([mentioned, drafted])}
           conversations={[mentioned, drafted]}
           currentUser={createCurrentUser()}
+          getLatestCachedMessage={(id) =>
+            cachedMessagesFor([mentioned, drafted], id).at(-1)
+          }
           drafts={{
             drafted: {
               mentions: [],
@@ -295,11 +410,29 @@ describe("ConversationSidebar", () => {
       <SidebarProvider>
         <ConversationSidebar
           activeConversationId=""
-          appsById={new Map()}
+          appsById={
+            new Map([
+              [
+                "app-1",
+                {
+                  avatar: "",
+                  creatorUserId: null,
+                  description: "",
+                  id: "app-1",
+                  name: "茉莉",
+                  online: true,
+                  type: "app",
+                } satisfies ContactApp,
+              ],
+            ])
+          }
           contactsById={new Map()}
           conversations={[choice, mention]}
           currentUser={createCurrentUser()}
           drafts={{}}
+          getLatestCachedMessage={(id) =>
+            cachedMessagesFor([choice, mention], id).at(-1)
+          }
           onCreateGroup={vi.fn()}
           onSelectConversation={vi.fn()}
           onSetConversationPinned={vi.fn()}
@@ -526,6 +659,35 @@ function createAppConversation(
     visibility: "private",
     ...overrides,
   }
+}
+
+function contactsFor(conversations: ClientConversation[]) {
+  return new Map(
+    conversations.flatMap((conversation) => {
+      const sender = conversation.lastMessageSender
+      return sender?.type === "user"
+        ? [[sender.id, sender as unknown as ContactUser] as const]
+        : []
+    })
+  )
+}
+
+function cachedMessagesFor(
+  conversations: ClientConversation[],
+  conversationId: string
+): ClientMessage[] {
+  const conversation = conversations.find((item) => item.id === conversationId)
+  if (!conversation?.lastMessageSummary) return []
+  return [
+    {
+      body: { content: conversation.lastMessageSummary, type: "text" },
+      conversationId,
+      sender: conversation.lastMessageSender ?? {
+        id: "user-1",
+        type: "user",
+      },
+    } as ClientMessage,
+  ]
 }
 
 function createCurrentUser(): ClientUser {

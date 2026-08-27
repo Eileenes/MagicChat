@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Bot, MessagesSquare } from "lucide-react"
+import { Bot, LoaderCircle, MessagesSquare } from "lucide-react"
 import { toast } from "sonner"
 import { getAvatarInitial } from "@/lib/avatar"
 import { cn } from "@/lib/utils"
@@ -376,6 +376,35 @@ export const MessageBubble = React.memo(function MessageBubble({
             data-slot="message-bubble-line"
           >
             {renderedMessageBody}
+            {message.deliveryStatus === "sending" && (
+              <LoaderCircle aria-label="消息发送中" className="size-4 animate-spin text-muted-foreground" />
+            )}
+            {message.deliveryStatus === "failed" && (
+              <Button
+                aria-label="重试发送消息"
+                className="size-6 text-destructive hover:text-destructive"
+                onClick={message.retry}
+                size="icon"
+                title="发送失败，点击重试"
+                variant="ghost"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="size-4"
+                  fill="currentColor"
+                  viewBox="0 0 16 16"
+                >
+                  <circle cx="8" cy="8" r="7" />
+                  <path
+                    d="M8 4.25v4.5M8 11.5h.01"
+                    fill="none"
+                    stroke="white"
+                    strokeLinecap="round"
+                    strokeWidth="1.5"
+                  />
+                </svg>
+              </Button>
+            )}
             {!selectionMode && !unavailable && (
               <div
                 className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/message-row:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100"
@@ -476,6 +505,8 @@ function arePanelMessagesEqual(
     areMessageChoicesEqual(previous.choice, next.choice) &&
     previous.canRevoke === next.canRevoke &&
     previous.delegatedByName === next.delegatedByName &&
+    previous.deliveryStatus === next.deliveryStatus &&
+    previous.retry === next.retry &&
     previous.reactionVersion === next.reactionVersion &&
     previous.role === next.role &&
     previous.senderAppId === next.senderAppId &&

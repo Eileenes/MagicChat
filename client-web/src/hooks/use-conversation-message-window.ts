@@ -107,6 +107,8 @@ export function useConversationMessageWindow({
               page,
             }
           })
+          const latestMessage = result.messages.at(-1)
+          if (latestMessage) rememberConversationMessage(latestMessage)
         })
         .catch((error: unknown) => {
           if (!coordinator.requestIsCurrent(conversationId, version)) {
@@ -129,6 +131,7 @@ export function useConversationMessageWindow({
       conversationMessageStatesRef,
       getConversationLatestSeq,
       coordinator,
+      rememberConversationMessage,
       updateConversationMessageState,
     ]
   )
@@ -344,6 +347,8 @@ export function useConversationMessageWindow({
               pendingLatestMessageCount: 0,
             }
           })
+          const latestMessage = result.messages.at(-1)
+          if (latestMessage) rememberConversationMessage(latestMessage)
         })
         .catch((error: unknown) => {
           if (!coordinator.requestIsCurrent(conversationId, version)) {
@@ -359,7 +364,12 @@ export function useConversationMessageWindow({
           toast.error(message)
         })
     },
-    [coordinator, getConversationLatestSeq, updateConversationMessageState]
+    [
+      coordinator,
+      getConversationLatestSeq,
+      rememberConversationMessage,
+      updateConversationMessageState,
+    ]
   )
 
   const focusConversationMessage = useCallback(

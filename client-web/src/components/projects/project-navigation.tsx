@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils"
 const projectSections = [
   { label: "任务", path: "tasks" },
   { label: "目标", path: "goals" },
-  { label: "讨论", path: "discussions" },
   { label: "文档", path: "documents" },
   { label: "成员", path: "members" },
 ]

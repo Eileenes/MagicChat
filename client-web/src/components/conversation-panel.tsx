@@ -90,7 +90,7 @@ type ConversationPanelProps = {
   onLoadBeforeMessages: () => void
   onOpenTopic?: (conversationId: string) => void
   onRichTextModeChange: (richTextMode: boolean) => void
-  onSendMessage: (content?: string) => void
+  onSendMessage: (content?: string) => Promise<boolean>
   onStartMessageSelection?: (message: ConversationPanelMessage) => void
   onToggleMessageSelection?: (message: ConversationPanelMessage) => void
   replyTarget: ConversationPanelReplyTarget | null

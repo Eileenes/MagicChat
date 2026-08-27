@@ -19,6 +19,7 @@ import {
   isClientMessageInitiatedByUser,
   listClientContacts,
   listClientConversations,
+  listConversationMessages,
   listFriendRequests,
   listConversationMessageChoiceSnapshots,
   listConversationMessageReactionSnapshots,
@@ -83,6 +84,10 @@ const minimumBootstrapLoadingMs = 1_000
 const refreshIntervalMs = 15_000
 const reactionSnapshotBatchSize = 100
 const choiceSnapshotBatchSize = 100
+const bootstrapMessageConcurrency = 5
+const bootstrapMessageLimit = 20
+const bootstrapConversationLimit = 30
+const bootstrapMessageTimeoutMs = 30_000
 const maxReactionSnapshotCatchUpAttempts = 3
 const userProfileCacheTtlMs = 5 * 60 * 1_000
 const unavailableUserCacheTtlMs = 30 * 1_000
@@ -111,6 +116,9 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const [conversations, setConversations] = useState<ClientConversation[]>([])
   const [conversationMessageStates, setConversationMessageStates] = useState<
     Record<string, ClientConversationMessageState>
+  >({})
+  const [latestCachedMessages, setLatestCachedMessages] = useState<
+    Record<string, ClientMessage>
   >({})
   const [foregroundConversationId, setForegroundConversationId] = useState("")
   const shouldLoadConversations =
@@ -202,6 +210,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const conversationMessageStatesRef = useRef(conversationMessageStates)
   const conversationsRef = useRef(conversations)
   const mountedRef = useRef(true)
+  const bootstrapGenerationRef = useRef(0)
   const refreshingReactionSnapshotKeysRef = useRef<Set<string>>(new Set())
   const reactionSnapshotMinimumVersionsRef = useRef<Map<string, number>>(
     new Map()
@@ -222,6 +231,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mountedRef.current = false
+      bootstrapGenerationRef.current += 1
     }
   }, [])
 
@@ -821,11 +831,26 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [applyConversationMessageToList]
   )
 
+  const saveLatestCachedMessage = useCallback((message: ClientMessage) => {
+    setLatestCachedMessages((current) => {
+      const cached = current[message.conversationId]
+      return cached && cached.seq >= message.seq
+        ? current
+        : { ...current, [message.conversationId]: message }
+    })
+  }, [])
+
   const rememberConversationMessage = useCallback(
     (message: ClientMessage) => {
+      saveLatestCachedMessage(message)
       applyConversationMessageToList(message)
     },
-    [applyConversationMessageToList]
+    [applyConversationMessageToList, saveLatestCachedMessage]
+  )
+
+  const getLatestCachedMessage = useCallback(
+    (conversationId: string) => latestCachedMessages[conversationId],
+    [latestCachedMessages]
   )
 
   const getConversationLatestSeq = useCallback(
@@ -1076,6 +1101,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       } else {
         updateTopicSourcePreview(message)
       }
+      saveLatestCachedMessage(message)
       applyConversationMessageToList(message, {
         countUnread: !fromCurrentUser && !visibleInActiveConversation,
       })
@@ -1084,6 +1110,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       applyConversationMessageToList,
       currentUserId,
       mergeIncomingConversationMessage,
+      saveLatestCachedMessage,
       updateTopicSourcePreview,
     ]
   )
@@ -1542,6 +1569,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     sendConversationText,
     sendConversationVoice,
   } = useConversationSenders({
+    currentUserId: me?.id ?? "",
     conversationMessageStatesRef,
     mergeIncomingConversationMessage,
     updateConversationMessageState,
@@ -1589,6 +1617,9 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   )
 
   const bootstrap = useCallback(async () => {
+    const generation = ++bootstrapGenerationRef.current
+    const isCurrent = () =>
+      mountedRef.current && bootstrapGenerationRef.current === generation
     const minimumLoading = wait(minimumBootstrapLoadingMs)
 
     try {
@@ -1604,11 +1635,69 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
           listClientProjects({ limit: 100 }),
         ])
 
+      const preloadedMessageStates: Record<
+        string,
+        ClientConversationMessageState
+      > = {}
+      const preloadedLatestMessages: Record<string, ClientMessage> = {}
+      const conversationsToPreload = orderConversations(nextConversations).slice(
+        0,
+        bootstrapConversationLimit
+      )
+      let nextConversationIndex = 0
+      let acceptingPreloadResults = true
+      const preloadWorker = async () => {
+        while (nextConversationIndex < conversationsToPreload.length) {
+          const conversation = conversationsToPreload[nextConversationIndex++]
+          try {
+            const result = await listConversationMessages(conversation.id, {
+              limit: bootstrapMessageLimit,
+            })
+            if (!isCurrent() || !acceptingPreloadResults) return
+            preloadedMessageStates[conversation.id] = {
+              ...createConversationMessageState(),
+              loaded: true,
+              latestKnownSeq: result.page.newestSeq,
+              messages: result.messages,
+              page: result.page,
+            }
+            const latestMessage = result.messages.at(-1)
+            if (latestMessage) {
+              preloadedLatestMessages[conversation.id] = latestMessage
+            }
+          } catch {
+            // Leave failures absent so opening the conversation retries normally.
+          }
+        }
+      }
+      const preloadTasks = Promise.all(
+        Array.from(
+          {
+            length: Math.min(
+              bootstrapMessageConcurrency,
+              conversationsToPreload.length
+            ),
+          },
+          () => preloadWorker()
+        )
+      )
+      let timeoutId: ReturnType<typeof setTimeout> | undefined
+      await Promise.race([
+        preloadTasks,
+        new Promise<void>((resolve) => {
+          timeoutId = setTimeout(resolve, bootstrapMessageTimeoutMs)
+        }),
+      ])
+      acceptingPreloadResults = false
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+      if (!isCurrent()) return
+
       await ensureUsers(nextContacts.userIds)
       if (nextContacts.directoryMode === "friends") {
         await refreshFriendRequests()
       }
       await minimumLoading
+      if (!isCurrent()) return
       setMe(nextMe)
       cacheUserProfiles([
         {
@@ -1628,23 +1717,29 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       setContactGroups(nextContacts.groups)
       setContactUserIds(nextContacts.userIds)
       setConversations(orderConversations(nextConversations))
+      setConversationMessageStates(preloadedMessageStates)
+      setLatestCachedMessages(preloadedLatestMessages)
       setPersonalProject(nextProjects.personalProject)
       setProjects(nextProjects.projects)
       setProjectsNextCursor(nextProjects.nextCursor)
       setBootstrapState("ready")
     } catch (error) {
+      if (!isCurrent()) return
       const requestError = handleError(error, "加载工作区失败")
 
       if (requestError.status !== 401 && requestError.code !== "unauthorized") {
         await minimumLoading
       }
 
+      if (!isCurrent()) return
       setBootstrapError(requestError)
       setBootstrapState("error")
     } finally {
-      setMeLoading(false)
-      setContactsLoading(false)
-      setProjectsLoading(false)
+      if (isCurrent()) {
+        setMeLoading(false)
+        setContactsLoading(false)
+        setProjectsLoading(false)
+      }
     }
   }, [
     cacheUserProfiles,
@@ -1659,6 +1754,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setBootstrapState("loading")
     setConversations([])
     setConversationMessageStates({})
+    setLatestCachedMessages({})
     setContactApps([])
     setContactDirectoryMode("organization")
     setContactGroups([])
@@ -1793,6 +1889,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     foregroundConversationId,
     getConversation: getVisibleConversation,
     getConversationMessageState: getVisibleConversationMessageState,
+    getLatestCachedMessage,
     getUser,
     incomingFriendRequests,
     invalidateUsers,

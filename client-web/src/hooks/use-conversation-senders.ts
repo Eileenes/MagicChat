@@ -1,4 +1,4 @@
-import { useCallback, type RefObject } from "react"
+import { useCallback, useRef, type RefObject } from "react"
 import { toast } from "sonner"
 
 import {
@@ -23,10 +23,12 @@ import { createClientMessageId } from "@/lib/message-id"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
 
 export function useConversationSenders({
+  currentUserId,
   conversationMessageStatesRef,
   mergeIncomingConversationMessage,
   updateConversationMessageState,
 }: {
+  currentUserId: string
   conversationMessageStatesRef: RefObject<
     Record<string, ClientConversationMessageState>
   >
@@ -38,6 +40,68 @@ export function useConversationSenders({
     ) => ClientConversationMessageState
   ) => void
 }) {
+  const attemptsRef = useRef(new Set<string>())
+  const sendOptimistic = useCallback(
+    async function runOptimistic(
+      conversationId: string,
+      clientMessageId: string,
+      body: import("@/lib/client-data-api").ClientMessage["body"],
+      replyToMessageId: string | undefined,
+      request: () => Promise<import("@/lib/client-data-api").ClientMessage>,
+      failureText: string
+    ) {
+      if (attemptsRef.current.has(clientMessageId)) return null
+      const retry = () =>
+        void runOptimistic(
+          conversationId,
+          clientMessageId,
+          body,
+          replyToMessageId,
+          request,
+          failureText
+        )
+      attemptsRef.current.add(clientMessageId)
+      const state = conversationMessageStatesRef.current[conversationId]
+      const temporary = {
+        body,
+        clientMessageId,
+        conversationId,
+        createdAt: new Date().toISOString(),
+        deliveryStatus: "sending" as const,
+        id: `optimistic:${clientMessageId}`,
+        reactionVersion: 0,
+        reactions: [],
+        replyToMessageId,
+        retry,
+        sender: { id: currentUserId, type: "user" as const },
+        seq:
+          Math.max(
+            state?.latestKnownSeq ?? 0,
+            ...(state?.messages.map((item) => item.seq) ?? [0])
+          ) + 1,
+      }
+      mergeIncomingConversationMessage(temporary, { markLoaded: true })
+      try {
+        const message = await request()
+        mergeIncomingConversationMessage(message, { markLoaded: true })
+        return message
+      } catch (error) {
+        mergeIncomingConversationMessage(
+          { ...temporary, deliveryStatus: "failed" },
+          { markLoaded: true }
+        )
+        toast.error(getClientDataErrorMessage(error, failureText))
+        return null
+      } finally {
+        attemptsRef.current.delete(clientMessageId)
+      }
+    },
+    [
+      conversationMessageStatesRef,
+      currentUserId,
+      mergeIncomingConversationMessage,
+    ]
+  )
   const sendConversationText = useCallback(
     async (
       conversationId: string,
@@ -45,40 +109,18 @@ export function useConversationSenders({
       options: SendConversationMessageOptions = {}
     ) => {
       const trimmedContent = content.trim()
-      const state = conversationMessageStatesRef.current[conversationId]
-      if (!conversationId || !trimmedContent || state?.sending) {
-        return null
-      }
-
+      if (!conversationId || !trimmedContent) return null
       const clientMessageId = createClientMessageId()
-      updateConversationMessageState(conversationId, (currentState) => ({
-        ...currentState,
-        sending: true,
-      }))
-
-      try {
-        const message = await sendConversationTextMessage(conversationId, {
-          clientMessageId,
-          content: trimmedContent,
-          replyToMessageId: options.replyToMessageId,
-        })
-        mergeIncomingConversationMessage(message, { markLoaded: true })
-        return message
-      } catch (error: unknown) {
-        toast.error(getClientDataErrorMessage(error, "发送消息失败"))
-        return null
-      } finally {
-        updateConversationMessageState(conversationId, (currentState) => ({
-          ...currentState,
-          sending: false,
-        }))
-      }
+      return sendOptimistic(
+        conversationId, clientMessageId, { type: "text", content: trimmedContent },
+        options.replyToMessageId,
+        () => sendConversationTextMessage(conversationId, {
+          clientMessageId, content: trimmedContent, replyToMessageId: options.replyToMessageId,
+        }),
+        "发送消息失败"
+      )
     },
-    [
-      conversationMessageStatesRef,
-      mergeIncomingConversationMessage,
-      updateConversationMessageState,
-    ]
+    [sendOptimistic]
   )
 
   const sendConversationMarkdown = useCallback(
@@ -88,40 +130,18 @@ export function useConversationSenders({
       options: SendConversationMessageOptions = {}
     ) => {
       const trimmedContent = content.trim()
-      const state = conversationMessageStatesRef.current[conversationId]
-      if (!conversationId || !trimmedContent || state?.sending) {
-        return null
-      }
-
+      if (!conversationId || !trimmedContent) return null
       const clientMessageId = createClientMessageId()
-      updateConversationMessageState(conversationId, (currentState) => ({
-        ...currentState,
-        sending: true,
-      }))
-
-      try {
-        const message = await sendConversationMarkdownMessage(conversationId, {
-          clientMessageId,
-          content: trimmedContent,
-          replyToMessageId: options.replyToMessageId,
-        })
-        mergeIncomingConversationMessage(message, { markLoaded: true })
-        return message
-      } catch (error: unknown) {
-        toast.error(getClientDataErrorMessage(error, "发送富文本消息失败"))
-        return null
-      } finally {
-        updateConversationMessageState(conversationId, (currentState) => ({
-          ...currentState,
-          sending: false,
-        }))
-      }
+      return sendOptimistic(
+        conversationId, clientMessageId, { type: "markdown", content: trimmedContent },
+        options.replyToMessageId,
+        () => sendConversationMarkdownMessage(conversationId, {
+          clientMessageId, content: trimmedContent, replyToMessageId: options.replyToMessageId,
+        }),
+        "发送富文本消息失败"
+      )
     },
-    [
-      conversationMessageStatesRef,
-      mergeIncomingConversationMessage,
-      updateConversationMessageState,
-    ]
+    [sendOptimistic]
   )
 
   const sendConversationLink = useCallback(
@@ -131,40 +151,18 @@ export function useConversationSenders({
       options: SendConversationMessageOptions = {}
     ) => {
       const trimmedURL = url.trim()
-      const state = conversationMessageStatesRef.current[conversationId]
-      if (!conversationId || !trimmedURL || state?.sending) {
-        return null
-      }
-
+      if (!conversationId || !trimmedURL) return null
       const clientMessageId = createClientMessageId()
-      updateConversationMessageState(conversationId, (currentState) => ({
-        ...currentState,
-        sending: true,
-      }))
-
-      try {
-        const message = await sendConversationLinkMessage(conversationId, {
-          clientMessageId,
-          replyToMessageId: options.replyToMessageId,
-          url: trimmedURL,
-        })
-        mergeIncomingConversationMessage(message, { markLoaded: true })
-        return message
-      } catch (error: unknown) {
-        toast.error(getClientDataErrorMessage(error, "发送链接失败"))
-        return null
-      } finally {
-        updateConversationMessageState(conversationId, (currentState) => ({
-          ...currentState,
-          sending: false,
-        }))
-      }
+      return sendOptimistic(
+        conversationId, clientMessageId, { type: "link", title: trimmedURL, url: trimmedURL },
+        options.replyToMessageId,
+        () => sendConversationLinkMessage(conversationId, {
+          clientMessageId, url: trimmedURL, replyToMessageId: options.replyToMessageId,
+        }),
+        "发送链接失败"
+      )
     },
-    [
-      conversationMessageStatesRef,
-      mergeIncomingConversationMessage,
-      updateConversationMessageState,
-    ]
+    [sendOptimistic]
   )
 
   const sendConversationCard = useCallback(

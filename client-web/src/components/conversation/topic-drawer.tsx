@@ -361,25 +361,22 @@ function TopicDrawerContent({
     })
   }
 
-  function sendMessage(contentOverride?: string) {
-    if (!conversation || messageState?.sending) return
+  async function sendMessage(contentOverride?: string) {
+    if (!conversation) return false
     const content = (contentOverride ?? draft).trim()
-    if (!content) return
-    const link = normalizeSingleLinkMessageURL(draft.trim())
+    if (!content) return false
+    const link = normalizeSingleLinkMessageURL(content)
     const send = link
       ? sendConversationLink
       : richTextMode
         ? sendConversationMarkdown
         : sendConversationText
-    void send(conversation.id, link ?? content, {
+    const message = await send(conversation.id, link ?? content, {
       replyToMessageId: replyTarget?.id,
-    }).then((message) => {
-      if (message) {
-        setDraft("")
-        setDraftMentions([])
-        setReplyTarget(null)
-      }
     })
+    if (!message) return false
+    setReplyTarget(null)
+    return true
   }
 
   async function sendFile(file: File) {

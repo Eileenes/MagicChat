@@ -80,6 +80,38 @@ describe("mergeConversationMessages", () => {
     expect(mergeConversationMessages(current, [updated])).toEqual([updated])
   })
 
+  it("replaces an optimistic message by client message id", () => {
+    const optimistic = {
+      ...createMessage("optimistic:client-1", 2),
+      clientMessageId: "client-1",
+      deliveryStatus: "sending" as const,
+    }
+    const persisted = {
+      ...createMessage("message-2", 2),
+      clientMessageId: "client-1",
+    }
+
+    expect(mergeConversationMessages([optimistic], [persisted])).toEqual([
+      persisted,
+    ])
+  })
+
+  it("does not downgrade a realtime persisted message on a late HTTP failure", () => {
+    const persisted = {
+      ...createMessage("message-2", 2),
+      clientMessageId: "client-1",
+    }
+    const lateFailure = {
+      ...createMessage("optimistic:client-1", 2),
+      clientMessageId: "client-1",
+      deliveryStatus: "failed" as const,
+    }
+
+    expect(mergeConversationMessages([persisted], [lateFailure])).toEqual([
+      persisted,
+    ])
+  })
+
   it("deduplicates messages within an incoming page", () => {
     const first = createMessage("message-1", 1, "旧内容")
     const latest = createMessage("message-1", 1, "新内容")
