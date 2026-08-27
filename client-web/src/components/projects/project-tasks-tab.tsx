@@ -84,7 +84,7 @@ type TaskFilters = {
   statuses: ProjectTaskStatus[]
 }
 
-export const statusOptions: Array<{
+const statusOptions: Array<{
   label: string
   value: ProjectTaskStatus
 }> = [
@@ -96,7 +96,7 @@ export const statusOptions: Array<{
 
 const defaultTaskStatuses: ProjectTaskStatus[] = ["todo", "in_progress"]
 
-export const priorityOptions: Array<{
+const priorityOptions: Array<{
   label: string
   value: ProjectTaskPriority
 }> = [
