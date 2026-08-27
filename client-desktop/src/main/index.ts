@@ -26,9 +26,11 @@ import { UpdaterService } from "@main/updater-service"
 import { StreamingUploadController } from "@main/streaming-upload"
 import { prepareUpdateInstall } from "@main/update-install-lifecycle"
 import { StartupHealth } from "@main/startup-health"
-import { WindowController } from "@main/window-controller"
+import { isMainApplicationUrl, WindowController } from "@main/window-controller"
 import { ScreenshotController } from "@main/screenshot-controller"
 import { ShortcutManager } from "@main/shortcut-manager"
+import { StorageService } from "@main/storage-service"
+import { UpdateCacheLifecycle } from "@main/update-cache-lifecycle"
 import messageCacheWorkerPath from "@main/message-cache/message-cache-worker?modulePath"
 
 registerPrivilegedSchemes()
@@ -65,7 +67,7 @@ async function start(): Promise<void> {
     profiles,
   )
   await messageCache.initialize().catch(() => undefined)
-  const sessions = new SessionController()
+  const sessions = new SessionController(app.getPath("userData"))
   installLocalProtocol(path.resolve(__dirname, "../renderer"), profiles, sessions)
   const files = new FileService(profiles, sessions)
   const credentials = new CredentialStore(path.join(app.getPath("userData"), "credentials"))
@@ -148,9 +150,24 @@ async function start(): Promise<void> {
     onUserChanged: (serverId) => documentWindows.closeServer(serverId),
   })
   const uploads = new StreamingUploadController(profiles, sessions)
+  const updateCache = new UpdateCacheLifecycle({
+    currentVersion: app.getVersion(),
+    updaterCachePath: updaterCachePath(),
+    userDataPath: app.getPath("userData"),
+  })
   const updater = new UpdaterService({
+    discardInstallIntent: () => updateCache.discardInstallIntent(),
     hasActiveTransfers: () => files.hasActiveTransfers() || uploads.hasActiveTransfers(),
     prepareInstall: () => prepareUpdateInstall({ documentWindows, messageCache, windows }),
+    recordInstallIntent: (targetVersion) => updateCache.recordInstallIntent(targetVersion),
+  })
+  const storage = new StorageService({
+    installationPath: appInstallationPath(),
+    sessions,
+    updateCache,
+    updater,
+    updaterCachePath: updaterCachePath(),
+    userDataPath: app.getPath("userData"),
   })
   const shortcuts = new ShortcutManager({
     diagnostics,
@@ -173,6 +190,7 @@ async function start(): Promise<void> {
     realtime,
     sessions,
     shortcuts,
+    storage,
     store,
     system,
     updater,
@@ -205,7 +223,12 @@ async function start(): Promise<void> {
   screen.on("display-added", cancelScreenshotForDisplayChange)
   screen.on("display-removed", cancelScreenshotForDisplayChange)
   screen.on("display-metrics-changed", cancelScreenshotForDisplayChange)
-  mainWindow.webContents.once("did-finish-load", () => void startupHealth.markHealthy())
+  const markHealthyOnMainApplicationLoad = () => {
+    if (!isMainApplicationUrl(mainWindow.webContents.getURL(), app.isPackaged)) return
+    mainWindow.webContents.removeListener("did-finish-load", markHealthyOnMainApplicationLoad)
+    void markStartupHealthy({ startupHealth, updateCache })
+  }
+  mainWindow.webContents.on("did-finish-load", markHealthyOnMainApplicationLoad)
   powerMonitor.on("suspend", () => {
     diagnostics.createEpisode("suspend")
     asr.closeAll()
@@ -346,6 +369,38 @@ async function start(): Promise<void> {
       })
     }
   }
+}
+
+async function markStartupHealthy(options: {
+  startupHealth: StartupHealth
+  updateCache: UpdateCacheLifecycle
+}): Promise<void> {
+  try {
+    await options.startupHealth.markHealthy()
+  } catch {
+    return
+  }
+  await options.updateCache.clearAfterHealthyStart().catch(() => undefined)
+}
+
+function updaterCachePath(): string {
+  const home = app.getPath("home")
+  const parent =
+    process.platform === "darwin"
+      ? path.join(home, "Library", "Caches")
+      : process.platform === "win32"
+        ? (process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"))
+        : (process.env.XDG_CACHE_HOME ?? path.join(home, ".cache"))
+  return path.join(parent, `${app.getName()}-updater`)
+}
+
+function appInstallationPath(): string | undefined {
+  if (!app.isPackaged) return undefined
+  if (process.platform === "linux" && process.env.APPIMAGE) return process.env.APPIMAGE
+  const executable = app.getPath("exe")
+  return process.platform === "darwin"
+    ? path.resolve(path.dirname(executable), "../..")
+    : path.dirname(executable)
 }
 
 function registerProtocolClient(): void {

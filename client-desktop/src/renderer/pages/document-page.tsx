@@ -11,13 +11,18 @@ import {
   Trash2,
   Users,
 } from "lucide-react"
-import { Link, useBlocker, useNavigate, useParams } from "react-router"
+import { Link, useBlocker, useLocation, useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
 import * as Y from "yjs"
 
 import { ClientDocumentTitle } from "@/components/client-document-title"
 import { SendCardDialog, StandaloneCardDialog } from "@/components/conversation/send-card-dialog"
 import { DocumentEditor } from "@/components/documents/document-editor"
+const MarkdownDocumentEditor = React.lazy(() =>
+  import("@/components/documents/markdown-document-editor").then((module) => ({
+    default: module.MarkdownDocumentEditor,
+  })),
+)
 import { DocumentWorkspaceSidebar } from "@/components/documents/document-workspace-sidebar"
 import { useLocale } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
@@ -38,12 +43,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import {
   deleteClientDocument,
   getClientDocument,
   updateCollaborativeDocumentTitle,
   type ClientDocument,
+  type ClientDocumentType,
 } from "@/lib/document-data-api"
 import {
   createDocumentWebSocketPolyfill,
@@ -77,60 +83,223 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import type { TranslationKey } from "@/lib/i18n"
 
-type Loaded = Readonly<{ document: ClientDocument; project: ClientProjectDetail }>
+type Loaded = Readonly<{
+  document: EditableClientDocument
+  project: ClientProjectDetail
+}>
+type EditableClientDocument = Readonly<
+  Omit<ClientDocument, "documentType" | "kind"> & {
+    documentType: ClientDocumentType
+    kind: "document"
+  }
+>
 type DocumentUnavailableMessage = Readonly<{ key: TranslationKey }> | Readonly<{ value: string }>
+type DocumentLoadError = Readonly<{
+  documentId: string
+  message: DocumentUnavailableMessage
+}>
+type DocumentNavigationHandlers = Readonly<{
+  allowConfirmedNavigation(): void
+  beforeNavigate(confirmedVersion?: number): boolean
+  getEditVersion(): number
+}>
+
+function isEditableClientDocument(document: ClientDocument): document is EditableClientDocument {
+  return (
+    document.kind === "document" &&
+    (document.documentType === "document" || document.documentType === "markdown")
+  )
+}
 
 export function DocumentPage() {
   const { documentId = "" } = useParams<{ documentId: string }>()
+  const { pathname } = useLocation()
+  const routeDocumentType = pathname.split("/")[2] ?? ""
+  const requestedDocumentType: ClientDocumentType | null =
+    routeDocumentType === "document" || routeDocumentType === "markdown" ? routeDocumentType : null
   const [loaded, setLoaded] = React.useState<Loaded>()
-  const [error, setError] = React.useState<DocumentUnavailableMessage>()
+  const [error, setError] = React.useState<DocumentLoadError>()
+  const [loading, setLoading] = React.useState(true)
   const [retry, setRetry] = React.useState(0)
 
   React.useEffect(() => {
     const controller = new AbortController()
-    setLoaded(undefined)
     setError(undefined)
+    setLoading(true)
     if (!documentId) {
-      setError({ key: "document.invalidId" })
+      setError({ documentId, message: { key: "document.invalidId" } })
+      setLoading(false)
+      return () => controller.abort()
+    }
+    if (!requestedDocumentType) {
+      setError({ documentId, message: { key: "document.invalidType" } })
+      setLoading(false)
       return () => controller.abort()
     }
     void getClientDocument(documentId, fetch, controller.signal)
       .then(async (document) => {
-        if (document.kind !== "document" || document.documentType !== "document") {
-          if (!controller.signal.aborted) setError({ key: "document.notEditable" })
+        if (!isEditableClientDocument(document)) {
+          if (!controller.signal.aborted) {
+            setError({ documentId, message: { key: "document.notEditable" } })
+            setLoading(false)
+          }
+          return
+        }
+        if (document.documentType !== requestedDocumentType) {
+          if (!controller.signal.aborted) {
+            setError({ documentId, message: { key: "document.typeMismatch" } })
+            setLoading(false)
+          }
           return
         }
         const project = await getClientProject(document.projectId)
-        if (!controller.signal.aborted) setLoaded({ document, project })
+        if (!controller.signal.aborted) {
+          setLoaded({ document, project })
+          setLoading(false)
+        }
       })
       .catch((loadError) => {
-        if (!controller.signal.aborted)
-          setError(
-            loadError instanceof Error
-              ? { value: loadError.message }
-              : { key: "document.loadFailed" },
-          )
+        if (!controller.signal.aborted) {
+          setError({
+            documentId,
+            message:
+              loadError instanceof Error
+                ? { value: loadError.message }
+                : { key: "document.loadFailed" },
+          })
+          setLoading(false)
+        }
       })
     return () => controller.abort()
-  }, [documentId, retry])
+  }, [documentId, requestedDocumentType, retry])
 
-  if (error)
-    return <DocumentUnavailable message={error} onRetry={() => setRetry((value) => value + 1)} />
+  const currentError = error?.documentId === documentId ? error.message : undefined
+  const loadedMatchesRoute =
+    loaded?.document.id === documentId && loaded.document.documentType === requestedDocumentType
+  if ((!loadedMatchesRoute || !loaded) && currentError)
+    return (
+      <DocumentUnavailable message={currentError} onRetry={() => setRetry((value) => value + 1)} />
+    )
   if (!loaded) return <DocumentLoading />
   return (
     <DocumentWorkspace
+      contentError={currentError}
       document={loaded.document}
-      key={loaded.document.id}
+      key={loaded.project.id}
+      loading={loading || loaded.document.id !== documentId}
+      onRetry={() => setRetry((value) => value + 1)}
       project={loaded.project}
     />
   )
 }
 
 function DocumentWorkspace({
+  contentError,
   document,
+  loading,
+  onRetry,
   project,
 }: {
-  document: ClientDocument
+  contentError?: DocumentUnavailableMessage
+  document: EditableClientDocument
+  loading: boolean
+  onRetry(): void
+  project: ClientProjectDetail
+}) {
+  const { t } = useLocale()
+  const [sheetOpen, setSheetOpen] = React.useState(false)
+  const [sidebarTitle, setSidebarTitle] = React.useState(() => ({
+    documentId: document.id,
+    title: normalizeDocumentTitle(document.title),
+  }))
+  const navigationHandlersRef = React.useRef<
+    { documentId: string; handlers: DocumentNavigationHandlers } | undefined
+  >(undefined)
+  const activeTitle =
+    sidebarTitle.documentId === document.id
+      ? sidebarTitle.title
+      : normalizeDocumentTitle(document.title)
+  const getEditVersion = React.useCallback(
+    () => navigationHandlersRef.current?.handlers.getEditVersion() ?? 0,
+    [],
+  )
+  const allowConfirmedNavigation = React.useCallback(() => {
+    navigationHandlersRef.current?.handlers.allowConfirmedNavigation()
+  }, [])
+  const beforeNavigate = React.useCallback(
+    (confirmedVersion?: number) =>
+      navigationHandlersRef.current?.handlers.beforeNavigate(confirmedVersion) ?? true,
+    [],
+  )
+  const handleNavigationHandlersChange = React.useCallback(
+    (documentId: string, handlers: DocumentNavigationHandlers | null) => {
+      if (handlers) {
+        navigationHandlersRef.current = { documentId, handlers }
+      } else if (navigationHandlersRef.current?.documentId === documentId) {
+        navigationHandlersRef.current = undefined
+      }
+    },
+    [],
+  )
+  const handleSidebarTitleChange = React.useCallback((documentId: string, title: string) => {
+    setSidebarTitle((current) =>
+      current.documentId === documentId && current.title === title
+        ? current
+        : { documentId, title },
+    )
+  }, [])
+  const sidebar = (
+    <DocumentWorkspaceSidebar
+      activeDocumentId={document.id}
+      activeTitle={activeTitle}
+      getEditVersion={getEditVersion}
+      onAllowConfirmedNavigation={allowConfirmedNavigation}
+      onBeforeNavigate={beforeNavigate}
+      projectAvatar={project.avatar}
+      projectId={project.id}
+      projectIsPersonal={project.isPersonal}
+      projectName={project.name}
+    />
+  )
+
+  return (
+    <main className="flex h-svh min-h-0 min-w-0 overflow-hidden bg-muted/40 pt-10">
+      <aside className="hidden w-72 shrink-0 border-r md:block">{sidebar}</aside>
+      <Sheet onOpenChange={setSheetOpen} open={sheetOpen}>
+        <SheetContent className="w-72 px-0 pt-10 pb-0" side="left">
+          <SheetTitle className="sr-only">{t("document.navTitle")}</SheetTitle>
+          {sidebar}
+        </SheetContent>
+      </Sheet>
+      {contentError ? (
+        <DocumentContentUnavailable message={contentError} onRetry={onRetry} />
+      ) : loading ? (
+        <DocumentContentLoading />
+      ) : (
+        <DocumentSession
+          document={document}
+          key={document.id}
+          onNavigationHandlersChange={handleNavigationHandlersChange}
+          onOpenSidebar={() => setSheetOpen(true)}
+          onSidebarTitleChange={handleSidebarTitleChange}
+          project={project}
+        />
+      )}
+    </main>
+  )
+}
+
+function DocumentSession({
+  document,
+  onNavigationHandlersChange,
+  onOpenSidebar,
+  onSidebarTitleChange,
+  project,
+}: {
+  document: EditableClientDocument
+  onNavigationHandlersChange(documentId: string, handlers: DocumentNavigationHandlers | null): void
+  onOpenSidebar(): void
+  onSidebarTitleChange(documentId: string, title: string): void
   project: ClientProjectDetail
 }) {
   const { t } = useLocale()
@@ -162,7 +331,6 @@ function DocumentWorkspace({
   const [permissionDenied, setPermissionDenied] = React.useState(false)
   const [collaborationProvider, setCollaborationProvider] = React.useState<HocuspocusProvider>()
   const [onlineUsers, setOnlineUsers] = React.useState<DocumentPresenceUser[]>([])
-  const [sheetOpen, setSheetOpen] = React.useState(false)
   const [openingWindow, setOpeningWindow] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -190,8 +358,8 @@ function DocumentWorkspace({
   const [title, setTitle] = React.useState<DocumentTitleSnapshot>(titleController.value)
   const titleText = normalizeDocumentTitle(title.input)
   const documentCard = React.useMemo(
-    () => createDocumentCard(document.id, titleText, project.name),
-    [document.id, project.name, titleText],
+    () => createDocumentCard(document.id, titleText, project.name, document.documentType),
+    [document.documentType, document.id, project.name, titleText],
   )
   const dirty = titleController.dirty || body.unsyncedChanges > 0
   const allowNextNavigation = React.useRef(false)
@@ -368,6 +536,23 @@ function DocumentWorkspace({
   const allowConfirmedNavigation = React.useCallback(() => {
     allowNextNavigation.current = true
   }, [])
+  React.useLayoutEffect(() => {
+    onNavigationHandlersChange(document.id, {
+      allowConfirmedNavigation,
+      beforeNavigate: confirmLeave,
+      getEditVersion,
+    })
+    return () => onNavigationHandlersChange(document.id, null)
+  }, [
+    allowConfirmedNavigation,
+    confirmLeave,
+    document.id,
+    getEditVersion,
+    onNavigationHandlersChange,
+  ])
+  React.useEffect(() => {
+    onSidebarTitleChange(document.id, titleText)
+  }, [document.id, onSidebarTitleChange, titleText])
   const saveTitle = () =>
     void titleController.flush().catch(() => toast.error(t("document.titleSaveFailed")))
   const openInWindow = async () => {
@@ -377,7 +562,7 @@ function DocumentWorkspace({
       : getDocumentReturnPath(`/projects/${encodeURIComponent(project.id)}/documents`)
     setOpeningWindow(true)
     try {
-      const result = await requestDocumentWindow(document.id, target.id)
+      const result = await requestDocumentWindow(document.id, target.id, document.documentType)
       toast.success(
         t(result.status === "focused" ? "documentWindow.focused" : "documentWindow.opened"),
       )
@@ -421,42 +606,26 @@ function DocumentWorkspace({
 
   if (permissionDenied)
     return (
-      <DocumentUnavailable message={{ key: "document.noAccess" }} projectId={document.projectId} />
+      <DocumentContentUnavailable
+        message={{ key: "document.noAccess" }}
+        projectId={document.projectId}
+      />
     )
 
-  const sidebar = (
-    <DocumentWorkspaceSidebar
-      activeDocumentId={document.id}
-      activeTitle={titleText}
-      getEditVersion={getEditVersion}
-      onAllowConfirmedNavigation={allowConfirmedNavigation}
-      onBeforeNavigate={confirmLeave}
-      projectId={project.id}
-      projectName={project.name}
-    />
-  )
   return (
-    <main className="flex h-svh min-h-0 min-w-0 overflow-hidden bg-muted/40 pt-10">
+    <>
       <ClientDocumentTitle disableMessageAlert title={titleText} />
-      <aside className="hidden w-72 shrink-0 border-r md:block">{sidebar}</aside>
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background/40">
         <header className="no-drag flex h-14 shrink-0 items-center gap-3 border-b bg-background px-3 sm:px-5">
-          <Sheet onOpenChange={setSheetOpen} open={sheetOpen}>
-            <SheetTrigger asChild>
-              <Button
-                aria-label={t("document.nav")}
-                className="md:hidden"
-                size="icon-sm"
-                variant="ghost"
-              >
-                <Menu />
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="w-72 px-0 pt-10 pb-0" side="left">
-              <SheetTitle className="sr-only">{t("document.navTitle")}</SheetTitle>
-              {sidebar}
-            </SheetContent>
-          </Sheet>
+          <Button
+            aria-label={t("document.nav")}
+            className="md:hidden"
+            onClick={onOpenSidebar}
+            size="icon-sm"
+            variant="ghost"
+          >
+            <Menu />
+          </Button>
           <FileText className="size-5 shrink-0 text-sky-600" />
           <input
             aria-label={t("document.titleBar")}
@@ -589,17 +758,38 @@ function DocumentWorkspace({
           <DocumentOnlineUsers users={onlineUsers} />
         </header>
         {collaborationProvider ? (
-          <DocumentEditor
-            collaborationDocument={ydoc}
-            collaborationProvider={collaborationProvider}
-            collaborationUser={collaborationUser}
-            onTitleBlur={saveTitle}
-            onTitleChange={(value) => {
-              editVersion.current += 1
-              titleController.change(value)
-            }}
-            title={title.input}
-          />
+          <React.Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+                正在加载文档编辑器
+              </div>
+            }
+          >
+            {document.documentType === "markdown" ? (
+              <MarkdownDocumentEditor
+                collaborationDocument={ydoc}
+                collaborationProvider={collaborationProvider}
+                onTitleBlur={saveTitle}
+                onTitleChange={(value) => {
+                  editVersion.current += 1
+                  titleController.change(value)
+                }}
+                title={title.input}
+              />
+            ) : (
+              <DocumentEditor
+                collaborationDocument={ydoc}
+                collaborationProvider={collaborationProvider}
+                collaborationUser={collaborationUser}
+                onTitleBlur={saveTitle}
+                onTitleChange={(value) => {
+                  editVersion.current += 1
+                  titleController.change(value)
+                }}
+                title={title.input}
+              />
+            )}
+          </React.Suspense>
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
@@ -607,7 +797,7 @@ function DocumentWorkspace({
           </div>
         )}
       </section>
-    </main>
+    </>
   )
 }
 
@@ -667,6 +857,35 @@ function PresenceAvatar({ user }: { user: DocumentPresenceUser }) {
   )
 }
 
+function DocumentContentLoading() {
+  const { t } = useLocale()
+  return (
+    <section className="flex min-w-0 flex-1 items-center justify-center gap-2 bg-background/40 text-sm text-muted-foreground">
+      <ClientDocumentTitle disableMessageAlert title={t("document.loading")} />
+      <Loader2 className="size-4 animate-spin" />
+      {t("document.loading")}
+    </section>
+  )
+}
+
+function DocumentContentUnavailable({
+  message,
+  onRetry,
+  projectId,
+}: {
+  message: DocumentUnavailableMessage
+  onRetry?: () => void
+  projectId?: string
+}) {
+  const { t } = useLocale()
+  return (
+    <section className="flex min-w-0 flex-1 items-center justify-center bg-background/40 px-6 pb-6">
+      <ClientDocumentTitle disableMessageAlert title={t("document.cannotOpen")} />
+      <DocumentUnavailableCard message={message} onRetry={onRetry} projectId={projectId} />
+    </section>
+  )
+}
+
 function DocumentLoading() {
   const { t } = useLocale()
   return (
@@ -688,25 +907,40 @@ function DocumentUnavailable({
   projectId?: string
 }) {
   const { t } = useLocale()
-  const messageText = "key" in message ? t(message.key) : message.value
   return (
     <main className="flex h-svh min-h-0 items-center justify-center px-6 pt-10 pb-6">
       <ClientDocumentTitle disableMessageAlert title={t("document.cannotOpen")} />
-      <div className="max-w-sm space-y-4 border bg-background p-8 text-center">
-        <h1 className="text-lg font-semibold">{t("document.cannotOpen")}</h1>
-        <p className="text-sm text-muted-foreground">{messageText}</p>
-        <div className="flex justify-center gap-2">
-          {projectId && (
-            <Button asChild variant="outline">
-              <Link to={`/projects/${encodeURIComponent(projectId)}/documents`}>
-                {t("document.backToProject")}
-              </Link>
-            </Button>
-          )}
-          {onRetry && <Button onClick={onRetry}>{t("document.retry")}</Button>}
-        </div>
-      </div>
+      <DocumentUnavailableCard message={message} onRetry={onRetry} projectId={projectId} />
     </main>
+  )
+}
+
+function DocumentUnavailableCard({
+  message,
+  onRetry,
+  projectId,
+}: {
+  message: DocumentUnavailableMessage
+  onRetry?: () => void
+  projectId?: string
+}) {
+  const { t } = useLocale()
+  const messageText = "key" in message ? t(message.key) : message.value
+  return (
+    <div className="max-w-sm space-y-4 border bg-background p-8 text-center">
+      <h1 className="text-lg font-semibold">{t("document.cannotOpen")}</h1>
+      <p className="text-sm text-muted-foreground">{messageText}</p>
+      <div className="flex justify-center gap-2">
+        {projectId && (
+          <Button asChild variant="outline">
+            <Link to={`/projects/${encodeURIComponent(projectId)}/documents`}>
+              {t("document.backToProject")}
+            </Link>
+          </Button>
+        )}
+        {onRetry && <Button onClick={onRetry}>{t("document.retry")}</Button>}
+      </div>
+    </div>
   )
 }
 

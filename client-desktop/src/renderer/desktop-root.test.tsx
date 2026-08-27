@@ -233,6 +233,9 @@ describe("桌面设置服务器管理", () => {
       /\.app-layout-shell\s+\[data-desktop-drag-region\]\s*\{\s*-webkit-app-region: drag/,
     )
     expect(source).toContain(".desktop-workspace-drag-region")
+    expect(source).toMatch(
+      /\[data-slot="dialog-overlay"\],\s*\[data-slot="dialog-content"\]\s*\{[^}]*-webkit-app-region:\s*no-drag/,
+    )
   })
 
   it("文档子窗口优先使用 URL 中的 serverId，不受全局服务器选择影响", async () => {
@@ -581,6 +584,9 @@ describe("桌面设置服务器管理", () => {
     }
     await user.click(screen.getByRole("button", { name: "存储空间" }))
     expect(screen.getByRole("heading", { name: "存储空间" })).toBeInTheDocument()
+    expect(screen.getByText("应用数据所在磁盘")).toBeInTheDocument()
+    expect(screen.getByText("缓存数据")).toBeInTheDocument()
+    expect(screen.getByText("其他")).toBeInTheDocument()
 
     const cacheButton = screen.getByRole("button", { name: "清理本地消息缓存" })
     expect(cacheButton).toHaveClass("settings-secondary-button")
@@ -590,6 +596,107 @@ describe("桌面设置服务器管理", () => {
       "utf8",
     )
     expect(source).toMatch(/\.settings-secondary-button\s*\{[^}]*justify-self:\s*end/)
+  })
+
+  it("按勾选项合计并确认清理缓存数据", async () => {
+    const bridge = createDesktopBridge()
+    const initialStats = {
+      appBytes: 9 * 1024,
+      cacheItems: [
+        { bytes: 2 * 1024, clearable: true, kind: "network" as const },
+        { bytes: 3 * 1024, clearable: true, kind: "runtime" as const },
+        { bytes: 4 * 1024, clearable: false, kind: "updates" as const },
+      ],
+      diagnosticsBytes: 512,
+      disk: {
+        availableBytes: 60 * 1024,
+        totalBytes: 100 * 1024,
+        usedBytes: 40 * 1024,
+      },
+      messageCacheBytes: 1024,
+      otherBytes: 2 * 1024,
+      userDataBytes: 6 * 1024,
+    }
+    vi.mocked(bridge.storage.getStats).mockResolvedValue(initialStats)
+    vi.mocked(bridge.storage.clearCache).mockResolvedValue({
+      expectedBytes: 2 * 1024,
+      reclaimedBytes: 1536,
+      stats: {
+        ...initialStats,
+        appBytes: 7 * 1024,
+        cacheItems: [
+          { bytes: 0, clearable: true, kind: "network" },
+          { bytes: 3 * 1024, clearable: true, kind: "runtime" },
+          { bytes: 4 * 1024, clearable: false, kind: "updates" },
+        ],
+      },
+    })
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await user.click(screen.getByRole("button", { name: "存储空间" }))
+    const networkCache = await screen.findByRole("checkbox", { name: "图片、媒体与网络缓存" })
+    expect(screen.getByRole("checkbox", { name: "已下载更新" })).toBeDisabled()
+    expect(screen.getByText("其他磁盘已用空间")).toBeInTheDocument()
+    expect(
+      screen.getByRole("img", {
+        name: "即应本地数据 9.0 KiB，磁盘已用空间 40.0 KiB，磁盘可用空间 60.0 KiB",
+      }),
+    ).toBeInTheDocument()
+
+    await user.click(networkCache)
+
+    expect(screen.getByText("已选择 1 项，预计可释放 2.0 KiB")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "清理已选缓存数据" }))
+
+    await waitFor(() => expect(bridge.storage.clearCache).toHaveBeenCalledWith(["network"]))
+    expect(screen.getByRole("status")).toHaveTextContent("已清理缓存，实际释放 1.5 KiB")
+  })
+
+  it("缓存清理失败后刷新已部分清理的统计", async () => {
+    const bridge = createDesktopBridge()
+    const initialStats = {
+      appBytes: 9 * 1024,
+      cacheItems: [
+        { bytes: 2 * 1024, clearable: true, kind: "network" as const },
+        { bytes: 3 * 1024, clearable: true, kind: "runtime" as const },
+        { bytes: 0, clearable: true, kind: "updates" as const },
+      ],
+      diagnosticsBytes: 0,
+      disk: { availableBytes: 60 * 1024, totalBytes: 100 * 1024, usedBytes: 40 * 1024 },
+      messageCacheBytes: 0,
+      otherBytes: 4 * 1024,
+      userDataBytes: 8 * 1024,
+    }
+    const partiallyClearedStats = {
+      ...initialStats,
+      appBytes: 7 * 1024,
+      cacheItems: [
+        { bytes: 0, clearable: true, kind: "network" as const },
+        { bytes: 3 * 1024, clearable: true, kind: "runtime" as const },
+        { bytes: 0, clearable: true, kind: "updates" as const },
+      ],
+      userDataBytes: 6 * 1024,
+    }
+    vi.mocked(bridge.storage.getStats)
+      .mockResolvedValueOnce(initialStats)
+      .mockResolvedValueOnce(partiallyClearedStats)
+    vi.mocked(bridge.storage.clearCache).mockRejectedValueOnce(new Error("运行缓存清理失败"))
+    Object.defineProperty(window, "desktop", { configurable: true, value: bridge })
+    const user = userEvent.setup()
+    render(<DesktopRoot />)
+
+    await user.click(await screen.findByRole("button", { name: "打开设置" }))
+    await user.click(screen.getByRole("button", { name: "存储空间" }))
+    await user.click(await screen.findByRole("checkbox", { name: "图片、媒体与网络缓存" }))
+    await user.click(screen.getByRole("button", { name: "清理已选缓存数据" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("缓存数据清理失败，请重试")
+    await waitFor(() => expect(bridge.storage.getStats).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole("checkbox", { name: "图片、媒体与网络缓存" })).toBeDisabled()
+    expect(screen.getByText("已选择 0 项，预计可释放 0 B")).toBeInTheDocument()
   })
 
   it("切换语言为 English 后设置界面即时变为英文且不重建工作区宿主", async () => {
@@ -948,6 +1055,33 @@ describe("桌面设置服务器管理", () => {
       bytes: 0,
       status: "available",
     })
+    vi.mocked(bridge.storage.getStats)
+      .mockResolvedValueOnce({
+        appBytes: 2 * 1024,
+        cacheItems: [
+          { bytes: 0, clearable: true, kind: "network" },
+          { bytes: 0, clearable: true, kind: "runtime" },
+          { bytes: 0, clearable: true, kind: "updates" },
+        ],
+        diagnosticsBytes: 2 * 1024,
+        disk: { availableBytes: 0, totalBytes: 0, usedBytes: 0 },
+        messageCacheBytes: 0,
+        otherBytes: 0,
+        userDataBytes: 2 * 1024,
+      })
+      .mockResolvedValueOnce({
+        appBytes: 0,
+        cacheItems: [
+          { bytes: 0, clearable: true, kind: "network" },
+          { bytes: 0, clearable: true, kind: "runtime" },
+          { bytes: 0, clearable: true, kind: "updates" },
+        ],
+        diagnosticsBytes: 0,
+        disk: { availableBytes: 0, totalBytes: 0, usedBytes: 0 },
+        messageCacheBytes: 0,
+        otherBytes: 0,
+        userDataBytes: 0,
+      })
     Object.defineProperty(window, "desktop", {
       configurable: true,
       value: bridge,
@@ -1491,7 +1625,11 @@ describe("桌面设置服务器管理", () => {
 
     await act(() => mocks.hostOpenExternal?.(documentUrl))
 
-    expect(bridge.navigation.openDocumentWindow).toHaveBeenCalledWith(documentId, profile.id)
+    expect(bridge.navigation.openDocumentWindow).toHaveBeenCalledWith(
+      documentId,
+      profile.id,
+      "document",
+    )
     expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
   })
 
@@ -1504,7 +1642,11 @@ describe("桌面设置服务器管理", () => {
     act(() => mocks.externalLinkHandler?.(documentUrl))
 
     await waitFor(() =>
-      expect(bridge.navigation.openDocumentWindow).toHaveBeenCalledWith(documentId, profile.id),
+      expect(bridge.navigation.openDocumentWindow).toHaveBeenCalledWith(
+        documentId,
+        profile.id,
+        "document",
+      ),
     )
     expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
   })
@@ -1522,8 +1664,18 @@ describe("桌面设置服务器管理", () => {
     await act(() => mocks.hostOpenExternal?.(documentUrl))
 
     expect(bridge.navigation.openDocumentWindow).toHaveBeenCalledTimes(2)
-    expect(bridge.navigation.openDocumentWindow).toHaveBeenNthCalledWith(1, documentId, profile.id)
-    expect(bridge.navigation.openDocumentWindow).toHaveBeenNthCalledWith(2, documentId, profile.id)
+    expect(bridge.navigation.openDocumentWindow).toHaveBeenNthCalledWith(
+      1,
+      documentId,
+      profile.id,
+      "document",
+    )
+    expect(bridge.navigation.openDocumentWindow).toHaveBeenNthCalledWith(
+      2,
+      documentId,
+      profile.id,
+      "document",
+    )
     expect(mocks.shellOpenExternal).not.toHaveBeenCalled()
   })
 
@@ -1768,6 +1920,22 @@ function createDesktopBridge(
       set: vi.fn().mockImplementation(async (patch) => {
         settings = { ...settings, ...patch }
         return { ...settings }
+      }),
+    },
+    storage: {
+      clearCache: vi.fn(),
+      getStats: vi.fn().mockResolvedValue({
+        appBytes: 0,
+        cacheItems: [
+          { bytes: 0, clearable: true, kind: "network" },
+          { bytes: 0, clearable: true, kind: "runtime" },
+          { bytes: 0, clearable: true, kind: "updates" },
+        ],
+        diagnosticsBytes: 0,
+        disk: { availableBytes: 0, totalBytes: 0, usedBytes: 0 },
+        messageCacheBytes: 0,
+        otherBytes: 0,
+        userDataBytes: 0,
       }),
     },
     shell: { openExternal: mocks.shellOpenExternal },

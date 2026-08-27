@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Download, ExternalLink, RefreshCw, Sparkles, Trash2 } from "lucide-react"
+import { ChevronDown, Download, ExternalLink, RefreshCw, Sparkles, Trash2 } from "lucide-react"
 
 import { useLocale } from "@/components/locale-provider"
 import { isTheme, useTheme } from "@/components/theme-provider"
@@ -24,6 +24,11 @@ import type {
 } from "@shared/bridge"
 import type { DiagnosticStorageStats } from "@shared/diagnostics-contract"
 import type { MessageCacheStats } from "@shared/message-cache-contract"
+import {
+  storageCacheKinds,
+  type DesktopStorageStats,
+  type StorageCacheKind,
+} from "@shared/storage-contract"
 import { DESKTOP_SETTINGS_CHANGED_EVENT } from "@/hooks/use-desktop-settings"
 import { SettingsCenter, type SettingsSectionId } from "./settings-center"
 import { SendMessageShortcutPicker } from "./send-message-shortcut-picker"
@@ -117,6 +122,11 @@ export function DesktopSettingsPanel({
   const [diagnosticStats, setDiagnosticStats] = useState<DiagnosticStorageStats>()
   const [diagnosticsClearing, setDiagnosticsClearing] = useState(false)
   const [diagnosticsClearError, setDiagnosticsClearError] = useState("")
+  const [storageStats, setStorageStats] = useState<DesktopStorageStats>()
+  const [selectedCacheKinds, setSelectedCacheKinds] = useState<ReadonlyArray<StorageCacheKind>>([])
+  const [storageCacheClearing, setStorageCacheClearing] = useState(false)
+  const [storageCacheClearError, setStorageCacheClearError] = useState("")
+  const [storageCacheClearSuccess, setStorageCacheClearSuccess] = useState("")
   const loadGenerationRef = useRef(0)
 
   const loadSettings = useCallback(async () => {
@@ -124,17 +134,20 @@ export function DesktopSettingsPanel({
     setSettingsLoading(true)
     setSettingsLoadError("")
     try {
-      const [nextSettings, nextInfo, nextCacheStats, nextDiagnosticStats] = await Promise.all([
-        window.desktop.settings.get(),
-        window.desktop.app.info(),
-        window.desktop.messageCache.getStats(target).catch(() => undefined),
-        window.desktop.diagnostics.getStorageStats().catch(() => undefined),
-      ])
+      const [nextSettings, nextInfo, nextCacheStats, nextDiagnosticStats, nextStorageStats] =
+        await Promise.all([
+          window.desktop.settings.get(),
+          window.desktop.app.info(),
+          window.desktop.messageCache.getStats(target).catch(() => undefined),
+          window.desktop.diagnostics.getStorageStats().catch(() => undefined),
+          window.desktop.storage.getStats().catch(() => undefined),
+        ])
       if (generation !== loadGenerationRef.current) return
       setSettings(nextSettings)
       setAppInfo(nextInfo)
       setCacheStats(nextCacheStats)
       setDiagnosticStats(nextDiagnosticStats)
+      setStorageStats(nextStorageStats)
     } catch {
       if (generation === loadGenerationRef.current) {
         setSettingsLoadError(t("settings.loadError"))
@@ -151,6 +164,21 @@ export function DesktopSettingsPanel({
     }
   }, [loadSettings])
 
+  useEffect(() => {
+    setSelectedCacheKinds((current) =>
+      current.filter((kind) =>
+        storageStats?.cacheItems.some(
+          (item) => item.kind === kind && item.clearable && item.bytes > 0,
+        ),
+      ),
+    )
+  }, [storageStats])
+
+  async function refreshStorageStats(): Promise<void> {
+    const nextStorageStats = await window.desktop.storage.getStats().catch(() => undefined)
+    if (nextStorageStats) setStorageStats(nextStorageStats)
+  }
+
   async function clearMessageCache() {
     if (!window.confirm(t("settings.storage.confirm"))) return
     setCacheClearing(true)
@@ -159,6 +187,7 @@ export function DesktopSettingsPanel({
       const managed = await clearManagedMessageCache(target)
       if (!managed) await window.desktop.messageCache.clearUser(target)
       setCacheStats(await window.desktop.messageCache.getStats(target))
+      await refreshStorageStats()
     } catch {
       setCacheClearError(t("settings.storage.error"))
     } finally {
@@ -172,6 +201,7 @@ export function DesktopSettingsPanel({
     setDiagnosticsClearError("")
     try {
       setDiagnosticStats(await window.desktop.diagnostics.clearStorage())
+      await refreshStorageStats()
     } catch {
       setDiagnosticsClearError(t("settings.storage.diagnostics.error"))
       setDiagnosticStats(await window.desktop.diagnostics.getStorageStats().catch(() => undefined))
@@ -179,6 +209,58 @@ export function DesktopSettingsPanel({
       setDiagnosticsClearing(false)
     }
   }
+
+  function toggleCacheKind(kind: StorageCacheKind, checked: boolean) {
+    setSelectedCacheKinds((current) => {
+      if (checked) return [...new Set([...current, kind])]
+      return current.filter((item) => item !== kind)
+    })
+    setStorageCacheClearError("")
+    setStorageCacheClearSuccess("")
+  }
+
+  async function clearSelectedStorageCache() {
+    const selectedItems = (storageStats?.cacheItems ?? []).filter(
+      (item) => item.clearable && selectedCacheKinds.includes(item.kind),
+    )
+    if (selectedItems.length === 0) return
+
+    const expectedBytes = selectedItems.reduce((total, item) => total + item.bytes, 0)
+    const itemNames = selectedItems.map((item) => storageCacheKindLabel(item.kind, t)).join("、")
+    if (
+      !window.confirm(
+        t("settings.storage.cacheData.confirm", {
+          items: itemNames,
+          size: formatStorageBytes(expectedBytes),
+        }),
+      )
+    )
+      return
+
+    setStorageCacheClearing(true)
+    setStorageCacheClearError("")
+    setStorageCacheClearSuccess("")
+    try {
+      const result = await window.desktop.storage.clearCache(selectedItems.map((item) => item.kind))
+      setStorageStats(result.stats)
+      setSelectedCacheKinds([])
+      setStorageCacheClearSuccess(
+        t("settings.storage.cacheData.success", {
+          size: formatStorageBytes(result.reclaimedBytes),
+        }),
+      )
+    } catch {
+      setStorageCacheClearError(t("settings.storage.cacheData.error"))
+      await refreshStorageStats()
+    } finally {
+      setStorageCacheClearing(false)
+    }
+  }
+
+  const selectedCacheItems = (storageStats?.cacheItems ?? []).filter(
+    (item) => item.clearable && item.bytes > 0 && selectedCacheKinds.includes(item.kind),
+  )
+  const selectedCacheBytes = selectedCacheItems.reduce((total, item) => total + item.bytes, 0)
 
   async function updateSettings(patch: DesktopSettingsPatch): Promise<DesktopSettings | undefined> {
     setSettingsError("")
@@ -386,11 +468,92 @@ export function DesktopSettingsPanel({
 
           {activeSection === "storage" && (
             <section aria-label={t("settings.storage.title")} className="settings-group">
+              <StorageDiskOverview stats={storageStats} />
+              <details className="settings-storage-cache" open>
+                <summary>
+                  <span>
+                    <strong>{t("settings.storage.cacheData.title")}</strong>
+                    <small>{t("settings.storage.cacheData.desc")}</small>
+                  </span>
+                  <span className="settings-storage-cache-summary-end">
+                    <small className="settings-storage-cache-total">
+                      {formatStorageBytes(
+                        (storageStats?.cacheItems ?? []).reduce(
+                          (total, item) => total + item.bytes,
+                          0,
+                        ),
+                      )}
+                    </small>
+                    <ChevronDown aria-hidden="true" size={16} />
+                  </span>
+                </summary>
+                <div className="settings-storage-cache-items">
+                  {storageCacheKinds.map((kind) => {
+                    const item = storageStats?.cacheItems.find(
+                      (candidate) => candidate.kind === kind,
+                    )
+                    const clearable = Boolean(item?.clearable)
+                    const selectable = clearable && (item?.bytes ?? 0) > 0
+                    return (
+                      <label className="settings-storage-cache-item" key={kind}>
+                        <input
+                          aria-label={storageCacheKindLabel(kind, t)}
+                          checked={selectedCacheKinds.includes(kind)}
+                          disabled={!selectable || storageCacheClearing}
+                          type="checkbox"
+                          onChange={(event) => toggleCacheKind(kind, event.target.checked)}
+                        />
+                        <span>
+                          <strong>{storageCacheKindLabel(kind, t)}</strong>
+                          <small>
+                            {item
+                              ? formatStorageBytes(item.bytes)
+                              : t("settings.storage.cacheData.loading")}
+                            {!clearable && item && kind === "updates" && (
+                              <>
+                                {" · "}
+                                {t("settings.storage.cacheData.updates.unavailable")}
+                              </>
+                            )}
+                          </small>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <div className="settings-storage-cache-actions">
+                  <small>
+                    {t("settings.storage.cacheData.selected", {
+                      count: selectedCacheItems.length,
+                      size: formatStorageBytes(selectedCacheBytes),
+                    })}
+                  </small>
+                  <button
+                    aria-label={t("settings.storage.cacheData.clear.aria")}
+                    className="settings-secondary-button"
+                    disabled={storageCacheClearing || selectedCacheItems.length === 0}
+                    onClick={() => void clearSelectedStorageCache()}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={16} />
+                    {t("settings.storage.cacheData.clear")}
+                  </button>
+                </div>
+                {storageCacheClearError && <p role="alert">{storageCacheClearError}</p>}
+                {storageCacheClearSuccess && (
+                  <p className="settings-storage-success" role="status">
+                    {storageCacheClearSuccess}
+                  </p>
+                )}
+              </details>
               <div className="settings-row">
                 <span>
                   <strong>{t("settings.storage.cache.title")}</strong>
                   <small>
-                    {formatCacheSize(cacheStats?.payloadBytes ?? 0)} ·
+                    {formatStorageBytes(
+                      storageStats?.messageCacheBytes ?? cacheStats?.payloadBytes ?? 0,
+                    )}
+                    {" · "}
                     {cacheStatusText(cacheStats?.status, t)}
                   </small>
                 </span>
@@ -406,12 +569,21 @@ export function DesktopSettingsPanel({
                 </button>
               </div>
               {cacheClearError && <p role="alert">{cacheClearError}</p>}
+              <div className="settings-row settings-storage-other">
+                <span>
+                  <strong>{t("settings.storage.other.title")}</strong>
+                  <small>
+                    {formatStorageBytes(storageStats?.otherBytes ?? 0)} ·{" "}
+                    {t("settings.storage.other.desc")}
+                  </small>
+                </span>
+              </div>
               <div className="settings-row">
                 <span>
                   <strong>{t("settings.storage.diagnostics.title")}</strong>
                   <small>
                     {diagnosticStats?.status === "available"
-                      ? formatCacheSize(diagnosticStats.bytes)
+                      ? formatStorageBytes(storageStats?.diagnosticsBytes ?? diagnosticStats.bytes)
                       : t("settings.storage.diagnostics.size.unavailable")}
                     {diagnosticStats?.status !== "available" && (
                       <>
@@ -552,10 +724,103 @@ export function DesktopSettingsPanel({
   )
 }
 
-function formatCacheSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`
+function StorageDiskOverview({ stats }: { stats?: DesktopStorageStats }) {
+  const { t } = useLocale()
+  const disk = stats?.disk
+  const diskAvailable = disk?.availableBytes ?? 0
+  const diskUsed = disk?.usedBytes ?? 0
+  const diskTotal = disk?.totalBytes ?? 0
+  const appBytes = Math.min(stats?.appBytes ?? 0, diskUsed)
+  const otherUsedBytes = Math.max(0, diskUsed - appBytes)
+  const percentages = diskTotal
+    ? {
+        app: (appBytes / diskTotal) * 100,
+        available: (diskAvailable / diskTotal) * 100,
+        other: (otherUsedBytes / diskTotal) * 100,
+      }
+    : { app: 0, available: 0, other: 0 }
+
+  return (
+    <div className="settings-storage-overview">
+      <div className="settings-storage-overview-heading">
+        <span>
+          <strong>{t("settings.storage.disk.title")}</strong>
+          <small>
+            {diskTotal
+              ? t("settings.storage.disk.summary", {
+                  available: formatStorageBytes(diskAvailable),
+                  used: formatStorageBytes(diskUsed),
+                })
+              : t("settings.storage.disk.loading")}
+          </small>
+        </span>
+        {diskTotal > 0 && <small>{formatStorageBytes(diskTotal)}</small>}
+      </div>
+      <div
+        aria-label={
+          diskTotal
+            ? t("settings.storage.disk.aria", {
+                app: formatStorageBytes(appBytes),
+                available: formatStorageBytes(diskAvailable),
+                used: formatStorageBytes(diskUsed),
+              })
+            : t("settings.storage.disk.loading")
+        }
+        className="settings-storage-disk-bar"
+        role="img"
+      >
+        <span
+          aria-hidden="true"
+          className="settings-storage-disk-segment settings-storage-disk-segment-app"
+          style={{ width: `${percentages.app}%` }}
+        />
+        <span
+          aria-hidden="true"
+          className="settings-storage-disk-segment settings-storage-disk-segment-other"
+          style={{ width: `${percentages.other}%` }}
+        />
+        <span
+          aria-hidden="true"
+          className="settings-storage-disk-segment settings-storage-disk-segment-available"
+          style={{ width: `${percentages.available}%` }}
+        />
+      </div>
+      <div className="settings-storage-disk-legend">
+        <span>
+          <i aria-hidden="true" className="settings-storage-disk-marker-app" />
+          <small>{t("settings.storage.disk.app")}</small>
+          <strong>{formatStorageBytes(appBytes)}</strong>
+        </span>
+        <span>
+          <i aria-hidden="true" className="settings-storage-disk-marker-other" />
+          <small>{t("settings.storage.disk.other")}</small>
+          <strong>{formatStorageBytes(otherUsedBytes)}</strong>
+        </span>
+        <span>
+          <i aria-hidden="true" className="settings-storage-disk-marker-available" />
+          <small>{t("settings.storage.disk.available")}</small>
+          <strong>{formatStorageBytes(diskAvailable)}</strong>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function storageCacheKindLabel(
+  kind: StorageCacheKind,
+  t: ReturnType<typeof useLocale>["t"],
+): string {
+  if (kind === "network") return t("settings.storage.cacheData.network")
+  if (kind === "runtime") return t("settings.storage.cacheData.runtime")
+  return t("settings.storage.cacheData.updates")
+}
+
+function formatStorageBytes(bytes: number): string {
+  const value = Number.isFinite(bytes) && bytes > 0 ? bytes : 0
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MiB`
+  return `${(value / 1024 / 1024 / 1024).toFixed(1)} GiB`
 }
 
 function cacheStatusText(

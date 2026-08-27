@@ -1,26 +1,33 @@
 import type { ReactNode } from "react"
-import { Bot, FolderClosed, MessagesSquare, Settings, UserRound, UsersRound } from "lucide-react"
+import { Bot, MessagesSquare, Settings, UserRound, UsersRound } from "lucide-react"
 
 import { useLocale } from "@/components/locale-provider"
 import { type ClientConversation } from "@/lib/client-data-api"
 import { AddGroupMembersDialog } from "@/components/add-group-members-dialog"
 import { AppProfilePopover } from "@/components/app-profile-popover"
 import { ConversationAvatar } from "@/components/conversation/conversation-avatar"
+import { ConversationStatusIndicator } from "@/components/conversation/conversation-status-indicator"
 import { ConversationInfoDrawer } from "@/components/conversation-info-drawer"
 import { GroupProfilePopover } from "@/components/group-profile-popover"
 import { Button } from "@/components/ui/button"
 import { UserProfilePopover } from "@/components/user-profile-popover"
+import { ConversationAttachmentsDialog } from "@/components/conversation/conversation-attachments-dialog"
+import { ConversationTopicsDialog } from "@/components/conversation/conversation-topics-dialog"
 
 export function ConversationPanelHeader({
   actions,
   conversation,
   currentUserId,
   online,
+  onOpenTopic,
+  status,
 }: {
   actions?: ReactNode
   conversation: ClientConversation
   currentUserId: string
   online?: boolean
+  onOpenTopic?: (conversationId: string) => void
+  status?: string
 }) {
   const { t } = useLocale()
   return (
@@ -43,18 +50,32 @@ export function ConversationPanelHeader({
               {t("chat.header.memberCount", { count: getGroupMemberCount(conversation) })}
             </span>
           )}
-          {conversation.type === "app" && (
-            <span className="inline-flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
-              <Bot className="size-3" />
-              {t("chat.header.app")}
-            </span>
-          )}
-          {conversation.type === "direct" && (
-            <span className="inline-flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
-              <UserRound className="size-3" />
-              {t("chat.header.privateChat")}
-            </span>
-          )}
+          {conversation.type === "app" &&
+            (status ? (
+              <ConversationStatusIndicator
+                announce
+                className="text-xs leading-4 text-muted-foreground"
+                status={status}
+              />
+            ) : (
+              <span className="inline-flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
+                <Bot className="size-3" />
+                {t("chat.header.app")}
+              </span>
+            ))}
+          {conversation.type === "direct" &&
+            (status ? (
+              <ConversationStatusIndicator
+                announce
+                className="text-xs leading-4 text-muted-foreground"
+                status={status}
+              />
+            ) : (
+              <span className="inline-flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
+                <UserRound className="size-3" />
+                {t("chat.header.privateChat")}
+              </span>
+            ))}
           {conversation.type === "topic" && (
             <span
               className="inline-flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground"
@@ -68,19 +89,13 @@ export function ConversationPanelHeader({
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {actions}
-        {conversation.type === "group" && <AddGroupMembersDialog conversation={conversation} />}
-        {conversation.type !== "topic" && (
-          <Button
-            aria-label={t("chat.header.attachments")}
-            disabled
-            size="icon-sm"
-            title={t("chat.header.attachments")}
-            type="button"
-            variant="ghost"
-          >
-            <FolderClosed className="size-4" />
-          </Button>
+        {conversation.type !== "topic" && onOpenTopic && (
+          <ConversationTopicsDialog conversation={conversation} onOpenTopic={onOpenTopic} />
         )}
+        {conversation.type !== "topic" && (
+          <ConversationAttachmentsDialog conversation={conversation} />
+        )}
+        {conversation.type === "group" && <AddGroupMembersDialog conversation={conversation} />}
         {conversation.type !== "topic" && (
           <ConversationInfoDrawer conversationId={conversation.id}>
             <Button

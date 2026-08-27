@@ -96,9 +96,9 @@ const bridge: DesktopBridge = {
   },
   notifications: { show: (input) => ipcRenderer.invoke(IPC.notificationShow, input) },
   navigation: {
-    openDocumentWindow: async (documentId, serverId) =>
+    openDocumentWindow: async (documentId, serverId, documentType) =>
       normalizeDocumentWindowOpenResponse(
-        await ipcRenderer.invoke(IPC.documentWindowOpen, { documentId, serverId }),
+        await ipcRenderer.invoke(IPC.documentWindowOpen, { documentId, documentType, serverId }),
       ),
     subscribe: (listener) => subscribe<string>(IPC.navigate, listener),
     subscribeUnknownServer: (listener) =>
@@ -150,6 +150,10 @@ const bridge: DesktopBridge = {
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     set: (patch) => ipcRenderer.invoke(IPC.settingsSet, patch),
+  },
+  storage: {
+    clearCache: (kinds) => ipcRenderer.invoke(IPC.storageCacheClear, kinds),
+    getStats: () => ipcRenderer.invoke(IPC.storageGetStats),
   },
   shell: { openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) },
   transport: {

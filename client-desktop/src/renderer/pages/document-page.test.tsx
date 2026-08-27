@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getClientDocument: vi.fn(),
   getClientProject: vi.fn(),
   listClientDocuments: vi.fn(),
+  markdownCollaborationDocument: undefined as Y.Doc | undefined,
   passedCollaborationProvider: undefined as unknown,
   providerOptions: undefined as
     | {
@@ -84,6 +85,12 @@ vi.mock("@/components/documents/document-editor", () => ({
     )
   },
 }))
+vi.mock("@/components/documents/markdown-document-editor", () => ({
+  MarkdownDocumentEditor: ({ collaborationDocument }: { collaborationDocument: Y.Doc }) => {
+    mocks.markdownCollaborationDocument = collaborationDocument
+    return <div aria-label="Markdown 文档编辑器" role="region" />
+  },
+}))
 vi.mock("@/lib/client-data-context", () => ({
   useClientData: () => ({
     me: mocks.currentMe,
@@ -93,7 +100,19 @@ vi.mock("@/lib/client-data-context", () => ({
 }))
 vi.mock("@/lib/document-data-context", () => ({
   useDocumentData: () => ({
+    loadMoreProjects: vi.fn(),
     me: mocks.currentMe,
+    personalProject: {
+      avatar: "",
+      description: "",
+      id: "personal",
+      isPersonal: true,
+      name: "个人项目",
+      updatedAt: "2026-08-19T00:00:00Z",
+    },
+    projects: [],
+    projectsLoadingMore: false,
+    projectsNextCursor: null,
     refreshMe: mocks.currentRefreshMe,
     refreshProjects: mocks.currentRefreshProjects,
   }),
@@ -152,6 +171,7 @@ describe("DocumentPage", () => {
     })
     mocks.getClientProject.mockReset().mockResolvedValue(project)
     mocks.listClientDocuments.mockReset().mockResolvedValue([document])
+    mocks.markdownCollaborationDocument = undefined
     mocks.passedCollaborationProvider = undefined
     mocks.providerOptions = undefined
     mocks.currentMe = { avatar: "", id: "user-1", name: "陈富东", nickname: "" }
@@ -182,6 +202,50 @@ describe("DocumentPage", () => {
     await waitFor(() => expect(screen.getByText(/标题已自动保存.*正文已同步/)).toBeInTheDocument())
     expect(mocks.attachProvider).toHaveBeenCalledOnce()
     expect(mocks.passedCollaborationProvider).toBeDefined()
+  })
+
+  it("Markdown 文档进入独立工作区并使用 markdown 共享文本根", async () => {
+    mocks.getClientDocument.mockResolvedValue({ ...document, documentType: "markdown" })
+    renderPage(false, "markdown")
+
+    await screen.findByRole("region", { name: "Markdown 文档编辑器" })
+    const collaborationDocument = mocks.markdownCollaborationDocument
+    expect(collaborationDocument).toBeDefined()
+    expect(collaborationDocument?.getText("markdown")).toBeDefined()
+    expect(collaborationDocument?.getXmlFragment("body").length).toBe(0)
+  })
+
+  it("路由类型与文档类型不一致时不渲染编辑器", async () => {
+    renderPage(false, "markdown")
+
+    expect(await screen.findByText("文档类型与访问路径不一致")).toBeInTheDocument()
+    expect(screen.queryByRole("textbox", { name: "顶部文档标题" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Markdown 文档编辑器" })).not.toBeInTheDocument()
+  })
+
+  it("同项目切换文档时保持侧栏实例，只替换内容区", async () => {
+    const nextDocument = {
+      ...document,
+      id: "5457c4af-2185-4e8e-b267-38f25ac3dd2f",
+      title: "第二篇文档",
+    }
+    const nextDocumentRequest = deferred<typeof nextDocument>()
+    mocks.getClientDocument.mockImplementation((documentId: string) =>
+      documentId === nextDocument.id ? nextDocumentRequest.promise : Promise.resolve(document),
+    )
+    const router = renderPage()
+    await screen.findByRole("textbox", { name: "顶部文档标题" })
+    const sidebarTrigger = screen.getByRole("button", { name: "切换文档项目" })
+
+    await router.navigate(`/documents/document/${nextDocument.id}`)
+
+    expect(await screen.findByText("正在加载文档")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "切换文档项目" })).toBe(sidebarTrigger)
+
+    await act(async () => nextDocumentRequest.resolve(nextDocument))
+
+    expect(await screen.findByRole("textbox", { name: "顶部文档标题" })).toHaveValue("第二篇文档")
+    expect(screen.getByRole("button", { name: "切换文档项目" })).toBe(sidebarTrigger)
   })
 
   it("统一拦截应用内路由导航，取消时保留编辑状态，确认后才离开", async () => {
@@ -320,7 +384,9 @@ describe("DocumentPage", () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "打开当前文档并返回" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "打开新窗口并返回" }))
-    await waitFor(() => expect(openDocumentWindow).toHaveBeenCalledWith(document.id, "server-1"))
+    await waitFor(() =>
+      expect(openDocumentWindow).toHaveBeenCalledWith(document.id, "server-1", "document"),
+    )
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/projects/project-1/documents"),
     )
@@ -343,7 +409,9 @@ describe("DocumentPage", () => {
       await screen.findByRole("textbox", { name: "顶部文档标题" })
 
       fireEvent.click(screen.getByRole("button", { name: "在新窗口打开文档" }))
-      await waitFor(() => expect(openDocumentWindow).toHaveBeenCalledWith(document.id, "server-1"))
+      await waitFor(() =>
+        expect(openDocumentWindow).toHaveBeenCalledWith(document.id, "server-1", "document"),
+      )
       expect(router.state.location.pathname).toBe(`/documents/document/${document.id}`)
     } finally {
       window.history.pushState({}, "", initialUrl)
@@ -460,17 +528,21 @@ describe("DocumentPage", () => {
   })
 })
 
-function renderPage(strictMode = false) {
+function renderPage(strictMode = false, routeDocumentType: "document" | "markdown" = "document") {
   const router = createMemoryRouter(
     [
       {
         path: "/documents/document/:documentId",
         element: <DocumentPage />,
       },
+      {
+        path: "/documents/markdown/:documentId",
+        element: <DocumentPage />,
+      },
       { path: "/projects/:projectId/documents", element: <div>项目页面</div> },
       { path: "/projects/:projectId", element: <div>项目页面</div> },
     ],
-    { initialEntries: [`/documents/document/${document.id}`] },
+    { initialEntries: [`/documents/${routeDocumentType}/${document.id}`] },
   )
   const page = (
     <DesktopTargetContext.Provider
@@ -481,4 +553,12 @@ function renderPage(strictMode = false) {
   )
   render(strictMode ? <StrictMode>{page}</StrictMode> : page)
   return router
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }

@@ -239,6 +239,208 @@
   min-width: 0;
 }
 
+.settings-storage-overview {
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 76%, transparent);
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 0 18px;
+}
+
+.settings-storage-overview-heading {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.settings-storage-overview-heading > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-storage-overview strong,
+.settings-storage-cache strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.settings-storage-overview small,
+.settings-storage-cache small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.settings-storage-overview-heading > small {
+  flex: none;
+  text-align: right;
+}
+
+.settings-storage-disk-bar {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  display: flex;
+  height: 14px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.settings-storage-disk-segment {
+  display: block;
+  flex: none;
+  height: 100%;
+}
+
+.settings-storage-disk-segment-app,
+.settings-storage-disk-marker-app {
+  background: oklch(0.62 0.16 150);
+}
+
+.settings-storage-disk-segment-other,
+.settings-storage-disk-marker-other {
+  background: oklch(0.72 0.16 65);
+}
+
+.settings-storage-disk-segment-available,
+.settings-storage-disk-marker-available {
+  background: oklch(1 0 0);
+}
+
+.settings-storage-disk-legend {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.settings-storage-disk-legend > span {
+  align-items: start;
+  display: grid;
+  gap: 2px 6px;
+  grid-template-columns: 8px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.settings-storage-disk-legend i {
+  border-radius: 2px;
+  grid-row: span 2;
+  height: 8px;
+  margin-top: 4px;
+  width: 8px;
+}
+
+.settings-storage-disk-legend strong {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.settings-storage-cache {
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 76%, transparent);
+  min-width: 0;
+}
+
+.settings-storage-cache > summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  list-style: none;
+  min-height: 76px;
+  min-width: 0;
+  padding: 13px 0;
+}
+
+.settings-storage-cache > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-storage-cache > summary > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-storage-cache-summary-end {
+  align-items: center;
+  display: flex !important;
+  gap: 6px;
+}
+
+.settings-storage-cache-summary-end svg {
+  flex: none;
+  transform: rotate(-90deg);
+  transition: transform 160ms ease;
+}
+
+.settings-storage-cache[open] .settings-storage-cache-summary-end svg {
+  transform: none;
+}
+
+.settings-storage-cache-total {
+  color: var(--foreground) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-storage-cache-items {
+  border-top: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  display: grid;
+}
+
+.settings-storage-cache-item {
+  align-items: center;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  min-height: 56px;
+  min-width: 0;
+  padding: 9px 0;
+}
+
+.settings-storage-cache-item:has(input:disabled) {
+  cursor: default;
+}
+
+.settings-storage-cache-item input {
+  accent-color: var(--primary);
+  height: 16px;
+  margin: 0;
+  width: 16px;
+}
+
+.settings-storage-cache-item > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-storage-cache-actions {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 72px;
+  min-width: 0;
+}
+
+.settings-storage-cache-actions > small {
+  min-width: 0;
+}
+
+.settings-storage-success {
+  color: var(--primary) !important;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
 .settings-row {
   align-items: center;
   border-bottom: 1px solid color-mix(in oklch, var(--border) 76%, transparent);
@@ -683,6 +885,16 @@
     justify-self: start;
   }
 
+  .settings-storage-disk-legend {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-storage-cache-actions {
+    align-items: start;
+    grid-template-columns: 1fr;
+    padding: 12px 0;
+  }
+
   .settings-mac-update-header {
     align-items: flex-start;
     flex-direction: column;
@@ -698,6 +910,10 @@
   .settings-select-trigger,
   .settings-row input[type="checkbox"],
   .settings-row input[type="checkbox"]::after {
+    transition: none;
+  }
+
+  .settings-storage-cache-summary-end svg {
     transition: none;
   }
 }

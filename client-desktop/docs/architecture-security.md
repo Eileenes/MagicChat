@@ -140,7 +140,11 @@ Updater 资格由 Main 根据打包状态、Stable 通道、平台、架构和�
 NSIS、macOS 打包应用和 Linux AppImage 可以进入 OTA；Linux deb、开发运行和 test 通道
 只进入手动升级；未知平台或架构进入不支持状态。更新检查和下载采用单飞 Promise，远端
 发布说明会移除 HTML、控制字符和 URL，并限制长度。安装前必须确认更新已下载且不存在
-活跃文件传输，再由 Main 协调资源清理和一次性退出安装意图。
+活跃文件传输，再由 Main 协调资源清理和一次性退出安装意图。安装意图只在 Main 的
+`userData` 中保存目标版本；新版本只有在首个 Renderer 加载并完成健康标记后，才会在
+自身版本严格匹配该目标版本时删除更新缓存。安装、版本匹配或缓存删除任一环节不确定时
+保留缓存；缓存删除失败保留安装意图，后续同版本健康启动重试。设置页手动清理更新缓存
+会同时删除安装意图，且 Renderer 不会获得本地路径或新增的更新清理 IPC。
 
 开发环境仅允许 localhost HTTP；打包应用只接受 HTTPS/WSS 和系统信任链。目前不支持
 忽略证书错误、应用内导入私有 CA 或 mTLS。网络使用 Electron/Chromium 系统代理，
@@ -218,6 +222,28 @@ SQL 参数或原始 SQLite 错误；设置页只展示近似逻辑占用、稳�
 Server 重新建立可信同步边界。
 
 ## 跨端变更规则
+
+### 2026-08 上游聊天与 Markdown 能力对齐
+
+以下能力以 Server 提交 `955c80b`、`8f4eda6`、`1e8c757`、`6532ca3`、`b89b554` 为协议和
+授权事实来源。Desktop 只消费既有受控 HTTP、文档协作和受保护媒体能力，不复制、引用或
+运行时加载 `client-web`。
+
+- 好友建立系统消息：Desktop 已支持 `friendship_created` 的归一化、固定摘要和实时会话
+  刷新；Server 与 Web 已提供；Mobile 未在本轮 Desktop 变更中修改或验证。
+- Markdown 协同文档：Desktop 已支持显式创建、`document_type: "markdown"`、路由级
+  CodeMirror 工作区和 `Y.Text("markdown")` 协作；Server 与 Web 已提供；Mobile 尚未在本轮
+  变更范围实现或验证该工作区。
+- 会话话题浏览：Desktop 已支持非话题父会话的有界游标分页、状态和未读展示，以及复用既有
+  话题导航；Server 与 Web 已提供；Mobile 未在本轮 Desktop 变更中修改或验证。
+- 历史附件浏览：Desktop 已支持非话题会话的有界游标分页，并复用 `magicchat-media://` 和
+  Main 下载链路；Server 与 Web 已提供；Mobile 未在本轮 Desktop 变更中修改或验证。
+- 普通成员改群名：Desktop 已将群名编辑入口扩展到 active `member`，最终授权仍由 Server
+  决定，其他群管理权限保持不变；Server 与 Web 已提供；Mobile 未在本轮 Desktop 变更中修改
+  或验证。
+
+本轮未改动 Shared、Preload、Main 或 DesktopBridge：既有版本化窄文档协作 Bridge 已覆盖
+Markdown 共享文本，保持原有 sender、AuthenticatedTarget、owner 和资源清理校验。
 
 修改以下内容时，必须分别核对 Server、Web、Desktop 和 Mobile，并记录哪些端已修改、
 不受影响或尚未实现：

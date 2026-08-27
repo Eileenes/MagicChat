@@ -11,7 +11,15 @@ import type { ASRBridge } from "@shared/asr-contract"
 import type { ScreenshotBridge } from "@shared/screenshot-contract"
 import type { ShortcutBridge } from "@shared/shortcut-contract"
 import type { DocumentCollaborationBridge } from "@shared/document-collaboration-contract"
-import type { DocumentWindowOpenResponse } from "@shared/document-window-contract"
+import type {
+  DocumentWindowDocumentType,
+  DocumentWindowOpenResponse,
+} from "@shared/document-window-contract"
+import type {
+  DesktopStorageStats,
+  StorageCacheKind,
+  StorageClearResult,
+} from "@shared/storage-contract"
 import type {
   DiagnosticEvent,
   DiagnosticEventInput,
@@ -101,6 +109,8 @@ export const IPC = {
   serversSelect: "desktop:v1:servers-select",
   settingsGet: "desktop:v1:settings-get",
   settingsSet: "desktop:v1:settings-set",
+  storageCacheClear: "desktop:v1:storage-cache-clear",
+  storageGetStats: "desktop:v1:storage-get-stats",
   transportCancel: "desktop:v1:transport-cancel",
   transportStreamAbort: "desktop:v1:transport-stream-abort",
   transportStreamChunk: "desktop:v1:transport-stream-chunk",
@@ -282,7 +292,11 @@ export interface DesktopBridge {
   messageCache: MessageCacheBridge
   notifications: { show(input: NotificationInput): Promise<void> }
   navigation: {
-    openDocumentWindow(documentId: string, serverId: string): Promise<DocumentWindowOpenResponse>
+    openDocumentWindow(
+      documentId: string,
+      serverId: string,
+      documentType: DocumentWindowDocumentType,
+    ): Promise<DocumentWindowOpenResponse>
     subscribe(listener: (route: string) => void): () => void
     subscribeUnknownServer(listener: (input: { serverId: string }) => void): () => void
   }
@@ -310,6 +324,10 @@ export interface DesktopBridge {
   settings: {
     get(): Promise<DesktopSettings>
     set(patch: DesktopSettingsPatch): Promise<DesktopSettings>
+  }
+  storage: {
+    clearCache(kinds: ReadonlyArray<StorageCacheKind>): Promise<StorageClearResult>
+    getStats(): Promise<DesktopStorageStats>
   }
   shell: { openExternal(url: string): Promise<void> }
   transport: {
