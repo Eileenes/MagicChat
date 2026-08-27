@@ -1,6 +1,7 @@
 ---
 import { Icon } from 'astro-icon/components';
 import BaseLayout from '../layouts/BaseLayout.astro';
+import HeroFlowBackground from '../components/HeroFlowBackground.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 
@@ -125,16 +126,24 @@ const faqs = [
   <SiteHeader />
   <main id="main-content" class="scene-page">
     <section class="scene scene-hero" aria-labelledby="hero-title">
-      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow">即应是什么</span><h1 id="hero-title"><span class="hero-title-name">即应</span><span class="hero-title-accent">AI 时代的团队协作入口</span></h1><p class="scene-lead"><span class="scene-lead-line">即应是一款开源的即时通讯工具，连接消息、知识与任务</span><span class="scene-lead-line">让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工</span></p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验 <Icon name="tabler:arrow-right" size={16} aria-hidden="true" /></a><details class="scene-download-menu download-menu"><summary class="scene-button scene-button-outline scene-install-toggle" aria-label="免费安装" data-tooltip="免费安装">免费安装 <Icon name="tabler:download" size={16} aria-hidden="true" /></summary><div class="download-menu-panel scene-download-menu-panel"><article class="download-option"><div><h3>Windows 下载</h3><p>Windows 桌面客户端</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.exe" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>Mac 下载</h3><p>macOS 桌面客户端</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.dmg" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>iOS 下载</h3><p>iPhone 与 iPad</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.dmg" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>安卓 下载</h3><p>Android 手机和平板</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.apk" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article></div></details></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持私有化部署</span></div></div>
+      <HeroFlowBackground />
+      <div class="hero-icon-cloud" aria-hidden="true">
+        <span class="hero-orbit-icon hero-orbit-icon-message"><span class="hero-orbit-icon-card"><Icon name="tabler:message-circle" size={23} is:inline /></span></span>
+        <span class="hero-orbit-icon hero-orbit-icon-ai"><span class="hero-orbit-icon-card"><Icon name="tabler:brain" size={24} is:inline /></span></span>
+        <span class="hero-orbit-icon hero-orbit-icon-document"><span class="hero-orbit-icon-card"><Icon name="tabler:file-text" size={23} is:inline /></span></span>
+        <span class="hero-orbit-icon hero-orbit-icon-task"><span class="hero-orbit-icon-card"><Icon name="tabler:checkbox" size={23} is:inline /></span></span>
+        <span class="hero-orbit-icon hero-orbit-icon-security"><span class="hero-orbit-icon-card"><Icon name="tabler:shield-check" size={23} is:inline /></span></span>
+      </div>
+      <div class="scene-content scene-content-bottom"><span class="scene-eyebrow"><Icon name="tabler:sparkles" size={16} is:inline aria-hidden="true" />即应是什么</span><h1 id="hero-title" class="hero-title-motion"><span class="hero-title-name">即应</span><span class="hero-title-accent">AI 时代的团队协作入口</span></h1><p class="scene-lead" data-hero-typing aria-label="即应是一款开源的即时通讯工具，连接消息、知识与任务。让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。"><span class="scene-lead-line" data-typing-line aria-hidden="true">即应是一款开源的即时通讯工具，连接消息、知识与任务</span><span class="scene-lead-line" data-typing-line aria-hidden="true">让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工</span></p><div class="scene-actions"><a class="scene-button scene-button-primary" href="https://app.jiying.chat/" target="_blank" rel="noopener noreferrer">在线体验</a><details class="scene-download-menu download-menu"><summary class="scene-button scene-button-outline scene-install-toggle" aria-label="免费安装" data-tooltip="免费安装">免费安装</summary><div class="download-menu-panel scene-download-menu-panel"><article class="download-option"><div><h3>Windows 下载</h3><p>Windows 桌面客户端</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.exe" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>Mac 下载</h3><p>macOS 桌面客户端</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.dmg" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>iOS 下载</h3><p>iPhone 与 iPad</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.dmg" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article><article class="download-option"><div><h3>安卓 下载</h3><p>Android 手机和平板</p></div><a class="download-option-action" href="https://jiying.chat/releases/jiying.apk" target="_blank" rel="noopener noreferrer">下载<Icon name="tabler:download" size={15} aria-hidden="true" /></a></article></div></details></div><div class="scene-tags"><span>开源</span><span>内置 AI 助理</span><span>支持私有化部署</span></div></div>
     </section>
 
     <section class="scene scene-why" id="why" aria-labelledby="why-title">
-      <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow">为什么需要即应</span><h2 id="why-title"><span class="title-line">一个空间，连接</span><span class="title-line title-accent">团队与 AI</span></h2><p>在即应中不仅可以提供完整的团队协作能力，让沟通与执行在同一个空间完成。同时也内置了 AI 智能体能自然接入相关流程，让每个人都能轻松定义专属智能体，完成更多定制化工作。</p></div><section class="pain-mosaic" aria-label="团队协作痛点">{painPoints.map(([number, itemTitle, body], index) => <article class:list={['pain-banner', `pain-tile-${index + 1}`]} id={`pain-slide-${number}`} tabindex="0" aria-label={`${index + 1} / ${painPoints.length}`}><div class="pain-banner-content"><p class="pain-banner-meta"><span>{number}</span><i></i><span>需求与痛点</span></p><h3>{itemTitle}</h3><p>{body}</p></div><span class="pain-banner-ordinal" aria-hidden="true">{number}</span></article>)}</section></div>
+      <div class="scene-content scene-content-bottom"><div class="scene-text-block"><span class="scene-eyebrow"><Icon name="tabler:users" size={16} is:inline aria-hidden="true" />为什么需要即应</span><h2 id="why-title"><span class="title-line">一个空间，连接</span><span class="title-line title-accent">团队与 AI</span></h2><p>在即应中不仅可以提供完整的团队协作能力，让沟通与执行在同一个空间完成。同时也内置了 AI 智能体能自然接入相关流程，让每个人都能轻松定义专属智能体，完成更多定制化工作。</p></div><div class="pain-showcase"><div class="pain-showcase-main"><section class="pain-mosaic" aria-label="需求与痛点">{painPoints.map(([number, itemTitle, body], index) => <article class:list={['pain-banner', `pain-tile-${index + 1}`]} id={`pain-slide-${number}`} tabindex="0" aria-label={`${index + 1} / ${painPoints.length}`}><div class="pain-banner-content"><p class="pain-banner-meta"><span>{number}</span><i></i></p><h3>{itemTitle}</h3><p>{body}</p></div><span class="pain-banner-ordinal" aria-hidden="true">{number}</span></article>)}</section></div></div></div>
     </section>
 
     <section class="scene scene-solution" id="solution" aria-labelledby="solution-title">
       <div class="scene-content scene-content-top scene-solution-content">
-        <div class="scene-text-block"><span class="scene-eyebrow">功能介绍</span><h2 id="solution-title"><span class="title-line">让 AI 真正成为<span class="title-accent">团队的一员</span></span></h2><p>即应希望 AI 不是与工作割裂的聊天机器人，而是能接手实际流程的数字员工——沟通、项目、时间、文档，处处替你分担；团队进展一目了然，人的精力回归真正重要的判断与创造。</p></div>
+        <div class="scene-text-block"><span class="scene-eyebrow"><Icon name="tabler:robot" size={16} is:inline aria-hidden="true" />功能介绍</span><h2 id="solution-title"><span class="title-line">让 AI 真正成为<span class="title-accent">团队的一员</span></span></h2><p>即应希望 AI 不是与工作割裂的聊天机器人，而是能接手实际流程的数字员工——沟通、项目、时间、文档，处处替你分担；团队进展一目了然，人的精力回归真正重要的判断与创造。</p></div>
         <section class="feature-explorer" aria-label="即应核心能力">
           <div class="feature-pagination" role="tablist" aria-label="选择核心能力">
             {capabilities.map(([itemTitle, body], index) => (
@@ -150,6 +159,7 @@ const faqs = [
                 <div class="feature-page-summary">
                   <strong>{itemTitle}</strong>
                   <span>{body}</span>
+                  <i class="feature-scratch-light" aria-hidden="true"></i>
                 </div>
               </div>
             ))}
@@ -173,10 +183,10 @@ const faqs = [
                     <div class="product-app">
                       <aside class="app-dock" aria-hidden="true">
                         <span class="app-dock-logo">即</span>
-                        <span class:list={['app-dock-item', index === 0 && 'is-current']}><Icon name="tabler:message-circle" size={14} /></span>
-                        <span class:list={['app-dock-item', index === 1 && 'is-current']}><Icon name="tabler:checkbox" size={14} /></span>
-                        <span class:list={['app-dock-item', index === 2 && 'is-current']}><Icon name="tabler:shield-check" size={14} /></span>
-                        <span class:list={['app-dock-item', index === 3 && 'is-current']}><Icon name="tabler:plug-connected" size={14} /></span>
+                        <span class:list={['app-dock-item', index === 0 && 'is-current']}><Icon name="tabler:message-circle" size={14} is:inline /></span>
+                        <span class:list={['app-dock-item', index === 1 && 'is-current']}><Icon name="tabler:checkbox" size={14} is:inline /></span>
+                        <span class:list={['app-dock-item', index === 2 && 'is-current']}><Icon name="tabler:shield-check" size={14} is:inline /></span>
+                        <span class:list={['app-dock-item', index === 3 && 'is-current']}><Icon name="tabler:plug-connected" size={14} is:inline /></span>
                       </aside>
                       <aside class="app-inbox">
                         <header>
@@ -230,8 +240,16 @@ const faqs = [
                         </div>
                         <footer class="app-composer" data-feature-composer>
                           <span class="app-typing-text" data-composer-text>{featureVisuals[index].prompt}</span>
-                          <span class="app-composer-send" data-send-control aria-hidden="true"><Icon name="tabler:send" size={14} /></span>
-                          <span class="app-mouse-pointer" data-mouse-pointer aria-hidden="true"><Icon name="tabler:pointer-2" size={17} /></span>
+                          <span class="app-composer-send" data-send-control aria-hidden="true">
+                            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14 21 3m0 0-6.5 18a.55.55 0 0 1-1 0L10 14l-7-3.5a.55.55 0 0 1 0-1z" />
+                            </svg>
+                          </span>
+                          <span class="app-mouse-pointer" data-mouse-pointer aria-hidden="true">
+                            <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m14.185 13.14 5.644-2.202c1.625-.634 1.538-2.962-.13-3.473L5.38 3.083c-1.41-.431-2.73.888-2.298 2.298l4.382 14.318c.51 1.668 2.84 1.755 3.473.13l2.202-5.644a1.84 1.84 0 0 1 1.045-1.045" />
+                            </svg>
+                          </span>
                         </footer>
                       </section>
                     </div>
@@ -245,9 +263,11 @@ const faqs = [
 
     <section class="dual-section dual-section-comparison" id="capabilities" aria-labelledby="capability-title">
       <div class="comparison-inner" id="comparison">
-        <div class="comparison-heading"><span class="scene-eyebrow">竞品对比</span><h2 id="capability-title">产品能力，一目了然</h2><p>围绕团队协作、部署方式与 AI 接入能力，快速了解即应与常见协作产品的覆盖范围。</p></div>
+        <div class="comparison-heading"><span class="scene-eyebrow"><Icon name="tabler:layout-kanban" size={16} is:inline aria-hidden="true" />竞品对比</span><h2 id="capability-title">产品能力，一目了然</h2><p>围绕团队协作、部署方式与 AI 接入能力，快速了解即应与常见协作产品的覆盖范围。</p></div>
         <div class="comparison-panel comparison-panel-full" aria-label="同类产品对比">
-          <div class="compare-wrap"><table class="compare-table"><thead><tr><th>比较维度</th><th class="jiying">即应</th><th>飞书</th><th>钉钉</th><th>企业微信</th><th>Slack</th><th>Mattermost</th><th>Rocket.Chat</th></tr></thead><tbody>{comparisonRows.map(([dimension, ...support]) => <tr><th>{dimension}</th>{support.map((supported, index) => <td class:list={[index === 0 && 'jiying']}><span class="sr-only">{supported ? '支持' : '不支持'}</span><Icon name={supported ? 'tabler:check' : 'tabler:x'} size={15} aria-hidden="true" /></td>)}</tr>)}</tbody></table></div>
+          <div class="comparison-showcase">
+            <div class="compare-wrap"><table class="compare-table"><thead><tr><th>比较维度</th><th class="jiying">即应</th><th>飞书</th><th>钉钉</th><th>企业微信</th><th>Slack</th><th>Mattermost</th><th>Rocket.Chat</th></tr></thead><tbody>{comparisonRows.map(([dimension, ...support]) => <tr><th>{dimension}</th>{support.map((supported, index) => <td class:list={[index === 0 && 'jiying']}><span class="sr-only">{supported ? '支持' : '不支持'}</span><Icon name={supported ? 'tabler:check' : 'tabler:x'} size={17} aria-hidden="true" /></td>)}</tr>)}</tbody></table></div>
+          </div>
           <p class="compare-note">对比基于各产品公开定位与常见使用方式整理；“私有化部署”指可部署到企业自有基础设施。具体能力可能随版本、套餐和企业配置变化。</p>
         </div>
       </div>
@@ -255,37 +275,144 @@ const faqs = [
 
     <section class="scene scene-faq" id="faq" aria-labelledby="faq-title">
       <div class="faq-inner">
-        <div class="faq-heading"><span class="scene-eyebrow">FAQ</span><h2 id="faq-title">常见问题</h2><p class="faq-intro">从产品能力、部署方式到 AI 助理的使用边界，这里整理了团队最常关心的问题。</p></div>
-        <div class="faq-list" aria-label="常见问题走马灯">
-          <div class="faq-marquee-track">
-            {faqs.map(([question, answer]) => <article class="faq-card" tabindex="0" aria-label={question}><h3>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></h3><p>{answer}</p></article>)}
-            {faqs.map(([question, answer]) => <article class="faq-card" aria-hidden="true"><h3>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></h3><p>{answer}</p></article>)}
+        <div class="faq-heading"><span class="scene-eyebrow"><Icon name="tabler:message-circle" size={16} is:inline aria-hidden="true" />FAQ</span><h2 id="faq-title">常见问题</h2><p class="faq-intro">从产品能力、部署方式到 AI 助理的使用边界，这里整理了团队最常关心的问题。</p></div>
+        <div class="faq-carousel">
+          <button class="faq-carousel-control faq-carousel-control-prev" type="button" aria-label="查看上一个常见问题" aria-controls="faq-marquee-track" data-faq-direction="prev"><Icon name="tabler:arrow-right" size={20} aria-hidden="true" /></button>
+          <div class="faq-list" aria-label="常见问题走马灯">
+            <div class="faq-marquee-track" id="faq-marquee-track">
+              {faqs.map(([question, answer]) => <article class="faq-card" tabindex="0" aria-label={question}><h3>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></h3><p>{answer}</p></article>)}
+              {faqs.map(([question, answer]) => <article class="faq-card" aria-hidden="true"><h3>{question}<Icon name="tabler:arrow-right" size={17} aria-hidden="true" /></h3><p>{answer}</p></article>)}
+            </div>
           </div>
+          <button class="faq-carousel-control faq-carousel-control-next" type="button" aria-label="查看下一个常见问题" aria-controls="faq-marquee-track" data-faq-direction="next"><Icon name="tabler:arrow-right" size={20} aria-hidden="true" /></button>
         </div>
       </div>
+      <SiteFooter />
     </section>
 
   </main>
-  <SiteFooter />
+  <button class="back-to-top" type="button" aria-label="回到页面顶部" title="回到顶部" data-back-to-top>
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
+    </svg>
+  </button>
   <script>
+    const heroTypingLines = Array.from(document.querySelectorAll<HTMLElement>('[data-typing-line]'));
+    const heroTypingReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const heroIconCloud = document.querySelector<HTMLElement>('.hero-icon-cloud');
+    const heroScene = heroIconCloud?.closest<HTMLElement>('.scene-hero') ?? null;
+    const heroOrbitIcons = Array.from(document.querySelectorAll<HTMLElement>('.hero-orbit-icon'));
+    const heroTitleAccent = document.querySelector<HTMLElement>('.hero-title-motion .hero-title-accent');
+    const revealHeroIcons = () => {
+      heroScene?.classList.add('is-icon-entering');
+      heroIconCloud?.classList.add('is-icon-reveal-ready');
+      window.setTimeout(() => heroScene?.classList.remove('is-icon-entering'), 1500);
+    };
+    heroOrbitIcons.forEach((icon) => icon.addEventListener('animationend', (event) => {
+      if (event.animationName === 'hero-icon-spread') icon.classList.add('is-spread-settled');
+    }, { once: true }));
+    if (heroTypingReducedMotion) revealHeroIcons();
+    else heroTitleAccent?.addEventListener('animationstart', (event) => {
+      if (event.animationName === 'hero-title-fade-in-down') window.setTimeout(revealHeroIcons, 420);
+    }, { once: true });
+    if (heroTypingLines.length > 0 && !heroTypingReducedMotion) {
+      const heroTypingText = heroTypingLines.map((line) => line.textContent ?? '');
+      heroTypingLines.forEach((line) => { line.textContent = ''; });
+      const typeHeroLine = (line: HTMLElement, value: string) => new Promise<void>((resolve) => {
+        const characters = Array.from(value);
+        let position = 0;
+        line.classList.add('is-typing');
+        const typeNext = () => {
+          position += 1;
+          line.textContent = characters.slice(0, position).join('');
+          if (position < characters.length) window.setTimeout(typeNext, 42);
+          else {
+            line.classList.remove('is-typing');
+            resolve();
+          }
+        };
+        typeNext();
+      });
+      window.setTimeout(async () => {
+        for (const [index, line] of heroTypingLines.entries()) {
+          await typeHeroLine(line, heroTypingText[index] ?? '');
+          if (index < heroTypingLines.length - 1) await new Promise((resolve) => window.setTimeout(resolve, 420));
+        }
+        heroTypingLines.at(-1)?.classList.add('is-typed');
+      }, 1650);
+    }
     const revealItems = Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>('.scene-hero .scene-content > *, .scene-why .scene-text-block, .scene-why .pain-mosaic, .scene-solution .scene-text-block, .feature-explorer, .comparison-heading, .comparison-panel, .faq-inner, .footer-grid > *'))));
     revealItems.forEach((item, index) => { item.classList.add('motion-reveal'); item.style.setProperty('--reveal-delay', `${(index % 5) * 70}ms`); });
     if ('IntersectionObserver' in window) { const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target); } }), { threshold: 0.16 }); revealItems.forEach((item) => observer.observe(item)); } else revealItems.forEach((item) => item.classList.add('is-visible'));
+    const sectionTitleGroups = Array.from(document.querySelectorAll<HTMLElement>('.scene-why .scene-text-block, .scene-solution .scene-text-block, .dual-section-comparison .comparison-heading, .scene-faq .faq-heading'));
+    sectionTitleGroups.forEach((group) => group.classList.add('section-title-fade'));
+    if ('IntersectionObserver' in window && !heroTypingReducedMotion) {
+      const sectionTitleObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => entry.target.classList.toggle('is-title-visible', entry.isIntersecting));
+      }, { threshold: 0.35, rootMargin: '-8% 0px -12% 0px' });
+      sectionTitleGroups.forEach((group) => sectionTitleObserver.observe(group));
+    } else sectionTitleGroups.forEach((group) => group.classList.add('is-title-visible'));
     const featureTemplate = document.querySelector<HTMLTemplateElement>('template[data-feature-template]');
     const featurePages = Array.from(document.querySelectorAll<HTMLElement>('[data-feature-page]'));
     const featureExplorer = document.querySelector<HTMLElement>('.feature-explorer');
     const featurePagination = document.querySelector<HTMLElement>('.feature-pagination');
     const faqMarqueeTrack = document.querySelector<HTMLElement>('.faq-marquee-track');
+    const faqList = document.querySelector<HTMLElement>('.faq-list');
+    const faqControls = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-faq-direction]'));
+    const siteFooter = document.querySelector<HTMLElement>('.site-footer');
+    const ambientAnimationRegions = [heroScene, siteFooter].filter((region): region is HTMLElement => region !== null);
     let shownFeatureIndex = -1;
     let mountedPreview: HTMLElement | null = null;
     let featureAutoTimer = 0;
-    let featureHovering = false;
     let featureInView = true;
     let faqInView = true;
+    let faqStepTimer = 0;
+    let faqResumeTimer = 0;
+    let faqManualIndex = 0;
     const featureAutoInterval = 5000;
     const featureDemoTimers = new WeakMap<HTMLElement, number[]>();
     const featureDemoStartDelay = 1000;
     const featureDemoClasses = ['is-demo-clicking', 'is-demo-sent', 'is-demo-processing', 'is-demo-streaming', 'is-demo-complete'];
+    const resumeFaqMarquee = () => {
+      if (!faqMarqueeTrack || !faqInView || document.hidden || faqList?.matches(':hover, :focus-within')) return;
+      faqMarqueeTrack.getAnimations()[0]?.play();
+    };
+    const stepFaqMarquee = (direction: 'prev' | 'next') => {
+      if (!faqMarqueeTrack) return;
+      const cards = Array.from(faqMarqueeTrack.querySelectorAll<HTMLElement>('.faq-card:not([aria-hidden="true"])'));
+      const firstCard = cards[0];
+      if (!firstCard || cards.length === 0) return;
+      const trackStyle = window.getComputedStyle(faqMarqueeTrack);
+      const gap = Number.parseFloat(trackStyle.columnGap || trackStyle.gap) || 0;
+      const stepWidth = firstCard.getBoundingClientRect().width + gap;
+      const animation = faqMarqueeTrack.getAnimations()[0];
+      window.clearTimeout(faqStepTimer);
+      window.clearTimeout(faqResumeTimer);
+
+      if (!animation || heroTypingReducedMotion) {
+        faqManualIndex = (faqManualIndex + (direction === 'next' ? 1 : -1) + cards.length) % cards.length;
+        faqMarqueeTrack.style.transform = `translate3d(${-faqManualIndex * stepWidth}px, 0, 0)`;
+        return;
+      }
+
+      const durationValue = animation.effect?.getTiming().duration;
+      const duration = typeof durationValue === 'number' ? durationValue : 42000;
+      const cycleWidth = Math.max(faqMarqueeTrack.scrollWidth / 2, stepWidth);
+      const timelineStep = duration * (stepWidth / cycleWidth);
+      const directionRate = direction === 'next' ? 10.5 : -10.5;
+      const currentTime = Number(animation.currentTime ?? 0);
+      if (directionRate < 0 && currentTime < timelineStep) animation.currentTime = currentTime + duration;
+      animation.playbackRate = directionRate;
+      animation.play();
+      faqStepTimer = window.setTimeout(() => {
+        animation.pause();
+        animation.playbackRate = 1;
+        faqResumeTimer = window.setTimeout(resumeFaqMarquee, 3000);
+      }, timelineStep / Math.abs(directionRate));
+    };
+    faqControls.forEach((control) => control.addEventListener('click', () => {
+      stepFaqMarquee(control.dataset.faqDirection === 'prev' ? 'prev' : 'next');
+    }));
     const stopFeatureDemo = (preview: HTMLElement) => {
       featureDemoTimers.get(preview)?.forEach((timer) => window.clearTimeout(timer));
       featureDemoTimers.delete(preview);
@@ -396,10 +523,9 @@ const faqs = [
     };
     const startFeatureAuto = () => {
       stopFeatureAuto();
-      if (featurePages.length === 0 || featureHovering || !featureInView || document.documentElement.classList.contains('is-resizing')) return;
+      if (featurePages.length === 0 || !featureInView || document.documentElement.classList.contains('is-resizing')) return;
       featureAutoTimer = window.setTimeout(() => {
-        const nextIndex = shownFeatureIndex < 0 ? 0 : (shownFeatureIndex + 1) % featurePages.length;
-        applyFeature(nextIndex);
+        applyFeature((shownFeatureIndex + 1) % featurePages.length);
         startFeatureAuto();
       }, featureAutoInterval);
     };
@@ -409,6 +535,7 @@ const faqs = [
       return rect.bottom >= -offset && rect.top <= viewportHeight + offset;
     };
     const syncFeatureVisibility = () => {
+      featureExplorer?.classList.toggle('is-animation-paused', !featureInView);
       if (featureInView) {
         resumeFeatureDemo();
         startFeatureAuto();
@@ -427,10 +554,7 @@ const faqs = [
       window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => {
         document.documentElement.classList.remove('is-resizing');
-        if (!featureHovering) {
-          resumeFeatureDemo();
-          startFeatureAuto();
-        }
+        syncFeatureVisibility();
       }, 360);
     }, { passive: true });
     if ('IntersectionObserver' in window) {
@@ -448,6 +572,15 @@ const faqs = [
         }, { threshold: 0.18 });
         faqObserver.observe(faqMarqueeTrack);
       }
+      if (ambientAnimationRegions.length > 0) {
+        const ambientObserver = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => entry.target.classList.toggle('is-animation-paused', !entry.isIntersecting));
+        }, { rootMargin: '0px', threshold: 0 });
+        ambientAnimationRegions.forEach((region) => {
+          region.classList.toggle('is-animation-paused', !isNearViewport(region, 180));
+          ambientObserver.observe(region);
+        });
+      }
     } else {
       faqMarqueeTrack?.classList.add('is-in-view');
     }
@@ -456,25 +589,29 @@ const faqs = [
         featureInView = false;
         stopFeatureAuto();
         pauseFeatureDemo();
+        featureExplorer?.classList.add('is-animation-paused');
         faqMarqueeTrack?.classList.remove('is-in-view');
+        ambientAnimationRegions.forEach((region) => region.classList.add('is-animation-paused'));
       } else {
         featureInView = featureExplorer ? isNearViewport(featureExplorer) : true;
         faqInView = faqMarqueeTrack ? isNearViewport(faqMarqueeTrack) : true;
         syncFeatureVisibility();
         if (faqInView) faqMarqueeTrack?.classList.add('is-in-view');
+        ambientAnimationRegions.forEach((region) => region.classList.toggle('is-animation-paused', !isNearViewport(region, 180)));
       }
     });
-    if (window.matchMedia('(hover: hover)').matches) {
-      featurePages.forEach((page, index) => page.addEventListener('mouseenter', () => {
-        featureHovering = true;
-        stopFeatureAuto();
+    featurePages.forEach((page, index) => {
+      page.addEventListener('click', () => {
         applyFeature(index);
-      }));
-      featureExplorer?.addEventListener('mouseleave', () => {
-        featureHovering = false;
-        syncFeatureVisibility();
+        startFeatureAuto();
       });
-    }
+      page.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        applyFeature(index);
+        startFeatureAuto();
+      });
+    });
     applyFeature(0);
     syncFeatureVisibility();
     const downloadMenus = Array.from(document.querySelectorAll<HTMLDetailsElement>('.download-menu'));
@@ -504,5 +641,21 @@ const faqs = [
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') closeDownloadMenus();
     });
+    const backToTop = document.querySelector<HTMLButtonElement>('[data-back-to-top]');
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const syncBackToTop = () => backToTop?.classList.toggle('is-visible', window.scrollY > window.innerHeight * .65);
+    let backToTopFrame = 0;
+    window.addEventListener('scroll', () => {
+      if (backToTopFrame) return;
+      backToTopFrame = window.requestAnimationFrame(() => {
+        backToTopFrame = 0;
+        syncBackToTop();
+      });
+    }, { passive: true });
+    window.addEventListener('resize', syncBackToTop, { passive: true });
+    backToTop?.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+    });
+    syncBackToTop();
   </script>
 </BaseLayout>
