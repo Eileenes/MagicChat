@@ -1,6 +1,6 @@
 import * as React from "react"
 import {
-  Building2,
+  ChevronDown,
   Circle,
   CircleCheckBig,
   CircleDot,
@@ -14,19 +14,29 @@ import { useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
 
 import { CreateProjectTaskDialog } from "@/components/projects/create-project-task-dialog"
+import { ProjectAvatar } from "@/components/projects/project-avatar"
 import { ProjectTaskDetailsDialog } from "@/components/projects/project-task-details-dialog"
-import type { ProjectTask } from "@/components/projects/project-types"
+import {
+  PriorityFilter,
+  StatusFilter,
+} from "@/components/projects/project-tasks-tab"
+import type {
+  ProjectTask,
+  ProjectTaskPriority,
+  ProjectTaskStatus,
+} from "@/components/projects/project-types"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   getClientProject,
   listClientProjects,
@@ -84,6 +94,8 @@ function LoadedTaskWorkspace({
   const [error, setError] = React.useState("")
   const [keyword, setKeyword] = React.useState("")
   const deferredKeyword = React.useDeferredValue(keyword.trim())
+  const [priorities, setPriorities] = React.useState<ProjectTaskPriority[]>([])
+  const [statuses, setStatuses] = React.useState<ProjectTaskStatus[]>([])
   const [loading, setLoading] = React.useState(true)
   const [loadingMore, setLoadingMore] = React.useState(false)
   const [loadedProject, setLoadedProject] =
@@ -194,6 +206,8 @@ function LoadedTaskWorkspace({
       const page = await listClientProjectTasks(projectId, {
         keyword: deferredKeyword || undefined,
         limit: 50,
+        priorities,
+        statuses,
       })
       if (requestId === requestIdRef.current) {
         setTasks(page.tasks)
@@ -209,13 +223,15 @@ function LoadedTaskWorkspace({
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
     }
-  }, [deferredKeyword, projectId])
+  }, [deferredKeyword, priorities, projectId, statuses])
 
   React.useEffect(() => {
     const requestId = ++requestIdRef.current
     void listClientProjectTasks(projectId, {
       keyword: deferredKeyword || undefined,
       limit: 50,
+      priorities,
+      statuses,
     })
       .then((page) => {
         if (requestId === requestIdRef.current) {
@@ -237,7 +253,7 @@ function LoadedTaskWorkspace({
     return () => {
       requestIdRef.current += 1
     }
-  }, [deferredKeyword, projectId])
+  }, [deferredKeyword, priorities, projectId, statuses])
 
   const listedActiveTask = tasks.find((task) => task.id === taskId)
   const displayedActiveTask =
@@ -271,6 +287,8 @@ function LoadedTaskWorkspace({
         cursor: nextCursor,
         keyword: deferredKeyword || undefined,
         limit: 50,
+        priorities,
+        statuses,
       })
       setTasks((current) => [...current, ...page.tasks])
       setNextCursor(page.nextCursor)
@@ -309,58 +327,76 @@ function LoadedTaskWorkspace({
   }
 
   return (
-    <main className="flex h-svh min-w-0 overflow-hidden bg-background">
+    <main className="flex h-svh min-w-0 gap-3 overflow-hidden bg-muted p-3">
       <aside
+        aria-label="任务列表工作区"
         className={cn(
-          "h-full w-full shrink-0 flex-col overflow-hidden border-r bg-background md:flex md:w-80",
+          "h-full w-full shrink-0 flex-col overflow-hidden rounded-xl border bg-background shadow-xs md:flex md:w-80",
           taskId ? "hidden" : "flex"
         )}
       >
-        <div className="flex h-14 shrink-0 items-center px-3">
-          <Select
-            onValueChange={(nextProjectId) => {
-              if (nextProjectId === "__load_more_projects__") {
-                void loadMoreProjects().catch((loadError: unknown) =>
-                  toast.error(
-                    loadError instanceof Error
-                      ? loadError.message
-                      : "加载更多项目失败"
-                  )
-                )
-                return
-              }
-              navigate(`/tasks/${encodeURIComponent(nextProjectId)}`)
-            }}
-            value={projectId}
-          >
-            <SelectTrigger
-              aria-label="切换项目"
-              className="h-10 w-full border-0 shadow-none"
-            >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300">
-                <Building2 className="size-4" />
-              </span>
-              <SelectValue placeholder={currentProject?.name || "选择项目"} />
-            </SelectTrigger>
-            <SelectContent>
-              {projectOptions.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
+        <div className="mx-2 mt-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                aria-label="切换项目"
+                className="h-10 w-full justify-start gap-2 px-2 font-semibold"
+                type="button"
+                variant="ghost"
+              >
+                {currentProject && (
+                  <ProjectAvatar
+                    className="size-7"
+                    project={currentProject}
+                    user={clientData?.me}
+                  />
+                )}
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {currentProject?.name || "选择项目"}
+                </span>
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup
+                onValueChange={(nextProjectId) =>
+                  navigate(`/tasks/${encodeURIComponent(nextProjectId)}`)
+                }
+                value={projectId}
+              >
+                {projectOptions.map((project) => (
+                  <DropdownMenuRadioItem key={project.id} value={project.id}>
+                    <ProjectAvatar
+                      className="size-5"
+                      project={project}
+                      user={clientData?.me}
+                    />
+                    <span className="truncate">{project.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
               {projectsNextCursor && (
-                <SelectItem
+                <DropdownMenuItem
                   disabled={projectsLoadingMore}
-                  value="__load_more_projects__"
+                  onSelect={(event) => {
+                    event.preventDefault()
+                    void loadMoreProjects().catch((loadError: unknown) =>
+                      toast.error(
+                        loadError instanceof Error
+                          ? loadError.message
+                          : "加载更多项目失败"
+                      )
+                    )
+                  }}
                 >
                   {projectsLoadingMore ? "正在加载更多项目" : "加载更多项目…"}
-                </SelectItem>
+                </DropdownMenuItem>
               )}
-            </SelectContent>
-          </Select>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
-        <div className="grid shrink-0 gap-2 px-3 pb-3">
+        <div className="grid shrink-0 gap-2 px-3 py-2">
           <div className="flex gap-2">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -382,6 +418,18 @@ function LoadedTaskWorkspace({
               <Plus />
             </Button>
           </div>
+          <div aria-label="任务筛选" className="grid grid-cols-2 gap-2">
+            <StatusFilter
+              emptyLabel="全部状态"
+              onValueChange={setStatuses}
+              value={statuses}
+            />
+            <PriorityFilter
+              emptyLabel="全部优先级"
+              onValueChange={setPriorities}
+              value={priorities}
+            />
+          </div>
         </div>
 
         <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
@@ -400,7 +448,11 @@ function LoadedTaskWorkspace({
             </WorkspaceState>
           ) : tasks.length === 0 ? (
             <WorkspaceState
-              message={deferredKeyword ? "没有匹配的任务" : "暂无任务"}
+              message={
+                deferredKeyword || priorities.length || statuses.length
+                  ? "没有匹配的任务"
+                  : "暂无任务"
+              }
             />
           ) : (
             <div aria-label="任务列表" className="grid gap-1" role="list">
@@ -431,8 +483,9 @@ function LoadedTaskWorkspace({
       </aside>
 
       <section
+        aria-label="任务内容工作区"
         className={cn(
-          "min-w-0 flex-1 overflow-hidden bg-background md:flex",
+          "min-w-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-xs md:flex",
           taskId ? "flex" : "hidden"
         )}
       >
@@ -526,7 +579,7 @@ function WorkspaceTaskItem({
       className={cn(
         "grid w-full gap-1.5 rounded-md px-3 py-2.5 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         active &&
-          "bg-teal-100 hover:bg-teal-100 dark:bg-teal-900 dark:hover:bg-teal-900"
+          "bg-(--weui-brand-1) hover:bg-(--weui-brand-1)"
       )}
       onClick={onClick}
       type="button"

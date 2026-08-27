@@ -397,6 +397,8 @@ definitions:
     type: object
   client.accountEnvelope:
     properties:
+      mobile_session:
+        $ref: '#/definitions/client.mobileSessionResponse'
       user:
         $ref: '#/definitions/client.accountResponse'
     type: object
@@ -1604,6 +1606,14 @@ definitions:
         items:
           $ref: '#/definitions/client.messageTopicReplyResponse'
         type: array
+    type: object
+  client.mobileSessionResponse:
+    properties:
+      expires_at:
+        format: date-time
+        type: string
+      token:
+        type: string
     type: object
   client.moveDocumentRequest:
     properties:
@@ -3714,6 +3724,10 @@ paths:
       - application/json
       description: 验证 8 位邮箱验证码，创建普通用户 Session 并写入登录 Cookie。验证码仅能使用一次。
       parameters:
+      - description: Native Mobile Session 能力版本（当前支持 1；带 Origin 的请求不会返回 token）
+        in: header
+        name: X-Dianbao-Mobile-Session
+        type: string
       - description: 邮箱和验证码
         in: body
         name: body
@@ -3800,6 +3814,10 @@ paths:
       - application/json
       description: 普通用户使用管理员创建的邮箱和密码登录。
       parameters:
+      - description: Native Mobile Session 能力版本（当前支持 1；带 Origin 的请求不会返回 token）
+        in: header
+        name: X-Dianbao-Mobile-Session
+        type: string
       - description: 登录参数
         in: body
         name: body
@@ -3836,6 +3854,11 @@ paths:
   /api/client/auth/logout:
     post:
       description: 删除当前普通用户会话并清除客户端登录 Cookie。重复调用也会返回成功。
+      parameters:
+      - description: 当前推送安装实例 ID
+        in: header
+        name: X-Push-Installation-ID
+        type: string
       produces:
       - application/json
       responses:

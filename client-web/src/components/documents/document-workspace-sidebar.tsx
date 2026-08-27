@@ -229,7 +229,6 @@ export function DocumentWorkspaceSidebar({
             >
               {creating ? <Loader2 className="animate-spin" /> : <Plus />}
               新建文档
-              <ChevronDown className="ml-auto" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
@@ -336,7 +335,7 @@ function DocumentTree({
             className={cn(
               "flex h-9 w-full items-center gap-2 rounded-md pr-2 text-left text-sm outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring",
               activeDocumentId === node.id &&
-                "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                "bg-(--weui-brand-1) font-medium text-sidebar-accent-foreground hover:bg-(--weui-brand-1)"
             )}
             key={node.id}
             onClick={(event) => {

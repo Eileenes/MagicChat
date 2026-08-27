@@ -84,7 +84,10 @@ type TaskFilters = {
   statuses: ProjectTaskStatus[]
 }
 
-const statusOptions: Array<{ label: string; value: ProjectTaskStatus }> = [
+export const statusOptions: Array<{
+  label: string
+  value: ProjectTaskStatus
+}> = [
   { label: "待办", value: "todo" },
   { label: "进行中", value: "in_progress" },
   { label: "已完成", value: "done" },
@@ -93,7 +96,7 @@ const statusOptions: Array<{ label: string; value: ProjectTaskStatus }> = [
 
 const defaultTaskStatuses: ProjectTaskStatus[] = ["todo", "in_progress"]
 
-const priorityOptions: Array<{
+export const priorityOptions: Array<{
   label: string
   value: ProjectTaskPriority
 }> = [
@@ -576,10 +579,12 @@ async function listAllProjectTasks(projectId: string, filters: TaskFilters) {
   return tasks
 }
 
-function StatusFilter({
+export function StatusFilter({
+  emptyLabel = "状态",
   onValueChange,
   value,
 }: {
+  emptyLabel?: string
   onValueChange: (value: ProjectTaskStatus[]) => void
   value: ProjectTaskStatus[]
 }) {
@@ -588,7 +593,7 @@ function StatusFilter({
       <DropdownMenuTrigger asChild>
         <FilterButton
           active={value.length > 0}
-          label={getFilterLabel("状态", value, statusOptions)}
+          label={getFilterLabel(emptyLabel, value, statusOptions)}
           prefix={value.length > 0 ? "状态" : undefined}
         />
       </DropdownMenuTrigger>
@@ -653,10 +658,12 @@ function hydrateTaskUsers(
   return changed ? next : tasks
 }
 
-function PriorityFilter({
+export function PriorityFilter({
+  emptyLabel = "优先级",
   onValueChange,
   value,
 }: {
+  emptyLabel?: string
   onValueChange: (value: ProjectTaskPriority[]) => void
   value: ProjectTaskPriority[]
 }) {
@@ -665,7 +672,7 @@ function PriorityFilter({
       <DropdownMenuTrigger asChild>
         <FilterButton
           active={value.length > 0}
-          label={getFilterLabel("优先级", value, priorityOptions)}
+          label={getFilterLabel(emptyLabel, value, priorityOptions)}
           prefix={value.length > 0 ? "优先级" : undefined}
         />
       </DropdownMenuTrigger>

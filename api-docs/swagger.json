@@ -2457,6 +2457,12 @@
                 "summary": "使用邮箱验证码登录",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Native Mobile Session 能力版本（当前支持 1；带 Origin 的请求不会返回 token）",
+                        "name": "X-Dianbao-Mobile-Session",
+                        "in": "header"
+                    },
+                    {
                         "description": "邮箱和验证码",
                         "name": "body",
                         "in": "body",
@@ -2597,6 +2603,12 @@
                 "summary": "普通用户登录",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Native Mobile Session 能力版本（当前支持 1；带 Origin 的请求不会返回 token）",
+                        "name": "X-Dianbao-Mobile-Session",
+                        "in": "header"
+                    },
+                    {
                         "description": "登录参数",
                         "name": "body",
                         "in": "body",
@@ -2656,6 +2668,14 @@
                     "客户端认证"
                 ],
                 "summary": "普通用户退出登录",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "当前推送安装实例 ID",
+                        "name": "X-Push-Installation-ID",
+                        "in": "header"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -9583,6 +9603,9 @@
         "client.accountEnvelope": {
             "type": "object",
             "properties": {
+                "mobile_session": {
+                    "$ref": "#/definitions/client.mobileSessionResponse"
+                },
                 "user": {
                     "$ref": "#/definitions/client.accountResponse"
                 }
@@ -11351,6 +11374,18 @@
                     "items": {
                         "$ref": "#/definitions/client.messageTopicReplyResponse"
                     }
+                }
+            }
+        },
+        "client.mobileSessionResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
