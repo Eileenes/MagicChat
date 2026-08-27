@@ -1,0 +1,19 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MagicChat Push Gateway API",
+    "version": "0.1.0",
+    "description": "Anonymous capability-based push notification gateway."
+  },
+  "paths": {
+    "/api/v1/installations": {"post": {"summary": "Register an app installation", "responses": {"201": {"description": "Registered"}}}},
+    "/api/v1/installations/{installation_id}/provider-token": {"put": {"summary": "Rotate a provider token", "responses": {"204": {"description": "Updated"}}}},
+    "/api/v1/installations/{installation_id}/active-grant": {"post": {"summary": "Replace the active grant", "responses": {"201": {"description": "Created"}}}},
+    "/api/v1/grants/{grant_id}/renew": {"post": {"summary": "Renew an active grant", "responses": {"200": {"description": "Renewed"}}}},
+    "/api/v1/grants/{grant_id}": {"delete": {"summary": "Revoke a grant", "responses": {"204": {"description": "Revoked"}}}},
+    "/api/v1/grants/{grant_id}/notifications": {"post": {"summary": "Enqueue a notification", "responses": {"202": {"description": "Accepted"}}}},
+    "/api/health/live": {"get": {"summary": "Liveness probe", "responses": {"200": {"description": "Alive"}}}},
+    "/api/health/ready": {"get": {"summary": "Readiness probe", "responses": {"200": {"description": "Ready"}}}},
+    "/api/metrics": {"get": {"summary": "Prometheus metrics", "responses": {"200": {"description": "Metrics"}}}}
+  }
+}
