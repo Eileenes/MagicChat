@@ -59,7 +59,8 @@ func (a *PushAPI) RegisterRoutes(group *echo.Group) {
 // @Router /api/client/push/grants [put]
 func (a *PushAPI) registerGrant(c echo.Context) error {
 	current, ok := CurrentAccount(c)
-	if !ok {
+	currentSession, sessionOK := CurrentAccountSession(c)
+	if !ok || !sessionOK {
 		return writeFailure(c, http.StatusUnauthorized, "unauthorized", "未登录")
 	}
 	var request registerPushGrantRequest
@@ -67,7 +68,7 @@ func (a *PushAPI) registerGrant(c echo.Context) error {
 		return writeFailure(c, http.StatusBadRequest, "invalid_request", "请求格式错误")
 	}
 	grant, err := a.push.RegisterGrant(c.Request().Context(), mobilepush.RegisterGrantCommand{
-		UserID: current.ID, InstallationID: request.InstallationID,
+		UserID: current.ID, SessionID: currentSession.ID, InstallationID: request.InstallationID,
 		GatewayGrantID: request.GrantID, SendToken: request.SendToken,
 		Platform: request.Platform, ExpiresAt: request.ExpiresAt,
 	})
@@ -128,6 +129,8 @@ func writePushError(c echo.Context, err error) error {
 	code := mobilepush.ErrorCodeOf(err)
 	status := http.StatusInternalServerError
 	switch code {
+	case "unauthorized":
+		status = http.StatusUnauthorized
 	case "invalid_request":
 		status = http.StatusBadRequest
 	case "route_not_found":

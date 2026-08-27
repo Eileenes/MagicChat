@@ -35,6 +35,25 @@ func TestLoadReadsConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresJPushCredentialsWhenEnabled(t *testing.T) {
+	key := make([]byte, 32)
+	t.Setenv("DATABASE_URL", "postgres://db/push")
+	t.Setenv("DATA_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(key))
+	t.Setenv("PUSH_PROVIDERS", "jpush")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "JPUSH_APP_KEY") {
+		t.Fatalf("missing JPush credential error = %v", err)
+	}
+	t.Setenv("JPUSH_APP_KEY", "app-key")
+	t.Setenv("JPUSH_MASTER_SECRET", "master-secret")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load JPush configuration: %v", err)
+	}
+	if cfg.JPush.AppKey != "app-key" || cfg.JPush.MasterSecret != "master-secret" {
+		t.Fatalf("JPush configuration = %#v", cfg.JPush)
+	}
+}
+
 func TestLoadRejectsInstallationRetentionShorterThanJobs(t *testing.T) {
 	key := make([]byte, 32)
 	t.Setenv("DATABASE_URL", "postgres://db/push")

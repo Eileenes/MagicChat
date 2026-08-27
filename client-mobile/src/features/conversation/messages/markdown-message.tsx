@@ -1,7 +1,7 @@
 import { useRouter } from "expo-router"
 import MarkdownIt from "markdown-it"
 import type Token from "markdown-it/lib/token.mjs"
-import { useMemo, type ReactNode } from "react"
+import { memo, useMemo, type ReactNode } from "react"
 import { Linking, ScrollView } from "react-native"
 import {
   Image,
@@ -42,7 +42,7 @@ const markdownParser = new MarkdownIt({
 
 const horizontalScrollStyle = { flexGrow: 0, flexShrink: 0 } as const
 
-export function MarkdownMessage({
+export const MarkdownMessage = memo(function MarkdownMessage({
   content,
   currentUserId,
   onMentionPress,
@@ -98,7 +98,7 @@ export function MarkdownMessage({
       {renderBlockNodes(nodes, context)}
     </YStack>
   )
-}
+})
 
 function buildTokenTree(tokens: Token[]) {
   const roots: MarkdownNode[] = []

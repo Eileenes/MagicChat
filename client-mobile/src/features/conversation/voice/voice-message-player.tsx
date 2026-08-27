@@ -72,7 +72,7 @@ export function VoiceMessagePlayer({
       player.play()
     } catch (error: unknown) {
       deactivateVoicePlayer(player.id)
-      toast.show({ message: `${"无法播放语音"}：${error instanceof Error ? error.message : "请稍后重试"}`, type: "text", duration: 1_000 })
+      toast.show({ message: `${"无法播放语音"}：${error instanceof Error ? error.message : "请稍后重试"}`, modal: false, type: "text", duration: 1_000 })
     }
   }, [player, playerId, playerStatus.didJustFinish, toast])
 
@@ -101,7 +101,7 @@ export function VoiceMessagePlayer({
     if (shownPlaybackErrorRef.current === playbackError) return
 
     shownPlaybackErrorRef.current = playbackError
-    toast.show({ message: `${"无法播放语音"}：${playbackError}`, type: "text", duration: 1_000 })
+    toast.show({ message: `${"无法播放语音"}：${playbackError}`, modal: false, type: "text", duration: 1_000 })
   }, [fileId, onResourceError, playerStatus.error, toast])
 
   useEffect(

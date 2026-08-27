@@ -59,12 +59,30 @@ func TestServiceLoginAuthenticateAndLogout(t *testing.T) {
 	if authenticated.ID != storedSession.ID || authenticated.Account.ID != user.ID {
 		t.Fatalf("authenticated session = %#v", authenticated)
 	}
+	installationID := uuid.NewString()
+	if err := db.Create(&store.UserPushGrant{
+		ID: uuid.NewString(), UserID: user.ID, InstallationID: installationID,
+		GatewayGrantID: uuid.NewString(), SendTokenCiphertext: []byte("encrypted"),
+		Platform: "ios", ExpiresAt: now.Add(time.Hour), Status: "active",
+		LastSeenAt: now, CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("create push grant: %v", err)
+	}
 
-	if err := service.Logout(context.Background(), LogoutCommand{Token: "session-token"}); err != nil {
+	if err := service.Logout(context.Background(), LogoutCommand{
+		Token: "session-token", InstallationID: installationID,
+	}); err != nil {
 		t.Fatalf("logout: %v", err)
 	}
 	if _, err := service.AuthenticateSession(context.Background(), "session-token"); ErrorCodeOf(err) != CodeUnauthorized {
 		t.Fatalf("authenticate after logout error = %v, code = %q", err, ErrorCodeOf(err))
+	}
+	var grantCount int64
+	if err := db.Model(&store.UserPushGrant{}).Where("installation_id = ?", installationID).Count(&grantCount).Error; err != nil {
+		t.Fatalf("count push grants after logout: %v", err)
+	}
+	if grantCount != 0 {
+		t.Fatalf("push grants after logout = %d, want 0", grantCount)
 	}
 }
 
@@ -288,7 +306,7 @@ func openAccountTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&store.User{}, &store.UserSession{}, &store.Project{}); err != nil {
+	if err := db.AutoMigrate(&store.User{}, &store.UserSession{}, &store.UserPushGrant{}, &store.Project{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	return db

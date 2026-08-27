@@ -1,4 +1,6 @@
-import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-client"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { ApiRequestError, type ApiFetch } from "@/data/api-client"
+import { createProtectedApiClient } from "@/data/protected-api-client"
 import type {
   ClientProjectPage,
   ClientProjectSummary,
@@ -20,7 +22,7 @@ type ProjectListResponse = {
 }
 
 export async function fetchProjects(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   input: { cursor?: string; limit: number },
   options: { fetcher?: ApiFetch; signal?: AbortSignal } = {}
 ): Promise<ClientProjectPage> {
@@ -29,7 +31,7 @@ export async function fetchProjects(
     query.set("cursor", input.cursor)
   }
 
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ProjectListResponse
   >(`/api/client/projects?${query.toString()}`, {
     errorMessage: "加载项目列表失败",

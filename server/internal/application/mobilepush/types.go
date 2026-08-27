@@ -11,6 +11,11 @@ const (
 	GrantStatusActive   = "active"
 	GrantStatusDisabled = "disabled"
 
+	EventStatusQueued    = "queued"
+	EventStatusExpanding = "expanding"
+	EventStatusRetry     = "retry"
+	EventStatusExpired   = "expired"
+
 	JobStatusQueued  = "queued"
 	JobStatusSending = "sending"
 	JobStatusRetry   = "retry"
@@ -21,6 +26,7 @@ const (
 
 type RegisterGrantCommand struct {
 	UserID         string
+	SessionID      string
 	InstallationID string
 	GatewayGrantID string
 	SendToken      string
@@ -33,16 +39,6 @@ type Grant struct {
 	GatewayGrantID string
 	Platform       string
 	ExpiresAt      time.Time
-}
-
-type MessageDelivery struct {
-	UserID         string
-	ActorUserID    string
-	ConversationID string
-	MessageID      string
-	SenderType     string
-	SenderID       string
-	Muted          bool
 }
 
 type Route struct {

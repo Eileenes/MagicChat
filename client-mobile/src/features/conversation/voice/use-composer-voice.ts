@@ -55,7 +55,7 @@ export function useComposerVoice({
   useEffect(() => {
     if (!recorder.error) return
 
-    toast.show({ message: `${"无法录音"}：${recorder.error}`, type: "text", duration: 1_000 })
+    toast.show({ message: `${"无法录音"}：${recorder.error}`, modal: false, type: "text", duration: 1_000 })
     recorder.clearError()
   }, [recorder, toast])
 
@@ -88,12 +88,12 @@ export function useComposerVoice({
     recorder.resetRecording()
   }, [cancelScheduledPrewarm, recorder])
 
-  const resetAndSchedulePrewarm = useCallback(() => {
+  const resetAndSchedulePrewarm = useCallback((preservePreparedFile = false) => {
     if (dialogClosingRef.current) return
 
     dialogClosingRef.current = true
     setTranscript("")
-    recorder.resetRecording()
+    recorder.resetRecording(preservePreparedFile)
     prewarmTimerRef.current = setTimeout(() => {
       prewarmTimerRef.current = null
       dialogClosingRef.current = false
@@ -152,7 +152,7 @@ export function useComposerVoice({
           transcript: transcript.trim(),
         })
       ) {
-        resetAndSchedulePrewarm()
+        resetAndSchedulePrewarm(true)
       }
     } finally {
       uploadInFlightRef.current = false

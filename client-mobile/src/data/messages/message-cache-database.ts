@@ -1,78 +1,25 @@
-import type { SQLiteDatabase } from "expo-sqlite"
-import { Platform } from "react-native"
-
-import {
-  createMessageCacheMigrationSQL,
-  MESSAGE_CACHE_DATABASE_VERSION,
-} from "@/data/messages/message-cache-version"
-
-const DATABASE_NAME = "magicchat-messages-v1.db"
-
-let databasePromise: Promise<SQLiteDatabase | null> | null = null
+import { databaseService, isDatabasePersistenceAvailable } from "@/data/database/database-service"
 
 export async function getGlobalMessageCacheSize(): Promise<number> {
-  const database = await getMessageCacheDatabase()
-  if (!database) return 0
-  const result = await database.getFirstAsync<{ bytes: number }>(
-    `SELECT COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB)) + 256), 0) AS bytes FROM cached_messages`
+  if (!isDatabasePersistenceAvailable) return 0
+  const result = await databaseService.read("messages.global-size.read", (database) =>
+    database.getFirst<{ bytes: number }>(
+      `SELECT COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB)) + 256), 0) AS bytes FROM cached_messages`
+    )
   )
   return result?.bytes ?? 0
 }
 
 export async function clearGlobalMessageCache(): Promise<void> {
-  const database = await getMessageCacheDatabase()
-  if (!database) return
-  await database.withExclusiveTransactionAsync(async (transaction) => {
-    await transaction.execAsync(
-      `DELETE FROM cached_messages; DELETE FROM message_sync_state; DELETE FROM message_cache_stats;`
-    )
-  })
-  await database.execAsync("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;").catch(() => undefined)
-}
-
-export function getMessageCacheDatabase() {
-  if (Platform.OS === "web") {
-    return Promise.resolve(null)
-  }
-
-  if (!databasePromise) {
-    databasePromise = openMessageCacheDatabase().catch((error) => {
-      databasePromise = null
-      throw error
+  if (!isDatabasePersistenceAvailable) return
+  await databaseService.maintenance("messages.global-cache.clear", async (database) => {
+    // Use the maintenance-scoped primitive rather than recursively entering the
+    // top-level service, so failure rolls all cache tables back as one unit.
+    await database.transaction(async (transaction) => {
+      await transaction.run("DELETE FROM cached_messages")
+      await transaction.run("DELETE FROM message_sync_state")
+      await transaction.run("DELETE FROM message_cache_stats")
     })
-  }
-
-  return databasePromise
-}
-
-async function openMessageCacheDatabase() {
-  const { openDatabaseAsync } = await import("expo-sqlite")
-  const database = await openDatabaseAsync(DATABASE_NAME)
-
-  try {
-    await database.execAsync("PRAGMA journal_mode = WAL;")
-    const version = await database.getFirstAsync<{ user_version: number }>(
-      "PRAGMA user_version"
-    )
-
-    if (
-      (version?.user_version ?? 0) < MESSAGE_CACHE_DATABASE_VERSION
-    ) {
-      await migrateDatabase(database, version?.user_version ?? 0)
-    }
-
-    return database
-  } catch (error) {
-    await database.closeAsync().catch(() => undefined)
-    throw error
-  }
-}
-
-async function migrateDatabase(
-  database: SQLiteDatabase,
-  previousVersion: number
-) {
-  await database.withExclusiveTransactionAsync(async (transaction) => {
-    await transaction.execAsync(createMessageCacheMigrationSQL(previousVersion))
+    await database.exec("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;")
   })
 }

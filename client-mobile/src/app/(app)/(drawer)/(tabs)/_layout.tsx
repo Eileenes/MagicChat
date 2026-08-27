@@ -29,7 +29,7 @@ import { AppHeader } from "@/components/navigation/app-header"
 import { notifyMessagesTabReselected } from "@/features/messages/messages-tab-reselect"
 import { formatUnreadCount } from "@/features/messages/conversation-list-model"
 import { buildCreateGroupConversationHref } from "@/navigation/conversations"
-import { useClientData } from "@/providers/client-data-provider"
+import { useClientConversations } from "@/providers/client-data-provider"
 import {
   XGUIPopoverMenu,
   XGUITabbar,
@@ -65,7 +65,7 @@ type AppTabBarProps = Parameters<
 >[0]
 
 export default function AppTabsLayout() {
-  const { conversations } = useClientData()
+  const { conversations } = useClientConversations()
   const { colors } = useXGUITheme()
   const unreadMessageCount = conversations.reduce(
     (total, conversation) =>

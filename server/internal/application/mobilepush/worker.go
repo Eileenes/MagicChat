@@ -31,6 +31,10 @@ func (s *Service) RunWorker(ctx context.Context) {
 	ticker := time.NewTicker(workerPollInterval)
 	defer ticker.Stop()
 	for {
+		expanded, err := s.ExpandEventBatch(ctx, workerBatchSize)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("expand mobile push events", "error", err)
+		}
 		processed, err := s.DispatchBatch(ctx, workerBatchSize)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("dispatch mobile push jobs", "error", err)
@@ -38,7 +42,7 @@ func (s *Service) RunWorker(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if processed > 0 {
+		if expanded > 0 || processed > 0 {
 			continue
 		}
 		select {
@@ -47,6 +51,94 @@ func (s *Service) RunWorker(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func (s *Service) ExpandEventBatch(ctx context.Context, limit int) (int, error) {
+	if !s.enabled || limit <= 0 {
+		return 0, nil
+	}
+	events, err := s.claimEvents(ctx, limit)
+	if err != nil {
+		return 0, err
+	}
+	for index := range events {
+		if err := s.expandEvent(ctx, events[index]); err != nil {
+			return index, err
+		}
+	}
+	return len(events), nil
+}
+
+func (s *Service) claimEvents(ctx context.Context, limit int) ([]store.MobilePushEvent, error) {
+	now := s.now().UTC()
+	var events []store.MobilePushEvent
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("status = ? AND updated_at < ?", EventStatusExpired, now.Add(-terminalRetention)).
+			Delete(&store.MobilePushEvent{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&store.MobilePushEvent{}).
+			Where("status = ? AND locked_at < ?", EventStatusExpanding, now.Add(-workerLease)).
+			Updates(map[string]any{
+				"status": EventStatusRetry, "next_attempt_at": now,
+				"locked_at": nil, "lock_token": "", "updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&store.MobilePushEvent{}).
+			Where("status IN ? AND expires_at <= ?", []string{EventStatusQueued, EventStatusRetry}, now).
+			Updates(map[string]any{
+				"status": EventStatusExpired, "last_error_code": "ttl_expired", "updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("status IN ? AND next_attempt_at <= ? AND expires_at > ?", []string{EventStatusQueued, EventStatusRetry}, now, now).
+			Order("created_at ASC").Limit(limit).Find(&events).Error; err != nil {
+			return err
+		}
+		for index := range events {
+			events[index].Status = EventStatusExpanding
+			events[index].Attempts++
+			events[index].LockedAt = &now
+			events[index].LockToken = uuid.NewString()
+			if err := tx.Model(&store.MobilePushEvent{}).Where("id = ?", events[index].ID).
+				Updates(map[string]any{
+					"status": EventStatusExpanding, "attempts": events[index].Attempts,
+					"locked_at": now, "lock_token": events[index].LockToken, "updated_at": now,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return events, err
+}
+
+func (s *Service) expandEvent(ctx context.Context, event store.MobilePushEvent) error {
+	now := s.now().UTC()
+	owned := s.db.WithContext(ctx).Model(&store.MobilePushEvent{}).
+		Where("id = ? AND status = ? AND lock_token = ?", event.ID, EventStatusExpanding, event.LockToken).
+		Updates(map[string]any{"locked_at": now, "updated_at": now})
+	if owned.Error != nil || owned.RowsAffected != 1 {
+		return owned.Error
+	}
+	if err := s.fanoutEvent(ctx, event); err == nil {
+		return nil
+	} else if errors.Is(err, context.Canceled) {
+		return err
+	}
+	nextAttempt := now.Add(time.Duration(1<<min(event.Attempts, 6)) * time.Second)
+	if event.Attempts >= maxJobAttempts || !nextAttempt.Before(event.ExpiresAt) {
+		return expireOwnedEvent(s.db.WithContext(ctx), event, now, "event_expansion_failed")
+	}
+	return s.db.WithContext(ctx).Model(&store.MobilePushEvent{}).
+		Where("id = ? AND status = ? AND lock_token = ?", event.ID, EventStatusExpanding, event.LockToken).
+		Updates(map[string]any{
+			"status": EventStatusRetry, "next_attempt_at": nextAttempt,
+			"locked_at": nil, "lock_token": "",
+			"last_error_code": "event_expansion_failed", "updated_at": now,
+		}).Error
 }
 
 func (s *Service) DispatchBatch(ctx context.Context, limit int) (int, error) {
@@ -76,6 +168,10 @@ func (s *Service) claimJobs(ctx context.Context, limit int) ([]store.MobilePushJ
 			"status IN ? AND updated_at < ?",
 			[]string{JobStatusSent, JobStatusFailed, JobStatusExpired}, now.Add(-terminalRetention),
 		).Delete(&store.MobilePushJob{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("status = ? AND updated_at < ?", GrantStatusDisabled, now.Add(-terminalRetention)).
+			Delete(&store.UserPushGrant{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&store.MobilePushJob{}).
@@ -127,6 +223,9 @@ func (s *Service) dispatchJob(ctx context.Context, job store.MobilePushJob) erro
 	now := s.now().UTC()
 	if !job.ExpiresAt.After(now) {
 		return s.finishJob(ctx, job, JobStatusExpired, "ttl_expired")
+	}
+	if job.UserID != job.Grant.UserID {
+		return s.finishJob(ctx, job, JobStatusFailed, "grant_owner_changed")
 	}
 	if job.Grant.Status != GrantStatusActive || !job.Grant.ExpiresAt.After(now) {
 		return s.finishJob(ctx, job, JobStatusFailed, "grant_inactive")

@@ -1,6 +1,6 @@
 import { useXGUIToast } from "@/xgui"
 import { useRouter } from "expo-router"
-import { Alert } from "react-native"
+import { useEffect, useRef, useState } from "react"
 
 import { ApiRequestError, isUnauthorizedError } from "@/data/api-client"
 import {
@@ -17,16 +17,28 @@ import type {
   PreparedClientVoiceMessage,
 } from "@/data/messages/message-upload"
 import type { AuthenticatedTarget } from "@/core/server-target"
+import type { ClientMessage } from "@/core/models"
+import {
+  createOptimisticMessage,
+  markOptimisticMessageFailed,
+  reconcileOptimisticMessages,
+  releaseAllDescriptorCleanups,
+  releaseDescriptorCleanup,
+  type OptimisticMessage,
+  type OptimisticSendDescriptor,
+} from "@/features/conversation/optimistic-message-model"
 import { useAuth } from "@/providers/auth-provider"
 
 export function useConversationMessageActions({
   conversationId,
+  confirmedMessages,
   forwardMessageId,
   onReplySent,
   replyToMessageId,
   server,
 }: {
   conversationId: string
+  confirmedMessages: ClientMessage[]
   forwardMessageId: string | undefined
   onReplySent: (messageId: string) => void
   replyToMessageId: string | undefined
@@ -35,6 +47,31 @@ export function useConversationMessageActions({
   const router = useRouter()
   const toast = useXGUIToast()
   const { invalidateSession } = useAuth()
+  const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([])
+  const confirmedMessagesRef = useRef(confirmedMessages)
+  const retryingIdsRef = useRef(new Set<string>())
+  const descriptorsRef = useRef(new Map<string, OptimisticSendDescriptor>())
+  confirmedMessagesRef.current = confirmedMessages
+
+  useEffect(() => {
+    const confirmedIds = new Set(confirmedMessages.map((message) => message.clientMessageId))
+    for (const clientMessageId of confirmedIds) {
+      releaseDescriptorCleanup(descriptorsRef.current, clientMessageId)
+    }
+    let active = true
+    queueMicrotask(() => {
+      if (active) setOptimisticMessages((current) => reconcileOptimisticMessages(current, confirmedMessages))
+    })
+    return () => { active = false }
+  }, [confirmedMessages])
+
+  useEffect(
+    () => () => {
+      releaseAllDescriptorCleanups(descriptorsRef.current)
+    },
+    [conversationId, server.id, server.url]
+  )
+
   const sendTextMutation = useSendConversationTextMessage(
     server,
     conversationId
@@ -63,79 +100,50 @@ export function useConversationMessageActions({
     server,
     conversationId
   )
-  const isSending =
-    sendTextMutation.isPending ||
-    sendFileMutation.isPending ||
-    sendImageMutation.isPending ||
-    sendVoiceMutation.isPending
+  const isSending = false
 
-  async function sendText(content: string) {
-    const repliedMessageId = replyToMessageId
+  async function enqueue(descriptor: OptimisticSendDescriptor) {
+    descriptorsRef.current.set(descriptor.clientMessageId, descriptor)
+    setOptimisticMessages((current) => {
+      const newestSeq = confirmedMessagesRef.current.reduce((maximum, message) => Math.max(maximum, message.seq), 0)
+      return [{ descriptor, message: createOptimisticMessage(server.userId, conversationId, descriptor, newestSeq + current.length + 1), status: "sending" }, ...current]
+    })
+    if (descriptor.replyToMessageId) onReplySent(descriptor.replyToMessageId)
+    void performSend(descriptor)
+    return true
+  }
+
+  async function performSend(descriptor: OptimisticSendDescriptor) {
+    if (retryingIdsRef.current.has(descriptor.clientMessageId)) return
+    retryingIdsRef.current.add(descriptor.clientMessageId)
+    setOptimisticMessages((current) => current.map((item) => item.message.clientMessageId === descriptor.clientMessageId ? { ...item, status: "sending" } : item))
     try {
-      await sendTextMutation.mutateAsync({
-        clientMessageId: createClientMessageId(),
-        content,
-        replyToMessageId: repliedMessageId,
-      })
-      if (repliedMessageId) onReplySent(repliedMessageId)
-      return true
-    } catch (error: unknown) {
-      Alert.alert(
-        "发送失败",
-        error instanceof ApiRequestError ? error.message : "消息发送失败，请重试。"
-      )
-      return false
+      if (descriptor.kind === "text") await sendTextMutation.mutateAsync(descriptor)
+      else if (descriptor.kind === "image") await sendImageMutation.mutateAsync({ clientMessageId: descriptor.clientMessageId, image: descriptor.upload, replyToMessageId: descriptor.replyToMessageId })
+      else if (descriptor.kind === "file") await sendFileMutation.mutateAsync({ clientMessageId: descriptor.clientMessageId, file: descriptor.upload, replyToMessageId: descriptor.replyToMessageId })
+      else await sendVoiceMutation.mutateAsync({ clientMessageId: descriptor.clientMessageId, durationMS: descriptor.durationMS, replyToMessageId: descriptor.replyToMessageId, transcript: descriptor.transcript, voice: descriptor.upload })
+    } catch {
+      setOptimisticMessages((current) => markOptimisticMessageFailed(current, descriptor.clientMessageId, confirmedMessagesRef.current))
+    } finally {
+      retryingIdsRef.current.delete(descriptor.clientMessageId)
     }
   }
 
-  async function sendUpload(selection: PreparedClientMessageUpload) {
-    const repliedMessageId = replyToMessageId
-    try {
-      if (selection.kind === "image") {
-        await sendImageMutation.mutateAsync({
-          clientMessageId: createClientMessageId(),
-          image: selection.upload,
-          replyToMessageId: repliedMessageId,
-        })
-      } else {
-        await sendFileMutation.mutateAsync({
-          clientMessageId: createClientMessageId(),
-          file: selection.upload,
-          replyToMessageId: repliedMessageId,
-        })
-      }
-      if (repliedMessageId) onReplySent(repliedMessageId)
-      return true
-    } catch (error: unknown) {
-      Alert.alert(
-        selection.kind === "image" ? "图片发送失败" : "文件发送失败",
-        error instanceof ApiRequestError
-          ? error.message
-          : "消息发送失败，请重试。"
-      )
-      return false
-    }
+  function sendText(content: string) {
+    return enqueue({ clientMessageId: createClientMessageId(), content, kind: "text", replyToMessageId })
   }
 
-  async function sendVoice(recording: PreparedClientVoiceMessage) {
-    const repliedMessageId = replyToMessageId
-    try {
-      await sendVoiceMutation.mutateAsync({
-        clientMessageId: createClientMessageId(),
-        durationMS: recording.durationMS,
-        replyToMessageId: repliedMessageId,
-        transcript: recording.transcript,
-        voice: recording.upload,
-      })
-      if (repliedMessageId) onReplySent(repliedMessageId)
-      return true
-    } catch (error: unknown) {
-      Alert.alert(
-        "语音发送失败",
-        error instanceof Error ? error.message : "消息发送失败，请重试。"
-      )
-      return false
-    }
+  function retryMessage(clientMessageId: string) {
+    const descriptor = descriptorsRef.current.get(clientMessageId)
+    if (descriptor) void performSend(descriptor)
+  }
+
+  function sendUpload(selection: PreparedClientMessageUpload) {
+    return enqueue({ cleanup: selection.cleanup, clientMessageId: createClientMessageId(), height: selection.height, kind: selection.kind, replyToMessageId, upload: selection.upload, width: selection.width })
+  }
+
+  function sendVoice(recording: PreparedClientVoiceMessage) {
+    return enqueue({ cleanup: recording.cleanup, clientMessageId: createClientMessageId(), durationMS: recording.durationMS, kind: "voice", replyToMessageId, transcript: recording.transcript, upload: recording.upload })
   }
 
   async function setReaction(
@@ -152,7 +160,7 @@ export function useConversationMessageActions({
       } else {
         toast.show({ message: error instanceof ApiRequestError
             ? error.message
-            : "更新消息表情失败，请重试。", type: "text", duration: 1_000 })
+            : "更新消息表情失败，请重试。", modal: false, type: "text", duration: 1_000 })
       }
       throw error
     }
@@ -185,13 +193,13 @@ export function useConversationMessageActions({
         )
         toast.show({ message: firstFailure?.status === "failed"
             ? firstFailure.error.message
-            : "转发消息失败，请重试。", type: "text", duration: 1_000 })
+            : "转发消息失败，请重试。", modal: false, type: "text", duration: 1_000 })
         return false
       }
 
       toast.show({ message: result.failedCount > 0
           ? `已转发到 ${result.sentCount} 个会话，${result.failedCount} 个失败`
-          : `已转发到 ${result.sentCount} 个会话`, type: "text", duration: 1_000 })
+          : `已转发到 ${result.sentCount} 个会话`, modal: false, type: "text", duration: 1_000 })
       return true
     } catch (error: unknown) {
       if (isUnauthorizedError(error)) {
@@ -200,7 +208,7 @@ export function useConversationMessageActions({
       } else {
         toast.show({ message: error instanceof ApiRequestError
             ? error.message
-            : "转发消息失败，请重试。", type: "text", duration: 1_000 })
+            : "转发消息失败，请重试。", modal: false, type: "text", duration: 1_000 })
       }
       return false
     }
@@ -209,6 +217,8 @@ export function useConversationMessageActions({
   return {
     forward,
     isSending,
+    optimisticMessages,
+    retryMessage,
     respondChoice,
     sendText,
     sendUpload,

@@ -70,7 +70,7 @@ func TestInstallationGrantAndNotificationLifecycle(t *testing.T) {
 		t.Fatalf("provider notifications = %d", len(pushProvider.notifications))
 	}
 	notification := pushProvider.notifications[0]
-	if notification.Title != "即应" || notification.Body != "你收到一条新消息" || notification.Token != "provider-token-123" {
+	if notification.ID != first.JobID || notification.Title != "即应" || notification.Body != "你收到一条新消息" || notification.Token != "provider-token-123" {
 		t.Fatalf("notification = %#v", notification)
 	}
 	var job model.Job

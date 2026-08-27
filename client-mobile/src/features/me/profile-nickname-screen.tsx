@@ -7,9 +7,10 @@ import { YStack } from "tamagui"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { PageHeader } from "@/components/navigation/page-header"
 import { queryKeys } from "@/data/query"
+import { contactManager } from "@/data/contacts"
 import { updateCurrentUserNickname } from "@/data/users/current-user-api"
 import { useAuthenticatedSession } from "@/providers/auth-provider"
-import { useClientData } from "@/providers/client-data-provider"
+import { useClientSession } from "@/providers/client-data-provider"
 import {
   XGUIInformationBar,
   XGUIInput,
@@ -20,7 +21,7 @@ import {
 export function ProfileNicknameScreen() {
   const router = useRouter()
   const session = useAuthenticatedSession()
-  const { currentUser } = useClientData()
+  const { currentUser } = useClientSession()
   const queryClient = useQueryClient()
   const { colors } = useXGUITheme()
   const toast = useXGUIToast()
@@ -36,19 +37,18 @@ export function ProfileNicknameScreen() {
     setErrorMessage("")
     toast.show({ duration: 0, message: "正在保存…", type: "loading" })
     try {
-      await updateCurrentUserNickname(session.url, normalizedNickname)
-      await Promise.all([
+      await updateCurrentUserNickname(session, normalizedNickname)
+      await Promise.allSettled([
         queryClient.invalidateQueries({ queryKey: queryKeys.currentUser(session) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.contacts(session) }),
+        contactManager.refreshUsers(session, [session.userId]),
         queryClient.invalidateQueries({ queryKey: queryKeys.conversations(session) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.userProfiles(session) }),
       ])
       toast.hide()
       router.back()
     } catch (error) {
       const message = error instanceof Error ? error.message : "修改昵称失败，请稍后重试"
       setErrorMessage(message)
-      toast.show({ message, type: "error" })
+      toast.show({ message, modal: false, type: "error" })
       setSaving(false)
     }
   }

@@ -455,7 +455,8 @@ export const MessageComposer = forwardRef<
         const selection = pendingImageUploadsRef.current[0]
         if (!selection || !(await onSendUpload(selection))) break
 
-        selection.cleanup?.()
+        // Successful enqueue transfers cleanup ownership to the optimistic send,
+        // so the local preview remains available for failure and retry.
         pendingImageUploadsRef.current = pendingImageUploadsRef.current.slice(1)
         setPendingImageUploads(pendingImageUploadsRef.current)
       }

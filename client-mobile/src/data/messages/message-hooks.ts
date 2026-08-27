@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useState } from "react"
 
+import { conversationManager } from "@/data/conversations/index"
 import { FALLBACK_POLLING_INTERVAL_MS } from "@/data/query/fallback-polling"
 import {
   messageManager,
@@ -24,6 +25,7 @@ import type {
 import type { ClientMessageUpload } from "@/data/messages/message-upload"
 import type { AuthenticatedTarget } from "@/core/server-target"
 import { queryKeys } from "@/data/query"
+import { formatClientMessageBodySummary } from "@/domain/messages/message-presenter"
 import { preserveNewerMessageState } from "@/domain/messages/message-reactions"
 
 const MESSAGE_PAGE_SIZE = 20
@@ -260,9 +262,7 @@ export function useRevokeConversationMessage(
     onSuccess: ({ message, systemMessage }) => {
       persistTopicSourcePreview(queryClient, server, message)
       persistTopicSourcePreview(queryClient, server, systemMessage)
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.conversations(server),
-      })
+      void updateConversationFromSentMessage(server, systemMessage)
     },
   })
 }
@@ -294,11 +294,9 @@ export function useForwardConversationMessage(
 
         for (const message of target.messages) {
           persistTopicSourcePreview(queryClient, server, message)
+          void updateConversationFromSentMessage(server, message)
         }
       }
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.conversations(server),
-      })
     },
   })
 }
@@ -314,11 +312,51 @@ function useSendConversationMessageMutation<TInput>(
     mutationFn: sendMessage,
     onSuccess: (message) => {
       persistTopicSourcePreview(queryClient, server, message)
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.conversations(server),
-      })
+      void updateConversationFromSentMessage(server, message)
     },
   })
+}
+
+async function updateConversationFromSentMessage(
+  target: AuthenticatedTarget,
+  message: ClientMessage
+) {
+  const updated = await conversationManager.patch(
+    target,
+    message.conversationId,
+    (conversation) => {
+      if (message.seq < conversation.lastMessageSeq) return {}
+
+      const member = conversation.members?.find(
+        (item) =>
+          item.id === message.sender.id && item.type === message.sender.type
+      )
+      return {
+        lastMessageAt: message.createdAt,
+        lastMessageId: message.id,
+        lastMessageSeq: message.seq,
+        lastMessageSender:
+          message.sender.type === "system"
+            ? {
+                id: message.sender.id,
+                name: "系统",
+                nickname: "",
+                type: "system",
+              }
+            : {
+                id: message.sender.id,
+                name: member?.name ?? "",
+                nickname: member?.nickname ?? "",
+                type: message.sender.type,
+              },
+        lastMessageSummary: formatClientMessageBodySummary(
+          message.body,
+          () => undefined
+        ),
+      }
+    }
+  )
+  if (!updated) void conversationManager.refresh(target).catch(() => undefined)
 }
 
 function persistTopicSourcePreview(
@@ -356,35 +394,19 @@ export function useMarkConversationRead(
         exact: true,
         queryKey: queryKeys.conversations(server),
       })
-      queryClient.setQueryData<ClientConversation[]>(
-        queryKeys.conversations(server),
-        (current) =>
-          current?.map((conversation) =>
-            conversation.id === conversationId
-              ? {
-                  ...conversation,
-                  lastReadSeq: Math.max(conversation.lastReadSeq, upToSeq),
-                  unreadCount: 0,
-                }
-              : conversation
-          )
-      )
-    },
-    onError: () => {
-      void queryClient.invalidateQueries({
-        exact: true,
-        queryKey: queryKeys.conversations(server),
+      void conversationManager.patch(server, conversationId, {
+        lastReadSeq: upToSeq,
+        unreadCount: 0,
       })
     },
-    onSuccess: (result) => {
-      queryClient.setQueryData<ClientConversation[]>(
-        queryKeys.conversations(server),
-        (current) =>
-          current?.map((conversation) =>
-            conversation.id === result.conversationId
-              ? mergeConversationReadResult(conversation, result)
-              : conversation
-          )
+    onError: () => {
+      void conversationManager.refresh(server).catch(() => undefined)
+    },
+    onSuccess: async (result) => {
+      await conversationManager.patch(
+        server,
+        result.conversationId,
+        (conversation) => mergeConversationReadResult(conversation, result)
       )
     },
   })

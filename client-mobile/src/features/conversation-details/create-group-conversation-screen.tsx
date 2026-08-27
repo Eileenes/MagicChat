@@ -30,7 +30,7 @@ export function CreateGroupConversationScreen() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "创建群聊失败，请稍后重试"
-      toast.show({ message, type: "error" })
+      toast.show({ message, modal: false, type: "error" })
     }
   }
 

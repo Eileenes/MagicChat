@@ -90,7 +90,7 @@ export function useAppUpdate() {
       activeDownloadRef.current = null
       setRelease(null)
       setStatus("idle")
-      toast.show({ message: `${"更新失败"}：${getUpdateErrorMessage(error)}`, type: "text", duration: 1_000 })
+      toast.show({ message: `${"更新失败"}：${getUpdateErrorMessage(error)}`, modal: false, type: "text", duration: 1_000 })
     }
   }
 

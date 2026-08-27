@@ -54,6 +54,7 @@ export function OfficeScreen() {
     toast.show({
       duration: 1_000,
       message: "暂不支持查看",
+      modal: false,
       type: "text",
     })
   }

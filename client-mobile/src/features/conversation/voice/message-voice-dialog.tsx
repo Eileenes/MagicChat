@@ -46,6 +46,7 @@ export function MessageVoiceDialog({
       toast.show({
         duration: 1_000,
         message: `无法播放语音：${message}`,
+        modal: false,
         type: "text",
       })
     },

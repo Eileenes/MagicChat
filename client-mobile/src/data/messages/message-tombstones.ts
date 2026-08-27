@@ -3,12 +3,13 @@ import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
 
 type ChoiceMessageTombstoneStatus = "deleted" | "revoked"
 
+export function createMessageTombstoneStore() {
 const choiceMessageTombstones = new Map<
   string,
   Map<string, ChoiceMessageTombstoneStatus>
 >()
 
-export function recordChoiceMessageTombstone(
+function recordChoiceMessageTombstone(
   target: AuthenticatedTarget,
   snapshot: MessageChoiceSnapshot
 ) {
@@ -23,7 +24,7 @@ export function recordChoiceMessageTombstone(
   choiceMessageTombstones.set(key, conversation)
 }
 
-export function applyChoiceMessageTombstone(
+function applyChoiceMessageTombstone(
   target: AuthenticatedTarget,
   message: ClientMessage
 ): ClientMessage | null {
@@ -41,24 +42,31 @@ export function applyChoiceMessageTombstone(
   }
 }
 
-export function clearAllMessageTombstones() {
+function clearAllMessageTombstones() {
   choiceMessageTombstones.clear()
 }
 
-export function clearConversationMessageTombstones(
+function clearConversationMessageTombstones(
   target: AuthenticatedTarget,
   conversationId: string
 ) {
   choiceMessageTombstones.delete(createConversationKey(target, conversationId))
 }
 
-export function clearServerMessageTombstones(server: ServerTarget) {
+function clearServerMessageTombstones(server: ServerTarget) {
   for (const key of choiceMessageTombstones.keys()) {
     if (conversationKeyBelongsToServer(key, server)) {
       choiceMessageTombstones.delete(key)
     }
   }
 }
+
+
+return { applyChoiceMessageTombstone, clearAllMessageTombstones, clearConversationMessageTombstones, clearServerMessageTombstones, recordChoiceMessageTombstone }
+}
+
+const defaultStore = createMessageTombstoneStore()
+export const { applyChoiceMessageTombstone, clearAllMessageTombstones, clearConversationMessageTombstones, clearServerMessageTombstones, recordChoiceMessageTombstone } = defaultStore
 
 function createConversationKey(
   target: AuthenticatedTarget,

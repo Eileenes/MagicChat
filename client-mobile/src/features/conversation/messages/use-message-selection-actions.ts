@@ -70,6 +70,7 @@ export function useMessageSelectionActions({
         xguiToast.show({
           duration: 1_000,
           message: "消息已撤回",
+          modal: false,
           type: "text",
         })
       } catch (error: unknown) {
@@ -84,6 +85,7 @@ export function useMessageSelectionActions({
           message: error instanceof ApiRequestError
             ? error.message
             : "撤回消息失败，请重试。",
+          modal: false,
           type: "text",
         })
       }
@@ -123,10 +125,10 @@ export function useMessageSelectionActions({
       if (event.action === "copy") {
         void Clipboard.setStringAsync(target.summary)
           .then(() => {
-            xguiToast.show({ message: "已复制", type: "text", duration: 1_000 })
+            xguiToast.show({ message: "已复制", modal: false, type: "text", duration: 1_000 })
           })
           .catch(() => {
-            xguiToast.show({ message: "复制失败", type: "text", duration: 1_000 })
+            xguiToast.show({ message: "复制失败", modal: false, type: "text", duration: 1_000 })
           })
         return
       }

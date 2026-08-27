@@ -40,21 +40,21 @@ const activityMembers = `
   ) : ActionMode.Callback2() {
     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
       val context = findMessageSelectionContext(textView) ?: return false
-      textView.onTextContextMenuItem(android.R.id.selectAll)
       configureMessageSelectionMenu(menu, context.canRevoke)
       return true
     }
 
     override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
-      val context = findMessageSelectionContext(textView) ?: return false
-      configureMessageSelectionMenu(menu, context.canRevoke)
-      return true
+      return false
     }
 
     override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+      if (item.itemId == android.R.id.copy) {
+        return textView.onTextContextMenuItem(item.itemId)
+      }
+
       val context = findMessageSelectionContext(textView) ?: return false
       val action = when (item.itemId) {
-        android.R.id.copy -> "copy"
         MESSAGE_ACTION_REPLY -> "reply"
         MESSAGE_ACTION_FORWARD -> "forward"
         MESSAGE_ACTION_REVOKE -> "revoke"
@@ -87,7 +87,7 @@ const activityMembers = `
     titleRes: Int
   ) {
     menu.add(Menu.NONE, itemId, order, titleRes)
-      .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+      .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
   }
 
   private fun installMessageSelectionCallbacks(view: View) {

@@ -7,7 +7,8 @@ MagicChat 的 Expo / React Native 手机客户端，包含：
 - 共享页面 Header
 - 消息、通讯录、项目三个底部 Tab
 - 会话列表、联系人目录、项目列表和文本消息收发
-- WebSocket 实时消息、断线增量同步和后台本地通知
+- WebSocket 实时消息、断线增量同步和后台通知
+- iOS 原生 APNs Token、Android JPush RegistrationID、公共 Push Gateway grant 与私有 Server 通知路由
 - 官方服务器与自定义 HTTP/HTTPS 服务器
 - Tamagui 2 默认组件与明暗主题
 
@@ -33,4 +34,16 @@ pnpm typecheck
 pnpm lint
 ```
 
-Android 13 及以上系统首次登录后会申请通知权限。后台 WebSocket 与本地通知依赖应用进程存活；进程被系统终止后，可靠通知仍需服务端推送通道。
+iOS 使用原生 APNs Token，固定连接 `https://push.jiying.chat`，并从签名 Entitlement 读取 sandbox/production 环境。Xcode Debug 使用 `development`，Release/TestFlight 使用 `production`；`with-apns-environments` config plugin 会在 prebuild 后保持这组配置。安装凭据、grant 和通知路由映射保存在 SecureStore；需要 Development Build 或 TestFlight 真机验证，Expo Go 不作为远程推送验证环境。
+
+Android 使用本地 Expo Module 封装 JPush Android SDK 6.2.0，不依赖 Legacy React Native bridge，也不会注册 Expo/FCM Token。构建 Development Build 前设置公开的 JPush AppKey（Master Secret 只能配置在 Gateway）：
+
+```bash
+JPUSH_APP_KEY=your-app-key JPUSH_CHANNEL=development pnpm android
+```
+
+未设置 `JPUSH_APP_KEY` 时，Android 安装包显示“安装包未配置”且不会初始化极光 SDK。配置后，用户仍须在“设置 → 手机通知”明确同意启用，应用才会首次调用极光 API、关闭非必要的地理围栏、自启动、链路合并和活跃时长统计，并初始化 JPush、申请 Android 通知权限；关闭手机通知时会停止 JPush。RegistrationID、grant 和通知路由继续使用同一套 SecureStore 生命周期。Expo Go 不支持该原生模块。
+
+华为、小米、OPPO、vivo 使用与 JPush SDK 相同的 `6.2.0` 官方厂商插件，仍由 JPush 统一发送。插件按构建环境条件打包，变量名见 `.env.example`：小米和 vivo 各需要 App ID/App Key，OPPO 需要 App ID/App Key/App Secret，华为需要下载的 `agconnect-services.json` 路径。任一通道只配置部分参数时构建会直接失败；没有配置的通道不会进入 APK。厂商服务端凭据仍只配置在极光控制台，不进入移动端或仓库。
+
+华为、小米、OPPO、vivo 通道都必须使用对应签名和真实设备执行杀进程 POC；小米、OPPO、vivo 的正式推送通常还要求应用已在对应应用市场上架。

@@ -161,6 +161,7 @@ function EntityProfileContent({
       toast.show({
         duration: 1_000,
         message: "头像已保存到系统相册",
+        modal: false,
         type: "text",
       })
     } catch (error: unknown) {
@@ -172,6 +173,7 @@ function EntityProfileContent({
             : error instanceof Error
               ? error.message
               : "头像保存失败，请稍后重试",
+        modal: false,
         type: "text",
       })
     } finally {

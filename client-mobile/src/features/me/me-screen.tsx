@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 // eslint-disable-next-line import/no-unresolved
+import IconBell from "@tabler/icons-react-native/IconBell"
+// eslint-disable-next-line import/no-unresolved
 import IconDatabase from "@tabler/icons-react-native/IconDatabase"
 // eslint-disable-next-line import/no-unresolved
 import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop"
@@ -18,7 +20,7 @@ import IconChevronRight from "@tabler/icons-react-native/IconChevronRight"
 // eslint-disable-next-line import/no-unresolved
 import IconSun from "@tabler/icons-react-native/IconSun"
 import { useRouter, type Href } from "expo-router"
-import { Alert, Pressable } from "react-native"
+import { Alert, Linking, Platform, Pressable } from "react-native"
 import {
   Card,
   Paragraph,
@@ -35,12 +37,19 @@ import { ApiRequestError } from "@/data/api-client"
 import { useCachedAppInfo } from "@/data/auth/auth-hooks"
 import { AppUpdateDialog } from "@/features/updates/app-update-dialog"
 import { useAppUpdate } from "@/features/updates/use-app-update"
+import { stopJPush } from "@/notifications/jpush-registration"
+import { saveJPushConsent } from "@/notifications/push-registration-store"
+import { presentPushSynchronizationState } from "@/notifications/push-status-presentation"
 import {
   useAuth,
   useAuthenticatedSession,
 } from "@/providers/auth-provider"
 import { useAppTheme } from "@/providers/app-theme-provider"
-import { useClientData } from "@/providers/client-data-provider"
+import { useClientSession } from "@/providers/client-data-provider"
+import {
+  usePushCoordinator,
+  usePushSynchronizationState,
+} from "@/providers/push-coordinator-provider"
 import { XGUIActionSheet, XGUIList, XGUIListItem, XGUIPicker, useXGUITheme, useXGUIToast, type XGUIPickerItem } from "@/xgui"
 
 const THEME_OPTIONS = [
@@ -61,8 +70,11 @@ export function MeScreen() {
   const router = useRouter()
   const session = useAuthenticatedSession()
   const appInfoQuery = useCachedAppInfo(session)
-  const { currentUser } = useClientData()
-  const { isSigningOut, signOut } = useAuth()
+  const { currentUser } = useClientSession()
+  const { active, isSigningOut, signOut } = useAuth()
+  const pushCoordinator = usePushCoordinator()
+  const pushState = usePushSynchronizationState()
+  const pushStatus = presentPushSynchronizationState(pushState)
   const appUpdate = useAppUpdate()
   const updateConfirmedRef = useRef(false)
   const themeSwitchFrameRef = useRef<number | null>(null)
@@ -118,7 +130,7 @@ export function MeScreen() {
   async function handleLogout() {
     try {
       await signOut()
-      router.replace("/server-management")
+      router.replace("/account-management" as Href)
     } catch (error: unknown) {
       Alert.alert(
         "退出登录失败",
@@ -129,15 +141,93 @@ export function MeScreen() {
     }
   }
 
+  function handlePushStatusPress() {
+    switch (pushStatus.action) {
+      case "enable_jpush":
+        Alert.alert(
+          "启用手机通知",
+          "Android 通知由极光推送提供。启用后，极光 SDK 会处理完成通知投递所需的设备、系统、网络和应用标识信息；不会收到聊天账号、服务器地址或消息内容。",
+          [
+            { style: "cancel", text: "暂不启用" },
+            {
+              onPress: () => {
+                void saveJPushConsent(true)
+                  .then(() => {
+                    pushCoordinator.triggerSynchronization()
+                  })
+                  .catch(() => {
+                    Alert.alert("启用失败", "无法保存通知授权，请稍后重试。")
+                  })
+              },
+              text: "同意并启用",
+            },
+          ]
+        )
+        return
+      case "open_settings":
+        void Linking.openSettings().catch(() => {
+          Alert.alert("无法打开系统设置", "请在系统设置中允许即应发送通知。")
+        })
+        return
+      case "retry":
+        pushCoordinator.triggerSynchronization()
+        toast.show({ message: "正在重新同步通知", modal: false, type: "text" })
+        return
+      case "show_device_limit":
+        Alert.alert(
+          "通知设备数量已达上限",
+          "当前账号最多启用 10 台通知设备。请先在其他设备退出登录，或联系服务器管理员处理。"
+        )
+        return
+      case "show_server_disabled":
+        Alert.alert("服务器未启用通知", "当前私有服务器没有开启公共推送功能。")
+        return
+      case "show_unauthorized":
+        Alert.alert("需要重新登录", "当前登录状态已失效，请切换账号后重新登录。")
+        return
+      case "none":
+        if (Platform.OS !== "android" || pushState !== "registered") return
+        Alert.alert(
+          "关闭手机通知",
+          "关闭后将撤销当前账号的远程通知授权，并停止极光推送服务。",
+          [
+            { style: "cancel", text: "取消" },
+            {
+              onPress: () => {
+                void (async () => {
+                  if (active) {
+                    await pushCoordinator
+                      .deactivate({
+                        accountId: active.accountId,
+                        generation: active.generation,
+                        target: active.target,
+                      })
+                      .catch(() => undefined)
+                  }
+                  await saveJPushConsent(false)
+                  await stopJPush().catch(() => undefined)
+                  pushCoordinator.triggerSynchronization()
+                })()
+              },
+              style: "destructive",
+              text: "关闭",
+            },
+          ]
+        )
+        return
+    }
+  }
+
   async function handleCheckForUpdates() {
     toast.show({ duration: 0, message: "正在检查更新", type: "loading" })
     try {
       const release = await appUpdate.checkForUpdates()
       toast.hide()
-      if (!release) toast.show({ message: "已经是最新版本", type: "success" })
+      if (!release) toast.show({ message: "已经是最新版本", modal: false, type: "success" })
     } catch (error: unknown) {
       toast.show({
         message: error instanceof Error ? error.message : "检查更新失败",
+        modal: false,
         type: "error",
       })
     }
@@ -146,7 +236,7 @@ export function MeScreen() {
   function startAvailableUpdate() {
     if (appUpdate.platform === "ios") {
       appUpdate.cancelUpdate()
-      toast.show({ message: "iOS 暂不支持应用内安装，请联系管理员更新", type: "text" })
+      toast.show({ message: "iOS 暂不支持应用内安装，请联系管理员更新", modal: false, type: "text" })
       return
     }
     void appUpdate.startUpdate()
@@ -209,6 +299,20 @@ export function MeScreen() {
                 separator
                 title="存储空间"
               />
+              {Platform.OS === "ios" || Platform.OS === "android" ? (
+                <XGUIListItem
+                  icon={({ size, strokeWidth }) => <IconBell color={colors.brand} size={size} strokeWidth={strokeWidth} />}
+                  onPress={
+                    pushStatus.action === "none" &&
+                    !(Platform.OS === "android" && pushState === "registered")
+                      ? undefined
+                      : handlePushStatusPress
+                  }
+                  separator
+                  title="手机通知"
+                  value={pushStatus.label}
+                />
+              ) : null}
             </XGUIList>
 
             <XGUIList size="large">
@@ -227,11 +331,15 @@ export function MeScreen() {
 
             <XGUIList size="large">
               <XGUIListItem
-                centerContent
-                destructive
                 icon={({ color, size, strokeWidth }) => <IconSwitchHorizontal color={color} size={size} strokeWidth={strokeWidth} />}
-                onPress={() => router.push("/server-management")}
-                title="切换账号"
+                onPress={() => router.push("/account-management" as Href)}
+                title="账号管理"
+              />
+              <XGUIListItem
+                icon={({ size, strokeWidth }) => <IconDatabase color={colors.blue} size={size} strokeWidth={strokeWidth} />}
+                onPress={() => router.push("/server-management?mode=manage" as Href)}
+                separator
+                title="服务器管理"
               />
             </XGUIList>
 

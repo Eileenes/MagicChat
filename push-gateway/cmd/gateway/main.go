@@ -16,6 +16,7 @@ import (
 	"push-gateway/internal/provider"
 	"push-gateway/internal/provider/apns"
 	"push-gateway/internal/provider/fake"
+	"push-gateway/internal/provider/jpush"
 	"push-gateway/internal/secure"
 	"push-gateway/internal/store"
 )
@@ -98,6 +99,14 @@ func configuredProviders(cfg config.Config) ([]provider.Provider, error) {
 			value, err := apns.New(apns.Config{
 				KeyID: cfg.APNS.KeyID, TeamID: cfg.APNS.TeamID,
 				BundleID: cfg.APNS.BundleID, PrivateKeyPEM: cfg.APNS.PrivateKeyPEM,
+			})
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, value)
+		case "jpush":
+			value, err := jpush.New(jpush.Config{
+				AppKey: cfg.JPush.AppKey, MasterSecret: cfg.JPush.MasterSecret,
 			})
 			if err != nil {
 				return nil, err

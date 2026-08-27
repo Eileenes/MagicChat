@@ -2,7 +2,9 @@ package mobilepush
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +15,16 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+type MessageDelivery struct {
+	UserID         string
+	ActorUserID    string
+	ConversationID string
+	MessageID      string
+	SenderType     string
+	SenderID       string
+	Muted          bool
+}
 
 type gatewayCall struct {
 	GrantID        string
@@ -73,6 +85,35 @@ func TestGrantRegistrationTransfersInstallationAndEncryptsCapability(t *testing.
 	}
 }
 
+func TestGrantRegistrationRequiresLiveSessionWhenProvided(t *testing.T) {
+	service, db, _, now := newPushTestService(t)
+	user := insertPushUser(t, db, "session-bound-grant@example.com")
+	session := store.UserSession{
+		ID: uuid.NewString(), TokenHash: uuid.NewString(), UserID: user.ID,
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now, LastSeenAt: now,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	command := RegisterGrantCommand{
+		UserID: user.ID, SessionID: session.ID,
+		InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
+		SendToken: "session-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if _, err := service.RegisterGrant(t.Context(), command); err != nil {
+		t.Fatalf("register with live session: %v", err)
+	}
+	if err := db.Delete(&session).Error; err != nil {
+		t.Fatalf("delete session: %v", err)
+	}
+	command.InstallationID = uuid.NewString()
+	command.GatewayGrantID = uuid.NewString()
+	if _, err := service.RegisterGrant(t.Context(), command); failureCode(err) != "unauthorized" {
+		t.Fatalf("register after logout error = %v", err)
+	}
+}
+
 func TestGrantRegistrationLimitsDevicesPerUser(t *testing.T) {
 	service, db, _, now := newPushTestService(t)
 	user := insertPushUser(t, db, "device-limit@example.com")
@@ -91,6 +132,249 @@ func TestGrantRegistrationLimitsDevicesPerUser(t *testing.T) {
 		ExpiresAt: now.Add(time.Hour),
 	}); failureCode(err) != "grant_limit_reached" {
 		t.Fatalf("grant beyond limit error = %v", err)
+	}
+}
+
+func TestGrantRegistrationIgnoresDisabledDevicesAtLimit(t *testing.T) {
+	service, db, _, now := newPushTestService(t)
+	user := insertPushUser(t, db, "device-replacement@example.com")
+	for index := 0; index < maxGrantsPerUser; index++ {
+		if _, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+			UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
+			SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+			ExpiresAt: now.Add(time.Hour),
+		}); err != nil {
+			t.Fatalf("register grant %d: %v", index, err)
+		}
+	}
+	var disabled store.UserPushGrant
+	if err := db.Where("user_id = ?", user.ID).First(&disabled).Error; err != nil {
+		t.Fatalf("load grant to disable: %v", err)
+	}
+	if err := db.Model(&disabled).Updates(map[string]any{
+		"status": GrantStatusDisabled, "updated_at": now,
+	}).Error; err != nil {
+		t.Fatalf("disable grant: %v", err)
+	}
+	if _, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
+		SendToken: "replacement-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+		ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("register replacement grant: %v", err)
+	}
+}
+
+func TestGrantRegistrationCannotReactivateDisabledDeviceBeyondLimit(t *testing.T) {
+	service, db, _, now := newPushTestService(t)
+	user := insertPushUser(t, db, "reactivation-limit@example.com")
+	for index := 0; index < maxGrantsPerUser; index++ {
+		if _, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+			UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
+			SendToken: "active-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+			ExpiresAt: now.Add(time.Hour),
+		}); err != nil {
+			t.Fatalf("register active grant %d: %v", index, err)
+		}
+	}
+	disabled := store.UserPushGrant{
+		ID: uuid.NewString(), UserID: user.ID, InstallationID: uuid.NewString(),
+		GatewayGrantID: uuid.NewString(), SendTokenCiphertext: []byte("disabled"),
+		Platform: "ios", ExpiresAt: now.Add(time.Hour), Status: GrantStatusDisabled,
+		LastSeenAt: now, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&disabled).Error; err != nil {
+		t.Fatalf("create disabled grant: %v", err)
+	}
+	_, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		UserID: user.ID, InstallationID: disabled.InstallationID, GatewayGrantID: uuid.NewString(),
+		SendToken: "reactivated-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if failureCode(err) != "grant_limit_reached" {
+		t.Fatalf("reactivate disabled grant error = %v", err)
+	}
+}
+
+func TestGrantRegistrationDropsQueuedJobsWhenInstallationChangesOwner(t *testing.T) {
+	service, db, _, now := newPushTestService(t)
+	alice := insertPushUser(t, db, "queued-alice@example.com")
+	bob := insertPushUser(t, db, "queued-bob@example.com")
+	conversation := insertPushConversation(t, db, alice, bob, now)
+	installationID := uuid.NewString()
+	first, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		UserID: alice.ID, InstallationID: installationID, GatewayGrantID: uuid.NewString(),
+		SendToken: "first-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("register first grant: %v", err)
+	}
+	if err := enqueueTestMessage(service, MessageDelivery{
+		UserID: alice.ID, ConversationID: conversation.ID, MessageID: uuid.NewString(),
+		SenderType: store.MessageSenderTypeUser, SenderID: bob.ID,
+	}); err != nil {
+		t.Fatalf("enqueue old-account message: %v", err)
+	}
+	second, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		UserID: bob.ID, InstallationID: installationID, GatewayGrantID: uuid.NewString(),
+		SendToken: "second-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("register transferred grant: %v", err)
+	}
+	if second.GatewayGrantID == first.GatewayGrantID {
+		t.Fatal("transferred installation kept the old gateway grant")
+	}
+	var jobs int64
+	if err := db.Model(&store.MobilePushJob{}).Count(&jobs).Error; err != nil {
+		t.Fatalf("count queued jobs: %v", err)
+	}
+	if jobs != 0 {
+		t.Fatalf("queued jobs after installation transfer = %d, want 0", jobs)
+	}
+}
+
+func TestMessageTransactionDurablyCreatesAndExpandsPushEvent(t *testing.T) {
+	service, db, _, now := newPushTestService(t)
+	user := insertPushUser(t, db, "event-recipient@example.com")
+	sender := insertPushUser(t, db, "event-sender@example.com")
+	conversation := insertPushConversation(t, db, user, sender, now)
+	_, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
+		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("register grant: %v", err)
+	}
+	message := store.Message{
+		ID: uuid.NewString(), ConversationID: conversation.ID, Seq: 1,
+		SenderType: store.MessageSenderTypeUser, SenderID: &sender.ID,
+		Body: json.RawMessage(`{"type":"text","content":"hello"}`), Summary: "hello",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&message).Error
+	}); err != nil {
+		t.Fatalf("create message transaction: %v", err)
+	}
+	var eventCount, jobCount int64
+	_ = db.Model(&store.MobilePushEvent{}).Count(&eventCount).Error
+	_ = db.Model(&store.MobilePushJob{}).Count(&jobCount).Error
+	if eventCount != 1 || jobCount != 0 {
+		t.Fatalf("before expansion events=%d jobs=%d", eventCount, jobCount)
+	}
+	processed, err := service.ExpandEventBatch(t.Context(), 10)
+	if err != nil || processed != 1 {
+		t.Fatalf("expand events = %d, %v", processed, err)
+	}
+	_ = db.Model(&store.MobilePushEvent{}).Count(&eventCount).Error
+	_ = db.Model(&store.MobilePushJob{}).Count(&jobCount).Error
+	if eventCount != 0 || jobCount != 1 {
+		t.Fatalf("after expansion events=%d jobs=%d", eventCount, jobCount)
+	}
+}
+
+func TestPushEventFanoutRechecksCurrentAccessAndMuteState(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*testing.T, *gorm.DB, store.User, store.Conversation, store.Message, time.Time)
+	}{
+		{
+			name: "muted",
+			change: func(t *testing.T, db *gorm.DB, user store.User, conversation store.Conversation, _ store.Message, now time.Time) {
+				t.Helper()
+				if err := db.Create(&store.ConversationUserPreference{
+					UserID: user.ID, ConversationID: conversation.ID, NotificationMuted: true,
+					CreatedAt: now, UpdatedAt: now,
+				}).Error; err != nil {
+					t.Fatalf("mute conversation: %v", err)
+				}
+			},
+		},
+		{
+			name: "left conversation",
+			change: func(t *testing.T, db *gorm.DB, user store.User, conversation store.Conversation, _ store.Message, now time.Time) {
+				t.Helper()
+				if err := db.Model(&store.ConversationMember{}).Where(
+					"conversation_id = ? AND member_id = ?", conversation.ID, user.ID,
+				).Update("left_at", now).Error; err != nil {
+					t.Fatalf("leave conversation: %v", err)
+				}
+			},
+		},
+		{
+			name: "deleted message",
+			change: func(t *testing.T, db *gorm.DB, _ store.User, _ store.Conversation, message store.Message, now time.Time) {
+				t.Helper()
+				if err := db.Model(&store.Message{}).Where("id = ?", message.ID).
+					Update("deleted_at", now).Error; err != nil {
+					t.Fatalf("delete message: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service, db, _, now := newPushTestService(t)
+			recipient := insertPushUser(t, db, "fanout-"+strings.ReplaceAll(test.name, " ", "-")+"@example.com")
+			sender := insertPushUser(t, db, "fanout-sender-"+strings.ReplaceAll(test.name, " ", "-")+"@example.com")
+			conversation := insertPushConversation(t, db, recipient, sender, now)
+			_, _ = service.RegisterGrant(t.Context(), RegisterGrantCommand{
+				UserID: recipient.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
+				SendToken: "fanout-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+				ExpiresAt: now.Add(time.Hour),
+			})
+			message := store.Message{
+				ID: uuid.NewString(), ConversationID: conversation.ID, Seq: 1,
+				SenderType: store.MessageSenderTypeUser, SenderID: &sender.ID,
+				Body: json.RawMessage(`{"type":"text","content":"hello"}`), Summary: "hello",
+				CreatedAt: now, UpdatedAt: now,
+			}
+			if err := db.Create(&message).Error; err != nil {
+				t.Fatalf("create message: %v", err)
+			}
+			test.change(t, db, recipient, conversation, message, now)
+			if _, err := service.ExpandEventBatch(t.Context(), 10); err != nil {
+				t.Fatalf("expand event: %v", err)
+			}
+			var jobs int64
+			if err := db.Model(&store.MobilePushJob{}).Count(&jobs).Error; err != nil {
+				t.Fatalf("count jobs: %v", err)
+			}
+			if jobs != 0 {
+				t.Fatalf("jobs after %s = %d, want 0", test.name, jobs)
+			}
+		})
+	}
+}
+
+func TestMessageTransactionRollsBackWhenPushEventCannotBeWritten(t *testing.T) {
+	_, db, _, now := newPushTestService(t)
+	user := insertPushUser(t, db, "event-rollback@example.com")
+	other := insertPushUser(t, db, "event-rollback-other@example.com")
+	conversation := insertPushConversation(t, db, user, other, now)
+	if err := db.Migrator().DropTable(&store.MobilePushEvent{}); err != nil {
+		t.Fatalf("drop push events table: %v", err)
+	}
+	message := store.Message{
+		ID: uuid.NewString(), ConversationID: conversation.ID, Seq: 1,
+		SenderType: store.MessageSenderTypeUser, SenderID: &user.ID,
+		Body: json.RawMessage(`{"type":"text","content":"hello"}`), Summary: "hello",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&message).Error
+	}); err == nil {
+		t.Fatal("message transaction unexpectedly succeeded without push event table")
+	}
+	var messageCount int64
+	if err := db.Model(&store.Message{}).Count(&messageCount).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if messageCount != 0 {
+		t.Fatalf("messages after failed event write = %d, want 0", messageCount)
 	}
 }
 
@@ -116,7 +400,7 @@ func TestMessageDeliveryCreatesRouteAndDispatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register grant: %v", err)
 	}
-	if err := service.EnqueueMessage(t.Context(), MessageDelivery{
+	if err := enqueueTestMessage(service, MessageDelivery{
 		UserID: user.ID, ConversationID: conversation.ID, MessageID: messageID,
 		SenderType: store.MessageSenderTypeUser, SenderID: sender.ID,
 	}); err != nil {
@@ -164,7 +448,7 @@ func TestDispatchUsesRemainingLocalTTL(t *testing.T) {
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
 	})
-	if err := service.EnqueueMessage(t.Context(), MessageDelivery{
+	if err := enqueueTestMessage(service, MessageDelivery{
 		UserID: user.ID, ConversationID: conversation.ID, MessageID: uuid.NewString(),
 		SenderType: store.MessageSenderTypeUser, SenderID: sender.ID,
 	}); err != nil {
@@ -190,7 +474,7 @@ func TestMessageDeliverySkipsMutedAndSelfMessages(t *testing.T) {
 		{UserID: user.ID, ConversationID: uuid.NewString(), MessageID: uuid.NewString(), Muted: true},
 		{UserID: user.ID, ConversationID: uuid.NewString(), MessageID: uuid.NewString(), SenderType: store.MessageSenderTypeUser, SenderID: user.ID},
 	} {
-		if err := service.EnqueueMessage(t.Context(), delivery); err != nil {
+		if err := enqueueTestMessage(service, delivery); err != nil {
 			t.Fatalf("enqueue skipped delivery: %v", err)
 		}
 	}
@@ -210,7 +494,7 @@ func TestReclaimedJobRejectsStaleWorker(t *testing.T) {
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
 	})
-	_ = service.EnqueueMessage(t.Context(), MessageDelivery{
+	_ = enqueueTestMessage(service, MessageDelivery{
 		UserID: user.ID, ConversationID: conversation.ID, MessageID: uuid.NewString(),
 		SenderType: store.MessageSenderTypeUser, SenderID: other.ID,
 	})
@@ -248,7 +532,7 @@ func TestStaleRevocationDoesNotDisableRotatedGrant(t *testing.T) {
 		UserID: user.ID, InstallationID: installationID, GatewayGrantID: oldGatewayGrantID,
 		SendToken: "old-gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
 	})
-	_ = service.EnqueueMessage(t.Context(), MessageDelivery{
+	_ = enqueueTestMessage(service, MessageDelivery{
 		UserID: user.ID, ConversationID: conversation.ID, MessageID: uuid.NewString(),
 		SenderType: store.MessageSenderTypeUser, SenderID: other.ID,
 	})
@@ -289,7 +573,7 @@ func TestRevokedGatewayResponseDisablesLocalGrant(t *testing.T) {
 	})
 	_ = grant
 	gateway.err = &GatewayError{Kind: GatewayErrorRevoked, Code: "grant_revoked", StatusCode: 410}
-	if err := service.EnqueueMessage(t.Context(), MessageDelivery{
+	if err := enqueueTestMessage(service, MessageDelivery{
 		UserID: user.ID, ConversationID: conversation.ID, MessageID: messageID,
 		SenderType: store.MessageSenderTypeUser, SenderID: other.ID,
 	}); err != nil {
@@ -307,6 +591,29 @@ func TestRevokedGatewayResponseDisablesLocalGrant(t *testing.T) {
 	}
 }
 
+func enqueueTestMessage(service *Service, delivery MessageDelivery) error {
+	if delivery.Muted || delivery.ActorUserID == delivery.UserID ||
+		delivery.SenderType == store.MessageSenderTypeUser && delivery.SenderID == delivery.UserID {
+		return nil
+	}
+	now := service.now().UTC()
+	return service.db.Transaction(func(tx *gorm.DB) error {
+		var grants []store.UserPushGrant
+		if err := tx.Where(
+			"user_id = ? AND status = ? AND expires_at > ?", delivery.UserID, GrantStatusActive, now,
+		).Find(&grants).Error; err != nil {
+			return err
+		}
+		message := store.Message{ID: delivery.MessageID, ConversationID: delivery.ConversationID}
+		for _, grant := range grants {
+			if err := service.createPushJob(tx, grant, message, now.Add(pushJobTTL), now); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func newPushTestService(t *testing.T) (*Service, *gorm.DB, *fakeGateway, time.Time) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -315,8 +622,8 @@ func newPushTestService(t *testing.T) (*Service, *gorm.DB, *fakeGateway, time.Ti
 	}
 	if err := db.AutoMigrate(
 		&store.User{}, &store.Conversation{}, &store.ConversationMember{},
-		&store.MessageRegistry{}, &store.ConversationTopic{}, &store.ConversationTopicParticipant{},
-		&store.UserPushGrant{}, &store.MobilePushRoute{}, &store.MobilePushJob{},
+		&store.Message{}, &store.MessageRegistry{}, &store.ConversationUserPreference{}, &store.ConversationTopic{}, &store.ConversationTopicParticipant{},
+		&store.UserSession{}, &store.UserPushGrant{}, &store.MobilePushRoute{}, &store.MobilePushEvent{}, &store.MobilePushJob{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

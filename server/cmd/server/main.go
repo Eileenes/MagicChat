@@ -19,13 +19,18 @@ const serverAddr = ":20080"
 
 // @title AI 原生企业协作服务 API
 // @version 0.1.0
-// @description 私有部署企业协作产品的服务端 API。当前阶段包含管理员登录、管理员创建普通用户、普通用户登录。
+// @description 私有部署企业协作产品的服务端 API。受保护客户端接口支持 Bearer Session 或 user_session Cookie（二选一）；Authorization 存在时始终优先校验 Bearer，格式错误、过期或无效时直接返回 401，不回退 Cookie。
 // @BasePath /
 //
-// @securityDefinitions.apikey UserSession
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Native Mobile 使用 Bearer <opaque-session-token>。原始 token 不得放入 URL、日志或业务模型。
+//
+// @securityDefinitions.apikey CookieAuth
 // @in header
 // @name Cookie
-// @description 使用 user_session=<token> 格式的会话 Cookie。
+// @description Web 使用 user_session=<opaque-session-token>。仅当请求不存在 Authorization Header 时才校验 Cookie。
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 

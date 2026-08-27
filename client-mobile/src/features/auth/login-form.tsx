@@ -15,7 +15,9 @@ import {
 import { YStack } from "tamagui"
 
 import { ApiRequestError } from "@/data/api-client"
+import { MobileSessionCompatibilityError } from "@/data/auth/auth-api"
 import {
+  loadAccountLoginAssistance,
   loadLoginCredentials,
   saveLoginAccount,
   saveLoginCredentials,
@@ -62,6 +64,8 @@ export function LoginForm({
   connectionFailed,
   connectionReady,
   emailCodeLoginEnabled,
+  assistanceAccountId,
+  initialAccount,
   onLoginSuccess,
   onRetryConnection,
   passwordLoginEnabled,
@@ -70,6 +74,8 @@ export function LoginForm({
   connectionFailed: boolean
   connectionReady: boolean
   emailCodeLoginEnabled: boolean
+  assistanceAccountId?: string
+  initialAccount?: string
   onLoginSuccess: (user: AuthenticatedUser) => Promise<void>
   onRetryConnection: () => void
   passwordLoginEnabled: boolean
@@ -132,11 +138,14 @@ export function LoginForm({
   useEffect(() => {
     let isCancelled = false
 
-    void loadLoginCredentials({ id: server.id, url: server.url })
-      .then((credentials) => {
+    void Promise.all([
+      loadLoginCredentials({ id: server.id, url: server.url }),
+      assistanceAccountId ? loadAccountLoginAssistance(assistanceAccountId) : Promise.resolve(null),
+    ])
+      .then(([credentials, assistance]) => {
         if (!isCancelled) {
           setFormState({
-            account: credentials?.account ?? "",
+            account: assistance?.account.trim() || initialAccount?.trim() || credentials?.account || "",
             emailCode: "",
             isLoading: false,
             password: credentials?.password ?? "",
@@ -147,7 +156,7 @@ export function LoginForm({
       .catch(() => {
         if (!isCancelled) {
           setFormState({
-            account: "",
+            account: initialAccount?.trim() ?? "",
             emailCode: "",
             isLoading: false,
             password: "",
@@ -159,7 +168,7 @@ export function LoginForm({
     return () => {
       isCancelled = true
     }
-  }, [server.id, server.url, serverKey])
+  }, [assistanceAccountId, initialAccount, server.id, server.url, serverKey])
 
   useEffect(() => {
     if (retryCodeAfter <= 0) return
@@ -209,6 +218,7 @@ export function LoginForm({
   function showError(message: string) {
     toast.show({
       message,
+      modal: false,
       type: "error",
     })
   }
@@ -234,12 +244,14 @@ export function LoginForm({
       toast.show({
         duration: 1_000,
         message: "验证码已发送",
+        modal: false,
         type: "success",
       })
     } catch (error: unknown) {
       toast.show({
         message:
           error instanceof ApiRequestError ? error.message : "验证码发送失败",
+        modal: false,
         type: "error",
       })
     }
@@ -468,6 +480,7 @@ async function attemptLoginRequest<T>(operation: () => Promise<T>) {
       return await operation()
     } catch (error: unknown) {
       lastError = error
+      if (error instanceof MobileSessionCompatibilityError) throw error
       if (
         error instanceof ApiRequestError &&
         error.status !== undefined &&

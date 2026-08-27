@@ -1,256 +1,251 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useQueryClient } from "@tanstack/react-query"
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 
-import { isValidServerUrl } from "@/core/server-model"
-import { logout } from "@/data/auth/auth-api"
-import type { AuthenticatedTarget } from "@/core/server-target"
-import { clearSessionData } from "@/data/auth/session-cache"
+import type { AuthenticatedUser } from "@/core/models"
+import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
+import type { ActiveAccountRuntimeSnapshot } from "@/data/auth/account-auth-runtime"
+import { migrateLegacyAccount } from "@/data/auth/account-migration"
+import { createAccountRecord, type AccountIndexV2, type AccountRecord } from "@/data/auth/account-store"
+import { accountAuthRuntime, accountStore } from "@/data/auth/account-runtime-instance"
+import { logout, type MobileSessionCredential } from "@/data/auth/auth-api"
+import { createSessionBootstrapOperations, sessionBootstrapCoordinator } from "@/features/bootstrap/session-bootstrap"
+import { migrateLegacyLoginAssistance } from "@/data/auth/credential-store"
+import { runAccountSignOutTransaction, selectRecentReadyAccount } from "@/data/auth/sign-out-transaction"
+import { runInstallAccountTransaction } from "@/data/auth/install-account-transaction"
+import type { PushAccountIdentity } from "@/notifications/push-types"
+import { usePushCoordinator } from "@/providers/push-coordinator-provider"
 
 export type AuthSession = AuthenticatedTarget
-
-const AUTH_SESSION_STORAGE_KEY = "@magicchat/auth-session/v1"
-
-type AuthPhase = "anonymous" | "preparing" | "authenticated"
+export type AuthPhase = "anonymous" | "preparing" | "switching" | "authenticated" | "signing-out" | "degraded"
+export type ActiveAccountSnapshot = ActiveAccountRuntimeSnapshot & { account: AccountRecord }
 
 type AuthContextValue = {
-  beginSignIn: (session: AuthSession) => void
-  commitSignIn: (session: AuthSession) => Promise<void>
-  invalidateSession: () => Promise<void>
+  accounts: AccountRecord[]
+  active: ActiveAccountSnapshot | null
+  activeAccount: AccountRecord | null
+  generation: number
+  phase: AuthPhase
+  switchAccount(accountId: string): Promise<void>
+  signOutAccount(accountId: string, localOnly?: boolean): Promise<void>
+  markReauthRequired(accountId: string): Promise<void>
+  installAndActivate(server: ServerTarget, user: AuthenticatedUser, credential: MobileSessionCredential): Promise<void>
+  // Transitional, non-persisting API for the existing login screen.
+  beginSignIn(session: AuthSession): void
+  commitSignIn(session: AuthSession): Promise<void>
+  rollbackSignIn(session: AuthSession): Promise<void>
+  invalidateSession(): Promise<void>
+  signOut(): Promise<void>
   isAuthenticated: boolean
   isHydrated: boolean
   isPreparingSignIn: boolean
   isSigningOut: boolean
-  rollbackSignIn: (session: AuthSession) => Promise<void>
   session: AuthSession | null
-  signOut: () => Promise<void>
 }
-
 const AuthContext = createContext<AuthContextValue | null>(null)
+const EMPTY: AccountIndexV2 = { version: 2, accounts: [], activeAccountId: null, revision: 0, pendingCredentialCleanup: [] }
 
 export function AuthProvider({ children }: React.PropsWithChildren) {
   const queryClient = useQueryClient()
-  const [session, setSession] = useState<AuthSession | null>(null)
-  const [phase, setPhase] = useState<AuthPhase>("anonymous")
-  const [isHydrated, setIsHydrated] = useState(false)
-  const [isSigningOut, setIsSigningOut] = useState(false)
-  const sessionRef = useRef<AuthSession | null>(null)
-  const phaseRef = useRef<AuthPhase>("anonymous")
-  const sessionMutationVersionRef = useRef(0)
-  const signOutPromiseRef = useRef<Promise<void> | null>(null)
-  useEffect(() => {
-    let isActive = true
-    const hydrationVersion = sessionMutationVersionRef.current
+  const pushCoordinator = usePushCoordinator()
+  const [index, setIndex] = useState(EMPTY)
+  const [active, setActive] = useState<ActiveAccountSnapshot | null>(null)
+  const [phase, setPhase] = useState<AuthPhase>("preparing")
+  const [hydrated, setHydrated] = useState(false)
+  const stateRef = useRef({ index: EMPTY, active: null as ActiveAccountSnapshot | null, generation: 0 })
+  const queueRef = useRef(Promise.resolve<unknown>(undefined))
+  const stagedRef = useRef<AuthSession | null>(null)
 
-    void AsyncStorage.getItem(AUTH_SESSION_STORAGE_KEY)
-      .then((storedSession) => {
-        if (
-          !isActive ||
-          sessionMutationVersionRef.current !== hydrationVersion
-        ) {
-          return
-        }
-        const restoredSession = parsePersistedAuthSession(storedSession)
-        sessionRef.current = restoredSession
-        phaseRef.current = restoredSession ? "authenticated" : "anonymous"
-        setSession(restoredSession)
-        setPhase(phaseRef.current)
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (isActive) setIsHydrated(true)
-      })
-
-    return () => {
-      isActive = false
-    }
+  const publish = useCallback((nextIndex: AccountIndexV2, nextActive: ActiveAccountSnapshot | null, nextPhase: AuthPhase) => {
+    stateRef.current = { index: nextIndex, active: nextActive, generation: nextActive?.generation ?? stateRef.current.generation }
+    accountAuthRuntime.install(nextActive)
+    setIndex(nextIndex); setActive(nextActive); setPhase(nextPhase)
   }, [])
-
-  const beginSignIn = useCallback((nextSession: AuthSession) => {
-    sessionMutationVersionRef.current += 1
-    sessionRef.current = nextSession
-    phaseRef.current = "preparing"
-    setSession(nextSession)
-    setPhase("preparing")
+  const serialize = useCallback(<T,>(operation: () => Promise<T>) => {
+    const result = queueRef.current.then(operation, operation)
+    queueRef.current = result.then(() => undefined, () => undefined)
+    return result
   }, [])
-
-  const commitSignIn = useCallback(async (expectedSession: AuthSession) => {
-    if (
-      phaseRef.current !== "preparing" ||
-      !matchesSession(sessionRef.current, expectedSession)
-    ) {
-      throw new Error("登录初始化已失效")
-    }
-
-    const mutationVersion = sessionMutationVersionRef.current
-    await AsyncStorage.setItem(
-      AUTH_SESSION_STORAGE_KEY,
-      JSON.stringify(expectedSession)
-    )
-    if (
-      sessionMutationVersionRef.current !== mutationVersion ||
-      !matchesSession(sessionRef.current, expectedSession)
-    ) {
-      throw new Error("登录初始化已失效")
-    }
-
-    phaseRef.current = "authenticated"
-    setPhase("authenticated")
-  }, [])
-
-  const rollbackSignIn = useCallback(
-    async (expectedSession: AuthSession) => {
-      if (
-        phaseRef.current !== "preparing" ||
-        !matchesSession(sessionRef.current, expectedSession)
-      ) {
-        return
-      }
-
-      sessionMutationVersionRef.current += 1
-      sessionRef.current = null
-      phaseRef.current = "anonymous"
-      setSession(null)
-      setPhase("anonymous")
-      await AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY).catch(
-        () => undefined
-      )
-      await clearSessionData(queryClient, expectedSession)
-    },
-    [queryClient]
-  )
-
-  const invalidateSession = useCallback(async () => {
-    const currentSession = sessionRef.current
-
-    sessionMutationVersionRef.current += 1
-    sessionRef.current = null
-    phaseRef.current = "anonymous"
-    setSession(null)
-    setPhase("anonymous")
-    await AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY).catch(() => undefined)
-
-    if (currentSession) {
-      await clearSessionData(queryClient, currentSession)
+  const targetOf = (account: AccountRecord): AuthenticatedTarget => ({ id: account.serverId, url: account.url, userId: account.userId })
+  const pushIdentityOf = (snapshot: ActiveAccountSnapshot): PushAccountIdentity => ({
+    accountId: snapshot.accountId,
+    generation: snapshot.generation,
+    target: snapshot.target,
+  })
+  const bootstrapBeforeCommit = useCallback(async (account: AccountRecord) => {
+    const target = targetOf(account)
+    const preparation = { accountId: account.id, target, generation: stateRef.current.generation + 1 }
+    accountAuthRuntime.prepare(preparation)
+    sessionBootstrapCoordinator.invalidate(target)
+    try {
+      await sessionBootstrapCoordinator.start(target, createSessionBootstrapOperations({ queryClient, target }))
+      return preparation
+    } catch (error) {
+      sessionBootstrapCoordinator.invalidate(target)
+      accountAuthRuntime.cancelPreparation(preparation)
+      throw error
     }
   }, [queryClient])
 
-  const signOut = useCallback(() => {
-    if (signOutPromiseRef.current) {
-      return signOutPromiseRef.current
-    }
+  useEffect(() => {
+    let mounted = true
+    void (async () => {
+      await migrateLegacyAccount({ storage: AsyncStorage, accountStore, migrateLoginAssistance: (target, account) => migrateLegacyLoginAssistance(target, account.id) })
+      const next = await accountStore.hydrate()
+      if (!mounted) return
+      const account = next.accounts.find((item) => item.id === next.activeAccountId && item.status === "ready")
+      if (!account) { publish(next, null, "anonymous"); return }
+      const preparation = await bootstrapBeforeCommit(account)
+      const snapshot = { accountId: account.id, account, target: targetOf(account), generation: preparation.generation }
+      publish(next, snapshot, "authenticated")
+    })().catch(async () => { if (mounted) publish(await accountStore.hydrate().catch(() => EMPTY), null, "degraded") }).finally(() => { if (mounted) setHydrated(true) })
+    return () => { mounted = false; accountAuthRuntime.setUnauthorizedHandler(null) }
+  }, [bootstrapBeforeCommit, publish])
 
-    const currentSession = sessionRef.current
-    if (!currentSession) {
-      return Promise.resolve()
-    }
+  const markReauthRequired = useCallback((accountId: string) => serialize(async () => {
+    await accountStore.markReauthRequired(accountId)
+    const next = await accountStore.hydrate()
+    const current = stateRef.current.active
+    if (current?.accountId === accountId) {
+      sessionBootstrapCoordinator.invalidate(current.target)
+      publish(next, null, "anonymous")
+    } else publish(next, current, current ? "authenticated" : "anonymous")
+  }), [publish, serialize])
+  useEffect(() => { accountAuthRuntime.setUnauthorizedHandler(markReauthRequired) }, [markReauthRequired])
 
-    setIsSigningOut(true)
-    const operation = logout(currentSession.url)
-      .then(async () => {
-        if (sessionRef.current === currentSession) {
-          await invalidateSession()
+  const switchAccount = useCallback((accountId: string) => serialize(async () => {
+    const old = stateRef.current.active
+    if (old?.accountId === accountId) return
+    setPhase("switching")
+    const before = await accountStore.hydrate()
+    const account = before.accounts.find((item) => item.id === accountId)
+    if (!account) { setPhase(old ? "authenticated" : "anonymous"); throw new Error("账号不存在") }
+    const credential = await accountStore.getCredential(accountId)
+    if (credential.status !== "valid") {
+      await accountStore.markReauthRequired(accountId); setIndex(await accountStore.hydrate())
+      setPhase(old ? "authenticated" : "anonymous"); throw new Error("账号需要重新登录")
+    }
+    try {
+      const preparation = await bootstrapBeforeCommit(account)
+      await accountStore.commitActive(accountId, before.revision)
+      const next = await accountStore.hydrate()
+      const generation = preparation.generation
+      old && sessionBootstrapCoordinator.invalidate(old.target)
+      publish(next, { accountId, account: next.accounts.find((a) => a.id === accountId)!, target: targetOf(account), generation }, "authenticated")
+    } catch (error) {
+      const persisted = await accountStore.hydrate()
+      const persistedAccount = persisted.accounts.find((item) => item.id === persisted.activeAccountId && item.status === "ready")
+      if (persistedAccount && persisted.activeAccountId !== old?.accountId) {
+        const reconciled = await bootstrapBeforeCommit(persistedAccount)
+        const snapshot = { accountId: persistedAccount.id, account: persistedAccount, target: targetOf(persistedAccount), generation: reconciled.generation }
+        publish(persisted, snapshot, "authenticated")
+      } else publish(persisted, old, old ? "authenticated" : "anonymous")
+      throw error
+    }
+  }), [bootstrapBeforeCommit, publish, serialize])
+
+  const signOutAccount = useCallback((accountId: string, localOnly = false) => serialize(async () => {
+    const old = stateRef.current.active
+    if (old?.accountId === accountId) pushCoordinator.pause()
+    setPhase("signing-out")
+    const before = await accountStore.hydrate()
+    const account = before.accounts.find((item) => item.id === accountId)
+    if (!account) { setPhase(old ? "authenticated" : "anonymous"); return }
+    const isCurrent = old?.accountId === accountId
+    const pushIdentity = isCurrent ? pushIdentityOf(old) : { accountId, generation: -1, target: targetOf(account) }
+    const candidate = isCurrent ? selectRecentReadyAccount(before.accounts, accountId) : undefined
+    await runAccountSignOutTransaction({
+      isCurrent,
+      prepareCandidate: () => candidate ? bootstrapBeforeCommit(candidate) : Promise.resolve(undefined),
+      cancelPreparation: (preparation) => accountAuthRuntime.cancelPreparation(preparation),
+      logout: async () => {
+        if (localOnly) {
+          await pushCoordinator.deactivate(pushIdentity)
+          return false
         }
-      })
-      .finally(() => {
-        signOutPromiseRef.current = null
-        setIsSigningOut(false)
-      })
+        const pushInstallationId = await pushCoordinator.getInstallationId(pushIdentity)
+        await logout(account.url, {
+          account: { accountId, auth: accountAuthRuntime.optionsForStoredAccount(accountId, targetOf(account)) },
+          pushInstallationId,
+        })
+        return true
+      },
+      afterLogout: async (remoteInvalidated) => {
+        if (remoteInvalidated) await pushCoordinator.queueRevocation(pushIdentity, true)
+      },
+      remove: async () => {
+        if (isCurrent) sessionBootstrapCoordinator.invalidate(old.target)
+        await accountStore.removeAccount(accountId)
+      },
+      commitCandidate: async () => {
+        const next = await accountStore.hydrate()
+        await accountStore.commitActive(candidate!.id, next.revision)
+      },
+      onSuccess: async (preparation) => {
+        const next = await accountStore.hydrate()
+        if (candidate && preparation) {
+          const snapshot = { accountId: candidate.id, account: candidate, target: targetOf(candidate), generation: preparation.generation }
+          publish(next, snapshot, "authenticated")
+        } else publish(next, isCurrent ? null : old, isCurrent ? "anonymous" : "authenticated")
+      },
+      onSafeRollback: async () => {
+        publish(await accountStore.hydrate(), old, old ? "authenticated" : "anonymous")
+      },
+      onUnsafeFailure: async () => {
+        await accountStore.markReauthRequired(accountId).catch(() => undefined)
+        publish(await accountStore.hydrate().catch(() => before), null, "degraded")
+      },
+    })
+  }), [bootstrapBeforeCommit, publish, pushCoordinator, serialize])
 
-    signOutPromiseRef.current = operation
-    return operation
-  }, [invalidateSession])
+  const installAndActivate = useCallback((server: ServerTarget, user: AuthenticatedUser, credential: MobileSessionCredential) => serialize(async () => {
+    const old = stateRef.current.active
+    setPhase("preparing")
+    const record = createAccountRecord({ serverId: server.id, url: server.url, userId: user.id, name: user.name, email: user.email, lastUsedAt: new Date().toISOString(), status: "ready" })
+    const before = await accountStore.hydrate()
+    const previousRecord = before.accounts.find((item) => item.id === record.id)
+    const previousCredential = previousRecord ? await accountStore.getCredential(record.id) : null
+    await runInstallAccountTransaction({
+      install: () => accountStore.installAccount(record, credential),
+      bootstrap: () => bootstrapBeforeCommit(record),
+      cancelPreparation: (preparation) => accountAuthRuntime.cancelPreparation(preparation),
+      commit: async () => {
+        const installed = await accountStore.hydrate()
+        await accountStore.commitActive(record.id, installed.revision)
+      },
+      publish: async (preparation) => {
+        const next = await accountStore.hydrate()
+        old && sessionBootstrapCoordinator.invalidate(old.target)
+        publish(next, { accountId: record.id, account: next.accounts.find((a) => a.id === record.id)!, target: targetOf(record), generation: preparation.generation }, "authenticated")
+      },
+      revokeNewSession: () => logout(server.url, { account: { accountId: record.id, auth: {
+        auth: async () => ({ accountId: record.id, generation: -1, token: credential.token }),
+        isCurrent: (snapshot) => snapshot.accountId === record.id && snapshot.generation === -1,
+      } } }),
+      restore: async () => {
+        if (previousRecord) {
+          const previousValue = previousCredential?.status === "valid" ? previousCredential.credential : null
+          await accountStore.restoreAccount(previousRecord, previousValue)
+        } else await accountStore.removeAccount(record.id)
+        const restored = await accountStore.hydrate()
+        if (old && restored.activeAccountId !== old.accountId) await accountStore.commitActive(old.accountId, restored.revision)
+        publish(await accountStore.hydrate(), old, old ? "authenticated" : "anonymous")
+      },
+      onRestoreFailure: async () => {
+        publish(await accountStore.hydrate().catch(() => before), null, "degraded")
+      },
+    })
+  }), [bootstrapBeforeCommit, publish, serialize])
 
-  const value = useMemo(
-    () => ({
-      beginSignIn,
-      commitSignIn,
-      invalidateSession,
-      isAuthenticated: phase === "authenticated",
-      isHydrated,
-      isPreparingSignIn: phase === "preparing",
-      isSigningOut,
-      rollbackSignIn,
-      session,
-      signOut,
-    }),
-    [
-      beginSignIn,
-      commitSignIn,
-      invalidateSession,
-      isHydrated,
-      isSigningOut,
-      phase,
-      rollbackSignIn,
-      session,
-      signOut,
-    ]
-  )
+  const invalidateSession = useCallback(async () => { const id = stateRef.current.active?.accountId; if (id) await markReauthRequired(id) }, [markReauthRequired])
+  const beginSignIn = useCallback((session: AuthSession) => { stagedRef.current = session; setPhase("preparing") }, [])
+  const commitSignIn = useCallback(async (session: AuthSession) => { if (!stagedRef.current || session.userId !== stagedRef.current.userId) throw new Error("登录初始化已失效"); const next = await accountStore.hydrate(); const account = next.accounts.find(a => a.serverId === session.id && a.url === session.url && a.userId === session.userId && a.status === "ready"); if (!account) throw new Error("登录凭据尚未安装"); stagedRef.current = null; if (stateRef.current.active?.accountId === account.id) { setPhase("authenticated"); return } await switchAccount(account.id) }, [switchAccount])
+  const rollbackSignIn = useCallback(async () => { stagedRef.current = null; setPhase(stateRef.current.active ? "authenticated" : "anonymous") }, [])
+  const signOut = useCallback(async () => { const id = stateRef.current.active?.accountId; if (id) await signOutAccount(id) }, [signOutAccount])
 
+  const value = useMemo<AuthContextValue>(() => ({ accounts: index.accounts, active, activeAccount: active?.account ?? null, generation: active?.generation ?? 0, phase, switchAccount, signOutAccount, markReauthRequired, installAndActivate, beginSignIn, commitSignIn, rollbackSignIn, invalidateSession, signOut, isAuthenticated: Boolean(active) && (phase === "authenticated" || phase === "degraded"), isHydrated: hydrated, isPreparingSignIn: phase === "preparing" || phase === "switching", isSigningOut: phase === "signing-out", session: active?.target ?? null }), [active, beginSignIn, commitSignIn, hydrated, index.accounts, installAndActivate, invalidateSession, markReauthRequired, phase, rollbackSignIn, signOut, signOutAccount, switchAccount])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-function parsePersistedAuthSession(value: string | null): AuthSession | null {
-  if (!value) return null
-
-  try {
-    const candidate = JSON.parse(value) as Partial<AuthSession>
-    if (
-      typeof candidate.id !== "string" ||
-      candidate.id.length === 0 ||
-      typeof candidate.url !== "string" ||
-      !isValidServerUrl(candidate.url) ||
-      typeof candidate.userId !== "string" ||
-      candidate.userId.length === 0
-    ) {
-      return null
-    }
-
-    return {
-      id: candidate.id,
-      url: candidate.url,
-      userId: candidate.userId,
-    }
-  } catch {
-    return null
-  }
-}
-
-function matchesSession(
-  current: AuthSession | null,
-  expected: AuthSession
-) {
-  return (
-    current?.id === expected.id &&
-    current.url === expected.url &&
-    current.userId === expected.userId
-  )
-}
-
-export function useAuth() {
-  const value = useContext(AuthContext)
-
-  if (!value) {
-    throw new Error("useAuth 必须在 AuthProvider 内使用")
-  }
-
-  return value
-}
-
-export function useAuthenticatedSession() {
-  const { isAuthenticated, session } = useAuth()
-
-  if (!isAuthenticated || !session) {
-    throw new Error("当前页面需要已认证的用户会话")
-  }
-
-  return session
-}
+export function useAuth() { const value = useContext(AuthContext); if (!value) throw new Error("useAuth 必须在 AuthProvider 内使用"); return value }
+export function useAuthenticatedSession() { const { isAuthenticated, session } = useAuth(); if (!isAuthenticated || !session) throw new Error("当前页面需要已认证的用户会话"); return session }

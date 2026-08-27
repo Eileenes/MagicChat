@@ -127,13 +127,13 @@ func callbackCode(c echo.Context) string {
 func setExternalAuthStateCookie(c echo.Context, state string, expiresAt time.Time) {
 	c.SetCookie(&http.Cookie{
 		Name: externalAuthStateCookieName, Value: state, Path: externalAuthCookiePath,
-		Expires: expiresAt, MaxAge: int(time.Until(expiresAt).Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Expires: expiresAt, MaxAge: int(time.Until(expiresAt).Seconds()), HttpOnly: true, Secure: requestUsesHTTPS(c.Request()), SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func clearExternalAuthStateCookie(c echo.Context) {
 	c.SetCookie(&http.Cookie{
 		Name: externalAuthStateCookieName, Value: "", Path: externalAuthCookiePath,
-		Expires: time.Unix(0, 0).UTC(), MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Expires: time.Unix(0, 0).UTC(), MaxAge: -1, HttpOnly: true, Secure: requestUsesHTTPS(c.Request()), SameSite: http.SameSiteLaxMode,
 	})
 }

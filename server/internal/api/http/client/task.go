@@ -169,7 +169,8 @@ func (a *TaskAPI) RegisterRoutes(group *echo.Group) {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/tasks [get]
 func (a *TaskAPI) list(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -224,7 +225,8 @@ func (a *TaskAPI) list(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/tasks [post]
 func (a *TaskAPI) create(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -255,7 +257,8 @@ func (a *TaskAPI) create(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/tasks/{task_id} [get]
 func (a *TaskAPI) get(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -284,7 +287,8 @@ func (a *TaskAPI) get(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/tasks/{task_id} [patch]
 func (a *TaskAPI) update(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -315,7 +319,8 @@ func (a *TaskAPI) update(c echo.Context) error {
 // @Success 200 {object} successEnvelope{data=taskActivityListResponse}
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/tasks/{task_id}/activities [get]
 func (a *TaskAPI) listActivities(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -362,7 +367,8 @@ func (a *TaskAPI) listActivities(c echo.Context) error {
 // @Failure 400 {object} errorEnvelope
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/tasks/{task_id}/comments [post]
 func (a *TaskAPI) addComment(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -395,7 +401,8 @@ func (a *TaskAPI) addComment(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/tasks/{task_id} [delete]
 func (a *TaskAPI) delete(c echo.Context) error {
 	current, ok := CurrentAccount(c)

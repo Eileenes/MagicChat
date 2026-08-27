@@ -1,3 +1,4 @@
+import { installTestAccountRuntime } from "./auth-runtime-test-helper.ts"
 import assert from "node:assert/strict"
 import test from "node:test"
 
@@ -5,6 +6,8 @@ import { fetchConversations } from "../src/data/conversations/conversations-api.
 import type {
   ClientContacts,
   ClientConversation,
+  ClientMessage,
+  ClientMessageList,
 } from "../src/core/models.ts"
 import {
   isConversationTopicVisibleInList,
@@ -12,8 +15,10 @@ import {
 } from "../src/domain/conversations/conversation-order.ts"
 import {
   buildConversationListItems,
+  collectLatestConversationMessages,
   findLatestUnreadConversationIndex,
   formatUnreadCount,
+  getBoundedConversationIds,
 } from "../src/features/messages/conversation-list-model.ts"
 
 const EMPTY_CONTACTS: ClientContacts = {
@@ -196,6 +201,16 @@ test("prefixes senders only for groups and group topics", () => {
     id: "group",
     lastMessageSender: sender("user-2", "张三", "小张"),
     lastMessageSummary: "群聊消息",
+    members: [{
+      avatar: "",
+      email: "",
+      id: "user-2",
+      name: "张三",
+      nickname: "小张",
+      phone: "",
+      role: "member",
+      type: "user",
+    }],
     name: "产品群",
     type: "group",
   })
@@ -227,6 +242,12 @@ test("prefixes senders only for groups and group topics", () => {
       conversations: [appTopic, groupTopic, app, group],
       currentUserId: "me",
       keyword: "",
+      latestMessages: new Map([
+        [group.id, message(group.id, "群聊消息", "user-2")],
+        [app.id, message(app.id, "应用消息", "app-1")],
+        [groupTopic.id, message(groupTopic.id, "话题回复", "user-2")],
+        [appTopic.id, message(appTopic.id, "应用话题回复", "user-2")],
+      ]),
       now,
     }).map((item) => [item.conversation.id, item.description])
   )
@@ -237,8 +258,57 @@ test("prefixes senders only for groups and group topics", () => {
   assert.equal(descriptions.get("app-topic"), "应用话题回复")
 })
 
+test("bounds visible conversation hydration without excluding later rows", () => {
+  const items = buildConversationListItems({
+    contacts: EMPTY_CONTACTS,
+    conversations: Array.from({ length: 40 }, (_, index) =>
+      conversation({
+        createdAt: new Date(Date.UTC(2026, 6, 30, 0, index)).toISOString(),
+        id: `conversation-${index}`,
+        lastMessageAt: new Date(Date.UTC(2026, 6, 30, 0, index)).toISOString(),
+      })
+    ),
+    currentUserId: "me",
+    keyword: "",
+  })
+
+  const laterVisibleRows = items.slice(30)
+  assert.deepEqual(getBoundedConversationIds(laterVisibleRows, 3), [
+    "conversation-9",
+    "conversation-8",
+    "conversation-7",
+  ])
+})
+
+test("uses only cached messages for conversation summaries", () => {
+  const item = buildConversationListItems({
+    contacts: EMPTY_CONTACTS,
+    conversations: [conversation({ lastMessageSummary: "服务端摘要" })],
+    currentUserId: "me",
+    keyword: "",
+  })[0]
+
+  assert.equal(item?.description, "暂无消息")
+})
+
+test("selects the highest-sequence cached message across all query pages", () => {
+  const older = { id: "older", seq: 7 } as ClientMessage
+  const latest = { id: "latest", seq: 11 } as ClientMessage
+  const selected = collectLatestConversationMessages([
+    {
+      conversationId: "conversation",
+      pages: [
+        { messages: [older], page: {} as ClientMessageList["page"] },
+        { messages: [latest], page: {} as ClientMessageList["page"] },
+      ],
+    },
+  ])
+
+  assert.equal(selected.get("conversation"), latest)
+})
+
 test("normalizes the last message sender from the conversation API", async () => {
-  const conversations = await fetchConversations("https://example.com", {
+  const conversations = await fetchConversations(installTestAccountRuntime({ id: "server-1", url: "https://example.com", userId: "user-1" }), {
     fetcher: async () =>
       new Response(
         JSON.stringify({
@@ -344,4 +414,25 @@ function topicConversation({
 
 function sender(id: string, name: string, nickname = "") {
   return { id, name, nickname, type: "user" as const }
+}
+
+function message(
+  conversationId: string,
+  text: string,
+  senderId: string
+): ClientMessage {
+  return {
+    body: { content: text, type: "text" },
+    clientMessageId: `client-${conversationId}`,
+    conversationId,
+    createdAt: "2026-07-30T08:00:00Z",
+    id: `message-${conversationId}`,
+    reactionVersion: 0,
+    reactions: [],
+    sender: {
+      id: senderId,
+      type: senderId.startsWith("app") ? "app" : "user",
+    },
+    seq: 1,
+  }
 }

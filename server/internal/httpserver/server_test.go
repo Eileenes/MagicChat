@@ -94,6 +94,7 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.UserSession{},
 		&store.UserPushGrant{},
 		&store.MobilePushRoute{},
+		&store.MobilePushEvent{},
 		&store.MobilePushJob{},
 		&store.UserFriendship{},
 		&store.UserFriendRequest{},
@@ -1061,6 +1062,50 @@ func findCookieNamed(t *testing.T, resp *http.Response, name string) *http.Cooki
 
 	t.Fatalf("response did not set %s cookie", name)
 	return nil
+}
+
+func TestClientWebSocketAcceptsBearerSession(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Now().UTC()
+	user := insertTestUser(t, db, "ws-bearer@example.com", "WS Bearer", store.UserStatusActive, now)
+	const credential = "ws-bearer-placeholder"
+	if err := db.Create(&store.UserSession{
+		ID: uuid.NewString(), TokenHash: auth.HashSessionToken(credential), UserID: user.ID,
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now, LastSeenAt: now,
+	}).Error; err != nil {
+		t.Fatalf("create bearer session: %v", err)
+	}
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+credential)
+	conn, response, err := websocket.DefaultDialer.Dial(clientWebSocketURL(server), header)
+	if err != nil {
+		status := 0
+		if response != nil {
+			status = response.StatusCode
+		}
+		t.Fatalf("dial bearer websocket: status = %d, err = %v", status, err)
+	}
+	defer conn.Close()
+	if ready := readRealtimeEvent(t, conn); ready.Event != realtime.EventSystemReady {
+		t.Fatalf("ready event = %q", ready.Event)
+	}
+}
+
+func TestClientWebSocketRejectsInvalidBearerDespiteCookie(t *testing.T) {
+	server, _ := newTestRouter(t)
+	defer server.Close()
+	header := http.Header{}
+	header.Set("Authorization", "Bearer invalid-placeholder")
+	header.Set("Cookie", (&http.Cookie{Name: "user_session", Value: "cookie-placeholder"}).String())
+	conn, response, err := websocket.DefaultDialer.Dial(clientWebSocketURL(server), header)
+	if err == nil {
+		conn.Close()
+		t.Fatal("invalid bearer websocket unexpectedly connected")
+	}
+	if response == nil || response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("invalid bearer websocket status = %v", response)
+	}
 }
 
 func TestClientWebSocketRequiresUserSession(t *testing.T) {
@@ -4922,7 +4967,7 @@ func TestListClientConversationsCreatesBuiltinAssistantConversationOnce(t *testi
 	}
 }
 
-func TestListClientConversationsLimitsToRecent100(t *testing.T) {
+func TestListClientConversationsLimitsToRecent30(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()
 	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
@@ -4957,20 +5002,20 @@ func TestListClientConversationsLimitsToRecent100(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 	conversations := requireConversations(t, requireSuccess(t, body))
-	if len(conversations) != 100 {
-		t.Fatalf("conversation count = %d, want 100", len(conversations))
+	if len(conversations) != 30 {
+		t.Fatalf("conversation count = %d, want 30", len(conversations))
 	}
 	first := conversations[0].(map[string]any)
 	second := conversations[1].(map[string]any)
-	last := conversations[99].(map[string]any)
+	last := conversations[29].(map[string]any)
 	if first["type"] != store.ConversationKindApp {
 		t.Fatalf("first type = %v, want app", first["type"])
 	}
 	if second["name"] != "Group 100" || second["pinned"] != true {
 		t.Fatalf("second conversation = %#v, want pinned Group 100", second)
 	}
-	if last["name"] != "Group 097" {
-		t.Fatalf("last name = %v, want Group 097", last["name"])
+	if last["name"] != "Group 027" {
+		t.Fatalf("last name = %v, want Group 027", last["name"])
 	}
 }
 

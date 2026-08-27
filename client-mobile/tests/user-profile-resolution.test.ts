@@ -1,3 +1,4 @@
+import { installTestAccountRuntime } from "./auth-runtime-test-helper.ts"
 import assert from "node:assert/strict"
 import test from "node:test"
 
@@ -10,7 +11,7 @@ const serverUrl = "https://chat.example.com"
 
 test("loads contact user IDs without requiring embedded user profiles", async () => {
   const requests: Array<{ init?: RequestInit; url: string }> = []
-  const contacts = await fetchContacts(serverUrl, {
+  const contacts = await fetchContacts(installTestAccountRuntime({ id: "server-1", url: serverUrl, userId: "user-current" }), {
     fetcher: async (url, init) => {
       requests.push({ init, url })
       return jsonResponse({
@@ -32,7 +33,7 @@ test("loads contact user IDs without requiring embedded user profiles", async ()
 
 test("resolves complete user profiles in one ID batch", async () => {
   let requestBody = ""
-  const users = await resolveClientUsers(serverUrl, ["user-1", "user-2"], {
+  const users = await resolveClientUsers(installTestAccountRuntime({ id: "server-1", url: serverUrl, userId: "user-current" }), ["user-1", "user-2"], {
     fetcher: async (_url, init) => {
       requestBody = String(init?.body)
       return jsonResponse({
@@ -69,7 +70,7 @@ test("resolves complete user profiles in one ID batch", async () => {
 })
 
 test("accepts ID-only user references in conversations and messages", async () => {
-  const conversations = await fetchConversations(serverUrl, {
+  const conversations = await fetchConversations(installTestAccountRuntime({ id: "server-1", url: serverUrl, userId: "user-current" }), {
     fetcher: async () =>
       jsonResponse({
         conversations: [

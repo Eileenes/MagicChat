@@ -187,7 +187,7 @@ func (s *Service) dispatchJob(ctx context.Context, job model.Job) error {
 	sendCtx, cancelSend := context.WithTimeout(ctx, providerSendLimit)
 	defer cancelSend()
 	receipt, err := pushProvider.Send(sendCtx, provider.Notification{
-		Token: providerToken, Platform: job.Grant.Installation.Platform,
+		ID: job.ID, Token: providerToken, Platform: job.Grant.Installation.Platform,
 		Environment: job.Grant.Installation.Environment,
 		Title:       template.Title, Body: template.Body, Event: job.EventType,
 		GrantID: job.GrantID, RouteToken: job.RouteToken,

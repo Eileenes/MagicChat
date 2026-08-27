@@ -1,4 +1,6 @@
-import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-client"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { ApiRequestError, type ApiFetch } from "@/data/api-client"
+import { createProtectedApiClient } from "@/data/protected-api-client"
 import type {
   ClientContactDirectory,
   ContactApp,
@@ -41,10 +43,10 @@ type ContactsResponse = {
 }
 
 export async function fetchContacts(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   options: { fetcher?: ApiFetch; signal?: AbortSignal } = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ContactsResponse
   >("/api/client/contacts", {
     errorMessage: "加载通讯录失败",

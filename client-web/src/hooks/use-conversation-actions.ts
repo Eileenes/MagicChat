@@ -39,6 +39,8 @@ export function useConversationActions({
   refreshContacts,
   setConversationMessageStates,
   setConversations,
+  onConversationRemoved,
+  onConversationUpserted,
 }: {
   conversations: ClientConversation[]
   conversationMessageStates: Record<string, ClientConversationMessageState>
@@ -53,6 +55,8 @@ export function useConversationActions({
     SetStateAction<Record<string, ClientConversationMessageState>>
   >
   setConversations: Dispatch<SetStateAction<ClientConversation[]>>
+  onConversationRemoved?: (conversationId: string) => void
+  onConversationUpserted?: (conversationId: string) => void
 }) {
   const getConversationMessageState = useCallback(
     (conversationId: string) => {
@@ -77,6 +81,7 @@ export function useConversationActions({
 
   const upsertConversation = useCallback(
     (conversation: ClientConversation) => {
+      onConversationUpserted?.(conversation.id)
       setConversations((currentConversations) => {
         const currentConversation = currentConversations.find(
           (item) => item.id === conversation.id
@@ -104,11 +109,12 @@ export function useConversationActions({
         ])
       })
     },
-    [setConversations]
+    [onConversationUpserted, setConversations]
   )
 
   const removeConversation = useCallback(
     (conversationId: string) => {
+      onConversationRemoved?.(conversationId)
       setConversations((currentConversations) =>
         currentConversations.filter(
           (conversation) => conversation.id !== conversationId
@@ -121,7 +127,7 @@ export function useConversationActions({
         return nextStates
       })
     },
-    [setConversationMessageStates, setConversations]
+    [onConversationRemoved, setConversationMessageStates, setConversations]
   )
 
   const openDirectConversation = useCallback(

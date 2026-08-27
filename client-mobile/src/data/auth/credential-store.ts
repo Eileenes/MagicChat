@@ -2,6 +2,13 @@ import * as SecureStore from "expo-secure-store"
 
 import type { ServerTarget } from "@/core/server-target"
 
+export type LoginAccountAssistance = {
+  accountId: string
+  account: string
+  serverId: string
+  serverUrl: string
+}
+
 type StoredLoginCredentials = {
   account: string
   password: string
@@ -10,6 +17,7 @@ type StoredLoginCredentials = {
 }
 
 const CREDENTIAL_KEY_PREFIX = "magicchat.credentials.v1"
+const ACCOUNT_ASSISTANCE_KEY_PREFIX = "magicchat.login-account.v2"
 const secureStoreOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 }
@@ -63,6 +71,28 @@ export async function saveLoginCredentials(
   )
 }
 
+// New multi-account callers use this password-free, accountId-scoped form assistance.
+// Legacy APIs remain available until the login UI moves in a later task.
+export async function saveAccountLoginAssistance(value: LoginAccountAssistance) {
+  if (!(await SecureStore.isAvailableAsync())) return
+  await SecureStore.setItemAsync(
+    `${ACCOUNT_ASSISTANCE_KEY_PREFIX}.${value.accountId}`,
+    JSON.stringify({ ...value, account: value.account.trim() }),
+    secureStoreOptions
+  )
+}
+
+export async function loadAccountLoginAssistance(accountId: string): Promise<LoginAccountAssistance | null> {
+  if (!(await SecureStore.isAvailableAsync())) return null
+  const raw = await SecureStore.getItemAsync(`${ACCOUNT_ASSISTANCE_KEY_PREFIX}.${accountId}`, secureStoreOptions)
+  try {
+    const value: unknown = raw && JSON.parse(raw)
+    if (!isRecord(value) || value.accountId !== accountId || typeof value.account !== "string" ||
+      typeof value.serverId !== "string" || typeof value.serverUrl !== "string") return null
+    return value as LoginAccountAssistance
+  } catch { return null }
+}
+
 export async function saveLoginAccount(server: ServerTarget, account: string) {
   const normalizedAccount = account.trim()
   const existingCredentials = await loadLoginCredentials(server)
@@ -75,6 +105,22 @@ export async function saveLoginAccount(server: ServerTarget, account: string) {
     account: normalizedAccount,
     password,
   })
+}
+
+export async function migrateLegacyLoginAssistance(
+  server: ServerTarget,
+  accountId: string
+): Promise<void> {
+  if (!(await SecureStore.isAvailableAsync())) return
+  const legacyKey = createCredentialKey(server)
+  const legacy = parseStoredCredentials(await SecureStore.getItemAsync(legacyKey, secureStoreOptions))
+  if (legacy?.account) {
+    await saveAccountLoginAssistance({
+      accountId, account: legacy.account, serverId: server.id, serverUrl: server.url,
+    })
+  }
+  // Passwords are intentionally discarded; they are never Session credentials.
+  await SecureStore.deleteItemAsync(legacyKey, secureStoreOptions)
 }
 
 function createCredentialKey(server: ServerTarget) {

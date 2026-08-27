@@ -72,10 +72,11 @@ func (a *EmailAuthAPI) requestCode(c echo.Context) error {
 // login godoc
 //
 // @Summary 使用邮箱验证码登录
-// @Description 验证 8 位邮箱验证码，创建普通用户 Session 并写入登录 Cookie。验证码仅能使用一次。
+// @Description 验证 8 位邮箱验证码，创建普通用户 Session 并写入登录 Cookie。验证码仅能使用一次；仅 Native Mobile 在发送 X-Dianbao-Mobile-Session: 1 且请求不带 Origin 时，响应 data 才可包含可选 mobile_session。
 // @Tags 客户端认证
 // @Accept json
 // @Produce json
+// @Param X-Dianbao-Mobile-Session header string false "Native Mobile Session 能力版本；仅值 1 启用可选 mobile_session 响应（带 Origin 时忽略）" Enums(1)
 // @Param body body emailCodeLoginRequest true "邮箱和验证码"
 // @Success 200 {object} successEnvelope{data=accountEnvelope}
 // @Failure 400 {object} errorEnvelope
@@ -95,7 +96,13 @@ func (a *EmailAuthAPI) login(c echo.Context) error {
 		return writeEmailAuthError(c, err)
 	}
 	setSessionCookie(c, result.Session.Token, result.Session.ExpiresAt)
-	return writeSuccess(c, http.StatusOK, accountEnvelope{Account: newAccountResponse(result.Account)})
+	response := accountEnvelope{Account: newAccountResponse(result.Account)}
+	if supportsMobileSessionResponse(c.Request()) {
+		response.MobileSession = &mobileSessionResponse{
+			Token: result.Session.Token, ExpiresAt: result.Session.ExpiresAt,
+		}
+	}
+	return writeSuccess(c, http.StatusOK, response)
 }
 
 func directClientIP(request *http.Request) string {

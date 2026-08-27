@@ -3,11 +3,11 @@ import { DatabaseSync } from "node:sqlite"
 import test from "node:test"
 
 import { normalizeClientMessage } from "../src/data/messages/message-normalizer.ts"
+import { DATABASE_VERSION } from "../src/data/database/database-version.ts"
 import {
-  createMessageCacheMigrationSQL,
-  MESSAGE_CACHE_DATABASE_VERSION,
-  requiresNormalizedMessageCacheReset,
-} from "../src/data/messages/message-cache-version.ts"
+  createDatabaseMigrationSQL,
+  requiresNormalizedMessageReset,
+} from "../src/data/database/migrations.ts"
 import {
   applyChoiceMessageTombstone,
   clearConversationMessageTombstones,
@@ -75,9 +75,7 @@ function choiceMessage(choice = choiceState(0)): ClientMessage {
   }
 }
 
-function conversation(
-  type: ClientConversation["type"]
-): ClientConversation {
+function conversation(type: ClientConversation["type"]): ClientConversation {
   return {
     avatar: "",
     canSend: true,
@@ -210,13 +208,8 @@ test("keeps single and multiple drafts in body option order", () => {
     updateMessageChoiceDraft({ ...choiceBody, selection: "single" }, [], "b"),
     ["b"]
   )
-  assert.deepEqual(updateMessageChoiceDraft(choiceBody, ["c"], "a"), [
-    "a",
-    "c",
-  ])
-  assert.deepEqual(updateMessageChoiceDraft(choiceBody, ["a", "c"], "c"), [
-    "a",
-  ])
+  assert.deepEqual(updateMessageChoiceDraft(choiceBody, ["c"], "a"), ["a", "c"])
+  assert.deepEqual(updateMessageChoiceDraft(choiceBody, ["a", "c"], "c"), ["a"])
   assert.equal(isMessageChoiceAnswered(choiceState(0)), false)
   assert.equal(isMessageChoiceAnswered(choiceState(1, ["a"])), true)
 })
@@ -245,7 +238,10 @@ test("never regresses counts or replaces a saved answer with empty state", () =>
       { id: "missing", responseCount: 0 },
     ],
   }
-  assert.equal(applyMessageChoiceState(newerWithoutAnswer, mismatched), newerWithoutAnswer)
+  assert.equal(
+    applyMessageChoiceState(newerWithoutAnswer, mismatched),
+    newerWithoutAnswer
+  )
 })
 
 test("uses actor options only for the current user's realtime event", () => {
@@ -310,10 +306,9 @@ test("tombstones block stale HTTP messages from reviving choices", () => {
   })
   const revoked = applyChoiceMessageTombstone(target, active)
   assert.deepEqual(revoked?.body, { type: "revoked" })
-  assert.deepEqual(
-    preserveNewerMessageState(revoked!, active).body,
-    { type: "revoked" }
-  )
+  assert.deepEqual(preserveNewerMessageState(revoked!, active).body, {
+    type: "revoked",
+  })
 
   const deletedMessage = { ...active, id: "deleted" }
   recordChoiceMessageTombstone(target, {
@@ -333,9 +328,18 @@ test("tombstones block stale HTTP messages from reviving choices", () => {
 })
 
 test("shows counts only for group conversations and group topics", () => {
-  assert.equal(shouldShowMessageChoiceResponseCounts(conversation("group")), true)
-  assert.equal(shouldShowMessageChoiceResponseCounts(conversation("direct")), false)
-  assert.equal(shouldShowMessageChoiceResponseCounts(conversation("app")), false)
+  assert.equal(
+    shouldShowMessageChoiceResponseCounts(conversation("group")),
+    true
+  )
+  assert.equal(
+    shouldShowMessageChoiceResponseCounts(conversation("direct")),
+    false
+  )
+  assert.equal(
+    shouldShowMessageChoiceResponseCounts(conversation("app")),
+    false
+  )
   assert.equal(
     shouldShowMessageChoiceResponseCounts({
       ...conversation("topic"),
@@ -372,14 +376,14 @@ test("choice unread wins mention ties and removes duplicate choice prefix", () =
   )
 })
 
-test("cache v4 resets old normalized message rows once", () => {
-  assert.equal(MESSAGE_CACHE_DATABASE_VERSION, 4)
-  assert.equal(requiresNormalizedMessageCacheReset(3), true)
-  assert.equal(requiresNormalizedMessageCacheReset(4), false)
+test("cache v5 preserves normalized message rows while adding conversations", () => {
+  assert.equal(DATABASE_VERSION, 6)
+  assert.equal(requiresNormalizedMessageReset(3), true)
+  assert.equal(requiresNormalizedMessageReset(4), false)
 
   const database = new DatabaseSync(":memory:")
   try {
-    database.exec(createMessageCacheMigrationSQL(0))
+    database.exec(createDatabaseMigrationSQL(0))
     database.exec(`
       INSERT INTO cached_messages (
         server_key, user_id, conversation_id, message_id, seq,
@@ -391,7 +395,7 @@ test("cache v4 resets old normalized message rows once", () => {
       ) VALUES ('server', 'user', 'conversation', 1);
     `)
 
-    database.exec(createMessageCacheMigrationSQL(4))
+    database.exec(createDatabaseMigrationSQL(4))
     assert.equal(
       database.prepare("SELECT COUNT(*) AS count FROM cached_messages").get()
         ?.count,
@@ -404,7 +408,7 @@ test("cache v4 resets old normalized message rows once", () => {
     )
 
     database.exec("PRAGMA user_version = 3")
-    database.exec(createMessageCacheMigrationSQL(3))
+    database.exec(createDatabaseMigrationSQL(3))
     assert.equal(
       database.prepare("SELECT COUNT(*) AS count FROM cached_messages").get()
         ?.count,
@@ -417,7 +421,7 @@ test("cache v4 resets old normalized message rows once", () => {
     )
     assert.equal(
       database.prepare("PRAGMA user_version").get()?.user_version,
-      MESSAGE_CACHE_DATABASE_VERSION
+      DATABASE_VERSION
     )
   } finally {
     database.close()

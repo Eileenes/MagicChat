@@ -23,6 +23,7 @@ import { isBuiltinAssistantConversation } from "@/domain/conversations/conversat
 import { ConversationAvatar } from "@/features/messages/conversation-avatar"
 import {
   findLatestUnreadConversationIndex,
+  getBoundedConversationIds,
   type ConversationListItemModel,
 } from "@/features/messages/conversation-list-model"
 import { ConversationPreferenceIndicators } from "@/features/messages/conversation-preference-indicators"
@@ -34,6 +35,7 @@ import {
 
 const PARENT_ROW_HEIGHT = PixelRatio.roundToNearestPixel(64)
 const NESTED_ROW_HEIGHT = PixelRatio.roundToNearestPixel(52)
+const VISIBLE_CONVERSATION_HYDRATION_LIMIT = 30
 
 export function ConversationList({
   errorMessage,
@@ -45,6 +47,7 @@ export function ConversationList({
   onConversationPinnedChange,
   onConversationPress,
   onConversationPressIn,
+  onConversationsVisible,
   onSearchPress,
   scrollToUnreadRequest = 0,
   server,
@@ -64,12 +67,27 @@ export function ConversationList({
   ) => void
   onConversationPress: (conversationId: string) => void
   onConversationPressIn: (conversationId: string) => void
+  onConversationsVisible: (conversationIds: string[]) => void
   onSearchPress: () => void
   scrollToUnreadRequest?: number
   server: ServerTarget
 }) {
   const listRef = useRef<FlatList<ConversationListItemModel>>(null)
   const openSwipeableRef = useRef<SwipeableMethods | null>(null)
+  const onConversationsVisibleRef = useRef(onConversationsVisible)
+  useEffect(() => {
+    onConversationsVisibleRef.current = onConversationsVisible
+  }, [onConversationsVisible])
+  const onViewableItemsChangedRef = useRef(
+    ({ viewableItems }: { viewableItems: { item: ConversationListItemModel }[] }) => {
+      onConversationsVisibleRef.current(
+        getBoundedConversationIds(
+          viewableItems.map(({ item }) => item),
+          VISIBLE_CONVERSATION_HYDRATION_LIMIT
+        )
+      )
+    }
+  )
   const latestUnreadIndex = findLatestUnreadConversationIndex(items)
 
   useEffect(() => {
@@ -132,6 +150,7 @@ export function ConversationList({
           })
         }, 50)
       }}
+      onViewableItemsChanged={onViewableItemsChangedRef.current}
       ref={listRef}
       renderItem={({ item }) => (
         <ConversationListItem

@@ -1,11 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { Redirect, useFocusEffect, useRouter } from "expo-router"
+import { Redirect, type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router"
 import { ChevronLeft } from "lucide-react-native"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { BackHandler } from "react-native"
 import { Image, Paragraph, XStack, YStack } from "tamagui"
 
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
+import { ContentState } from "@/components/feedback/content-state"
 import { PageHeader } from "@/components/navigation/page-header"
 import type { AuthenticatedUser } from "@/core/models"
 import { ApiRequestError } from "@/data/api-client"
@@ -13,6 +14,7 @@ import { useAppInfoQuery } from "@/data/auth/auth-hooks"
 import { queryKeys } from "@/data/query"
 import { runLoginBootstrap } from "@/features/auth/login-bootstrap"
 import { LoginForm } from "@/features/auth/login-form"
+import { isAccountLoginMode, resolveLoginTarget, shouldRedirectAuthenticatedLogin } from "@/features/accounts/account-management-model"
 import { useAuth } from "@/providers/auth-provider"
 import { useServers } from "@/providers/server-provider"
 import { useRealtime } from "@/realtime/realtime-context"
@@ -23,30 +25,43 @@ const MIN_CONNECTION_TOAST_MS = 300
 
 export function LoginScreen() {
   const router = useRouter()
+  const params = useLocalSearchParams<{ accountId?: string; mode?: string; returnTo?: string }>()
+  const accountFlow = isAccountLoginMode(params.mode)
   const queryClient = useQueryClient()
   const {
+    accounts,
     beginSignIn,
     commitSignIn,
     isAuthenticated,
+    isHydrated: authHydrated,
     isPreparingSignIn,
     rollbackSignIn,
   } = useAuth()
   const { waitUntilReady } = useRealtime()
   const {
-    isHydrated,
+    isHydrated: serversHydrated,
     markServerAsRecentlyUsed,
     selectedServer,
   } = useServers()
   const { colors } = useXGUITheme()
   const { hide: hideToast, show: showToast } = useXGUIToast()
-  const appInfoQuery = useAppInfoQuery(selectedServer, isHydrated)
-  const serverKey = `${selectedServer.id}\u0000${selectedServer.url}`
+  const resolvedLogin = useMemo(() => resolveLoginTarget({ accounts, accountId: params.accountId, authHydrated, mode: params.mode, selectedServer }),
+    [accounts, authHydrated, params.accountId, params.mode, selectedServer])
+  const loginServer = resolvedLogin.target
+  const reauthAccount = resolvedLogin.account
+  const routeDependenciesReady = serversHydrated && !resolvedLogin.pendingReauth
+  const appInfoQuery = useAppInfoQuery(loginServer, routeDependenciesReady && !resolvedLogin.invalidReauth)
+  const serverKey = `${loginServer.id}\u0000${loginServer.url}`
   const [timedOutServerKey, setTimedOutServerKey] = useState<string | null>(
     null
   )
   const connectionTimedOut = timedOutServerKey === serverKey
+  useEffect(() => {
+    if (!resolvedLogin.invalidReauth) return
+    showToast({ message: "账号不存在或已被移除", modal: false, type: "error" })
+  }, [resolvedLogin.invalidReauth, showToast])
   const connectionLoading =
-    isHydrated && appInfoQuery.isFetching && !connectionTimedOut
+    routeDependenciesReady && appInfoQuery.isFetching && !connectionTimedOut
   const returnToServerSelection = useCallback(() => {
     if (isPreparingSignIn) return
 
@@ -54,8 +69,8 @@ export function LoginScreen() {
       router.back()
       return
     }
-    router.replace("/server-management")
-  }, [isPreparingSignIn, router])
+    router.replace((accountFlow ? "/account-management" : "/server-management") as Href)
+  }, [accountFlow, isPreparingSignIn, router])
 
   useFocusEffect(
     useCallback(() => {
@@ -78,7 +93,7 @@ export function LoginScreen() {
       hideToast()
       void queryClient.cancelQueries({
         exact: true,
-        queryKey: queryKeys.appInfo(selectedServer),
+        queryKey: queryKeys.appInfo(loginServer),
       })
     }, CONNECTION_TIMEOUT_MS)
     return () => clearTimeout(timeout)
@@ -87,7 +102,7 @@ export function LoginScreen() {
     hideToast,
     isPreparingSignIn,
     queryClient,
-    selectedServer,
+    loginServer,
     serverKey,
   ])
 
@@ -113,7 +128,11 @@ export function LoginScreen() {
     showToast,
   ])
 
-  if (isAuthenticated) {
+  if (!routeDependenciesReady) return <ContentState loading message="正在加载登录信息" />
+
+  if (resolvedLogin.invalidReauth) return <Redirect href={"/account-management" as Href} />
+
+  if (shouldRedirectAuthenticatedLogin(isAuthenticated, params.mode)) {
     return <Redirect href="/messages" />
   }
 
@@ -137,7 +156,7 @@ export function LoginScreen() {
     try {
       await queryClient.cancelQueries({
         exact: true,
-        queryKey: queryKeys.appInfo(selectedServer),
+        queryKey: queryKeys.appInfo(loginServer),
       })
       await appInfoQuery.refetch()
     } finally {
@@ -152,8 +171,8 @@ export function LoginScreen() {
 
   async function handleLoginSuccess(user: AuthenticatedUser) {
     const authenticatedTarget = {
-      id: selectedServer.id,
-      url: selectedServer.url,
+      id: loginServer.id,
+      url: loginServer.url,
       userId: user.id,
     }
     beginSignIn(authenticatedTarget)
@@ -164,9 +183,10 @@ export function LoginScreen() {
         target: authenticatedTarget,
         waitForRealtime: waitUntilReady,
       })
-      markServerAsRecentlyUsed(selectedServer.id)
+      markServerAsRecentlyUsed(loginServer.id)
       await commitSignIn(authenticatedTarget)
       hideToast()
+      router.replace("/messages")
     } catch (error: unknown) {
       await rollbackSignIn(authenticatedTarget)
       throw new ApiRequestError(
@@ -220,10 +240,12 @@ export function LoginScreen() {
             connectionFailed={connectionFailed}
             connectionReady={connectionReady}
             emailCodeLoginEnabled={appInfo?.emailCodeLoginEnabled ?? true}
+            assistanceAccountId={reauthAccount?.id}
+            initialAccount={reauthAccount?.email}
             onLoginSuccess={handleLoginSuccess}
             onRetryConnection={() => void handleRetryConnection()}
             passwordLoginEnabled={appInfo?.passwordLoginEnabled ?? true}
-            server={selectedServer}
+            server={loginServer}
           />
         </YStack>
       </YStack>

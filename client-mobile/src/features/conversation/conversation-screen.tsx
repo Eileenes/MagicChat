@@ -49,6 +49,8 @@ import {
 } from "@/features/conversation/composer/message-composer"
 import { ForwardMessageSheet } from "@/features/conversation/forward-message-sheet"
 import { MessageList } from "@/features/conversation/messages/message-list"
+import { useTargetMessageNavigation } from "@/features/conversation/messages/use-target-message-navigation"
+import { mergeOptimisticMessages } from "@/features/conversation/optimistic-message-model"
 import { createMentionCandidates } from "@/features/conversation/composer/mention-model"
 import { useConversationReadSync } from "@/features/conversation/use-conversation-read-sync"
 import { useConversationNavigation } from "@/features/conversation/use-conversation-navigation"
@@ -83,6 +85,7 @@ const EMPTY_MENTION_RESOLVER: MessageMentionLabelResolver = () => undefined
 export function ConversationScreen() {
   const params = useLocalSearchParams<{
     conversationId: string
+    messageId?: string
     parentConversationId?: string
     topic?: string
   }>()
@@ -92,6 +95,9 @@ export function ConversationScreen() {
   const parentConversationId = Array.isArray(params.parentConversationId)
     ? (params.parentConversationId[0] ?? "")
     : (params.parentConversationId ?? "")
+  const targetMessageId = Array.isArray(params.messageId)
+    ? (params.messageId[0] ?? "")
+    : (params.messageId ?? "")
   const router = useRouter()
   const { colors } = useXGUITheme()
   const loadingToast = useXGUIToast()
@@ -203,6 +209,14 @@ export function ConversationScreen() {
   const messagesQuery = useConversationMessages(session, conversationId, {
     fallbackPollingEnabled: !realtimeReady,
   })
+  useTargetMessageNavigation({
+    fetchOlderMessages: messagesQuery.fetchOlder,
+    hasOlder: messagesQuery.hasOlder,
+    isFetchingOlder: messagesQuery.isFetchingOlder,
+    isLoading: messagesQuery.isLoading,
+    messages: messagesQuery.messages,
+    targetMessageId,
+  })
   const { mutateAsync: markRead } = useMarkConversationRead(
     session,
     conversationId
@@ -240,6 +254,39 @@ export function ConversationScreen() {
         : EMPTY_MENTION_RESOLVER,
     [conversation, currentUser, profileContacts]
   )
+  const messageActions = useConversationMessageActions({
+    conversationId,
+    confirmedMessages: messagesQuery.messages,
+    forwardMessageId: forwardMessage?.id,
+    onReplySent: (messageId) => {
+      setReplyTarget((current) => current?.id === messageId ? null : current)
+    },
+    replyToMessageId: replyTarget?.id,
+    server: session,
+  })
+  const displayedMessages = useMemo(
+    () => mergeOptimisticMessages(messagesQuery.messages, messageActions.optimisticMessages),
+    [messageActions.optimisticMessages, messagesQuery.messages]
+  )
+  const displayedResourceStates = useMemo(() => {
+    const states = new Map(resources.states)
+    for (const item of messageActions.optimisticMessages) {
+      const descriptor = item.descriptor
+      if (descriptor.kind === "text") continue
+      states.set(descriptor.upload.uri, {
+        error: null,
+        resource: {
+          identity: `optimistic:${descriptor.clientMessageId}`,
+          mimeType: descriptor.upload.mimeType,
+          sizeBytes: descriptor.upload.sizeBytes,
+          source: "cache" as const,
+          uri: descriptor.upload.uri,
+        },
+        status: "ready" as const,
+      })
+    }
+    return states
+  }, [messageActions.optimisticMessages, resources.states])
   const presentedMessages = useMemo(
     () =>
       conversation && currentUser
@@ -247,14 +294,14 @@ export function ConversationScreen() {
             contacts: profileContacts,
             conversation,
             currentUser,
-            messages: messagesQuery.messages,
+            messages: displayedMessages,
             resolveMentionLabel,
           })
         : [],
     [
       conversation,
       currentUser,
-      messagesQuery.messages,
+      displayedMessages,
       profileContacts,
       resolveMentionLabel,
     ]
@@ -321,11 +368,6 @@ export function ConversationScreen() {
       current?.id === messageId ? null : current
     )
   }, [])
-  const handleReplySent = useCallback((messageId: string) => {
-    setReplyTarget((current) =>
-      current?.id === messageId ? null : current
-    )
-  }, [])
   const { goBack, openTopic } = useConversationNavigation({
     activateConversation,
     conversationId,
@@ -367,14 +409,6 @@ export function ConversationScreen() {
     server: session,
     topicArchived,
   })
-  const messageActions = useConversationMessageActions({
-    conversationId,
-    forwardMessageId: forwardMessage?.id,
-    onReplySent: handleReplySent,
-    replyToMessageId: replyTarget?.id,
-    server: session,
-  })
-
   useEffect(() => {
     const error = messagesQuery.error ?? topicQuery.error ?? currentUserError
     if (isUnauthorizedError(error)) {
@@ -546,8 +580,11 @@ export function ConversationScreen() {
               error={messagesQuery.error}
               hasOlder={messagesQuery.hasOlder}
               isFetchingOlder={messagesQuery.isFetchingOlder}
+              initialMessageId={targetMessageId || undefined}
               isLoading={messagesQuery.isLoading}
               messages={presentedMessages}
+              optimisticMessages={messageActions.optimisticMessages}
+              onRetryMessage={messageActions.retryMessage}
               onAvatarLongPress={
                 conversation.type === "group"
                   ? handleAvatarLongPress
@@ -573,7 +610,7 @@ export function ConversationScreen() {
               onMentionPress={handleAvatarPress}
               onOpenTopic={openTopic}
               resolveMentionLabel={resolveMentionLabel}
-              resourceStates={resources.states}
+              resourceStates={displayedResourceStates}
               server={session}
               showChoiceResponseCounts={
                 shouldShowMessageChoiceResponseCounts(conversation)

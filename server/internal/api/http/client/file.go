@@ -61,7 +61,8 @@ func (a *FileAPI) RegisterRoutes(group *echo.Group) {
 // @Failure 401 {object} errorEnvelope
 // @Failure 413 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/temporary-files [post]
 func (a *FileAPI) createTemporaryFile(c echo.Context) error {
 	c.Request().Body = http.MaxBytesReader(c.Response().Writer, c.Request().Body, fileapp.MaxTemporaryUploadRequestBytes)
@@ -109,7 +110,8 @@ func (a *FileAPI) createTemporaryFile(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/temporary-files/read-urls [post]
 func (a *FileAPI) readTemporaryFileURLs(c echo.Context) error {
 	var req readTemporaryFileURLsRequest
@@ -134,7 +136,8 @@ func (a *FileAPI) readTemporaryFileURLs(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/temporary-files/{file_id}/content [get]
 func (a *FileAPI) redirectTemporaryFileContent(c echo.Context) error {
 	value, err := a.files.ResolveTemporaryURL(c.Request().Context(), c.Param("file_id"))

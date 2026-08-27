@@ -82,7 +82,8 @@ func (a *AppAPI) RegisterRoutes(group *echo.Group) {
 // @Success 200 {object} successEnvelope{data=listClientAppsResponse}
 // @Failure 401 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps [get]
 func (a *AppAPI) list(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -113,7 +114,8 @@ func (a *AppAPI) list(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 413 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps [post]
 func (a *AppAPI) create(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -150,7 +152,8 @@ func (a *AppAPI) create(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps/{app_id} [get]
 func (a *AppAPI) get(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -183,7 +186,8 @@ func (a *AppAPI) get(c echo.Context) error {
 // @Failure 404 {object} errorEnvelope
 // @Failure 413 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps/{app_id} [patch]
 func (a *AppAPI) update(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -218,7 +222,8 @@ func (a *AppAPI) update(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps/{app_id} [delete]
 func (a *AppAPI) delete(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -243,7 +248,8 @@ func (a *AppAPI) delete(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps/{app_id}/enable [post]
 func (a *AppAPI) enable(c echo.Context) error { return a.setEnabled(c, true) }
 
@@ -258,7 +264,8 @@ func (a *AppAPI) enable(c echo.Context) error { return a.setEnabled(c, true) }
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps/{app_id}/disable [post]
 func (a *AppAPI) disable(c echo.Context) error { return a.setEnabled(c, false) }
 
@@ -287,7 +294,8 @@ func (a *AppAPI) setEnabled(c echo.Context, enabled bool) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps/{app_id}/secret/regenerate [post]
 func (a *AppAPI) regenerateSecret(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -320,7 +328,8 @@ func (a *AppAPI) regenerateSecret(c echo.Context) error {
 // @Failure 404 {object} errorEnvelope
 // @Failure 413 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/apps/{app_id}/avatar [post]
 func (a *AppAPI) uploadAvatar(c echo.Context) error {
 	current, ok := CurrentAccount(c)

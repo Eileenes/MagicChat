@@ -15,7 +15,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const topicConversationListActivityWindow = 30 * time.Minute
+const (
+	clientConversationListLimit          = 30
+	topicConversationListActivityWindow = 30 * time.Minute
+)
 
 type topicConversationListGroup struct {
 	ParentConversationID string
@@ -48,7 +51,7 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	if hasAssistant && !conversationVisibleForPreference(assistant, preferencesByConversation[assistant.ID]) {
 		hasAssistant = false
 	}
-	groupLimit := MaxClientListItems
+	groupLimit := clientConversationListLimit
 	if hasAssistant {
 		groupLimit--
 	}

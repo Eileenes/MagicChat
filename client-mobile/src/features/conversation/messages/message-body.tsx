@@ -5,7 +5,7 @@ import {
   Link as LinkIcon,
   MessagesSquare,
 } from "lucide-react-native"
-import { useRef, useState } from "react"
+import { memo, useRef, useState } from "react"
 import { Alert, Linking, Pressable } from "react-native"
 import {
   Button,
@@ -38,7 +38,7 @@ import { MessageMentionText } from "@/features/conversation/messages/message-men
 import { VoiceMessagePlayer } from "@/features/conversation/voice/voice-message-player"
 import { XGUILoadingIcon, useXGUITheme } from "@/xgui"
 
-export function MessageBody({
+export const MessageBody = memo(function MessageBody({
   body,
   bubbleTone,
   currentUserId,
@@ -291,7 +291,7 @@ export function MessageBody({
       {formatClientMessageBodySummary(body, resolveMentionLabel)}
     </Paragraph>
   )
-}
+})
 
 function MessageImageThumbnail({
   captioned,

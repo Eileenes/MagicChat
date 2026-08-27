@@ -54,7 +54,9 @@ type VerifiedEmailLoginCommand struct {
 }
 
 type LogoutCommand struct {
-	Token string
+	Token           string
+	InstallationID  string
+	RequireExisting bool
 }
 
 type UpdateProfileCommand struct {

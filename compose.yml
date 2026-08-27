@@ -119,6 +119,25 @@ services:
       retries: 10
       start_period: 10s
 
+  prometheus:
+    container_name: magic-chat-prometheus
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/push-alerts.yml:/etc/prometheus/rules/push-alerts.yml:ro
+      - prometheus-data:/prometheus
+
   caddy:
     container_name: magic-chat-caddy
     image: ${IMAGE_REGISTRY:-ghcr.1ms.run/chaitin/magicchat}/caddy:${IMAGE_TAG:-latest}
@@ -150,3 +169,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+volumes:
+  prometheus-data:

@@ -167,6 +167,25 @@ type MobilePushRoute struct {
 
 func (MobilePushRoute) TableName() string { return "mobile_push_routes" }
 
+type MobilePushEvent struct {
+	ID             string       `gorm:"type:uuid;primaryKey"`
+	MessageID      string       `gorm:"type:uuid;not null;uniqueIndex"`
+	ConversationID string       `gorm:"type:uuid;not null"`
+	Conversation   Conversation `gorm:"constraint:OnDelete:CASCADE;"`
+	MessageSeq     int64        `gorm:"not null"`
+	Status         string       `gorm:"size:16;not null;index:mobile_push_events_dispatch_index,priority:1"`
+	Attempts       int          `gorm:"not null"`
+	NextAttemptAt  time.Time    `gorm:"not null;index:mobile_push_events_dispatch_index,priority:2"`
+	ExpiresAt      time.Time    `gorm:"not null"`
+	LockedAt       *time.Time
+	LockToken      string    `gorm:"not null"`
+	LastErrorCode  string    `gorm:"size:120;not null"`
+	CreatedAt      time.Time `gorm:"not null;index:mobile_push_events_dispatch_index,priority:3"`
+	UpdatedAt      time.Time `gorm:"not null"`
+}
+
+func (MobilePushEvent) TableName() string { return "mobile_push_events" }
+
 type MobilePushJob struct {
 	ID                   string        `gorm:"type:uuid;primaryKey"`
 	GrantID              string        `gorm:"type:uuid;not null;uniqueIndex:mobile_push_jobs_grant_message_unique,priority:1"`

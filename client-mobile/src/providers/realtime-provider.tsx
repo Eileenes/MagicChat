@@ -2,309 +2,147 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AppState, Platform, type AppStateStatus } from "react-native"
 
-import { isUnauthorizedError } from "@/data/api-client"
-import { fetchCurrentUser } from "@/data/users/current-user-api"
 import type { AuthenticatedTarget } from "@/core/server-target"
+import { isUnauthorizedError } from "@/data/api-client"
+import { accountAuthRuntime } from "@/data/auth/account-runtime-instance"
+import { fetchCurrentUser } from "@/data/users/current-user-api"
+import { prepareMessageNotifications, showBackgroundMessageNotification } from "@/notifications/message-notifications"
+import { hasActiveRemotePushDelegation } from "@/notifications/push-runtime-state"
 import { useAuth } from "@/providers/auth-provider"
-import {
-  prepareMessageNotifications,
-  showBackgroundMessageNotification,
-} from "@/notifications/message-notifications"
-import {
-  applyRealtimeEvent,
-  refreshClientDataOnForeground,
-  synchronizeRealtimeData,
-} from "@/realtime/realtime-cache"
-import {
-  buildRealtimeWebSocketUrl,
-  RealtimeClient,
-  type RealtimeSnapshot,
-} from "@/realtime/realtime-client"
-import {
-  DISCONNECTED_REALTIME_SNAPSHOT,
-  RealtimeContext,
-} from "@/realtime/realtime-context"
+import { applyRealtimeEvent, refreshClientDataOnForeground, synchronizeRealtimeData } from "@/realtime/realtime-cache"
+import { buildRealtimeWebSocketUrl, RealtimeClient, type RealtimeSnapshot, type RealtimeSocketFactory } from "@/realtime/realtime-client"
+import { createRealtimeTargetKey, waitForClientReady, waitForRealtimeClient } from "@/realtime/realtime-connection"
+import { DISCONNECTED_REALTIME_SNAPSHOT, RealtimeContext } from "@/realtime/realtime-context"
+import { RealtimeDispatcher } from "@/realtime/realtime-dispatcher"
 import { realtimeEvents } from "@/realtime/realtime-protocol"
+import { RealtimeClientSlot } from "@/realtime/realtime-runtime"
 
 export function RealtimeProvider({ children }: React.PropsWithChildren) {
   const queryClient = useQueryClient()
-  const { invalidateSession, isPreparingSignIn, session } = useAuth()
-  const [snapshot, setSnapshot] = useState<RealtimeSnapshot>(
-    DISCONNECTED_REALTIME_SNAPSHOT
-  )
+  const { active, isPreparingSignIn, markReauthRequired } = useAuth()
+  const [snapshot, setSnapshot] = useState<RealtimeSnapshot>(DISCONNECTED_REALTIME_SNAPSHOT)
   const activeConversationIdRef = useRef("")
-  const clientRef = useRef<{
-    client: RealtimeClient
-    targetKey: string
-  } | null>(null)
+  const [dispatcher] = useState(() => new RealtimeDispatcher())
+  const [runtimeSlot] = useState(() => new RealtimeClientSlot())
+  const clientRef = useRef<{ client: RealtimeClient; targetKey: string } | null>(null)
+
   const activateConversation = useCallback((conversationId: string) => {
     activeConversationIdRef.current = conversationId
-
-    return () => {
-      if (activeConversationIdRef.current === conversationId) {
-        activeConversationIdRef.current = ""
-      }
-    }
+    return () => { if (activeConversationIdRef.current === conversationId) activeConversationIdRef.current = "" }
   }, [])
-  const waitUntilReady = useCallback(
-    async (
-      target: AuthenticatedTarget,
-      options: { attempts: number; timeoutMs: number }
-    ) => {
-      const targetKey = createTargetKey(target)
-      const client = await waitForRealtimeClient(
-        clientRef,
-        targetKey,
-        options.timeoutMs
-      )
 
-      let lastError: unknown
-      for (let attempt = 0; attempt < options.attempts; attempt += 1) {
-        if (attempt > 0) {
-          client.disconnect()
-          client.connect()
-        }
+  const waitUntilReady = useCallback(async (target: AuthenticatedTarget, options: { attempts: number; timeoutMs: number }) => {
+    const client = await waitForRealtimeClient(clientRef, createRealtimeTargetKey(target), options.timeoutMs)
+    let lastError: unknown
+    for (let attempt = 0; attempt < options.attempts; attempt += 1) {
+      if (attempt > 0) { client.disconnect(); client.connect() }
+      try { await waitForClientReady(client, options.timeoutMs); return }
+      catch (error) { lastError = error }
+    }
+    throw lastError
+  }, [])
 
-        try {
-          await waitForClientReady(client, options.timeoutMs)
-          return
-        } catch (error) {
-          lastError = error
-        }
-      }
-
-      throw lastError
-    },
-    []
-  )
-  const server = useMemo<AuthenticatedTarget | null>(
-    () =>
-      session
-        ? { id: session.id, url: session.url, userId: session.userId }
-        : null,
-    [session]
-  )
-  const realtimeEnabled =
-    server !== null && canConnectFromCurrentPlatform(server.url)
+  const server = active?.target ?? null
+  const realtimeEnabled = server !== null && canConnectFromCurrentPlatform(server.url)
 
   useEffect(() => {
-    if (!realtimeEnabled || !server) {
+    if (!realtimeEnabled || !server || !active) {
+      runtimeSlot.clear()
+      clientRef.current = null
       return
     }
-
     const activeServer = server
+    const identity = { accountId: active.accountId, generation: active.generation }
+    const auth = accountAuthRuntime.optionsFor(activeServer, active.accountId)
     let isActive = true
-    let synchronization = Promise.resolve()
     let currentAppState = AppState.currentState
-    const client = new RealtimeClient({
+    let client!: RealtimeClient
+    client = new RealtimeClient({
+      auth: auth.auth,
+      isCurrent: auth.isCurrent,
+      createSocket: Platform.OS === "web" ? createWebRealtimeSocket : undefined,
       authCheck: async () => {
-        try {
-          await fetchCurrentUser(activeServer.url)
-          return true
-        } catch (error: unknown) {
-          if (isUnauthorizedError(error)) {
-            return false
-          }
-          throw error
-        }
+        try { await fetchCurrentUser(activeServer); return true }
+        catch (error) { if (isUnauthorizedError(error)) return false; throw error }
       },
-      onUnauthorized: () => {
-        void invalidateSession()
+      onUnauthorized: (accountId) => {
+        if (accountId === identity.accountId && runtimeSlot.isCurrent(identity, client)) void markReauthRequired(accountId)
       },
       reconnectDelaysMs: isPreparingSignIn ? [30_000] : undefined,
-      url: buildRealtimeWebSocketUrl(activeServer.url),
+      url: buildRealtimeWebSocketUrl(activeServer.url, __DEV__),
     })
-    const clientRecord = {
-      client,
-      targetKey: createTargetKey(activeServer),
-    }
-    clientRef.current = clientRecord
-
+    const record = { client, targetKey: createRealtimeTargetKey(activeServer) }
+    runtimeSlot.replace(client, identity)
+    clientRef.current = record
+    const isCurrent = () => runtimeSlot.isCurrent(identity, client) && accountAuthRuntime.isCurrent(identity)
+    const dispatchTarget = dispatcher.activate((error) => {
+      if (isUnauthorizedError(error) && isCurrent()) void markReauthRequired(identity.accountId)
+    })
     const unsubscribeSnapshot = client.subscribe(() => {
-      if (isActive) {
-        setSnapshot(client.getSnapshot())
-      }
+      if (isActive && isCurrent()) setSnapshot(client.getSnapshot())
     })
     const unsubscribeEvents = client.subscribeEvent((event, payload) => {
+      if (!isCurrent()) return
       if (event === realtimeEvents.systemReady) {
-        if (!isPreparingSignIn) {
-          enqueueSynchronization(() =>
-            synchronizeRealtimeData(queryClient, activeServer, {
-              activeConversationId: activeConversationIdRef.current,
-            })
-          )
-        }
+        if (!isPreparingSignIn) dispatchTarget.enqueue(() => {
+          if (!isCurrent()) return Promise.resolve()
+          return synchronizeRealtimeData(queryClient, activeServer, { activeConversationId: activeConversationIdRef.current })
+        })
         return
       }
-
-      void applyRealtimeEvent(queryClient, activeServer, event, payload, {
-        activeConversationId: activeConversationIdRef.current,
-        visible: currentAppState === "active",
+      dispatchTarget.enqueue(async () => {
+        if (!isCurrent()) return
+        const result = (await applyRealtimeEvent(queryClient, activeServer, event, payload, {
+          activeConversationId: activeConversationIdRef.current,
+          visible: currentAppState === "active",
+          isCurrent,
+        })) ?? {}
+        if (!isCurrent()) return
+        const message = "message" in result ? result.message : undefined
+        const notificationMuted = "notificationMuted" in result ? result.notificationMuted : undefined
+        if (event === realtimeEvents.messageCreated && message && currentAppState !== "active" && !hasActiveRemotePushDelegation({ ...identity, target: activeServer })) {
+          void showBackgroundMessageNotification(queryClient, activeServer, message, { notificationMuted, identity: { ...identity, target: activeServer } }).catch(() => undefined)
+        }
       })
-        .then(({ message }) => {
-          if (
-            event === realtimeEvents.messageCreated &&
-            message &&
-            currentAppState !== "active"
-          ) {
-            void showBackgroundMessageNotification(
-              queryClient,
-              activeServer,
-              message
-            ).catch(() => undefined)
-          }
-        })
-        .catch(handleRealtimeDataError)
     })
-
-    function enqueueSynchronization(task: () => Promise<void>) {
-      synchronization = synchronization
-        .catch(() => undefined)
-        .then(task)
-        .catch(handleRealtimeDataError)
-    }
-
-    function handleRealtimeDataError(error: unknown) {
-      if (isActive && isUnauthorizedError(error)) {
-        void invalidateSession()
-      }
-    }
-
     function handleAppStateChange(status: AppStateStatus) {
       const wasActive = currentAppState === "active"
       currentAppState = status
-
-      if (status === "active" && !wasActive) {
+      if (status === "active" && !wasActive && isCurrent()) {
         client.connect()
         void prepareMessageNotifications().catch(() => undefined)
-        enqueueSynchronization(() =>
-          refreshClientDataOnForeground(queryClient, activeServer, {
-            activeConversationId: activeConversationIdRef.current,
-          })
-        )
+        dispatchTarget.enqueue(() => {
+          if (!isCurrent()) return Promise.resolve()
+          return refreshClientDataOnForeground(queryClient, activeServer, { activeConversationId: activeConversationIdRef.current })
+        })
       }
     }
-
-    const appStateSubscription = AppState.addEventListener(
-      "change",
-      handleAppStateChange
-    )
+    const appStateSubscription = AppState.addEventListener("change", handleAppStateChange)
     client.connect()
-    if (currentAppState === "active") {
-      void prepareMessageNotifications().catch(() => undefined)
-    }
-
+    if (currentAppState === "active") void prepareMessageNotifications().catch(() => undefined)
     return () => {
       isActive = false
-      if (clientRef.current === clientRecord) {
-        clientRef.current = null
-      }
+      dispatchTarget.dispose()
+      runtimeSlot.clear(client)
+      if (clientRef.current === record) clientRef.current = null
       activeConversationIdRef.current = ""
       appStateSubscription.remove()
       unsubscribeEvents()
       unsubscribeSnapshot()
-      client.disconnect()
     }
-  }, [
-    invalidateSession,
-    isPreparingSignIn,
-    queryClient,
-    realtimeEnabled,
-    server,
-  ])
+  }, [active, dispatcher, isPreparingSignIn, markReauthRequired, queryClient, realtimeEnabled, runtimeSlot, server])
 
-  const value = useMemo(() => {
-    if (!realtimeEnabled) {
-      return {
-        ...DISCONNECTED_REALTIME_SNAPSHOT,
-        activateConversation,
-        waitUntilReady,
-      }
-    }
-
-    return {
-      activateConversation,
-      ready: snapshot.ready,
-      status: snapshot.status,
-      waitUntilReady,
-    }
-  }, [
-    activateConversation,
-    realtimeEnabled,
-    snapshot.ready,
-    snapshot.status,
-    waitUntilReady,
-  ])
-
-  return (
-    <RealtimeContext.Provider value={value}>
-      {children}
-    </RealtimeContext.Provider>
-  )
+  const value = useMemo(() => realtimeEnabled ? {
+    activateConversation, ready: snapshot.ready, status: snapshot.status, waitUntilReady,
+  } : { ...DISCONNECTED_REALTIME_SNAPSHOT, activateConversation, waitUntilReady },
+  [activateConversation, realtimeEnabled, snapshot.ready, snapshot.status, waitUntilReady])
+  return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>
 }
 
-function createTargetKey(target: AuthenticatedTarget) {
-  return `${target.id}\u0000${target.url}\u0000${target.userId}`
-}
-
-function waitForRealtimeClient(
-  clientRef: {
-    current: { client: RealtimeClient; targetKey: string } | null
-  },
-  targetKey: string,
-  timeoutMs: number
-) {
-  const current = clientRef.current
-  if (current?.targetKey === targetKey) {
-    return Promise.resolve(current.client)
-  }
-
-  return new Promise<RealtimeClient>((resolve, reject) => {
-    const deadline = Date.now() + timeoutMs
-    const check = () => {
-      const next = clientRef.current
-      if (next?.targetKey === targetKey) {
-        resolve(next.client)
-        return
-      }
-      if (Date.now() >= deadline) {
-        reject(new Error("实时连接初始化超时"))
-        return
-      }
-      setTimeout(check, 25)
-    }
-    check()
-  })
-}
-
-function waitForClientReady(client: RealtimeClient, timeoutMs: number) {
-  if (client.getSnapshot().ready) return Promise.resolve()
-
-  return new Promise<void>((resolve, reject) => {
-    const unsubscribe = client.subscribe(() => {
-      if (!client.getSnapshot().ready) return
-      clearTimeout(timeout)
-      unsubscribe()
-      resolve()
-    })
-    const timeout = setTimeout(() => {
-      unsubscribe()
-      reject(new Error("实时连接超时"))
-    }, timeoutMs)
-  })
-}
+const createWebRealtimeSocket: RealtimeSocketFactory = (url, protocols) => new WebSocket(url, protocols)
 
 function canConnectFromCurrentPlatform(serverUrl: string) {
-  if (Platform.OS !== "web" || typeof window === "undefined") {
-    return true
-  }
-
-  // Browsers control the Origin header and the current server only permits
-  // same-origin websocket upgrades. Native Android/iOS connections are not
-  // subject to this browser restriction.
-  try {
-    return new URL(serverUrl).origin === window.location.origin
-  } catch {
-    return false
-  }
+  if (Platform.OS !== "web" || typeof window === "undefined") return true
+  try { return new URL(serverUrl).origin === window.location.origin }
+  catch { return false }
 }

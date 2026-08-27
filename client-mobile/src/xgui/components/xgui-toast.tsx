@@ -20,6 +20,7 @@ export type XGUIToastType = "error" | "loading" | "success" | "text"
 export type XGUIToastOptions = {
   duration?: number
   message: string
+  modal?: boolean
   type?: XGUIToastType
 }
 
@@ -49,10 +50,10 @@ export function XGUIToastProvider({ children }: PropsWithChildren) {
   }, [clearTimer])
 
   const show = useCallback(
-    ({ duration = DEFAULT_TOAST_DURATION, message, type = "text" }: XGUIToastOptions) => {
+    ({ duration = DEFAULT_TOAST_DURATION, message, modal = true, type = "text" }: XGUIToastOptions) => {
       clearTimer()
       const id = ++nextId.current
-      setToast({ duration, id, message, type })
+      setToast({ duration, id, message, modal, type })
       if (duration > 0) {
         timer.current = setTimeout(() => {
           setToast((current) => (current?.id === id ? null : current))
@@ -95,6 +96,44 @@ function XGUIToastView({
 
   const textOnly = toast.type === "text"
 
+  const content = (
+    <View
+      accessibilityLiveRegion="assertive"
+      pointerEvents={toast.modal ? "auto" : "none"}
+      style={[styles.overlay, !toast.modal && styles.nonModalOverlay]}
+    >
+      <View
+        accessibilityRole="alert"
+        style={[
+          styles.toast,
+          textOnly && styles.textToast,
+          { backgroundColor: colors.background4 },
+        ]}
+      >
+        {toast.type === "success" ? (
+          <WeUIToastSuccessIcon color={colors.toastForeground} />
+        ) : null}
+        {toast.type === "error" ? (
+          <WeUIToastWarnIcon color={colors.toastForeground} />
+        ) : null}
+        {toast.type === "loading" ? (
+          <XGUILoadingIcon color="#EDEDED" size={56} />
+        ) : null}
+        <Text
+          style={[
+            styles.content,
+            !textOnly && styles.contentWithIcon,
+            { color: colors.toastForeground },
+          ]}
+        >
+          {toast.message}
+        </Text>
+      </View>
+    </View>
+  )
+
+  if (!toast.modal) return content
+
   return (
     <Modal
       animationType="fade"
@@ -105,35 +144,7 @@ function XGUIToastView({
       transparent
       visible
     >
-      <View accessibilityLiveRegion="assertive" style={styles.overlay}>
-        <View
-          accessibilityRole="alert"
-          style={[
-            styles.toast,
-            textOnly && styles.textToast,
-            { backgroundColor: colors.background4 },
-          ]}
-        >
-          {toast.type === "success" ? (
-            <WeUIToastSuccessIcon color={colors.toastForeground} />
-          ) : null}
-          {toast.type === "error" ? (
-            <WeUIToastWarnIcon color={colors.toastForeground} />
-          ) : null}
-          {toast.type === "loading" ? (
-            <XGUILoadingIcon color="#EDEDED" size={56} />
-          ) : null}
-          <Text
-            style={[
-              styles.content,
-              !textOnly && styles.contentWithIcon,
-              { color: colors.toastForeground },
-            ]}
-          >
-            {toast.message}
-          </Text>
-        </View>
-      </View>
+      {content}
     </Modal>
   )
 }
@@ -171,6 +182,14 @@ const styles = StyleSheet.create({
   },
   contentWithIcon: {
     marginTop: 16,
+  },
+  nonModalOverlay: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 1_000,
   },
   overlay: {
     alignItems: "center",

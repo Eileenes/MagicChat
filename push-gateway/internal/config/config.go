@@ -18,6 +18,7 @@ type Config struct {
 	Providers                         []string
 	TrustedProxyCIDRs                 []string
 	APNS                              APNSConfig
+	JPush                             JPushConfig
 	GrantTTL                          time.Duration
 	NotificationTTL                   time.Duration
 	MaxNotificationTTL                time.Duration
@@ -37,6 +38,11 @@ type APNSConfig struct {
 	TeamID        string
 	BundleID      string
 	PrivateKeyPEM []byte
+}
+
+type JPushConfig struct {
+	AppKey       string
+	MasterSecret string
 }
 
 func Load() (Config, error) {
@@ -104,6 +110,13 @@ func Load() (Config, error) {
 		cfg.APNS.PrivateKeyPEM, err = base64.StdEncoding.DecodeString(encodedPrivateKey)
 		if err != nil || len(cfg.APNS.PrivateKeyPEM) == 0 {
 			return Config{}, fmt.Errorf("APNS_PRIVATE_KEY_BASE64 must contain a base64-encoded APNs private key")
+		}
+	}
+	if contains(cfg.Providers, "jpush") {
+		cfg.JPush.AppKey = strings.TrimSpace(os.Getenv("JPUSH_APP_KEY"))
+		cfg.JPush.MasterSecret = strings.TrimSpace(os.Getenv("JPUSH_MASTER_SECRET"))
+		if cfg.JPush.AppKey == "" || cfg.JPush.MasterSecret == "" {
+			return Config{}, fmt.Errorf("JPUSH_APP_KEY and JPUSH_MASTER_SECRET are required when jpush is enabled")
 		}
 	}
 	if cfg.GrantTTL, err = durationEnv("DEFAULT_GRANT_TTL", cfg.GrantTTL); err != nil {

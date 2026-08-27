@@ -138,6 +138,9 @@ func (p *Provider) Send(ctx context.Context, notification provider.Notification)
 	}
 	request.Header.Set("Authorization", "bearer "+jwt)
 	request.Header.Set("Content-Type", "application/json")
+	if notificationID := strings.TrimSpace(notification.ID); notificationID != "" {
+		request.Header.Set("apns-id", notificationID)
+	}
 	request.Header.Set("apns-topic", p.bundleID)
 	request.Header.Set("apns-push-type", "alert")
 	request.Header.Set("apns-priority", "10")

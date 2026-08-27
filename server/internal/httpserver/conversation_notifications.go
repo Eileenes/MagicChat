@@ -15,15 +15,6 @@ func (s *Server) PublishConversationMessage(ctx context.Context, userIDs []strin
 			[]string{userID},
 			realtimeMessageCreatedEvent(newConversationApplicationMessageResponse(message), muted),
 		)
-		delegatedType, delegatedID := "", ""
-		if message.DelegatedBy != nil {
-			delegatedType, delegatedID = message.DelegatedBy.Type, message.DelegatedBy.ID
-		}
-		s.enqueueMobileMessagePush(
-			ctx, userID, message.ConversationID, message.ID,
-			message.Sender.Type, message.Sender.ID,
-			delegatedType, delegatedID, message.Body, muted,
-		)
 	}
 }
 

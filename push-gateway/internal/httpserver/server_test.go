@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +74,17 @@ func TestAPIRoutesInstallationGrantAndNotification(t *testing.T) {
 	decodeResponse(t, duplicate, &second)
 	if duplicate.Code != http.StatusAccepted || !second.Duplicate || second.JobID != first.JobID {
 		t.Fatalf("duplicate status/body = %d/%s", duplicate.Code, duplicate.Body.String())
+	}
+	metrics := requestJSON(t, router, http.MethodGet, "/api/metrics", nil, nil)
+	for _, expected := range []string{
+		`push_gateway_jobs{status="queued"} 1`,
+		`push_gateway_grants{status="active"} 1`,
+		`push_gateway_installations{provider="fake",platform="android",status="active"} 1`,
+		"push_gateway_oldest_pending_job_age_seconds",
+	} {
+		if !strings.Contains(metrics.Body.String(), expected) {
+			t.Fatalf("metrics do not contain %q: %s", expected, metrics.Body.String())
+		}
 	}
 }
 

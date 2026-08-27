@@ -96,7 +96,7 @@ export function MessageChoice({
     try {
       await onRespond(selectedOptionIds)
     } catch (error: unknown) {
-      toast.show({ message: error instanceof Error ? error.message : "提交选择失败", type: "text", duration: 1_000 })
+      toast.show({ message: error instanceof Error ? error.message : "提交选择失败", modal: false, type: "text", duration: 1_000 })
     } finally {
       setSubmitting(false)
     }

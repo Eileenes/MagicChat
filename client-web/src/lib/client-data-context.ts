@@ -205,6 +205,7 @@ export type ClientDataContextValue = {
     announcement: string
   ) => Promise<ClientConversation>
   refreshConversations: () => Promise<void>
+  refreshRestoredConversation: (conversationId: string) => Promise<void>
   refreshContacts: () => Promise<void>
   refreshFriendRequests: () => Promise<void>
   refreshMe: () => Promise<void>

@@ -1,6 +1,8 @@
+import type { AuthenticatedTarget } from "@/core/server-target"
 import { File } from "expo-file-system"
 
-import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-client"
+import { ApiRequestError, type ApiFetch } from "@/data/api-client"
+import { createProtectedApiClient } from "@/data/protected-api-client"
 import {
   normalizeClientMessage,
   normalizeClientMessagePage,
@@ -47,7 +49,7 @@ export type ForwardConversationMessagesResult = {
 }
 
 export async function fetchConversationMessages(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   input: { afterSeq?: number; beforeSeq?: number; limit?: number } = {},
   options: ApiOptions = {}
@@ -56,7 +58,7 @@ export async function fetchConversationMessages(
   if (input.beforeSeq !== undefined) search.set("before_seq", String(input.beforeSeq))
   if (input.afterSeq !== undefined) search.set("after_seq", String(input.afterSeq))
 
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     messages?: unknown[]
     page?: unknown
   }>(
@@ -72,14 +74,19 @@ export async function fetchConversationMessages(
     throw new ApiRequestError("消息列表响应格式不正确")
   }
 
+  const messages = data.messages.map(normalizeClientMessage)
+  if (messages.some((message) => message.conversationId !== conversationId)) {
+    throw new ApiRequestError("消息列表响应包含其他会话的消息")
+  }
+
   return {
-    messages: data.messages.map(normalizeClientMessage),
+    messages,
     page: normalizeClientMessagePage(data.page),
   }
 }
 
 export async function submitConversationMessageChoiceResponse(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   messageId: string,
   optionIds: string[],
@@ -94,7 +101,7 @@ export async function submitConversationMessageChoiceResponse(
     throw new ApiRequestError("请选择有效选项")
   }
 
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     choice?: unknown
     conversation_id?: unknown
     created?: unknown
@@ -144,7 +151,7 @@ export async function submitConversationMessageChoiceResponse(
 }
 
 export async function fetchConversationMessageChoiceSnapshots(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   messageIds: string[],
   options: ApiOptions = {}
@@ -154,7 +161,7 @@ export async function fetchConversationMessageChoiceSnapshots(
     throw new ApiRequestError("选择消息快照请求格式不正确")
   }
 
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     conversation_id?: unknown
     snapshots?: unknown
   }>(
@@ -208,13 +215,13 @@ export async function fetchConversationMessageChoiceSnapshots(
 }
 
 export async function setConversationMessageReaction(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   messageId: string,
   input: { reacted: boolean; text: string },
   options: ApiOptions = {}
 ): Promise<MessageReactionSnapshot> {
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     conversation_id?: unknown
     message_id?: unknown
     reaction_version?: unknown
@@ -234,13 +241,13 @@ export async function setConversationMessageReaction(
 }
 
 export async function fetchConversationMessageReactionSnapshots(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   messageIds: string[],
   options: ApiOptions = {}
 ): Promise<MessageReactionSnapshot[]> {
   const uniqueMessageIds = [...new Set(messageIds)]
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     conversation_id?: unknown
     snapshots?: unknown
   }>(
@@ -281,7 +288,7 @@ export async function fetchConversationMessageReactionSnapshots(
 }
 
 export async function sendConversationTextMessage(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   input: {
     clientMessageId: string
@@ -290,7 +297,7 @@ export async function sendConversationTextMessage(
   },
   options: ApiOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     message?: unknown
   }>(`/api/client/conversations/${encodeURIComponent(conversationId)}/messages`, {
     body: JSON.stringify({
@@ -312,7 +319,7 @@ export async function sendConversationTextMessage(
 }
 
 export function sendConversationFileMessage(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   input: {
     clientMessageId: string
@@ -322,7 +329,7 @@ export function sendConversationFileMessage(
   options: ApiOptions = {}
 ) {
   return sendConversationUploadMessage(
-    serverUrl,
+    target,
     conversationId,
     {
       clientMessageId: input.clientMessageId,
@@ -337,7 +344,7 @@ export function sendConversationFileMessage(
 }
 
 export function sendConversationImageMessage(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   input: {
     clientMessageId: string
@@ -347,7 +354,7 @@ export function sendConversationImageMessage(
   options: ApiOptions = {}
 ) {
   return sendConversationUploadMessage(
-    serverUrl,
+    target,
     conversationId,
     {
       clientMessageId: input.clientMessageId,
@@ -362,7 +369,7 @@ export function sendConversationImageMessage(
 }
 
 export function sendConversationVoiceMessage(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   input: {
     clientMessageId: string
@@ -374,7 +381,7 @@ export function sendConversationVoiceMessage(
   options: ApiOptions = {}
 ) {
   return sendConversationUploadMessage(
-    serverUrl,
+    target,
     conversationId,
     {
       clientMessageId: input.clientMessageId,
@@ -393,12 +400,12 @@ export function sendConversationVoiceMessage(
 }
 
 export async function markConversationRead(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   upToSeq: number,
   options: ApiOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     conversation_id?: string
     last_read_seq?: number
     unread_count?: number
@@ -426,12 +433,12 @@ export async function markConversationRead(
 }
 
 export async function revokeConversationMessage(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   messageId: string,
   options: ApiOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     message?: unknown
     system_message?: unknown
   }>(
@@ -454,7 +461,7 @@ export async function revokeConversationMessage(
 }
 
 export async function forwardConversationMessages(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   sourceConversationId: string,
   input: {
     clientForwardId: string
@@ -463,7 +470,7 @@ export async function forwardConversationMessages(
   },
   options: ApiOptions = {}
 ): Promise<ForwardConversationMessagesResult> {
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     failed_count?: unknown
     results?: unknown
     sent_count?: unknown
@@ -535,7 +542,7 @@ export async function forwardConversationMessages(
 }
 
 async function sendConversationUploadMessage(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   input: {
     clientMessageId: string
@@ -567,7 +574,7 @@ async function sendConversationUploadMessage(
     formData.set(input.fieldName, file, input.upload.name)
   }
 
-  const data = await createApiClient(serverUrl, options.fetcher).request<{
+  const data = await createProtectedApiClient(target, options.fetcher).request<{
     message?: unknown
   }>(
     `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/${input.path}`,

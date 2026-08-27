@@ -1,3 +1,4 @@
+import { installTestAccountRuntime } from "./auth-runtime-test-helper.ts"
 import assert from "node:assert/strict"
 import test from "node:test"
 
@@ -18,7 +19,7 @@ const CURRENT_USER: ClientUser = {
 }
 
 test("normalizes the complete source message from topic details", async () => {
-  const detail = await fetchConversationTopic("https://example.com", "topic-1", {
+  const detail = await fetchConversationTopic(installTestAccountRuntime({ id: "server-1", url: "https://example.com", userId: "user-1" }), "topic-1", {
     fetcher: async () =>
       jsonResponse({
         can_archive: true,
@@ -93,7 +94,7 @@ test("normalizes the complete source message from topic details", async () => {
 
 test("loads source reply data from the parent conversation for legacy servers", async () => {
   let requests = 0
-  const detail = await fetchConversationTopic("https://example.com", "topic-1", {
+  const detail = await fetchConversationTopic(installTestAccountRuntime({ id: "server-1", url: "https://example.com", userId: "user-1" }), "topic-1", {
     fetcher: async (input) => {
       requests += 1
       if (String(input).includes("/messages?")) {

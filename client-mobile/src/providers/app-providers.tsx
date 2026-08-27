@@ -15,6 +15,8 @@ import { AuthProvider } from "@/providers/auth-provider"
 import { ServerProvider } from "@/providers/server-provider"
 import { ClientDataProvider } from "@/providers/client-data-provider"
 import { AppBlurTargetProvider } from "@/providers/app-blur-target"
+import { PushCoordinatorProvider } from "@/providers/push-coordinator-provider"
+import { PushProvider } from "@/providers/push-provider"
 import { RealtimeProvider } from "@/providers/realtime-provider"
 import { XGUIToastProvider } from "@/xgui"
 
@@ -43,11 +45,15 @@ export function AppProviders({ children }: React.PropsWithChildren) {
                   <AppBlurTargetProvider>
                     <YStack bg="$background" flex={1}>
                       <ServerProvider>
-                        <AuthProvider>
-                          <RealtimeProvider>
-                            <ClientDataProvider>{children}</ClientDataProvider>
-                          </RealtimeProvider>
-                        </AuthProvider>
+                        <PushCoordinatorProvider>
+                          <AuthProvider>
+                            <RealtimeProvider>
+                              <ClientDataProvider>
+                                <PushProvider>{children}</PushProvider>
+                              </ClientDataProvider>
+                            </RealtimeProvider>
+                          </AuthProvider>
+                        </PushCoordinatorProvider>
                       </ServerProvider>
                     </YStack>
                   </AppBlurTargetProvider>

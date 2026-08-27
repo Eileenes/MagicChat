@@ -1,4 +1,6 @@
-import { ApiRequestError, createApiClient } from "@/data/api-client"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { ApiRequestError, } from "@/data/api-client"
+import { createProtectedApiClient } from "@/data/protected-api-client"
 
 export type ResourceReadUrl = {
   expiresAt: string
@@ -8,13 +10,13 @@ export type ResourceReadUrl = {
 }
 
 export async function fetchResourceReadUrls(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   fileIds: string[],
   options: { signal?: AbortSignal } = {}
 ): Promise<ResourceReadUrl[]> {
   if (fileIds.length === 0) return []
 
-  const data = await createApiClient(serverUrl).request<{
+  const data = await createProtectedApiClient(target).request<{
     urls?: unknown[]
   }>("/api/client/temporary-files/read-urls", {
     body: JSON.stringify({ file_ids: Array.from(new Set(fileIds)) }),

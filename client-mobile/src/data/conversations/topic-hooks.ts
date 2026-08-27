@@ -5,11 +5,9 @@ import {
   createConversationTopic,
   fetchConversationTopic,
 } from "@/data/conversations/conversations-api"
+import { conversationManager } from "@/data/conversations/index"
 import { messageManager } from "@/data/messages"
-import type {
-  ClientConversation,
-  ClientTopicDetail,
-} from "@/core/models"
+import type { ClientConversation, ClientTopicDetail } from "@/core/models"
 import type { AuthenticatedTarget } from "@/core/server-target"
 import { queryKeys } from "@/data/query"
 
@@ -21,7 +19,7 @@ export function useConversationTopic(
   return useQuery({
     enabled: enabled && conversationId.length > 0,
     queryFn: ({ signal }) =>
-      fetchConversationTopic(target.url, conversationId, { signal }),
+      fetchConversationTopic(target, conversationId, { signal }),
     queryKey: queryKeys.conversationTopic(target, conversationId),
   })
 }
@@ -34,8 +32,10 @@ export function useCreateConversationTopic(
 
   return useMutation({
     mutationFn: (messageId: string) =>
-      createConversationTopic(target.url, conversationId, messageId),
-    onSuccess: ({ conversation }, messageId) => {
+      createConversationTopic(target, conversationId, messageId),
+    onMutate: () => ({ startedAt: conversationManager.beginOperation(target) }),
+    onSuccess: async ({ conversation }, messageId, context) => {
+      await persistTopicConversation(target, conversation, context?.startedAt)
       const topic = conversation.topic
       if (topic) {
         void messageManager.updateMessageTopic(target, {
@@ -64,8 +64,10 @@ export function useArchiveConversationTopic(
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: () => archiveConversationTopic(target.url, conversationId),
-    onSuccess: (conversation) => {
+    mutationFn: () => archiveConversationTopic(target, conversationId),
+    onMutate: () => ({ startedAt: conversationManager.beginOperation(target) }),
+    onSuccess: async (conversation, _variables, context) => {
+      await persistTopicConversation(target, conversation, context?.startedAt)
       const topic = conversation.topic
 
       queryClient.setQueryData<ClientTopicDetail>(
@@ -80,12 +82,6 @@ export function useArchiveConversationTopic(
               }
             : current
       )
-      queryClient.setQueryData<ClientConversation[]>(
-        queryKeys.conversations(target),
-        (current) =>
-          current?.filter((item) => item.id !== conversationId)
-      )
-
       if (topic) {
         void messageManager.updateMessageTopic(target, {
           archived: true,
@@ -105,4 +101,16 @@ export function useArchiveConversationTopic(
       })
     },
   })
+}
+
+async function persistTopicConversation(
+  target: AuthenticatedTarget,
+  conversation: ClientConversation,
+  startedAt?: number
+) {
+  try {
+    await conversationManager.upsert(target, conversation, { startedAt })
+  } catch {
+    void conversationManager.refresh(target).catch(() => undefined)
+  }
 }

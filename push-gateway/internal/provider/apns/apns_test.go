@@ -33,6 +33,7 @@ func TestSendBuildsAPNsRequest(t *testing.T) {
 	pushProvider := newTestProvider(t, server.URL)
 	expiresAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
 	receipt, err := pushProvider.Send(t.Context(), provider.Notification{
+		ID:    "4f8f9f84-1302-4c40-af80-5d37bb7f3f6c",
 		Token: strings.Repeat("ab", 32), Platform: "ios", Environment: "production",
 		Title: "即应", Body: "你收到一条新消息", Event: "message.created",
 		GrantID: "grant-1", RouteToken: "route-1", CollapseKey: "conversation-1", ExpiresAt: expiresAt,
@@ -45,6 +46,9 @@ func TestSendBuildsAPNsRequest(t *testing.T) {
 	}
 	if captured == nil || captured.URL.Path != "/3/device/"+strings.Repeat("ab", 32) {
 		t.Fatalf("request = %#v", captured)
+	}
+	if captured.Header.Get("apns-id") != "4f8f9f84-1302-4c40-af80-5d37bb7f3f6c" {
+		t.Fatalf("apns-id = %q", captured.Header.Get("apns-id"))
 	}
 	if !strings.HasPrefix(captured.Header.Get("Authorization"), "bearer ") || captured.Header.Get("apns-topic") != "cloud.baizhi.chat" {
 		t.Fatalf("APNs headers = %#v", captured.Header)

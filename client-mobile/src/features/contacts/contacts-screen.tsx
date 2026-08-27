@@ -14,7 +14,7 @@ import {
 } from "@/features/contacts/contact-directory-model"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
 import { useAuthenticatedSession } from "@/providers/auth-provider"
-import { useClientData } from "@/providers/client-data-provider"
+import { useClientContacts } from "@/providers/client-data-provider"
 import { useXGUITheme } from "@/xgui"
 
 export function ContactsScreen() {
@@ -24,7 +24,7 @@ export function ContactsScreen() {
   const {
     contacts,
     contactsError,
-  } = useClientData()
+  } = useClientContacts()
   const sections = useMemo(
     () =>
       buildDirectorySections({

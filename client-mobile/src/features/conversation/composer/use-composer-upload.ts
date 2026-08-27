@@ -20,6 +20,11 @@ export function useComposerUpload({
   const [selected, setSelected] =
     useState<PreparedClientMessageUpload | null>(null)
 
+  const releaseSelected = useCallback(() => {
+    selectedRef.current = null
+    if (mountedRef.current) setSelected(null)
+  }, [])
+
   const replaceSelected = useCallback(
     (selection: PreparedClientMessageUpload | null) => {
       if (selectedRef.current !== selection) {
@@ -54,7 +59,7 @@ export function useComposerUpload({
         }
         return selection
       } catch (error: unknown) {
-        toast.show({ message: `${"无法选择文件"}：${error instanceof Error ? error.message : "请稍后重试"}`, type: "text", duration: 1_000 })
+        toast.show({ message: `${"无法选择文件"}：${error instanceof Error ? error.message : "请稍后重试"}`, modal: false, type: "text", duration: 1_000 })
         return null
       } finally {
         if (mountedRef.current) setPreparing(false)
@@ -70,7 +75,9 @@ export function useComposerUpload({
     uploadInFlightRef.current = true
     try {
       const sent = await onSend(selection)
-      if (sent) replaceSelected(null)
+      // A successful enqueue transfers cleanup ownership to the optimistic send.
+      // Keep the local URI alive for rendering and retries.
+      if (sent) releaseSelected()
       return sent
     } finally {
       uploadInFlightRef.current = false
@@ -78,7 +85,7 @@ export function useComposerUpload({
         replaceSelected(null)
       }
     }
-  }, [disabled, onSend, replaceSelected, selected])
+  }, [disabled, onSend, releaseSelected, replaceSelected, selected])
 
   const cancel = useCallback(() => replaceSelected(null), [replaceSelected])
 

@@ -23,6 +23,8 @@ export function isValidServerUrl(value: string) {
 export function normalizeServerUrl(value: string) {
   const url = new URL(value.trim())
   url.hash = ""
+  url.search = ""
+  url.pathname = url.pathname.replace(/\/+$/, "") || "/"
 
   return url.toString().replace(/\/$/, "")
 }

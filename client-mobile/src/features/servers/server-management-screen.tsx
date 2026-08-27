@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { Redirect, type Href, useRouter } from "expo-router"
+import { Redirect, type Href, useLocalSearchParams, useRouter } from "expo-router"
 import { useRef, useState } from "react"
 import {
   ScrollView,
@@ -13,6 +13,7 @@ import { YStack } from "tamagui"
 import type { ServerConfig } from "@/core/server-model"
 import { queryKeys } from "@/data/query"
 import { ServerListItem } from "@/features/servers/server-list-item"
+import { parseServerManagementMode } from "@/features/accounts/account-management-model"
 import { useAuth } from "@/providers/auth-provider"
 import { useServers } from "@/providers/server-provider"
 import {
@@ -25,6 +26,8 @@ import {
 
 export function ServerManagementScreen() {
   const router = useRouter()
+  const params = useLocalSearchParams<{ mode?: string }>()
+  const mode = parseServerManagementMode(params.mode)
   const queryClient = useQueryClient()
   const { invalidateSession, isAuthenticated, session } = useAuth()
   const {
@@ -41,7 +44,7 @@ export function ServerManagementScreen() {
   const closeOpenSwipeableRef = useRef<(() => void) | null>(null)
   const selectionAttemptRef = useRef(0)
 
-  if (isAuthenticated) return <Redirect href="/messages" />
+  if (isAuthenticated && mode === "default") return <Redirect href="/messages" />
 
   function closeOpenSwipeable() {
     closeOpenSwipeableRef.current?.()
@@ -82,9 +85,10 @@ export function ServerManagementScreen() {
   }
 
   async function handleSelect(server: ServerConfig) {
+    if (mode === "manage") { handleRequestActions(server); return }
     const attempt = ++selectionAttemptRef.current
     closeOpenSwipeable()
-    await invalidateSession()
+    if (!isAuthenticated) await invalidateSession()
     if (attempt !== selectionAttemptRef.current) return
 
     await queryClient.cancelQueries({
@@ -98,14 +102,13 @@ export function ServerManagementScreen() {
       queryKey: queryKeys.appInfo(server),
     })
     selectServer(server.id)
-    router.replace("/login")
+    if (mode === "add-account") router.push("/login?mode=add-account&returnTo=account-management" as Href)
+    else router.replace("/login")
   }
 
   async function handleDelete(server: ServerConfig) {
     const deletesSessionServer = session?.id === server.id
-    if (deletesSessionServer) {
-      await invalidateSession()
-    }
+    if (deletesSessionServer && !isAuthenticated) await invalidateSession()
 
     removeServer(server.id)
     setServerToDelete(null)
@@ -119,8 +122,15 @@ export function ServerManagementScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <YStack grow={1} items="center" onPress={closeOpenSwipeable}>
+            {mode !== "default" ? (
+              <YStack maxW={440} pt="$3" px="$4" width="100%">
+                <XGUIButton accessibilityLabel={mode === "add-account" ? "取消添加账号" : "返回账号设置"} onPress={() => router.back()} size="mini" variant="secondary">
+                  返回
+                </XGUIButton>
+              </YStack>
+            ) : null}
             <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>
-              选择服务器
+              {mode === "manage" ? "服务器管理" : mode === "add-account" ? "选择要添加账号的服务器" : "选择服务器"}
             </Text>
             <YStack maxW={440} mt={48} px="$4" width="100%">
               <ScrollView

@@ -58,7 +58,7 @@ func TestPushAPIRoutesAuthenticatedUser(t *testing.T) {
 		"platform":"ios",
 		"expires_at":"2026-09-21T09:00:00Z"
 	}`)
-	if register.Code != http.StatusOK || service.register.UserID != "user-1" || !service.register.ExpiresAt.Equal(expiresAt) {
+	if register.Code != http.StatusOK || service.register.UserID != "user-1" || service.register.SessionID != "00000000-0000-0000-0000-000000000010" || !service.register.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("register = %d/%s, command = %#v", register.Code, register.Body.String(), service.register)
 	}
 	revoke := servePushRequest(router, http.MethodDelete, "/api/client/push/grants/00000000-0000-0000-0000-000000000001", "")
@@ -107,6 +107,10 @@ func pushTestRouter(service mobilepush.ClientService) *echo.Echo {
 	group := router.Group("/api/client", func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			c.Set(currentAccountKey, account.Account{ID: "user-1"})
+			c.Set(currentSessionKey, account.AuthenticatedSession{
+				ID:      "00000000-0000-0000-0000-000000000010",
+				Account: account.Account{ID: "user-1"},
+			})
 			return next(c)
 		}
 	})

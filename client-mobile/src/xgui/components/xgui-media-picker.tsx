@@ -59,13 +59,13 @@ export function XGUIMediaPicker({
     try {
       const response = await requestPermission()
       if (!response.granted) {
-        toast.show({ message: "未获得照片访问权限", type: "error" })
+        toast.show({ message: "未获得照片访问权限", modal: false, type: "error" })
         onCancel()
       }
     } catch (cause) {
       toast.show({
         message: cause instanceof Error ? cause.message : "无法申请照片访问权限",
-        type: "error",
+        modal: false, type: "error",
       })
       onCancel()
     } finally {
@@ -74,7 +74,7 @@ export function XGUIMediaPicker({
   }, [onCancel, requestPermission, toast])
 
   const openPhotoPermissionSettings = useCallback(async () => {
-    toast.show({ message: "请在系统设置中允许访问照片", type: "error" })
+    toast.show({ message: "请在系统设置中允许访问照片", modal: false, type: "error" })
     try {
       await Linking.openSettings()
     } finally {
@@ -125,6 +125,7 @@ export function XGUIMediaPicker({
         toast.show({
           duration: 1_000,
           message: `最多选择 ${maxSelection} 张图片`,
+          modal: false,
           type: "text",
         })
         return current
@@ -142,7 +143,7 @@ export function XGUIMediaPicker({
       toast.show({
         duration: 1_000,
         message: cause instanceof Error ? cause.message : "图片发送失败",
-        type: "error",
+        modal: false, type: "error",
       })
     } finally {
       setSubmitting(false)

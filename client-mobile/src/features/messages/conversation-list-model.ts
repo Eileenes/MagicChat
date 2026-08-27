@@ -1,13 +1,13 @@
 import type {
   ClientContacts,
   ClientConversation,
+  ClientMessage,
+  ClientMessageList,
 } from "@/core/models"
 import { flattenVisibleConversations } from "@/domain/conversations/conversation-order"
 import { getContactDisplayName } from "@/domain/contacts/contact-display"
-import {
-  formatMentionTemplateText,
-  type MessageMentionLabelResolver,
-} from "@/domain/messages/message-mentions"
+import type { MessageMentionLabelResolver } from "@/domain/messages/message-mentions"
+import { formatClientMessageBodySummary } from "@/domain/messages/message-presenter"
 
 export type ConversationListItemModel = {
   conversation: ClientConversation
@@ -18,12 +18,33 @@ export type ConversationListItemModel = {
   unreadAlertLabel: "[选择]" | "[有人 @ 我]" | null
 }
 
+export function collectLatestConversationMessages(
+  entries: readonly {
+    conversationId: string
+    pages: readonly ClientMessageList[] | undefined
+  }[]
+) {
+  const latest = new Map<string, ClientMessage>()
+  for (const entry of entries) {
+    for (const page of entry.pages ?? []) {
+      for (const message of page.messages) {
+        const current = latest.get(entry.conversationId)
+        if (!current || message.seq > current.seq) {
+          latest.set(entry.conversationId, message)
+        }
+      }
+    }
+  }
+  return latest
+}
+
 export function buildConversationListItems({
   activeConversationId,
   contacts,
   conversations,
   currentUserId,
   keyword,
+  latestMessages = new Map(),
   now = new Date(),
 }: {
   activeConversationId?: string
@@ -31,6 +52,7 @@ export function buildConversationListItems({
   conversations: ClientConversation[]
   currentUserId: string
   keyword: string
+  latestMessages?: ReadonlyMap<string, ClientMessage>
   now?: Date
 }): ConversationListItemModel[] {
   const labels = createMentionLabels(contacts, conversations)
@@ -44,6 +66,7 @@ export function buildConversationListItems({
   const items = rows.map(({ conversation, nested, pinnedBackground }) => {
     const messageDescription = formatConversationDescription(
       conversation,
+      latestMessages.get(conversation.id),
       labels,
       currentUserId
     )
@@ -149,6 +172,15 @@ function getConversationListRows({
   return rows
 }
 
+export function getBoundedConversationIds(
+  items: readonly ConversationListItemModel[],
+  limit: number
+) {
+  if (limit <= 0) return []
+
+  return items.slice(0, limit).map((item) => item.conversation.id)
+}
+
 export function findLatestUnreadConversationIndex(
   items: ConversationListItemModel[]
 ) {
@@ -230,15 +262,14 @@ function createMentionLabels(
 
 function formatConversationDescription(
   conversation: ClientConversation,
+  message: ClientMessage | undefined,
   labels: {
     appLabels: ReadonlyMap<string, string>
     userLabels: ReadonlyMap<string, string>
   },
   currentUserId: string
 ) {
-  const summary = conversation.lastMessageSummary.trim()
-
-  if (!summary) {
+  if (!message) {
     return "暂无消息"
   }
 
@@ -249,7 +280,10 @@ function formatConversationDescription(
       : labels.userLabels.get(id.toLowerCase())
   }
 
-  const description = formatMentionTemplateText(summary, resolveMentionLabel)
+  const description = formatClientMessageBodySummary(
+    message.body,
+    resolveMentionLabel
+  )
   const showsSender =
     conversation.type === "group" ||
     (conversation.type === "topic" &&
@@ -259,18 +293,19 @@ function formatConversationDescription(
     return description
   }
 
-  const senderName = getLastMessageSenderName(conversation, currentUserId)
+  const senderName = getLastMessageSenderName(message, labels, currentUserId)
   return senderName ? `${senderName}：${description}` : description
 }
 
 function getLastMessageSenderName(
-  conversation: ClientConversation,
+  message: ClientMessage,
+  labels: {
+    appLabels: ReadonlyMap<string, string>
+    userLabels: ReadonlyMap<string, string>
+  },
   currentUserId: string
 ) {
-  const sender = conversation.lastMessageSender
-  if (!sender) {
-    return ""
-  }
+  const sender = message.sender
 
   if (sender.type === "system") {
     return "系统"
@@ -280,7 +315,8 @@ function getLastMessageSenderName(
     return "我"
   }
 
-  return sender.nickname.trim() || sender.name.trim()
+  const senderLabels = sender.type === "app" ? labels.appLabels : labels.userLabels
+  return senderLabels.get(sender.id.toLowerCase()) ?? ""
 }
 
 function formatActivityTime(activityAt: string | null, now: Date) {

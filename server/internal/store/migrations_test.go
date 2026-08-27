@@ -48,6 +48,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00033_add_friendships.sql",
 		"00034_add_email_code_registration_setting.sql",
 		"00035_add_mobile_push.sql",
+		"00036_add_mobile_push_events.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -55,6 +56,25 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	for index, match := range matches {
 		if got := filepath.Base(match); got != want[index] {
 			t.Fatalf("migration file %d = %q, want %q", index, got, want[index])
+		}
+	}
+}
+
+func TestEveryMigrationDefinesGooseUpAndDownSections(t *testing.T) {
+	matches, err := filepath.Glob("../../migrations/*.sql")
+	if err != nil {
+		t.Fatalf("glob migrations: %v", err)
+	}
+	for _, match := range matches {
+		rawSQL, err := os.ReadFile(match)
+		if err != nil {
+			t.Fatalf("read migration %s: %v", filepath.Base(match), err)
+		}
+		sql := normalizeSQL(string(rawSQL))
+		upIndex := strings.Index(sql, "-- +goose up")
+		downIndex := strings.Index(sql, "-- +goose down")
+		if upIndex < 0 || downIndex < 0 || upIndex >= downIndex {
+			t.Errorf("migration %s must define ordered goose Up and Down sections", filepath.Base(match))
 		}
 	}
 }

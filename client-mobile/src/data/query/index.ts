@@ -5,11 +5,12 @@ import {
 } from "@tanstack/react-query"
 
 import { fetchAppInfo } from "@/data/auth/app-info-api"
-import { fetchContacts } from "@/data/contacts/contacts-api"
-import { fetchConversations } from "@/data/conversations/conversations-api"
+import { contactManager } from "@/data/contacts"
+import { conversationManager } from "@/data/conversations/index"
 import { fetchCurrentUser } from "@/data/users/current-user-api"
 import type { ClientProjectPage } from "@/core/models"
-import { fetchProjects } from "@/data/projects/projects-api"
+import { projectManager } from "@/data/projects"
+import { createAuthenticatedScopeKey, createServerKey } from "@/data/server-key"
 import type {
   AuthenticatedTarget,
   ServerTarget,
@@ -22,11 +23,13 @@ type PeriodicQueryOptions = {
 }
 
 function serverQueryKey(server: ServerTarget) {
-  return ["server", server.id, server.url] as const
+  // Use the same canonical server identity as SQLite and Managers. In
+  // particular, spelling-only URL differences must not create a new scope.
+  return ["server", createServerKey(server)] as const
 }
 
 function authenticatedQueryKey(target: AuthenticatedTarget) {
-  return [...serverQueryKey(target), "user", target.userId] as const
+  return ["authenticated", ...createAuthenticatedScopeKey(target)] as const
 }
 
 export const queryKeys = {
@@ -95,7 +98,7 @@ export function contactsQueryOptions(
   options: PeriodicQueryOptions = {}
 ) {
   return queryOptions({
-    queryFn: ({ signal }) => fetchContacts(target.url, { signal }),
+    queryFn: () => contactManager.getSnapshot(target).then((value) => value.directory),
     queryKey: queryKeys.contacts(target),
     refetchInterval: options.refetchInterval,
   })
@@ -103,19 +106,15 @@ export function contactsQueryOptions(
 
 export function currentUserQueryOptions(target: AuthenticatedTarget) {
   return queryOptions({
-    queryFn: ({ signal }) => fetchCurrentUser(target.url, { signal }),
+    queryFn: ({ signal }) => fetchCurrentUser(target, { signal }),
     queryKey: queryKeys.currentUser(target),
   })
 }
 
-export function conversationsQueryOptions(
-  target: AuthenticatedTarget,
-  options: PeriodicQueryOptions = {}
-) {
+export function conversationsQueryOptions(target: AuthenticatedTarget) {
   return queryOptions({
-    queryFn: ({ signal }) => fetchConversations(target.url, { signal }),
+    queryFn: () => conversationManager.list(target),
     queryKey: queryKeys.conversations(target),
-    refetchInterval: options.refetchInterval,
   })
 }
 
@@ -127,15 +126,19 @@ export function projectsQueryOptions(
     getNextPageParam: (lastPage: ClientProjectPage) =>
       lastPage.nextCursor ?? undefined,
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam, signal }) =>
-      fetchProjects(
-        target.url,
-        {
-          cursor: pageParam ?? undefined,
-          limit: PROJECT_PAGE_SIZE,
-        },
-        { signal }
-      ),
+    queryFn: ({ pageParam }) =>
+      projectManager.getSnapshot(target).then((snapshot) => {
+        const page = pageParam === null
+          ? snapshot.pages[0]
+          : snapshot.pages[
+              snapshot.pages.findIndex(
+                (_, pageIndex) =>
+                  snapshot.pages[pageIndex - 1]?.nextCursor === pageParam
+              )
+            ]
+        if (!page) throw new Error(`项目分页缓存中不存在 cursor: ${String(pageParam)}`)
+        return page
+      }),
     queryKey: queryKeys.projects(target),
     refetchInterval: options.refetchInterval,
   })

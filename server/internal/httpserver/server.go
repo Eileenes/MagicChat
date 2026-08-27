@@ -261,6 +261,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	router.GET("/healthz", func(c echo.Context) error {
 		return success(c, http.StatusOK, map[string]any{"status": "ok"})
 	})
+	router.GET("/metrics", server.mobilePushMetrics)
 	if docsDir, ok := findAPIDocsDir(); ok {
 		router.Static("/api-docs", docsDir)
 		router.GET("/swagger/*", echoSwagger.EchoWrapHandler(echoSwagger.URL("/api-docs/swagger.json")))

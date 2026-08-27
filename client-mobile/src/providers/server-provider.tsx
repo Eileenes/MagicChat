@@ -141,15 +141,11 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
     [servers]
   )
 
-  const selectServer = useCallback(
-    (id: string) => {
-      if (servers.some((server) => server.id === id)) {
-        setSelectedServerId(id)
-        setHasSelectedServerInSession(true)
-      }
-    },
-    [servers]
-  )
+  const selectServer = useCallback((id: string) => {
+    if (!id.trim()) return
+    setSelectedServerId(id)
+    setHasSelectedServerInSession(true)
+  }, [])
 
   const markServerAsRecentlyUsed = useCallback(
     (id: string) => {

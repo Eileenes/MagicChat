@@ -1,0 +1,58 @@
+groups:
+  - name: magicchat-mobile-push
+    rules:
+      - alert: MagicChatPrivatePushMetricsUnavailable
+        expr: up{job="magicchat-server"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: MagicChat 私有 Server 推送指标不可用
+
+      - alert: MagicChatGatewayMetricsUnavailable
+        expr: up{job="magicchat-push-gateway"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 公共 Push Gateway 指标不可用
+
+      - alert: MagicChatPushEventBacklog
+        expr: magicchat_mobile_push_enabled == 1 and magicchat_mobile_push_oldest_pending_event_age_seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: MagicChat 推送事件 fanout 已积压
+
+      - alert: MagicChatPrivatePushDeliveryBacklog
+        expr: magicchat_mobile_push_enabled == 1 and magicchat_mobile_push_oldest_pending_job_age_seconds > 120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: MagicChat 私有 Server 推送投递已积压
+
+      - alert: MagicChatGatewayPushDeliveryBacklog
+        expr: push_gateway_oldest_pending_job_age_seconds > 120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 公共 Push Gateway 投递已积压
+
+      - alert: MagicChatPushCriticalBacklog
+        expr: magicchat_mobile_push_enabled == 1 and (magicchat_mobile_push_oldest_pending_event_age_seconds > 300 or magicchat_mobile_push_oldest_pending_job_age_seconds > 300)
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: MagicChat 私有推送队列长时间没有清空
+
+      - alert: MagicChatGatewayCriticalBacklog
+        expr: push_gateway_oldest_pending_job_age_seconds > 300
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 公共 Push Gateway 队列长时间没有清空

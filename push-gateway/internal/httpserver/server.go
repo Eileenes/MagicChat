@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
+	"time"
 
 	"push-gateway/internal/gateway"
 	"push-gateway/internal/model"
@@ -166,22 +168,105 @@ func (s *Server) ready(c echo.Context) error {
 }
 
 func (s *Server) metrics(c echo.Context) error {
-	type statusCount struct {
-		Status string
-		Count  int64
+	ctx := c.Request().Context()
+	jobCounts, err := metricStatusCounts(s.db.WithContext(ctx).Model(&model.Job{}))
+	if err != nil {
+		return err
 	}
-	var counts []statusCount
-	if err := s.db.WithContext(c.Request().Context()).Model(&model.Job{}).
-		Select("status, count(*) AS count").Group("status").Scan(&counts).Error; err != nil {
+	grantCounts, err := metricStatusCounts(s.db.WithContext(ctx).Model(&model.Grant{}))
+	if err != nil {
+		return err
+	}
+	installationCounts, err := metricInstallationCounts(s.db.WithContext(ctx))
+	if err != nil {
+		return err
+	}
+	oldestJobAge, err := metricOldestAge(
+		s.db.WithContext(ctx).Model(&model.Job{}).Where(
+			"status IN ?", []string{model.JobStatusQueued, model.JobStatusRetry, model.JobStatusSending},
+		),
+		time.Now().UTC(),
+	)
+	if err != nil {
 		return err
 	}
 	var output strings.Builder
-	output.WriteString("# HELP push_gateway_jobs Current push jobs by status.\n")
-	output.WriteString("# TYPE push_gateway_jobs gauge\n")
-	for _, count := range counts {
-		fmt.Fprintf(&output, "push_gateway_jobs{status=%q} %d\n", count.Status, count.Count)
+	writeMetricStatusCounts(&output, "push_gateway_jobs", "Current push jobs by status.", jobCounts)
+	writeMetricStatusCounts(&output, "push_gateway_grants", "Current anonymous push grants by status.", grantCounts)
+	output.WriteString("# HELP push_gateway_installations Current anonymous push installations by provider, platform, and status.\n")
+	output.WriteString("# TYPE push_gateway_installations gauge\n")
+	for _, count := range installationCounts {
+		fmt.Fprintf(
+			&output,
+			"push_gateway_installations{provider=%q,platform=%q,status=%q} %d\n",
+			count.Provider, count.Platform, count.Status, count.Count,
+		)
 	}
+	output.WriteString("# HELP push_gateway_oldest_pending_job_age_seconds Age of the oldest pending Gateway push job.\n")
+	output.WriteString("# TYPE push_gateway_oldest_pending_job_age_seconds gauge\n")
+	fmt.Fprintf(&output, "push_gateway_oldest_pending_job_age_seconds %.0f\n", oldestJobAge)
 	return c.Blob(http.StatusOK, "text/plain; version=0.0.4; charset=utf-8", []byte(output.String()))
+}
+
+type metricStatusCount struct {
+	Status string
+	Count  int64
+}
+
+type metricInstallationCount struct {
+	Provider string
+	Platform string
+	Status   string
+	Count    int64
+}
+
+func metricStatusCounts(query *gorm.DB) ([]metricStatusCount, error) {
+	var counts []metricStatusCount
+	err := query.Select("status, count(*) AS count").Group("status").Scan(&counts).Error
+	sort.Slice(counts, func(first, second int) bool {
+		return counts[first].Status < counts[second].Status
+	})
+	return counts, err
+}
+
+func metricInstallationCounts(db *gorm.DB) ([]metricInstallationCount, error) {
+	var counts []metricInstallationCount
+	err := db.Model(&model.Installation{}).
+		Select("provider, platform, status, count(*) AS count").
+		Group("provider, platform, status").Scan(&counts).Error
+	sort.Slice(counts, func(first, second int) bool {
+		left := counts[first].Provider + "\x00" + counts[first].Platform + "\x00" + counts[first].Status
+		right := counts[second].Provider + "\x00" + counts[second].Platform + "\x00" + counts[second].Status
+		return left < right
+	})
+	return counts, err
+}
+
+func metricOldestAge(query *gorm.DB, now time.Time) (float64, error) {
+	var oldest struct {
+		CreatedAt time.Time
+	}
+	result := query.Select("created_at").Order("created_at ASC").Limit(1).Scan(&oldest)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected == 0 || !oldest.CreatedAt.Before(now) {
+		return 0, nil
+	}
+	return now.Sub(oldest.CreatedAt).Seconds(), nil
+}
+
+func writeMetricStatusCounts(
+	output *strings.Builder,
+	name string,
+	help string,
+	counts []metricStatusCount,
+) {
+	fmt.Fprintf(output, "# HELP %s %s\n", name, help)
+	fmt.Fprintf(output, "# TYPE %s gauge\n", name)
+	for _, count := range counts {
+		fmt.Fprintf(output, "%s{status=%q} %d\n", name, count.Status, count.Count)
+	}
 }
 
 func (*Server) openAPI(c echo.Context) error {

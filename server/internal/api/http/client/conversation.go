@@ -571,7 +571,7 @@ func (a *ConversationAPI) archiveTopic(c echo.Context) error {
 // list godoc
 //
 // @Summary 列出当前用户会话
-// @Description 普通用户获取最近 100 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。
+// @Description 普通用户获取最近 30 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。
 // @Tags 客户端会话
 // @Produce json
 // @Param include_conversation_id query string false "即使话题超过活跃时间，也包含这个当前正在查看的会话 ID"
@@ -679,7 +679,8 @@ func (a *ConversationAPI) createApp(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/conversations/groups [post]
 func (a *ConversationAPI) createGroup(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -973,7 +974,8 @@ func (a *ConversationAPI) leave(c echo.Context) error {
 // @Failure 404 {object} errorEnvelope
 // @Failure 409 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/conversations/groups/{conversation_id} [delete]
 func (a *ConversationAPI) dissolve(c echo.Context) error {
 	current, ok := CurrentAccount(c)

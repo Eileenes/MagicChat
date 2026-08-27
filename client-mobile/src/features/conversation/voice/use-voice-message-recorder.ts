@@ -580,7 +580,7 @@ export function useVoiceMessageRecorder({
     }
   }
 
-  const resetRecording = useCallback(() => {
+  const resetRecording = useCallback((preservePreparedFile = false) => {
     operationVersionRef.current += 1
     stopRequestedRef.current = true
     clearMaxDurationTimer()
@@ -599,7 +599,12 @@ export function useVoiceMessageRecorder({
         )
       }
     }
-    discardPreparedRecording()
+    if (preservePreparedFile) {
+      pendingRecordingRef.current = null
+      recordingRef.current = null
+    } else {
+      discardPreparedRecording()
+    }
     if (mountedRef.current) {
       setError("")
       setCompletedDurationMS(0)

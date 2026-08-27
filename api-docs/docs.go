@@ -1857,7 +1857,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "produces": [
@@ -1903,7 +1906,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "创建应用并仅在本次响应中返回连接密钥。",
@@ -1978,7 +1984,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "produces": [
@@ -2039,7 +2048,10 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "produces": [
@@ -2088,7 +2100,10 @@ const docTemplate = `{
             "patch": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "更新名称、备注、可见范围或 restricted 授权用户。",
@@ -2176,7 +2191,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "头像必须是 256x256 WebP，最大 1MiB。",
@@ -2262,7 +2280,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "禁用应用并关闭该应用已有连接。",
@@ -2326,7 +2347,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "produces": [
@@ -2389,7 +2413,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "返回新密钥并关闭该应用已有连接，旧密钥立即失效。",
@@ -2451,7 +2478,7 @@ const docTemplate = `{
         },
         "/api/client/auth/email-code/login": {
             "post": {
-                "description": "验证 8 位邮箱验证码，创建普通用户 Session 并写入登录 Cookie。验证码仅能使用一次。",
+                "description": "验证 8 位邮箱验证码，创建普通用户 Session 并写入登录 Cookie。验证码仅能使用一次；仅 Native Mobile 在发送 X-Dianbao-Mobile-Session: 1 且请求不带 Origin 时，响应 data 才可包含可选 mobile_session。",
                 "consumes": [
                     "application/json"
                 ],
@@ -2463,6 +2490,15 @@ const docTemplate = `{
                 ],
                 "summary": "使用邮箱验证码登录",
                 "parameters": [
+                    {
+                        "enum": [
+                            "1"
+                        ],
+                        "type": "string",
+                        "description": "Native Mobile Session 能力版本；仅值 1 启用可选 mobile_session 响应（带 Origin 时忽略）",
+                        "name": "X-Dianbao-Mobile-Session",
+                        "in": "header"
+                    },
                     {
                         "description": "邮箱和验证码",
                         "name": "body",
@@ -2591,7 +2627,7 @@ const docTemplate = `{
         },
         "/api/client/auth/login": {
             "post": {
-                "description": "普通用户使用管理员创建的邮箱和密码登录。",
+                "description": "普通用户使用管理员创建的邮箱和密码登录。仅 Native Mobile 在发送 X-Dianbao-Mobile-Session: 1 且请求不带 Origin 时，响应 data 才可包含可选 mobile_session；普通 Web 响应不保证且不会要求该字段。",
                 "consumes": [
                     "application/json"
                 ],
@@ -2603,6 +2639,15 @@ const docTemplate = `{
                 ],
                 "summary": "普通用户登录",
                 "parameters": [
+                    {
+                        "enum": [
+                            "1"
+                        ],
+                        "type": "string",
+                        "description": "Native Mobile Session 能力版本；仅值 1 启用可选 mobile_session 响应（带 Origin 时忽略）",
+                        "name": "X-Dianbao-Mobile-Session",
+                        "in": "header"
+                    },
                     {
                         "description": "登录参数",
                         "name": "body",
@@ -2655,7 +2700,15 @@ const docTemplate = `{
         },
         "/api/client/auth/logout": {
             "post": {
-                "description": "删除当前普通用户会话并清除客户端登录 Cookie。重复调用也会返回成功。",
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "精确撤销本请求解析出的一个 Session 并清除兼容 Cookie；Bearer 优先，存在但无效时返回 401 且不回退 Cookie。Mobile 客户端将 401/已失效 Session 作为幂等注销完成。",
                 "produces": [
                     "application/json"
                 ],
@@ -2663,11 +2716,25 @@ const docTemplate = `{
                     "客户端认证"
                 ],
                 "summary": "普通用户退出登录",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "当前推送安装实例 ID",
+                        "name": "X-Push-Installation-ID",
+                        "in": "header"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/client.successEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
@@ -2897,7 +2964,7 @@ const docTemplate = `{
         },
         "/api/client/conversations": {
             "get": {
-                "description": "普通用户获取最近 100 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。",
+                "description": "普通用户获取最近 30 个父会话组。话题仅返回当前用户已参与且未关闭，并且最近 30 分钟内活跃或仍有未读消息的条目；父会话组及组内话题分别按照最后活跃时间倒序排列。",
                 "produces": [
                     "application/json"
                 ],
@@ -3121,7 +3188,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "普通用户创建群聊。当前登录用户会自动成为群主，member_ids 和 app_ids 可选择其他成员或应用，project_ids 可选填要关联的本人普通项目。",
@@ -3196,7 +3266,10 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "群主解散 active 群聊。解散后所有成员将不再看到该群聊。",
@@ -6057,7 +6130,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "produces": [
@@ -6124,7 +6200,10 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "软删除文档；删除目录时递归软删除全部子节点。",
@@ -6192,7 +6271,10 @@ const docTemplate = `{
             "patch": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "重命名目录或更新节点字段；文档标题必须通过协作服务修改，移动操作推荐使用原子 move 接口。",
@@ -6274,7 +6356,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "在单个事务中移动文档或目录，并重新排列源目录与目标目录的同级节点。",
@@ -6871,7 +6956,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "获取当前用户可访问的项目及个人项目，按更新时间倒序分页。",
@@ -6938,7 +7026,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "创建普通项目，可同时关联当前可用的群聊。",
@@ -7013,7 +7104,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "获取当前用户可访问的项目详情和任务统计。",
@@ -7081,7 +7175,10 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "项目所有者删除普通项目；个人项目不能删除。",
@@ -7155,7 +7252,10 @@ const docTemplate = `{
             "patch": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "项目所有者更新项目名称、描述或头像。",
@@ -7243,7 +7343,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "项目所有者上传裁切后的 WebP 项目头像。头像必须是 256x256，文件会写入 public bucket。",
@@ -7335,7 +7438,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "返回项目内未删除的文档和目录节点，前端可根据 parent_id 构建目录树。",
@@ -7403,7 +7509,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "在项目根目录或指定父目录下创建富文本文档、Markdown 文档或目录；document_type 省略时默认为 document。",
@@ -7485,7 +7594,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "获取项目关联的可用群聊，按关联时间倒序分页。",
@@ -7567,7 +7679,10 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "项目所有者将可用群聊关联到普通项目；重复关联保持成功。",
@@ -7654,7 +7769,10 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "项目所有者解除普通项目与群聊的关联；未关联时保持成功。",
@@ -7737,7 +7855,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "获取项目成员及其来源群聊，按显示名称分页。",
@@ -7819,7 +7940,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "获取项目任务，支持关键字、状态、优先级、负责人、标签和日期范围筛选。",
@@ -7953,7 +8077,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "在当前用户可访问的项目中创建任务，可指定负责人、状态、优先级、日期和标签。",
@@ -8035,7 +8162,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "获取当前用户可访问的项目任务详情。",
@@ -8110,7 +8240,10 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "删除当前用户可访问的项目任务。",
@@ -8185,7 +8318,10 @@ const docTemplate = `{
             "patch": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "更新当前用户可访问的项目任务字段。",
@@ -8274,7 +8410,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "按时间顺序获取任务创建、修改和评论动态。",
@@ -8351,7 +8490,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "为当前用户可访问的任务添加评论动态。",
@@ -8687,7 +8829,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "普通用户上传临时文件，最大 200MiB。大于 10MiB 的文件保留 30 天，其余文件保留 180 天，统一写入 temporary bucket。",
@@ -8760,7 +8905,10 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "普通用户按临时文件 ID 批量申请最长 24 小时、且不超过文件剩余寿命的访问地址。",
@@ -8835,7 +8983,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "UserSession": []
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
                     }
                 ],
                 "description": "普通用户通过临时文件 ID 跳转到有效的临时访问地址，适用于浏览器原生媒体播放。",
@@ -9590,6 +9741,9 @@ const docTemplate = `{
         "client.accountEnvelope": {
             "type": "object",
             "properties": {
+                "mobile_session": {
+                    "$ref": "#/definitions/client.mobileSessionResponse"
+                },
                 "user": {
                     "$ref": "#/definitions/client.accountResponse"
                 }
@@ -11361,6 +11515,18 @@ const docTemplate = `{
                 }
             }
         },
+        "client.mobileSessionResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
         "client.moveDocumentRequest": {
             "type": "object",
             "required": [
@@ -12263,8 +12429,14 @@ const docTemplate = `{
         }
     },
     "securityDefinitions": {
-        "UserSession": {
-            "description": "使用 user_session=\u003ctoken\u003e 格式的会话 Cookie。",
+        "BearerAuth": {
+            "description": "Native Mobile 使用 Bearer \u003copaque-session-token\u003e。原始 token 不得放入 URL、日志或业务模型。",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "CookieAuth": {
+            "description": "Web 使用 user_session=\u003copaque-session-token\u003e。仅当请求不存在 Authorization Header 时才校验 Cookie。",
             "type": "apiKey",
             "name": "Cookie",
             "in": "header"
@@ -12279,7 +12451,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "AI 原生企业协作服务 API",
-	Description:      "私有部署企业协作产品的服务端 API。当前阶段包含管理员登录、管理员创建普通用户、普通用户登录。",
+	Description:      "私有部署企业协作产品的服务端 API。受保护客户端接口支持 Bearer Session 或 user_session Cookie（二选一）；Authorization 存在时始终优先校验 Bearer，格式错误、过期或无效时直接返回 401，不回退 Cookie。",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

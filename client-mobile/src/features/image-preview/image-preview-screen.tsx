@@ -247,13 +247,13 @@ function AuthenticatedImagePreview({
 
     try {
       await saveImageToMediaLibrary(resource)
-      toast.show({ message: "图片已保存：已保存到系统相册", type: "text", duration: 1_000 })
+      toast.show({ message: "图片已保存：已保存到系统相册", modal: false, type: "text", duration: 1_000 })
     } catch (saveError: unknown) {
       toast.show({ message: `${"保存失败"}：${saveError instanceof MediaLibraryPermissionError
             ? "请在系统设置中允许即应访问相册"
             : saveError instanceof Error
               ? saveError.message
-              : "请稍后重试"}`, type: "text", duration: 1_000 })
+              : "请稍后重试"}`, modal: false, type: "text", duration: 1_000 })
     } finally {
       setIsSaving(false)
     }

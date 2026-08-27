@@ -148,7 +148,8 @@ func (a *ProjectAPI) RegisterRoutes(group *echo.Group) {
 // @Failure 400 {object} errorEnvelope
 // @Failure 401 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects [get]
 func (a *ProjectAPI) list(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -187,7 +188,8 @@ func (a *ProjectAPI) list(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 409 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects [post]
 func (a *ProjectAPI) create(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -217,7 +219,8 @@ func (a *ProjectAPI) create(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id} [get]
 func (a *ProjectAPI) get(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -246,7 +249,8 @@ func (a *ProjectAPI) get(c echo.Context) error {
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id} [patch]
 func (a *ProjectAPI) update(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -287,7 +291,8 @@ func (a *ProjectAPI) update(c echo.Context) error {
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id} [delete]
 func (a *ProjectAPI) delete(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -315,7 +320,8 @@ func (a *ProjectAPI) delete(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/groups [get]
 func (a *ProjectAPI) listGroups(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -352,7 +358,8 @@ func (a *ProjectAPI) listGroups(c echo.Context) error {
 // @Failure 404 {object} errorEnvelope
 // @Failure 409 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/groups/{group_id} [put]
 func (a *ProjectAPI) bindGroup(c echo.Context) error { return a.mutateGroup(c, true) }
 
@@ -370,7 +377,8 @@ func (a *ProjectAPI) bindGroup(c echo.Context) error { return a.mutateGroup(c, t
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/groups/{group_id} [delete]
 func (a *ProjectAPI) unbindGroup(c echo.Context) error { return a.mutateGroup(c, false) }
 
@@ -406,7 +414,8 @@ func (a *ProjectAPI) mutateGroup(c echo.Context, bind bool) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/members [get]
 func (a *ProjectAPI) listMembers(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -444,7 +453,8 @@ func (a *ProjectAPI) listMembers(c echo.Context) error {
 // @Failure 404 {object} errorEnvelope
 // @Failure 413 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/avatar [post]
 func (a *ProjectAPI) uploadAvatar(c echo.Context) error {
 	current, ok := CurrentAccount(c)

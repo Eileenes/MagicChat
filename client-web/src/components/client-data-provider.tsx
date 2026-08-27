@@ -52,6 +52,7 @@ import {
 } from "@/lib/client-data-context"
 import { ClientProfileProvider } from "@/components/client-profile-provider"
 import {
+  clearConversationRemovalState,
   compactConversationMessageState,
   createConversationMessageState,
   applyMessageChoiceSnapshot,
@@ -61,7 +62,10 @@ import {
   getMessageSummary,
   getNewestMessageSeq,
   mergeConversationMessages,
+  mergeConversationSnapshot,
+  isLatestConversationSnapshot,
   orderConversations,
+  shouldReplaceConversationSnapshot,
   updatePageWithMessage,
 } from "@/lib/client-data-state"
 import {
@@ -209,6 +213,12 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const [projectsRefreshing, setProjectsRefreshing] = useState(false)
   const conversationMessageStatesRef = useRef(conversationMessageStates)
   const conversationsRef = useRef(conversations)
+  const removedConversationIdsRef = useRef<Set<string>>(new Set())
+  const removedConversationsRef = useRef<Map<string, ClientConversation>>(
+    new Map()
+  )
+  const conversationSnapshotSequenceRef = useRef(0)
+  const conversationAccountIdRef = useRef<string | null>(null)
   const mountedRef = useRef(true)
   const bootstrapGenerationRef = useRef(0)
   const refreshingReactionSnapshotKeysRef = useRef<Set<string>>(new Set())
@@ -248,6 +258,12 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         }
 
         setAuthenticated(false)
+        conversationAccountIdRef.current = null
+        clearConversationRemovalState(
+          removedConversationIdsRef.current,
+          removedConversationsRef.current
+        )
+        ++conversationSnapshotSequenceRef.current
         setConversations([])
         setConversationMessageStates({})
         setContactApps([])
@@ -630,18 +646,45 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   )
 
   const refreshConversations = useCallback(async () => {
+    const sequence = ++conversationSnapshotSequenceRef.current
     try {
-      setConversations(
-        orderConversations(
-          await listClientConversations(undefined, {
-            includeConversationId: includedConversationIdRef.current,
-          })
+      const snapshot = await listClientConversations(undefined, {
+        includeConversationId: includedConversationIdRef.current,
+      })
+      if (
+        !isLatestConversationSnapshot(
+          sequence,
+          conversationSnapshotSequenceRef.current
+        )
+      )
+        return
+      setConversations((current) =>
+        mergeConversationSnapshot(
+          current,
+          snapshot,
+          removedConversationIdsRef.current
         )
       )
     } catch (error) {
       throw handleError(error, "加载会话列表失败")
     }
   }, [handleError])
+
+  const refreshRestoredConversation = useCallback(
+    async (conversationId: string) => {
+      removedConversationIdsRef.current.delete(conversationId)
+      const cachedConversation =
+        removedConversationsRef.current.get(conversationId)
+      removedConversationsRef.current.delete(conversationId)
+      if (cachedConversation) {
+        setConversations((current) =>
+          mergeConversationSnapshot(current, [cachedConversation])
+        )
+      }
+      await refreshConversations()
+    },
+    [refreshConversations]
+  )
 
   const refreshProjects = useCallback(async () => {
     const isInitialLoad = personalProject === null && projects.length === 0
@@ -1602,6 +1645,19 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshContacts,
     setConversationMessageStates,
     setConversations,
+    onConversationRemoved: (conversationId) => {
+      const conversation = conversationsRef.current.find(
+        (item) => item.id === conversationId
+      )
+      if (conversation) {
+        removedConversationsRef.current.set(conversationId, conversation)
+      }
+      removedConversationIdsRef.current.add(conversationId)
+    },
+    onConversationUpserted: (conversationId) => {
+      removedConversationIdsRef.current.delete(conversationId)
+      removedConversationsRef.current.delete(conversationId)
+    },
   })
 
   const dismissConversation = useCallback(
@@ -1617,6 +1673,8 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   )
 
   const bootstrap = useCallback(async () => {
+    const conversationSnapshotSequence =
+      ++conversationSnapshotSequenceRef.current
     const generation = ++bootstrapGenerationRef.current
     const isCurrent = () =>
       mountedRef.current && bootstrapGenerationRef.current === generation
@@ -1640,10 +1698,9 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         ClientConversationMessageState
       > = {}
       const preloadedLatestMessages: Record<string, ClientMessage> = {}
-      const conversationsToPreload = orderConversations(nextConversations).slice(
-        0,
-        bootstrapConversationLimit
-      )
+      const conversationsToPreload = orderConversations(
+        nextConversations
+      ).slice(0, bootstrapConversationLimit)
       let nextConversationIndex = 0
       let acceptingPreloadResults = true
       const preloadWorker = async () => {
@@ -1716,7 +1773,32 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       setContactDirectoryMode(nextContacts.directoryMode)
       setContactGroups(nextContacts.groups)
       setContactUserIds(nextContacts.userIds)
-      setConversations(orderConversations(nextConversations))
+      const accountChanged = shouldReplaceConversationSnapshot(
+        conversationAccountIdRef.current,
+        nextMe.id
+      )
+      if (accountChanged) {
+        conversationAccountIdRef.current = nextMe.id
+        clearConversationRemovalState(
+          removedConversationIdsRef.current,
+          removedConversationsRef.current
+        )
+        ++conversationSnapshotSequenceRef.current
+        setConversations(orderConversations(nextConversations))
+      } else if (
+        isLatestConversationSnapshot(
+          conversationSnapshotSequence,
+          conversationSnapshotSequenceRef.current
+        )
+      ) {
+        setConversations((current) =>
+          mergeConversationSnapshot(
+            current,
+            nextConversations,
+            removedConversationIdsRef.current
+          )
+        )
+      }
       setConversationMessageStates(preloadedMessageStates)
       setLatestCachedMessages(preloadedLatestMessages)
       setPersonalProject(nextProjects.personalProject)
@@ -1826,6 +1908,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     bootstrapState,
     refreshContacts,
     refreshConversations,
+    refreshRestoredConversation,
     refreshMe,
     refreshProjects,
     shouldLoadConversations,
@@ -1922,6 +2005,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     registerConversationMessageView,
     respondToChoice,
     refreshConversations,
+    refreshRestoredConversation,
     refreshContacts,
     refreshFriendRequests,
     refreshMe,

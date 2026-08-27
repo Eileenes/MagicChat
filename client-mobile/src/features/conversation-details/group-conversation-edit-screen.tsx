@@ -11,7 +11,7 @@ import {
   useUpdateGroupConversationName,
 } from "@/data/conversations/conversation-hooks"
 import { useAuthenticatedSession } from "@/providers/auth-provider"
-import { useClientData } from "@/providers/client-data-provider"
+import { useClientConversations } from "@/providers/client-data-provider"
 import {
   XGUIInformationBar,
   XGUIInput,
@@ -33,7 +33,7 @@ export function GroupConversationEditScreen() {
   const validField = editingAnnouncement || field === "name"
   const router = useRouter()
   const session = useAuthenticatedSession()
-  const { conversations } = useClientData()
+  const { conversations } = useClientConversations()
   const { colors } = useXGUITheme()
   const toast = useXGUIToast()
   const conversation = conversations.find(
@@ -87,7 +87,7 @@ export function GroupConversationEditScreen() {
       const message =
         error instanceof Error ? error.message : `${title}失败，请稍后重试`
       setErrorMessage(message)
-      toast.show({ message, type: "error" })
+      toast.show({ message, modal: false, type: "error" })
     }
   }
 

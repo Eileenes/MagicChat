@@ -431,6 +431,46 @@ export function orderConversations(
   return ordered
 }
 
+export function clearConversationRemovalState(
+  removedIds: Set<string>,
+  removedConversations: Map<string, ClientConversation>
+) {
+  removedIds.clear()
+  removedConversations.clear()
+}
+
+export function isLatestConversationSnapshot(
+  requestSequence: number,
+  latestSequence: number
+) {
+  return requestSequence === latestSequence
+}
+
+export function shouldReplaceConversationSnapshot(
+  currentAccountId: string | null,
+  nextAccountId: string
+) {
+  return currentAccountId !== nextAccountId
+}
+
+/** Merge a limited server snapshot without treating omitted rows as deletions. */
+export function mergeConversationSnapshot(
+  current: ClientConversation[],
+  snapshot: ClientConversation[],
+  removedConversationIds: ReadonlySet<string> = new Set()
+) {
+  const byId = new Map(
+    current
+      .filter((conversation) => !removedConversationIds.has(conversation.id))
+      .map((conversation) => [conversation.id, conversation])
+  )
+  for (const conversation of snapshot) {
+    if (!removedConversationIds.has(conversation.id))
+      byId.set(conversation.id, conversation)
+  }
+  return orderConversations(Array.from(byId.values()))
+}
+
 export function isConversationTopicVisibleInList(
   conversation: ClientConversation,
   options: { activeConversationId?: string; now?: number } = {}

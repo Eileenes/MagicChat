@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -46,6 +47,23 @@ func TestAccountAPILoginMapsTransportDataAndSetsCookie(t *testing.T) {
 	}
 }
 
+func TestSessionCookieUsesSecureFlagForHTTPSAndForwardedHTTPS(t *testing.T) {
+	for _, configure := range []func(*http.Request){
+		func(request *http.Request) { request.TLS = &tls.ConnectionState{} },
+		func(request *http.Request) { request.Header.Set("X-Forwarded-Proto", "https") },
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		configure(request)
+		recorder := httptest.NewRecorder()
+		context := echo.New().NewContext(request, recorder)
+		setSessionCookie(context, "fixture-session", time.Now().Add(time.Hour))
+		cookies := recorder.Result().Cookies()
+		if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode {
+			t.Fatalf("secure cookie flags missing")
+		}
+	}
+}
+
 func TestAccountAPIReturnsUnavailableForDisabledPasswordLogin(t *testing.T) {
 	service := &fakeAccountService{loginErr: &account.Error{
 		Code: account.CodeLoginUnavailable, Message: "密码登录未启用",
@@ -62,6 +80,93 @@ func TestAccountAPIReturnsUnavailableForDisabledPasswordLogin(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAccountAPISessionCredentialPrecedence(t *testing.T) {
+	tests := []struct {
+		name, authorization, cookie, wantToken string
+		wantStatus                             int
+	}{
+		{name: "bearer only", authorization: "Bearer bearer-token", wantToken: "bearer-token", wantStatus: http.StatusOK},
+		{name: "cookie only", cookie: "cookie-token", wantToken: "cookie-token", wantStatus: http.StatusOK},
+		{name: "same", authorization: "Bearer shared-token", cookie: "shared-token", wantToken: "shared-token", wantStatus: http.StatusOK},
+		{name: "conflict prefers bearer", authorization: "Bearer bearer-token", cookie: "cookie-token", wantToken: "bearer-token", wantStatus: http.StatusOK},
+		{name: "invalid bearer does not use cookie", authorization: "Bearer invalid-token", cookie: "cookie-token", wantToken: "invalid-token", wantStatus: http.StatusUnauthorized},
+		{name: "wrong scheme", authorization: "Basic placeholder", cookie: "cookie-token", wantStatus: http.StatusUnauthorized},
+		{name: "missing token", authorization: "Bearer ", cookie: "cookie-token", wantStatus: http.StatusUnauthorized},
+		{name: "multiple credentials", authorization: "Bearer first, Bearer second", cookie: "cookie-token", wantStatus: http.StatusUnauthorized},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &fakeAccountService{authenticated: account.AuthenticatedSession{Account: account.Account{ID: "account-1"}}, invalidToken: "invalid-token"}
+			api := NewAccountAPI(service, service, nil)
+			router := echo.New()
+			router.GET("/api/client/protected", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, api.RequireSession)
+			request := httptest.NewRequest(http.MethodGet, "/api/client/protected", nil)
+			if test.authorization != "" {
+				request.Header.Set("Authorization", test.authorization)
+			}
+			if test.cookie != "" {
+				request.AddCookie(&http.Cookie{Name: UserSessionCookieName, Value: test.cookie})
+			}
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			if recorder.Code != test.wantStatus || service.authToken != test.wantToken {
+				t.Fatalf("status = %d, authenticated expected credential = %t", recorder.Code, service.authToken == test.wantToken)
+			}
+		})
+	}
+}
+
+func TestAccountAPILogoutUsesExactCredential(t *testing.T) {
+	service := &fakeAccountService{authenticated: account.AuthenticatedSession{Account: account.Account{ID: "account-1"}}}
+	api := NewAccountAPI(service, service, nil)
+	router := echo.New()
+	api.RegisterPublicRoutes(router)
+	request := httptest.NewRequest(http.MethodPost, "/api/client/auth/logout", nil)
+	request.Header.Set("Authorization", "Bearer selected-token")
+	request.AddCookie(&http.Cookie{Name: UserSessionCookieName, Value: "other-token"})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || service.logoutToken != "selected-token" {
+		t.Fatalf("status = %d, revoked selected credential = %t", recorder.Code, service.logoutToken == "selected-token")
+	}
+	if len(recorder.Result().Cookies()) == 0 || recorder.Result().Cookies()[0].Value != "" {
+		t.Fatal("logout did not clear compatibility cookie")
+	}
+
+	anonymous := httptest.NewRequest(http.MethodPost, "/api/client/auth/logout", nil)
+	anonymousRecorder := httptest.NewRecorder()
+	router.ServeHTTP(anonymousRecorder, anonymous)
+	if anonymousRecorder.Code != http.StatusOK {
+		t.Fatalf("anonymous logout status = %d", anonymousRecorder.Code)
+	}
+
+	service.invalidToken = "expired-cookie-placeholder"
+	expiredCookie := httptest.NewRequest(http.MethodPost, "/api/client/auth/logout", nil)
+	expiredCookie.AddCookie(&http.Cookie{
+		Name:  UserSessionCookieName,
+		Value: "expired-cookie-placeholder",
+	})
+	expiredCookieRecorder := httptest.NewRecorder()
+	router.ServeHTTP(expiredCookieRecorder, expiredCookie)
+	if expiredCookieRecorder.Code != http.StatusOK || service.logoutToken != "expired-cookie-placeholder" {
+		t.Fatalf("expired cookie logout status = %d", expiredCookieRecorder.Code)
+	}
+	if len(expiredCookieRecorder.Result().Cookies()) == 0 || expiredCookieRecorder.Result().Cookies()[0].Value != "" {
+		t.Fatal("expired cookie logout did not clear compatibility cookie")
+	}
+
+	service.logoutToken = ""
+	invalidBearer := httptest.NewRequest(http.MethodPost, "/api/client/auth/logout", nil)
+	invalidBearer.Header.Set("Authorization", "Bearer invalid-bearer-placeholder")
+	invalidBearer.AddCookie(&http.Cookie{Name: UserSessionCookieName, Value: "valid-cookie-placeholder"})
+	service.invalidToken = "invalid-bearer-placeholder"
+	invalidBearerRecorder := httptest.NewRecorder()
+	router.ServeHTTP(invalidBearerRecorder, invalidBearer)
+	if invalidBearerRecorder.Code != http.StatusUnauthorized || service.logoutToken != "invalid-bearer-placeholder" {
+		t.Fatalf("invalid bearer logout status = %d", invalidBearerRecorder.Code)
 	}
 }
 
@@ -110,6 +215,8 @@ type fakeAccountService struct {
 	loginResult   account.LoginResult
 	loginErr      error
 	authToken     string
+	logoutToken   string
+	invalidToken  string
 	authenticated account.AuthenticatedSession
 }
 
@@ -118,7 +225,11 @@ func (s *fakeAccountService) Login(_ context.Context, cmd account.LoginCommand) 
 	return s.loginResult, s.loginErr
 }
 
-func (s *fakeAccountService) Logout(context.Context, account.LogoutCommand) error {
+func (s *fakeAccountService) Logout(_ context.Context, cmd account.LogoutCommand) error {
+	s.logoutToken = cmd.Token
+	if cmd.RequireExisting && cmd.Token == s.invalidToken && cmd.Token != "" {
+		return &account.Error{Code: account.CodeUnauthorized, Message: "未登录"}
+	}
 	return nil
 }
 
@@ -136,5 +247,8 @@ func (s *fakeAccountService) UploadAvatar(_ context.Context, cmd account.UploadA
 
 func (s *fakeAccountService) AuthenticateSession(_ context.Context, token string) (account.AuthenticatedSession, error) {
 	s.authToken = token
+	if token == s.invalidToken && token != "" {
+		return account.AuthenticatedSession{}, &account.Error{Code: account.CodeUnauthorized, Message: "未登录"}
+	}
 	return s.authenticated, nil
 }

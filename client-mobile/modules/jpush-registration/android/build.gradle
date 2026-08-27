@@ -1,0 +1,85 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'cloud.baizhi'
+version = '1.0.0'
+
+final def jpushVersion = '6.2.0'
+final def environmentValue = { String name -> System.getenv(name)?.trim() ?: '' }
+final def requireCompleteChannel = { String channel, Map<String, String> values ->
+  def configured = values.findAll { _, value -> !value.isEmpty() }
+  if (!configured.isEmpty() && configured.size() != values.size()) {
+    def missing = values.findAll { _, value -> value.isEmpty() }.keySet().sort().join(', ')
+    throw new GradleException("Incomplete ${channel} push configuration; missing ${missing}")
+  }
+  !configured.isEmpty()
+}
+
+final def jpushAppKey = environmentValue('JPUSH_APP_KEY')
+final def jpushChannel = environmentValue('JPUSH_CHANNEL') ?: 'official'
+final def xiaomiValues = [
+  XIAOMI_APPID: environmentValue('JPUSH_XIAOMI_APP_ID'),
+  XIAOMI_APPKEY: environmentValue('JPUSH_XIAOMI_APP_KEY'),
+]
+final def vivoValues = [
+  VIVO_APPID: environmentValue('JPUSH_VIVO_APP_ID'),
+  VIVO_APPKEY: environmentValue('JPUSH_VIVO_APP_KEY'),
+]
+final def oppoValues = [
+  OPPO_APPID: environmentValue('JPUSH_OPPO_APP_ID'),
+  OPPO_APPKEY: environmentValue('JPUSH_OPPO_APP_KEY'),
+  OPPO_APPSECRET: environmentValue('JPUSH_OPPO_APP_SECRET'),
+]
+final def huaweiConfigPath = environmentValue('JPUSH_HUAWEI_AGCONNECT_SERVICES')
+final def xiaomiConfigured = requireCompleteChannel('Xiaomi', xiaomiValues)
+final def vivoConfigured = requireCompleteChannel('vivo', vivoValues)
+final def oppoConfigured = requireCompleteChannel('OPPO', oppoValues)
+final def huaweiConfigured = !huaweiConfigPath.isEmpty()
+final def vendorChannels = [
+  huaweiConfigured ? 'huawei' : '',
+  xiaomiConfigured ? 'xiaomi' : '',
+  oppoConfigured ? 'oppo' : '',
+  vivoConfigured ? 'vivo' : '',
+].findAll { !it.isEmpty() }
+if (!vendorChannels.isEmpty() && jpushAppKey.isEmpty()) {
+  throw new GradleException('JPUSH_APP_KEY is required when a JPush vendor channel is enabled')
+}
+
+android {
+  namespace "cloud.baizhi.jpush"
+
+  buildFeatures {
+    buildConfig true
+  }
+
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+
+    manifestPlaceholders = [
+      JPUSH_APPKEY: jpushAppKey,
+      JPUSH_CHANNEL: jpushChannel,
+    ] + xiaomiValues + vivoValues + oppoValues
+    buildConfigField "boolean", "JPUSH_CONFIGURED", (!jpushAppKey.isEmpty()).toString()
+    buildConfigField "String", "JPUSH_VENDOR_CHANNELS", "\"${vendorChannels.join(',')}\""
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+}
+
+dependencies {
+  implementation "cn.jiguang.sdk:jpush:${jpushVersion}"
+  if (huaweiConfigured) {
+    implementation "cn.jiguang.sdk.plugin:huawei:${jpushVersion}"
+  }
+  if (xiaomiConfigured) {
+    implementation "cn.jiguang.sdk.plugin:xiaomi:${jpushVersion}"
+  }
+  if (oppoConfigured) {
+    implementation "cn.jiguang.sdk.plugin:oppo:${jpushVersion}"
+  }
+  if (vivoConfigured) {
+    implementation "cn.jiguang.sdk.plugin:vivo:${jpushVersion}"
+  }
+}

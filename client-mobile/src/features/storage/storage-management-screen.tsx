@@ -88,15 +88,15 @@ export function StorageManagementScreen() {
       const { failed } = await clearStorage(parts)
       await refresh()
       if (!failed.length) {
-        toast.show({ message: "清理完成", type: "success" })
+        toast.show({ message: "清理完成", modal: false, type: "success" })
       } else if (failed.length === parts.length) {
-        toast.show({ message: "清理失败，请稍后重试", type: "error" })
+        toast.show({ message: "清理失败，请稍后重试", modal: false, type: "error" })
       } else {
         const failedLabel = failed.includes("media") ? "媒体与文件" : "离线消息"
-        toast.show({ message: `${failedLabel}清理失败`, type: "error" })
+        toast.show({ message: `${failedLabel}清理失败`, modal: false, type: "error" })
       }
     } catch {
-      toast.show({ message: `${label}清理失败，请稍后重试`, type: "error" })
+      toast.show({ message: `${label}清理失败，请稍后重试`, modal: false, type: "error" })
     } finally {
       setBusy(false)
     }

@@ -21,6 +21,22 @@ type ConversationMessagesData = InfiniteData<
   number | null
 >
 
+export function cacheBootstrappedConversationMessages(
+  queryClient: QueryClient,
+  target: AuthenticatedTarget,
+  pages: ReadonlyMap<string, ClientMessageList>
+) {
+  for (const [conversationId, page] of pages) {
+    queryClient.setQueryData<ConversationMessagesData>(
+      queryKeys.conversationMessages(target, conversationId),
+      (current) =>
+        current
+          ? replaceLatestConversationPage(current, page)
+          : { pageParams: [null], pages: [page] }
+    )
+  }
+}
+
 export async function hydrateConversationMessagesQuery(
   queryClient: QueryClient,
   target: AuthenticatedTarget,
@@ -29,17 +45,15 @@ export async function hydrateConversationMessagesQuery(
 ) {
   const queryKey = queryKeys.conversationMessages(target, conversationId)
   const current = queryClient.getQueryData<ConversationMessagesData>(queryKey)
-  if (current !== undefined) {
-    if (current.pages.length > 1) {
-      queryClient.setQueryData<ConversationMessagesData>(
-        queryKey,
-        compactConversationMessagesData
-      )
-      return true
-    }
-    return false
+  if (current?.pages.length && current.pages.length > 1) {
+    queryClient.setQueryData<ConversationMessagesData>(
+      queryKey,
+      compactConversationMessagesData
+    )
   }
 
+  // Query presence only means a snapshot was cached. Runtime/SQLite may have
+  // advanced since then (including bootstrap work that finished after timeout).
   const page = await messageManager.readLatestPage(
     target,
     conversationId,
@@ -47,17 +61,14 @@ export async function hydrateConversationMessagesQuery(
   )
   if (page.messages.length === 0) return false
 
-  let hydrated = false
   queryClient.setQueryData<ConversationMessagesData>(
     queryKey,
-    (latest) => {
-      if (latest !== undefined) return latest
-
-      hydrated = true
-      return { pageParams: [null], pages: [page] }
-    }
+    (latest) =>
+      latest
+        ? replaceLatestConversationPage(latest, page)
+        : { pageParams: [null], pages: [page] }
   )
-  return hydrated
+  return true
 }
 
 export function compactConversationMessagesQuery(

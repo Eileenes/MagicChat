@@ -53,7 +53,7 @@ async function flushBatch(batchKey: string, batch: ReadUrlBatch) {
   const fileIds = Array.from(batch.requests.keys())
 
   try {
-    const values = await fetchResourceReadUrls(batch.session.url, fileIds)
+    const values = await fetchResourceReadUrls(batch.session, fileIds)
     const valuesById = new Map(values.map((value) => [value.fileId, value]))
 
     for (const [fileId, request] of batch.requests) {

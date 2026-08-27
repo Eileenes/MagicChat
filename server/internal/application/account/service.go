@@ -234,10 +234,36 @@ func (s *Service) Logout(ctx context.Context, cmd LogoutCommand) error {
 	if token == "" {
 		return nil
 	}
-	if err := s.db.WithContext(ctx).
-		Where("token_hash = ?", auth.HashSessionToken(token)).
-		Delete(&store.UserSession{}).Error; err != nil {
+	found := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		installationID := strings.TrimSpace(cmd.InstallationID)
+		if installationID != "" {
+			if err := store.LockMobilePushInstallation(tx, installationID); err != nil {
+				return err
+			}
+		}
+		var session store.UserSession
+		result := tx.Where("token_hash = ?", auth.HashSessionToken(token)).Limit(1).Find(&session)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		found = true
+		if installationID != "" {
+			if err := tx.Where("user_id = ? AND installation_id = ?", session.UserID, installationID).
+				Delete(&store.UserPushGrant{}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Delete(&session).Error
+	})
+	if err != nil {
 		return internalError(err)
+	}
+	if cmd.RequireExisting && !found {
+		return unauthorized()
 	}
 	return nil
 }

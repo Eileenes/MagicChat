@@ -19,6 +19,7 @@ Implemented:
 - bounded retention for jobs, grants, and abandoned installations
 - invalid-device revocation behavior
 - APNs HTTP/2 provider with token authentication, sandbox/production routing, collapse IDs, and error classification
+- JPush Android REST provider with RegistrationID targeting, fixed anonymous extras, TTL forwarding, and error classification
 - fake provider for local and automated testing
 - `/api`-scoped health, metrics, OpenAPI, and v1 routes
 
@@ -26,13 +27,13 @@ The private MagicChat server integration is implemented with a fixed production 
 
 Not implemented yet:
 
-- JPush/Getui provider
+- JPush OEM-channel real-device validation and Getui fallback evaluation
 - provider delivery-receipt polling
 - mobile installation and grant lifecycle integration
 
 ## Run locally
 
-Set the variables documented in `.env.example`, create the PostgreSQL database, then run. `PUSH_PROVIDERS` is required explicitly so a production deployment cannot silently fall back to the fake provider:
+Set the variables documented in `.env.example`, create the PostgreSQL database, then run. `PUSH_PROVIDERS` is required explicitly so a production deployment cannot silently fall back to the fake provider. Use `apns,jpush` for the official iOS and Android channels; JPush additionally requires `JPUSH_APP_KEY` and `JPUSH_MASTER_SECRET`:
 
 ```sh
 go run ./cmd/gateway
@@ -58,3 +59,12 @@ To rotate `DATA_ENCRYPTION_KEY`, move the old value into `DATA_ENCRYPTION_PREVIO
 - `GET /api/health/ready`
 - `GET /api/metrics`
 - `GET /api/openapi.json`
+
+`GET /api/metrics` exposes only anonymous operational aggregates:
+
+- `push_gateway_jobs{status}`
+- `push_gateway_grants{status}`
+- `push_gateway_installations{provider,platform,status}`
+- `push_gateway_oldest_pending_job_age_seconds`
+
+No installation ID, grant ID, provider token, route token, user identity, private-server address, conversation ID, or message ID is included.

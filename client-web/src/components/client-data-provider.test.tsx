@@ -1,5 +1,5 @@
 import * as React from "react"
-import { act, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -24,15 +24,24 @@ describe("ClientDataProvider", () => {
     const requestedIds: string[] = []
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
-      if (url === "/api/client/me") return Promise.resolve(jsonResponse(createCurrentUserResponse()))
-      if (url === "/api/client/contacts") return Promise.resolve(jsonResponse(createContactsResponse()))
-      if (url === "/api/client/conversations") return Promise.resolve(jsonResponse(createConversationsResponse(conversations)))
-      if (url === "/api/client/projects?limit=100") return Promise.resolve(jsonResponse(createProjectsResponse()))
-      const match = url.match(/^\/api\/client\/conversations\/(.+)\/messages\?limit=20$/)
+      if (url === "/api/client/me")
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      if (url === "/api/client/contacts")
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      if (url === "/api/client/conversations")
+        return Promise.resolve(
+          jsonResponse(createConversationsResponse(conversations))
+        )
+      if (url === "/api/client/projects?limit=100")
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      const match = url.match(
+        /^\/api\/client\/conversations\/(.+)\/messages\?limit=20$/
+      )
       if (match) {
         const id = match[1]
         requestedIds.push(id)
-        if (id === "conversation-3") return Promise.reject(new Error("failed preload"))
+        if (id === "conversation-3")
+          return Promise.reject(new Error("failed preload"))
         activeRequests += 1
         maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests)
         return new Promise<Response>((resolve) => {
@@ -48,7 +57,9 @@ describe("ClientDataProvider", () => {
 
     render(
       <MemoryRouter initialEntries={["/chat"]}>
-        <ClientDataProvider><BootstrapPreloadProbe /></ClientDataProvider>
+        <ClientDataProvider>
+          <BootstrapPreloadProbe />
+        </ClientDataProvider>
       </MemoryRouter>
     )
     await act(async () => undefined)
@@ -56,7 +67,10 @@ describe("ClientDataProvider", () => {
     expect(pending.size).toBe(5)
 
     while (requestedIds.length < 30) {
-      const [id, resolve] = pending.entries().next().value as [string, (response: Response) => void]
+      const [id, resolve] = pending.entries().next().value as [
+        string,
+        (response: Response) => void,
+      ]
       pending.delete(id)
       await act(async () => {
         resolve(jsonResponse(createMessagesResponseFor(id)))
@@ -64,7 +78,9 @@ describe("ClientDataProvider", () => {
     }
     for (const [id, resolve] of [...pending]) {
       pending.delete(id)
-      await act(async () => resolve(jsonResponse(createMessagesResponseFor(id))))
+      await act(async () =>
+        resolve(jsonResponse(createMessagesResponseFor(id)))
+      )
     }
     await act(async () => vi.advanceTimersByTimeAsync(1_000))
 
@@ -73,7 +89,9 @@ describe("ClientDataProvider", () => {
     expect(requestedIds).not.toContain("conversation-1")
     expect(screen.getByTestId("preloaded-count")).toHaveTextContent("29")
     expect(screen.getByTestId("failed-loaded")).toHaveTextContent("false")
-    expect(screen.getByTestId("latest-message")).toHaveTextContent("message-conversation-31")
+    expect(screen.getByTestId("latest-message")).toHaveTextContent(
+      "message-conversation-31"
+    )
   })
 
   it("refreshes workspace data including the directory", async () => {
@@ -150,6 +168,62 @@ describe("ClientDataProvider", () => {
     expect(conversationRequestCount).toBe(2)
   })
 
+  it("exposes restore refresh and restores a cached conversation omitted by the limited snapshot", async () => {
+    vi.useFakeTimers()
+    let conversationRequests = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === "/api/client/me")
+          return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+        if (url === "/api/client/contacts")
+          return Promise.resolve(jsonResponse(createContactsResponse()))
+        if (url === "/api/client/projects?limit=100")
+          return Promise.resolve(jsonResponse(createProjectsResponse()))
+        if (url === "/api/client/conversations") {
+          conversationRequests += 1
+          return Promise.resolve(
+            jsonResponse(
+              createConversationsResponse(
+                conversationRequests === 1
+                  ? [createConversationResponse("old-conversation")]
+                  : []
+              )
+            )
+          )
+        }
+        if (url.includes("/messages?limit=20")) {
+          return Promise.resolve(
+            jsonResponse(createMessagesResponseFor("old-conversation"))
+          )
+        }
+        return Promise.reject(new Error(`unexpected request: ${url}`))
+      })
+    )
+
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <ClientDataProvider>
+          <RestoreProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(1_000))
+    expect(screen.getByTestId("restore-action-type")).toHaveTextContent(
+      "function"
+    )
+    expect(screen.getByTestId("conversation-ids")).toHaveTextContent(
+      "old-conversation"
+    )
+    fireEvent.click(screen.getByText("remove cached"))
+    expect(screen.getByTestId("conversation-ids")).toBeEmptyDOMElement()
+    await act(async () => fireEvent.click(screen.getByText("remote restored")))
+    expect(screen.getByTestId("conversation-ids")).toHaveTextContent(
+      "old-conversation"
+    )
+  })
+
   it("loads friend requests with a friends-only directory", async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -180,14 +254,18 @@ describe("ClientDataProvider", () => {
         return Promise.resolve(
           jsonResponse({
             data: {
-              requests: [createFriendRequestResponse("request-1", "user-2", "user-1")],
+              requests: [
+                createFriendRequestResponse("request-1", "user-2", "user-1"),
+              ],
             },
             success: true,
           })
         )
       }
       if (url === "/api/client/friend-requests?direction=outgoing") {
-        return Promise.resolve(jsonResponse({ data: { requests: [] }, success: true }))
+        return Promise.resolve(
+          jsonResponse({ data: { requests: [] }, success: true })
+        )
       }
       if (url === "/api/client/users/resolve") {
         const body = JSON.parse(String(init?.body)) as { user_ids: string[] }
@@ -246,7 +324,12 @@ describe("ClientDataProvider", () => {
       if (url === "/api/client/contacts") {
         return Promise.resolve(
           jsonResponse({
-            data: { apps: [], directory_mode: "friends", groups: [], user_ids: [] },
+            data: {
+              apps: [],
+              directory_mode: "friends",
+              groups: [],
+              user_ids: [],
+            },
             success: true,
           })
         )
@@ -255,14 +338,18 @@ describe("ClientDataProvider", () => {
         return Promise.resolve(
           jsonResponse({
             data: {
-              requests: [createFriendRequestResponse("request-1", "user-2", "user-1")],
+              requests: [
+                createFriendRequestResponse("request-1", "user-2", "user-1"),
+              ],
             },
             success: true,
           })
         )
       }
       if (url === "/api/client/friend-requests?direction=outgoing") {
-        return Promise.resolve(jsonResponse({ data: { requests: [] }, success: true }))
+        return Promise.resolve(
+          jsonResponse({ data: { requests: [] }, success: true })
+        )
       }
       if (url === "/api/client/users/resolve") {
         const body = JSON.parse(String(init?.body)) as { user_ids: string[] }
@@ -847,9 +934,7 @@ function UserDirectoryProbe() {
         resolve users
       </button>
       <button
-        onClick={() =>
-          invalidateUsers(["user-2"], "2026-07-09T01:00:01Z")
-        }
+        onClick={() => invalidateUsers(["user-2"], "2026-07-09T01:00:01Z")}
         type="button"
       >
         invalidate user
@@ -874,6 +959,29 @@ function BootstrapPreloadProbe() {
       <div data-testid="latest-message">
         {getLatestCachedMessage?.("conversation-31")?.id}
       </div>
+    </>
+  )
+}
+
+function RestoreProbe() {
+  const { conversations, refreshRestoredConversation, removeConversation } =
+    useClientData()
+  return (
+    <>
+      <span data-testid="restore-action-type">
+        {typeof refreshRestoredConversation}
+      </span>
+      <span data-testid="conversation-ids">
+        {conversations.map(({ id }) => id).join(",")}
+      </span>
+      <button onClick={() => removeConversation("old-conversation")}>
+        remove cached
+      </button>
+      <button
+        onClick={() => void refreshRestoredConversation("old-conversation")}
+      >
+        remote restored
+      </button>
     </>
   )
 }

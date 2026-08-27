@@ -37,7 +37,7 @@ export function AddGroupMembersScreen() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "添加群成员失败，请稍后重试"
-      toast.show({ message, type: "error" })
+      toast.show({ message, modal: false, type: "error" })
     }
   }
 

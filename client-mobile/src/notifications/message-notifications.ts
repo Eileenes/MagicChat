@@ -1,38 +1,47 @@
 import type { QueryClient } from "@tanstack/react-query"
 import * as Notifications from "expo-notifications"
-import { Platform } from "react-native"
+import { AppState, Platform } from "react-native"
 
-import type {
-  ClientContactDirectory,
-  ClientConversation,
-  ClientMessage,
-  ClientMessageSender,
-  ClientUser,
-  ContactUser,
-} from "@/core/models"
+import type { ClientConversation, ClientMessage } from "@/core/models"
 import type { AuthenticatedTarget } from "@/core/server-target"
+import type { PushAccountIdentity } from "@/notifications/push-types"
 import { queryKeys } from "@/data/query"
-import {
-  createMessageMentionLabelResolver,
-  formatClientMessageBodySummary,
-} from "@/domain/messages/message-presenter"
-
+import { shouldShowMessageNotification } from "@/notifications/message-notification-policy"
 const MESSAGE_CHANNEL_ID = "messages"
 
 let notificationsAllowed = false
+let notificationPreparation: Promise<boolean> | null = null
 
 if (Platform.OS !== "web") {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
+    handleNotification: async () => {
+      const appIsActive = AppState.currentState === "active"
+      return {
+        shouldPlaySound: !appIsActive,
+        shouldSetBadge: false,
+        shouldShowBanner: !appIsActive,
+        shouldShowList: !appIsActive,
+      }
+    },
   })
 }
 
-export async function prepareMessageNotifications() {
+export function prepareMessageNotifications() {
+  if (notificationPreparation) return notificationPreparation
+  const operation = prepareMessageNotificationsOnce()
+  notificationPreparation = operation
+  void operation.then(
+    () => {
+      if (notificationPreparation === operation) notificationPreparation = null
+    },
+    () => {
+      if (notificationPreparation === operation) notificationPreparation = null
+    }
+  )
+  return operation
+}
+
+async function prepareMessageNotificationsOnce() {
   if (Platform.OS === "web") {
     return false
   }
@@ -59,116 +68,44 @@ export async function prepareMessageNotifications() {
 export async function showBackgroundMessageNotification(
   queryClient: QueryClient,
   server: AuthenticatedTarget,
-  message: ClientMessage
+  message: ClientMessage,
+  options: { notificationMuted?: boolean; identity?: PushAccountIdentity } = {}
 ) {
   if (Platform.OS === "web" || !notificationsAllowed) {
     return
   }
 
-  const currentUser = queryClient.getQueryData<ClientUser>(
-    queryKeys.currentUser(server)
-  )
-  if (currentUser && isMessageInitiatedByUser(message, currentUser.id)) {
-    return
-  }
-
-  const contacts = queryClient.getQueryData<ClientContactDirectory>(
-    queryKeys.contacts(server)
-  )
-  const usersById = queryClient.getQueryData<Record<string, ContactUser>>(
-    queryKeys.userProfiles(server)
-  )
   const conversations = queryClient.getQueryData<ClientConversation[]>(
     queryKeys.conversations(server)
   )
   const conversation = conversations?.find(
     (item) => item.id === message.conversationId
   )
-  const profileContacts = contacts
-    ? { ...contacts, users: Object.values(usersById ?? {}) }
-    : undefined
-  if (conversation?.notificationMuted) {
+  if (!shouldShowMessageNotification({
+    cachedConversationMuted: conversation?.notificationMuted,
+    message,
+    notificationMuted: options.notificationMuted,
+    recipientUserId: server.userId,
+  })) {
     return
   }
-  const resolveMentionLabel =
-    profileContacts && conversation && currentUser
-      ? createMessageMentionLabelResolver({
-          contacts: profileContacts,
-          conversation,
-          currentUser,
-        })
-      : () => undefined
-  const summary = formatClientMessageBodySummary(
-    message.body,
-    resolveMentionLabel
-  )
-    .trim()
-    .replace(/\s+/g, " ")
-  const senderName = getSenderName(
-    message.sender,
-    contacts,
-    conversation,
-    currentUser,
-    usersById
-  )
 
   await Notifications.scheduleNotificationAsync({
     content: {
-      body: `${senderName}: ${summary || "收到一条新消息"}`,
+      body: "你收到一条新消息",
       data: {
+        accountId: options.identity?.accountId,
         conversationId: message.conversationId,
+        generation: options.identity?.generation,
         serverId: server.id,
+        serverUrl: server.url,
+        userId: server.userId,
       },
       sound: "default",
-      title: conversation?.name || "MagicChat",
+      title: "即应",
     },
     identifier: message.id,
     trigger:
       Platform.OS === "android" ? { channelId: MESSAGE_CHANNEL_ID } : null,
   })
-}
-
-function getSenderName(
-  sender: ClientMessageSender,
-  contacts: ClientContactDirectory | undefined,
-  conversation: ClientConversation | undefined,
-  currentUser: ClientUser | undefined,
-  usersById: Readonly<Record<string, ContactUser>> | undefined
-) {
-  if (sender.type === "system") {
-    return "系统"
-  }
-  if (sender.id === currentUser?.id) {
-    return currentUser.nickname.trim() || currentUser.name
-  }
-
-  const contact =
-    sender.type === "app"
-      ? contacts?.apps.find((item) => item.id === sender.id)
-      : usersById?.[sender.id]
-  if (contact) {
-    return "nickname" in contact
-      ? contact.nickname.trim() || contact.name
-      : contact.name
-  }
-
-  const member = conversation?.members?.find((item) => item.id === sender.id)
-  return member
-    ? member.nickname.trim() || member.name
-    : sender.type === "app"
-      ? "智能应用"
-      : "新消息"
-}
-
-function isMessageInitiatedByUser(message: ClientMessage, userId: string) {
-  if (message.sender.type === "user") {
-    return message.sender.id === userId
-  }
-  if (message.body.type !== "system_event") {
-    return false
-  }
-  if (message.body.event === "group_members_invited") {
-    return message.body.inviter.id === userId
-  }
-  return message.body.actor.id === userId
 }

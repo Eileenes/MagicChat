@@ -9,14 +9,14 @@ import { useAuthenticatedSession } from "@/providers/auth-provider"
 import { ProjectList } from "@/features/projects/project-list"
 import { buildProjectListSections } from "@/features/projects/project-list-model"
 import { useXGUITheme } from "@/xgui"
-import { useClientData } from "@/providers/client-data-provider"
+import { useClientProjects, useClientSession } from "@/providers/client-data-provider"
 
 export function ProjectsScreen() {
   const { colors } = useXGUITheme()
   const router = useRouter()
   const session = useAuthenticatedSession()
+  const { currentUser } = useClientSession()
   const {
-    currentUser,
     hasMoreProjects,
     isProjectsLoading,
     isProjectsLoadingMore,
@@ -26,7 +26,7 @@ export function ProjectsScreen() {
     projects,
     projectsError,
     refreshProjects,
-  } = useClientData()
+  } = useClientProjects()
   const sections = useMemo(
     () => buildProjectListSections({ keyword: "", personalProject, projects }),
     [personalProject, projects]

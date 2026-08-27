@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest"
 
 import type { ClientConversation, ClientMessage } from "@/lib/client-data-api"
 import {
+  clearConversationRemovalState,
   compactConversationMessageState,
   createConversationMessageState,
   isConversationTopicVisibleInList,
+  isLatestConversationSnapshot,
   mergeConversationMessages,
+  mergeConversationSnapshot,
   orderConversations,
+  shouldReplaceConversationSnapshot,
 } from "@/lib/client-data-state"
 
 describe("compactConversationMessageState", () => {
@@ -48,6 +52,58 @@ describe("compactConversationMessageState", () => {
     }
 
     expect(compactConversationMessageState(state)).toBe(state)
+  })
+})
+
+describe("mergeConversationSnapshot", () => {
+  it("merges server updates and additions while retaining omitted local rows", () => {
+    const retained = createConversation("retained", "direct", "2026-07-01")
+    const oldShared = createConversation("shared", "direct", "2026-07-02")
+    const newShared = { ...oldShared, name: "server name" }
+    const added = createConversation("added", "direct", "2026-07-03")
+    const result = mergeConversationSnapshot(
+      [retained, oldShared],
+      [newShared, added]
+    )
+    expect(result.find(({ id }) => id === "shared")).toBe(newShared)
+    expect(new Set(result.map(({ id }) => id))).toEqual(
+      new Set(["retained", "shared", "added"])
+    )
+  })
+
+  it("keeps a newly opened direct conversation from an older snapshot", () => {
+    const opened = createConversation("new-direct", "direct", "2026-07-03")
+    expect(mergeConversationSnapshot([opened], [])).toContain(opened)
+  })
+
+  it("does not resurrect an explicitly removed conversation until restored", () => {
+    const removed = createConversation("removed", "direct", "2026-07-03")
+    const removedIds = new Set([removed.id])
+    expect(mergeConversationSnapshot([], [removed], removedIds)).toEqual([])
+    removedIds.delete(removed.id)
+    expect(mergeConversationSnapshot([], [removed], removedIds)).toContain(
+      removed
+    )
+  })
+
+  it("accepts only the latest concurrent snapshot response", () => {
+    expect(isLatestConversationSnapshot(1, 2)).toBe(false)
+    expect(isLatestConversationSnapshot(2, 2)).toBe(true)
+  })
+
+  it("clears account-scoped removed IDs and cached conversations", () => {
+    const conversation = createConversation("removed", "direct", "2026-07-03")
+    const removedIds = new Set([conversation.id])
+    const removedConversations = new Map([[conversation.id, conversation]])
+    clearConversationRemovalState(removedIds, removedConversations)
+    expect(removedIds.size).toBe(0)
+    expect(removedConversations.size).toBe(0)
+  })
+
+  it("replaces snapshots across accounts but merges for the same account", () => {
+    expect(shouldReplaceConversationSnapshot("user-a", "user-b")).toBe(true)
+    expect(shouldReplaceConversationSnapshot("user-a", "user-a")).toBe(false)
+    expect(shouldReplaceConversationSnapshot(null, "user-a")).toBe(true)
   })
 })
 

@@ -27,6 +27,7 @@ export function ClientConversationRealtimeSync() {
     handleIncomingMessageChoiceUpdate,
     handleIncomingMessageReactionsUpdate,
     refreshConversations,
+    refreshRestoredConversation,
     removeConversation,
     syncLoadedConversationMessages,
     updateConversationLastMentionedSeq,
@@ -139,13 +140,15 @@ export function ClientConversationRealtimeSync() {
   React.useEffect(() => {
     return subscribeRealtimeEvent("conversation.restored", (payload) => {
       try {
-        normalizeConversationRemovedEventPayload(payload)
-        void refreshConversations().catch(() => undefined)
+        const event = normalizeConversationRemovedEventPayload(payload)
+        void refreshRestoredConversation(event.conversationId).catch(
+          () => undefined
+        )
       } catch {
         // Ignore malformed realtime events. The websocket remains usable.
       }
     })
-  }, [refreshConversations, subscribeRealtimeEvent])
+  }, [refreshRestoredConversation, subscribeRealtimeEvent])
 
   React.useEffect(() => {
     return subscribeRealtimeEvent("conversation.mute_updated", (payload) => {

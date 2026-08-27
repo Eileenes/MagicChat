@@ -1,4 +1,6 @@
-import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-client"
+import type { AuthenticatedTarget } from "@/core/server-target"
+import { ApiRequestError, type ApiFetch } from "@/data/api-client"
+import { createProtectedApiClient } from "@/data/protected-api-client"
 import {
   normalizeClientMessage,
   normalizeClientMessageBody,
@@ -140,10 +142,10 @@ type ConversationRequestOptions = {
 }
 
 export async function fetchConversations(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationsResponse
   >("/api/client/conversations", {
     errorMessage: "加载会话列表失败",
@@ -159,12 +161,12 @@ export async function fetchConversations(
 }
 
 export async function setConversationPinned(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   pinned: boolean,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationPinResponse
   >(`/api/client/conversations/${encodeURIComponent(conversationId)}/pin`, {
     errorMessage: pinned ? "置顶会话失败" : "取消置顶失败",
@@ -186,12 +188,12 @@ export async function setConversationPinned(
 }
 
 export async function setConversationMuted(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   muted: boolean,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationMuteResponse
   >(`/api/client/conversations/${encodeURIComponent(conversationId)}/mute`, {
     errorMessage: muted ? "开启消息免打扰失败" : "取消消息免打扰失败",
@@ -210,11 +212,11 @@ export async function setConversationMuted(
 }
 
 export async function dismissConversation(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationDismissResponse
   >(`/api/client/conversations/${encodeURIComponent(conversationId)}`, {
     errorMessage: "删除对话失败",
@@ -230,11 +232,11 @@ export async function dismissConversation(
 }
 
 export async function leaveGroupConversation(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     GroupConversationActionResponse
   >(
     `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/leave`,
@@ -253,11 +255,11 @@ export async function leaveGroupConversation(
 }
 
 export async function dissolveGroupConversation(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     GroupConversationActionResponse
   >(`/api/client/conversations/groups/${encodeURIComponent(conversationId)}`, {
     errorMessage: "解散群聊失败",
@@ -273,12 +275,12 @@ export async function dissolveGroupConversation(
 }
 
 export async function addGroupConversationMembers(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   memberIds: string[],
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationActionResponse
   >(
     `/api/client/conversations/${encodeURIComponent(conversationId)}/members`,
@@ -295,11 +297,11 @@ export async function addGroupConversationMembers(
 }
 
 export async function createGroupConversation(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   memberIds: string[],
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationActionResponse
   >("/api/client/conversations/groups", {
     body: JSON.stringify({
@@ -317,12 +319,12 @@ export async function createGroupConversation(
 }
 
 export async function updateGroupConversationName(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   name: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationActionResponse
   >(
     `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/name`,
@@ -339,12 +341,12 @@ export async function updateGroupConversationName(
 }
 
 export async function updateGroupConversationAnnouncement(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   announcement: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationActionResponse
   >(
     `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/announcement`,
@@ -361,11 +363,11 @@ export async function updateGroupConversationAnnouncement(
 }
 
 export async function openDirectConversation(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   userId: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationActionResponse
   >("/api/client/conversations/direct", {
     body: JSON.stringify({ user_id: userId }),
@@ -379,11 +381,11 @@ export async function openDirectConversation(
 }
 
 export async function openAppConversation(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   appId: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationActionResponse
   >("/api/client/conversations/apps", {
     body: JSON.stringify({ app_id: appId }),
@@ -397,11 +399,11 @@ export async function openAppConversation(
 }
 
 export async function joinGroupConversation(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationActionResponse
   >(
     `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/join`,
@@ -416,11 +418,11 @@ export async function joinGroupConversation(
 }
 
 export async function fetchConversationTopic(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   options: ConversationRequestOptions = {}
 ): Promise<ClientTopicDetail> {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationTopicDetailResponse
   >(`/api/client/conversations/topics/${encodeURIComponent(conversationId)}`, {
     errorMessage: "加载话题失败",
@@ -447,7 +449,7 @@ export async function fetchConversationTopic(
 
   let sourceReply = normalizeClientMessageReply(source.reply_to)
   if (!sourceReply && !source.revoked_at) {
-    const sourcePage = await createApiClient(serverUrl, options.fetcher).request<{
+    const sourcePage = await createProtectedApiClient(target, options.fetcher).request<{
       messages?: unknown[]
     }>(
       `/api/client/conversations/${encodeURIComponent(parent.id)}/messages?before_seq=${source.seq + 1}&limit=1`,
@@ -495,12 +497,12 @@ export async function fetchConversationTopic(
 }
 
 export async function createConversationTopic(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   messageId: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationCreateTopicResponse
   >(
     `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/topic`,
@@ -521,11 +523,11 @@ export async function createConversationTopic(
 }
 
 export async function archiveConversationTopic(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   conversationId: string,
   options: ConversationRequestOptions = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ConversationActionResponse
   >(
     `/api/client/conversations/topics/${encodeURIComponent(conversationId)}/archive`,

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { AppProviders } from "@/providers/app-providers"
 import { useAuth } from "@/providers/auth-provider"
 import { useServers } from "@/providers/server-provider"
+import { useClientDataStatus } from "@/providers/client-data-provider"
 
 const MINIMUM_SPLASH_TIME_MS = 2_000
 
@@ -18,6 +19,7 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="init" />
         <Stack.Screen name="login" />
+        <Stack.Screen name="account-management" />
         <Stack.Screen name="server-management" />
         <Stack.Screen name="server-editor" />
         <Stack.Screen name="(app)" />
@@ -34,6 +36,7 @@ function NativeSplashController() {
   const pathname = usePathname()
   const { isAuthenticated, isHydrated: isAuthHydrated } = useAuth()
   const { isHydrated: areServersHydrated } = useServers()
+  const { isMessageBootstrapComplete } = useClientDataStatus()
   const [minimumTimeElapsed, setMinimumTimeElapsed] = useState(false)
 
   useEffect(() => {
@@ -49,6 +52,7 @@ function NativeSplashController() {
       !isAuthHydrated ||
       !areServersHydrated ||
       !minimumTimeElapsed ||
+      (isAuthenticated && !isMessageBootstrapComplete) ||
       pathname === "/" ||
       pathname === "/init"
     ) {
@@ -56,8 +60,9 @@ function NativeSplashController() {
     }
 
     const routeIsReady = isAuthenticated
-      ? pathname !== "/login"
+      ? true
       : pathname === "/login" ||
+        pathname === "/account-management" ||
         pathname === "/server-editor" ||
         pathname === "/server-management"
     if (!routeIsReady) return
@@ -67,6 +72,7 @@ function NativeSplashController() {
     areServersHydrated,
     isAuthenticated,
     isAuthHydrated,
+    isMessageBootstrapComplete,
     minimumTimeElapsed,
     pathname,
   ])

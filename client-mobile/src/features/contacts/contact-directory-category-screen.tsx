@@ -12,7 +12,7 @@ import {
 } from "@/features/contacts/contact-directory-model"
 import { buildEntityDetailHref } from "@/navigation/entity-details"
 import { useAuthenticatedSession } from "@/providers/auth-provider"
-import { useClientData } from "@/providers/client-data-provider"
+import { useClientContacts } from "@/providers/client-data-provider"
 import { useXGUITheme } from "@/xgui"
 
 export function ContactDirectoryCategoryScreen() {
@@ -23,7 +23,7 @@ export function ContactDirectoryCategoryScreen() {
   const {
     contacts,
     contactsError,
-  } = useClientData()
+  } = useClientContacts()
   const categoryValue = Array.isArray(params.category)
     ? params.category[0]
     : params.category

@@ -12,12 +12,46 @@ import (
 )
 
 const (
-	UserSessionCookieName = "user_session"
-	currentAccountKey     = "api.client.current_account"
-	maxAvatarRequestBytes = 2 * 1024 * 1024
+	UserSessionCookieName    = "user_session"
+	PushInstallationIDHeader = "X-Push-Installation-ID"
+	currentAccountKey        = "api.client.current_account"
+	currentSessionKey        = "api.client.current_session"
+	maxAvatarRequestBytes    = 2 * 1024 * 1024
 )
 
 type AuthenticatedHook func(echo.Context, account.AuthenticatedSession)
+
+type sessionCredential struct {
+	token  string
+	source string
+}
+
+func sessionCredentialFromRequest(r *http.Request) (sessionCredential, bool) {
+	values, present := r.Header[http.CanonicalHeaderKey("Authorization")]
+	if present {
+		if len(values) != 1 {
+			return sessionCredential{}, false
+		}
+		value := values[0]
+		const prefix = "Bearer "
+		if !strings.HasPrefix(value, prefix) || len(value) == len(prefix) {
+			return sessionCredential{}, false
+		}
+		token := value[len(prefix):]
+		for _, character := range token {
+			if character <= ' ' || character >= 0x7f || character == ',' {
+				return sessionCredential{}, false
+			}
+		}
+		return sessionCredential{token: token, source: "bearer"}, true
+	}
+
+	cookie, err := r.Cookie(UserSessionCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return sessionCredential{}, true
+	}
+	return sessionCredential{token: cookie.Value, source: "cookie"}, true
+}
 
 type AccountAPI struct {
 	accounts        account.ClientService
@@ -47,8 +81,14 @@ type accountResponse struct {
 	CreatedAt    time.Time `json:"created_at" format:"date-time"`
 }
 
+type mobileSessionResponse struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at" format:"date-time"`
+}
+
 type accountEnvelope struct {
-	Account accountResponse `json:"user"`
+	Account       accountResponse        `json:"user"`
+	MobileSession *mobileSessionResponse `json:"mobile_session,omitempty"`
 }
 
 type successEnvelope struct {
@@ -87,16 +127,17 @@ func (a *AccountAPI) RegisterProtectedRoutes(group *echo.Group) {
 
 func (a *AccountAPI) RequireSession(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		cookie, err := c.Cookie(UserSessionCookieName)
-		if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		credential, valid := sessionCredentialFromRequest(c.Request())
+		if !valid || credential.token == "" {
 			return writeFailure(c, http.StatusUnauthorized, string(account.CodeUnauthorized), "未登录")
 		}
 
-		session, err := a.sessions.AuthenticateSession(c.Request().Context(), cookie.Value)
+		session, err := a.sessions.AuthenticateSession(c.Request().Context(), credential.token)
 		if err != nil {
 			return writeAccountError(c, err)
 		}
 		c.Set(currentAccountKey, session.Account)
+		c.Set(currentSessionKey, session)
 		if a.onAuthenticated != nil {
 			a.onAuthenticated(c, session)
 		}
@@ -107,10 +148,11 @@ func (a *AccountAPI) RequireSession(next echo.HandlerFunc) echo.HandlerFunc {
 // login godoc
 //
 // @Summary 普通用户登录
-// @Description 普通用户使用管理员创建的邮箱和密码登录。
+// @Description 普通用户使用管理员创建的邮箱和密码登录。仅 Native Mobile 在发送 X-Dianbao-Mobile-Session: 1 且请求不带 Origin 时，响应 data 才可包含可选 mobile_session；普通 Web 响应不保证且不会要求该字段。
 // @Tags 客户端认证
 // @Accept json
 // @Produce json
+// @Param X-Dianbao-Mobile-Session header string false "Native Mobile Session 能力版本；仅值 1 启用可选 mobile_session 响应（带 Origin 时忽略）" Enums(1)
 // @Param body body loginRequest true "登录参数"
 // @Success 200 {object} successEnvelope{data=accountEnvelope}
 // @Failure 400 {object} errorEnvelope
@@ -134,24 +176,37 @@ func (a *AccountAPI) login(c echo.Context) error {
 	}
 
 	setSessionCookie(c, result.Session.Token, result.Session.ExpiresAt)
-	return writeSuccess(c, http.StatusOK, accountEnvelope{Account: newAccountResponse(result.Account)})
+	response := accountEnvelope{Account: newAccountResponse(result.Account)}
+	if supportsMobileSessionResponse(c.Request()) {
+		response.MobileSession = &mobileSessionResponse{
+			Token: result.Session.Token, ExpiresAt: result.Session.ExpiresAt,
+		}
+	}
+	return writeSuccess(c, http.StatusOK, response)
 }
 
 // logout godoc
 //
 // @Summary 普通用户退出登录
-// @Description 删除当前普通用户会话并清除客户端登录 Cookie。重复调用也会返回成功。
+// @Description 精确撤销本请求解析出的一个 Session 并清除兼容 Cookie；Bearer 优先，存在但无效时返回 401 且不回退 Cookie。Mobile 客户端将 401/已失效 Session 作为幂等注销完成。
 // @Tags 客户端认证
 // @Produce json
+// @Param X-Push-Installation-ID header string false "当前推送安装实例 ID"
 // @Success 200 {object} successEnvelope
+// @Failure 401 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/auth/logout [post]
 func (a *AccountAPI) logout(c echo.Context) error {
-	var token string
-	if cookie, err := c.Cookie(UserSessionCookieName); err == nil {
-		token = cookie.Value
+	credential, valid := sessionCredentialFromRequest(c.Request())
+	if !valid {
+		return writeFailure(c, http.StatusUnauthorized, string(account.CodeUnauthorized), "未登录")
 	}
-	if err := a.accounts.Logout(c.Request().Context(), account.LogoutCommand{Token: token}); err != nil {
+	if err := a.accounts.Logout(c.Request().Context(), account.LogoutCommand{
+		Token: credential.token, InstallationID: c.Request().Header.Get(PushInstallationIDHeader),
+		RequireExisting: credential.source == "bearer",
+	}); err != nil {
 		return writeAccountError(c, err)
 	}
 
@@ -261,6 +316,11 @@ func CurrentAccount(c echo.Context) (account.Account, bool) {
 	return current, ok
 }
 
+func CurrentAccountSession(c echo.Context) (account.AuthenticatedSession, bool) {
+	current, ok := c.Get(currentSessionKey).(account.AuthenticatedSession)
+	return current, ok
+}
+
 func newAccountResponse(value account.Account) accountResponse {
 	var lastOnlineAt *string
 	if value.LastOnlineAt != nil {
@@ -288,6 +348,7 @@ func setSessionCookie(c echo.Context, token string, expiresAt time.Time) {
 		Expires:  expiresAt,
 		MaxAge:   int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true,
+		Secure:   requestUsesHTTPS(c.Request()),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -300,8 +361,13 @@ func clearSessionCookie(c echo.Context) {
 		Expires:  time.Unix(0, 0).UTC(),
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   requestUsesHTTPS(c.Request()),
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func requestUsesHTTPS(request *http.Request) bool {
+	return request.TLS != nil || strings.EqualFold(strings.TrimSpace(request.Header.Get("X-Forwarded-Proto")), "https")
 }
 
 func writeSuccess(c echo.Context, status int, data any) error {

@@ -1,6 +1,8 @@
+import type { AuthenticatedTarget } from "@/core/server-target"
 import { File } from "expo-file-system"
 
-import { ApiRequestError, createApiClient, type ApiFetch } from "@/data/api-client"
+import { ApiRequestError, type ApiFetch } from "@/data/api-client"
+import { createProtectedApiClient } from "@/data/protected-api-client"
 import type { ClientUser } from "@/core/models"
 import { createNicknameRequest } from "@/domain/users/profile-edit"
 
@@ -19,34 +21,34 @@ type CurrentUserResponse = {
 }
 
 export async function updateCurrentUserNickname(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   nickname: string,
   options: { fetcher?: ApiFetch } = {}
 ) {
-  await createApiClient(serverUrl, options.fetcher).request("/api/client/me", {
+  await createProtectedApiClient(target, options.fetcher).request("/api/client/me", {
     ...createNicknameRequest(nickname),
     errorMessage: "修改昵称失败",
   })
 }
 
 export async function uploadCurrentUserAvatar(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   uri: string,
   options: { fetcher?: ApiFetch } = {}
 ) {
   const formData = new FormData()
   formData.set("file", new File(uri), "avatar.webp")
-  await createApiClient(serverUrl, options.fetcher).request(
+  await createProtectedApiClient(target, options.fetcher).request(
     "/api/client/me/avatar",
     { body: formData, errorMessage: "上传头像失败", method: "POST" }
   )
 }
 
 export async function fetchCurrentUser(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   options: { fetcher?: ApiFetch; signal?: AbortSignal } = {}
 ) {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     CurrentUserResponse
   >("/api/client/me", {
     errorMessage: "加载当前用户失败",

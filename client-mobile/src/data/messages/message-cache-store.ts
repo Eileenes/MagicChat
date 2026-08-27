@@ -1,4 +1,4 @@
-import type { SQLiteDatabase } from "expo-sqlite"
+import { databaseService, type DatabaseWriter } from "@/data/database/database-service"
 
 import type {
   ClientMessage,
@@ -8,9 +8,9 @@ import type {
   MessageReactionsUpdatedEvent,
   MessageReactionSnapshot,
 } from "@/core/models"
-import { getMessageCacheDatabase } from "@/data/messages/message-cache-database"
 import { applyChoiceMessageTombstone } from "@/data/messages/message-tombstones"
 import type { AuthenticatedTarget, ServerTarget } from "@/core/server-target"
+import { createServerKey } from "@/data/server-key"
 import {
   applyMessageChoiceEvent,
   applyMessageChoiceSnapshot,
@@ -29,6 +29,10 @@ const CACHE_MAINTENANCE_INTERVAL_MS = 60_000
 type CachedMessageRow = {
   payload_bytes: number
   payload_json: string
+}
+
+type CachedMessageIdentityRow = {
+  message_id: string
 }
 
 type CacheStatsRow = {
@@ -54,9 +58,7 @@ export type MessageSyncState = {
   oldestCachedSeq: number | null
 }
 
-export function createMessageServerKey(server: ServerTarget) {
-  return JSON.stringify([server.id, server.url])
-}
+export const createMessageServerKey = createServerKey
 
 export async function readLatestCachedMessages(
   target: AuthenticatedTarget,
@@ -79,10 +81,7 @@ export async function getMessageSyncState(
   target: AuthenticatedTarget,
   conversationId: string
 ): Promise<MessageSyncState | null> {
-  const database = await getMessageCacheDatabase()
-  if (!database) return null
-
-  const row = await database.getFirstAsync<SyncStateRow>(
+  const row = await databaseService.read("messages.sync-state.read", (database) => database.getFirst<SyncStateRow>(
     `SELECT conversation_id, http_synced_through_seq, oldest_cached_seq,
             has_more_before, last_synced_at, last_accessed_at
        FROM message_sync_state
@@ -90,7 +89,7 @@ export async function getMessageSyncState(
     createMessageServerKey(target),
     target.userId,
     conversationId
-  )
+  ))
 
   return row ? mapSyncState(row) : null
 }
@@ -98,17 +97,14 @@ export async function getMessageSyncState(
 export async function listMessageSyncStates(
   target: AuthenticatedTarget
 ): Promise<MessageSyncState[]> {
-  const database = await getMessageCacheDatabase()
-  if (!database) return []
-
-  const rows = await database.getAllAsync<SyncStateRow>(
+  const rows = await databaseService.read("messages.sync-states.list", (database) => database.getAll<SyncStateRow>(
     `SELECT conversation_id, http_synced_through_seq, oldest_cached_seq,
             has_more_before, last_synced_at, last_accessed_at
        FROM message_sync_state
       WHERE server_key = ? AND user_id = ?`,
     createMessageServerKey(target),
     target.userId
-  )
+  ))
 
   return rows.map(mapSyncState)
 }
@@ -117,11 +113,10 @@ export async function persistRealtimeMessages(
   target: AuthenticatedTarget,
   messages: ClientMessage[]
 ) {
-  const database = await getMessageCacheDatabase()
-  if (!database || messages.length === 0) return
+  if (messages.length === 0) return
 
   const grouped = groupMessagesByConversation(messages)
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     for (const [conversationId, conversationMessages] of grouped) {
       await upsertMessages(transaction, target, conversationMessages)
       await ensureSyncState(transaction, target, conversationId, Date.now())
@@ -136,10 +131,8 @@ export async function persistLatestHttpPage(
   conversationId: string,
   result: ClientMessageList
 ) {
-  const database = await getMessageCacheDatabase()
-  if (!database) return
-
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  assertMessagesBelongToConversation(conversationId, result.messages)
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     const now = Date.now()
     await upsertMessages(transaction, target, result.messages)
     const state = await readSyncStateRow(transaction, target, conversationId)
@@ -173,10 +166,8 @@ export async function persistBeforeHttpPage(
   requestedBeforeSeq: number,
   result: ClientMessageList
 ) {
-  const database = await getMessageCacheDatabase()
-  if (!database) return
-
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  assertMessagesBelongToConversation(conversationId, result.messages)
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     const state = await readSyncStateRow(transaction, target, conversationId)
     const updatesHistoryBoundary =
       !state ||
@@ -205,13 +196,9 @@ export async function persistAfterHttpPage(
   requestedAfterSeq: number,
   result: ClientMessageList
 ) {
-  const database = await getMessageCacheDatabase()
-  if (!database) {
-    return newestSeqAfter(requestedAfterSeq, result)
-  }
-
+  assertMessagesBelongToConversation(conversationId, result.messages)
   let committedSeq = requestedAfterSeq
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     const state = await readSyncStateRow(transaction, target, conversationId)
     const currentCursor = state?.http_synced_through_seq ?? requestedAfterSeq
     await upsertMessages(transaction, target, result.messages)
@@ -312,26 +299,23 @@ export async function removeConversationMessageCache(
   target: AuthenticatedTarget,
   conversationId: string
 ) {
-  const database = await getMessageCacheDatabase()
-  if (!database) return
-
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     const serverKey = createMessageServerKey(target)
-    await transaction.runAsync(
+    await transaction.run(
       `DELETE FROM cached_messages
         WHERE server_key = ? AND user_id = ? AND conversation_id = ?`,
       serverKey,
       target.userId,
       conversationId
     )
-    await transaction.runAsync(
+    await transaction.run(
       `DELETE FROM message_sync_state
         WHERE server_key = ? AND user_id = ? AND conversation_id = ?`,
       serverKey,
       target.userId,
       conversationId
     )
-    await transaction.runAsync(
+    await transaction.run(
       `DELETE FROM message_cache_stats
         WHERE server_key = ? AND user_id = ? AND conversation_id = ?`,
       serverKey,
@@ -342,20 +326,17 @@ export async function removeConversationMessageCache(
 }
 
 export async function removeServerMessageCache(server: ServerTarget) {
-  const database = await getMessageCacheDatabase()
-  if (!database) return
-
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     const serverKey = createMessageServerKey(server)
-    await transaction.runAsync(
+    await transaction.run(
       "DELETE FROM cached_messages WHERE server_key = ?",
       serverKey
     )
-    await transaction.runAsync(
+    await transaction.run(
       "DELETE FROM message_sync_state WHERE server_key = ?",
       serverKey
     )
-    await transaction.runAsync(
+    await transaction.run(
       "DELETE FROM message_cache_stats WHERE server_key = ?",
       serverKey
     )
@@ -367,12 +348,9 @@ async function readCachedMessages(
   conversationId: string,
   input: { beforeSeq?: number; limit: number }
 ) {
-  const database = await getMessageCacheDatabase()
-  if (!database) return []
-
   const serverKey = createMessageServerKey(target)
-  const rows = input.beforeSeq === undefined
-    ? await database.getAllAsync<CachedMessageRow>(
+  const rows = await databaseService.read("messages.page.read", async (database) => input.beforeSeq === undefined
+    ? database.getAll<CachedMessageRow>(
         `SELECT payload_json FROM cached_messages
           WHERE server_key = ? AND user_id = ? AND conversation_id = ?
           ORDER BY seq DESC LIMIT ?`,
@@ -381,7 +359,7 @@ async function readCachedMessages(
         conversationId,
         input.limit
       )
-    : await database.getAllAsync<CachedMessageRow>(
+    : await database.getAll<CachedMessageRow>(
         `SELECT payload_json FROM cached_messages
           WHERE server_key = ? AND user_id = ? AND conversation_id = ?
             AND seq < ?
@@ -398,16 +376,16 @@ async function readCachedMessages(
         target.userId,
         conversationId,
         input.limit
-      )
+      ))
 
-  await database.runAsync(
+  void databaseService.write("messages.access.touch", (database) => database.run(
     `UPDATE message_sync_state SET last_accessed_at = ?
       WHERE server_key = ? AND user_id = ? AND conversation_id = ?`,
     Date.now(),
     serverKey,
     target.userId,
     conversationId
-  )
+  )).catch(() => undefined)
 
   return rows.flatMap((row) => {
     try {
@@ -419,7 +397,7 @@ async function readCachedMessages(
 }
 
 async function upsertMessages(
-  database: SQLiteDatabase,
+  database: DatabaseWriter,
   target: AuthenticatedTarget,
   messages: ClientMessage[]
 ) {
@@ -430,7 +408,7 @@ async function upsertMessages(
     const incoming = applyChoiceMessageTombstone(target, candidate)
     if (!incoming) continue
 
-    const existing = await database.getFirstAsync<CachedMessageRow>(
+    const existing = await database.getFirst<CachedMessageRow>(
       `SELECT payload_json,
               LENGTH(CAST(payload_json AS BLOB)) AS payload_bytes
          FROM cached_messages
@@ -445,9 +423,24 @@ async function upsertMessages(
     const message = current
       ? preserveNewerMessageState(current, incoming)
       : incoming
+
+    // A server race or legacy bad row can assign one seq to two IDs. Keep the
+    // already committed identity: replacing it could overwrite a newer or
+    // reaction-enriched message, while skipping only the conflicting candidate
+    // lets the rest of this page commit.
+    const seqOwner = await database.getFirst<CachedMessageIdentityRow>(
+      `SELECT message_id FROM cached_messages
+        WHERE server_key = ? AND user_id = ? AND conversation_id = ? AND seq = ?`,
+      serverKey,
+      target.userId,
+      message.conversationId,
+      message.seq
+    )
+    if (seqOwner && seqOwner.message_id !== message.id) continue
+
     const payload = JSON.stringify(message)
 
-    await database.runAsync(
+    await database.run(
       `INSERT INTO cached_messages (
           server_key, user_id, conversation_id, message_id, seq,
           reaction_version, payload_json, created_at, cached_at
@@ -486,12 +479,9 @@ export async function updatePersistedMessage(
   messageId: string,
   update: (message: ClientMessage) => ClientMessage
 ) {
-  const database = await getMessageCacheDatabase()
-  if (!database) return
-
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     const serverKey = createMessageServerKey(target)
-    const row = await transaction.getFirstAsync<CachedMessageRow>(
+    const row = await transaction.getFirst<CachedMessageRow>(
       `SELECT payload_json,
               LENGTH(CAST(payload_json AS BLOB)) AS payload_bytes
          FROM cached_messages
@@ -509,7 +499,7 @@ export async function updatePersistedMessage(
     if (message === current) return
     const payload = JSON.stringify(message)
 
-    await transaction.runAsync(
+    await transaction.run(
       `UPDATE cached_messages
           SET reaction_version = ?, payload_json = ?, cached_at = ?
         WHERE server_key = ? AND user_id = ? AND conversation_id = ?
@@ -538,12 +528,9 @@ export async function removePersistedMessage(
   conversationId: string,
   messageId: string
 ) {
-  const database = await getMessageCacheDatabase()
-  if (!database) return
-
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     const serverKey = createMessageServerKey(target)
-    const row = await transaction.getFirstAsync<CachedMessageRow>(
+    const row = await transaction.getFirst<CachedMessageRow>(
       `SELECT payload_json,
               LENGTH(CAST(payload_json AS BLOB)) AS payload_bytes
          FROM cached_messages
@@ -556,7 +543,7 @@ export async function removePersistedMessage(
     )
     if (!row) return
 
-    await transaction.runAsync(
+    await transaction.run(
       `DELETE FROM cached_messages
         WHERE server_key = ? AND user_id = ? AND conversation_id = ?
           AND message_id = ?`,
@@ -572,7 +559,7 @@ export async function removePersistedMessage(
       -1,
       -row.payload_bytes
     )
-    await transaction.runAsync(
+    await transaction.run(
       `DELETE FROM message_cache_stats
         WHERE server_key = ? AND user_id = ? AND conversation_id = ?
           AND message_count = 0`,
@@ -584,12 +571,12 @@ export async function removePersistedMessage(
 }
 
 async function ensureSyncState(
-  database: SQLiteDatabase,
+  database: DatabaseWriter,
   target: AuthenticatedTarget,
   conversationId: string,
   accessedAt: number
 ) {
-  await database.runAsync(
+  await database.run(
     `INSERT INTO message_sync_state (
        server_key, user_id, conversation_id, last_accessed_at
      ) VALUES (?, ?, ?, ?)
@@ -603,11 +590,11 @@ async function ensureSyncState(
 }
 
 async function readSyncStateRow(
-  database: SQLiteDatabase,
+  database: DatabaseWriter,
   target: AuthenticatedTarget,
   conversationId: string
 ) {
-  return database.getFirstAsync<SyncStateRow>(
+  return database.getFirst<SyncStateRow>(
     `SELECT conversation_id, http_synced_through_seq, oldest_cached_seq,
             has_more_before, last_synced_at, last_accessed_at
        FROM message_sync_state
@@ -619,12 +606,12 @@ async function readSyncStateRow(
 }
 
 async function writeSyncState(
-  database: SQLiteDatabase,
+  database: DatabaseWriter,
   target: AuthenticatedTarget,
   conversationId: string,
   state: Omit<MessageSyncState, "conversationId">
 ) {
-  await database.runAsync(
+  await database.run(
     `INSERT INTO message_sync_state (
        server_key, user_id, conversation_id, http_synced_through_seq,
        oldest_cached_seq, has_more_before, last_synced_at, last_accessed_at
@@ -647,7 +634,7 @@ async function writeSyncState(
 }
 
 async function trimConversation(
-  database: SQLiteDatabase,
+  database: DatabaseWriter,
   target: AuthenticatedTarget,
   conversationId: string
 ) {
@@ -659,7 +646,7 @@ async function trimConversation(
   )
   const stats = await readCacheStats(database, target, conversationId)
   if ((stats?.message_count ?? 0) > MAX_MESSAGES_PER_CONVERSATION) {
-    const trimmed = await database.getFirstAsync<CacheStatsRow>(
+    const trimmed = await database.getFirst<CacheStatsRow>(
       `SELECT COUNT(*) AS message_count,
               COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB))), 0)
                 AS payload_bytes
@@ -678,7 +665,7 @@ async function trimConversation(
       conversationId,
       MAX_MESSAGES_PER_CONVERSATION
     )
-    await database.runAsync(
+    await database.run(
       `DELETE FROM cached_messages
         WHERE server_key = ? AND user_id = ? AND conversation_id = ?
           AND message_id IN (
@@ -703,7 +690,7 @@ async function trimConversation(
     )
   }
   const oldest = previousState?.oldest_cached_seq
-    ? await database.getFirstAsync<{ seq: number | null }>(
+    ? await database.getFirst<{ seq: number | null }>(
         `SELECT MIN(seq) AS seq FROM cached_messages
           WHERE server_key = ? AND user_id = ? AND conversation_id = ?
             AND seq >= ?`,
@@ -718,7 +705,7 @@ async function trimConversation(
     previousState?.oldest_cached_seq &&
       (!oldestCachedSeq || oldestCachedSeq > previousState.oldest_cached_seq)
   )
-  await database.runAsync(
+  await database.run(
     `UPDATE message_sync_state
         SET oldest_cached_seq = ?,
             has_more_before = CASE WHEN ? = 1 THEN 1 ELSE has_more_before END
@@ -755,13 +742,10 @@ export async function waitForMessageCacheMaintenance() {
 }
 
 async function runMessageCacheMaintenance() {
-  const database = await getMessageCacheDatabase()
-  if (!database) return
-
-  await database.withExclusiveTransactionAsync(async (transaction) => {
+  await databaseService.transaction("messages.cache.transaction", async (transaction) => {
     let size = await getLogicalCacheSize(transaction)
     while (size > MAX_LOGICAL_CACHE_BYTES) {
-      const oldest = await transaction.getFirstAsync<{
+      const oldest = await transaction.getFirst<{
         conversation_id: string
         message_count: number
         payload_bytes: number
@@ -779,21 +763,21 @@ async function runMessageCacheMaintenance() {
       )
       if (!oldest) return
 
-      await transaction.runAsync(
+      await transaction.run(
         `DELETE FROM cached_messages
           WHERE server_key = ? AND user_id = ? AND conversation_id = ?`,
         oldest.server_key,
         oldest.user_id,
         oldest.conversation_id
       )
-      await transaction.runAsync(
+      await transaction.run(
         `DELETE FROM message_sync_state
           WHERE server_key = ? AND user_id = ? AND conversation_id = ?`,
         oldest.server_key,
         oldest.user_id,
         oldest.conversation_id
       )
-      await transaction.runAsync(
+      await transaction.run(
         `DELETE FROM message_cache_stats
           WHERE server_key = ? AND user_id = ? AND conversation_id = ?`,
         oldest.server_key,
@@ -805,13 +789,13 @@ async function runMessageCacheMaintenance() {
         oldest.message_count * MESSAGE_ROW_OVERHEAD_BYTES
     }
   })
-  await database
-    .execAsync("PRAGMA optimize; PRAGMA wal_checkpoint(PASSIVE);")
-    .catch(() => undefined)
+  await databaseService.maintenance("messages.cache.optimize", (database) =>
+    database.exec("PRAGMA optimize; PRAGMA wal_checkpoint(PASSIVE);")
+  ).catch(() => undefined)
 }
 
-async function getLogicalCacheSize(database: SQLiteDatabase) {
-  const result = await database.getFirstAsync<{
+async function getLogicalCacheSize(database: DatabaseWriter) {
+  const result = await database.getFirst<{
     logical_bytes: number
   }>(
     `SELECT COALESCE(
@@ -825,11 +809,11 @@ async function getLogicalCacheSize(database: SQLiteDatabase) {
 }
 
 async function readCacheStats(
-  database: SQLiteDatabase,
+  database: DatabaseWriter,
   target: AuthenticatedTarget,
   conversationId: string
 ) {
-  return database.getFirstAsync<CacheStatsRow>(
+  return database.getFirst<CacheStatsRow>(
     `SELECT message_count, payload_bytes
        FROM message_cache_stats
       WHERE server_key = ? AND user_id = ? AND conversation_id = ?`,
@@ -840,14 +824,14 @@ async function readCacheStats(
 }
 
 async function updateCacheStats(
-  database: SQLiteDatabase,
+  database: DatabaseWriter,
   target: AuthenticatedTarget,
   conversationId: string,
   messageCountDelta: number,
   payload: string,
   previousPayloadBytesDelta: number
 ) {
-  await database.runAsync(
+  await database.run(
     `INSERT INTO message_cache_stats (
        server_key, user_id, conversation_id, message_count, payload_bytes
      ) VALUES (?, ?, ?, ?, LENGTH(CAST(? AS BLOB)) + ?)
@@ -864,13 +848,13 @@ async function updateCacheStats(
 }
 
 async function updateCacheStatsByDelta(
-  database: SQLiteDatabase,
+  database: DatabaseWriter,
   target: AuthenticatedTarget,
   conversationId: string,
   messageCountDelta: number,
   payloadBytesDelta: number
 ) {
-  await database.runAsync(
+  await database.run(
     `UPDATE message_cache_stats
         SET message_count = MAX(0, message_count + ?),
             payload_bytes = MAX(0, payload_bytes + ?)
@@ -881,6 +865,20 @@ async function updateCacheStatsByDelta(
     target.userId,
     conversationId
   )
+}
+
+function assertMessagesBelongToConversation(
+  conversationId: string,
+  messages: ClientMessage[]
+) {
+  const mismatched = messages.find(
+    (message) => message.conversationId !== conversationId
+  )
+  if (mismatched) {
+    throw new Error(
+      `消息缓存会话不一致: expected=${conversationId}, actual=${mismatched.conversationId}`
+    )
+  }
 }
 
 function groupMessagesByConversation(messages: ClientMessage[]) {

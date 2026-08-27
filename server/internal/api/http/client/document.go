@@ -96,7 +96,8 @@ func (a *DocumentAPI) RegisterRoutes(group *echo.Group) {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/documents [get]
 func (a *DocumentAPI) list(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -130,7 +131,8 @@ func (a *DocumentAPI) list(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/projects/{project_id}/documents [post]
 func (a *DocumentAPI) create(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -166,7 +168,8 @@ func (a *DocumentAPI) create(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/documents/{document_id} [get]
 func (a *DocumentAPI) get(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -196,7 +199,8 @@ func (a *DocumentAPI) get(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/documents/{document_id} [patch]
 func (a *DocumentAPI) update(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -234,7 +238,8 @@ func (a *DocumentAPI) update(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/documents/{document_id}/move [post]
 func (a *DocumentAPI) move(c echo.Context) error {
 	current, ok := CurrentAccount(c)
@@ -267,7 +272,8 @@ func (a *DocumentAPI) move(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
-// @Security UserSession
+// @Security BearerAuth
+// @Security CookieAuth
 // @Router /api/client/documents/{document_id} [delete]
 func (a *DocumentAPI) delete(c echo.Context) error {
 	current, ok := CurrentAccount(c)

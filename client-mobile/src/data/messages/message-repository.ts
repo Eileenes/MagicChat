@@ -1,175 +1,131 @@
-import { fetchConversationMessages } from "@/data/messages/messages-api"
-import type { ClientMessageList } from "@/core/models"
+import type { ClientMessage, ClientMessageList } from "@/core/models"
 import type { AuthenticatedTarget } from "@/core/server-target"
 import {
   getMessageSyncState,
   persistAfterHttpPage,
   persistBeforeHttpPage,
   persistLatestHttpPage,
+  persistRealtimeMessages,
   readCachedMessagesBefore,
   readLatestCachedMessages,
+  type MessageSyncState,
 } from "@/data/messages/message-cache-store"
+import { fetchConversationMessages } from "@/data/messages/messages-api"
 
-export async function loadLatestCachedMessagePage(
+/**
+ * Message persistence boundary. These methods are deliberately policy-free:
+ * every failure is propagated and callers choose fallback, telemetry and retry.
+ */
+export const messageRepository = {
+  fetchAfterRemote,
+  fetchBeforeRemote,
+  fetchLatestRemote,
+  persistAfter,
+  persistBefore,
+  persistLatest,
+  persistMessages,
+  readBeforeLocal,
+  readLatestLocal,
+  readSyncStateLocal,
+}
+
+export function readLatestLocal(
   target: AuthenticatedTarget,
   conversationId: string,
   limit: number
-): Promise<ClientMessageList | null> {
-  const [messages, state] = await Promise.all([
-    readLatestCachedMessages(target, conversationId, limit),
-    getMessageSyncState(target, conversationId),
-  ])
-  if (messages.length === 0) return null
-
-  return createCachedPage(messages, limit, state?.hasMoreBefore ?? true)
+): Promise<ClientMessage[]> {
+  return readLatestCachedMessages(target, conversationId, limit)
 }
 
-export async function loadCachedMessagePageBefore(
+export function readBeforeLocal(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  beforeSeq: number,
+  limit: number
+): Promise<ClientMessage[]> {
+  return readCachedMessagesBefore(target, conversationId, beforeSeq, limit)
+}
+
+export function readSyncStateLocal(
+  target: AuthenticatedTarget,
+  conversationId: string
+): Promise<MessageSyncState | null> {
+  return getMessageSyncState(target, conversationId)
+}
+
+export function fetchLatestRemote(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  limit: number,
+  options: { signal?: AbortSignal } = {}
+): Promise<ClientMessageList> {
+  return fetchConversationMessages(
+    target,
+    conversationId,
+    { limit },
+    options
+  )
+}
+
+export function fetchBeforeRemote(
   target: AuthenticatedTarget,
   conversationId: string,
   beforeSeq: number,
   limit: number,
-  fallbackHasMoreBefore?: boolean
-): Promise<ClientMessageList | null> {
-  const [messages, state] = await Promise.all([
-    readCachedMessagesBefore(
-      target,
-      conversationId,
-      beforeSeq,
-      limit
-    ),
-    getMessageSyncState(target, conversationId),
-  ])
-  if (messages.length === 0) {
-    return state?.hasMoreBefore === false
-      ? createCachedPage([], limit, false, true, beforeSeq)
-      : null
-  }
-
-  return createCachedPage(
-    messages,
-    limit,
-    messages.length >= limit
-      ? true
-      : (fallbackHasMoreBefore ?? state?.hasMoreBefore ?? true),
-    true,
-    beforeSeq
-  )
-}
-
-export async function fetchConversationMessagePage(
-  target: AuthenticatedTarget,
-  conversationId: string,
-  input: { beforeSeq?: number; limit: number },
   options: { signal?: AbortSignal } = {}
-) {
-  if (input.beforeSeq !== undefined) {
-    const state = await getMessageSyncState(target, conversationId).catch(
-      () => null
-    )
-    const canReadContiguousCache =
-      state !== null &&
-      state.httpSyncedThroughSeq > 0 &&
-      input.beforeSeq <= state.httpSyncedThroughSeq + 1
-    const messages = canReadContiguousCache
-      ? await readCachedMessagesBefore(
-          target,
-          conversationId,
-          input.beforeSeq,
-          input.limit
-        ).catch(() => [])
-      : []
-    if (
-      messages.length > 0 ||
-      (canReadContiguousCache && state.hasMoreBefore === false)
-    ) {
-      return createCachedPage(
-        messages,
-        input.limit,
-        messages.length > 0
-          ? messages.length >= input.limit || state?.hasMoreBefore !== false
-          : false,
-        true,
-        input.beforeSeq
-      )
-    }
-  }
-
-  const result = await fetchConversationMessages(
-    target.url,
+): Promise<ClientMessageList> {
+  return fetchConversationMessages(
+    target,
     conversationId,
-    input,
+    { beforeSeq, limit },
     options
   )
-  if (input.beforeSeq === undefined) {
-    await persistLatestHttpPage(target, conversationId, result).catch(
-      () => undefined
-    )
-  } else {
-    await persistBeforeHttpPage(
-      target,
-      conversationId,
-      input.beforeSeq!,
-      result
-    ).catch(() => undefined)
-  }
-  return result
 }
 
-export async function initializeConversationMessageSync(
-  target: AuthenticatedTarget,
-  conversationId: string,
-  limit: number
-) {
-  const result = await fetchConversationMessages(target.url, conversationId, {
-    limit,
-  })
-  await persistLatestHttpPage(target, conversationId, result).catch(
-    () => undefined
-  )
-  return result
-}
-
-export async function fetchAndPersistMessagesAfter(
+export function fetchAfterRemote(
   target: AuthenticatedTarget,
   conversationId: string,
   afterSeq: number,
-  limit: number
-) {
-  const result = await fetchConversationMessages(target.url, conversationId, {
-    afterSeq,
-    limit,
-  })
-  const committedSeq = await persistAfterHttpPage(
+  limit: number,
+  options: { signal?: AbortSignal } = {}
+): Promise<ClientMessageList> {
+  return fetchConversationMessages(
     target,
     conversationId,
-    afterSeq,
-    result
-  ).catch(() =>
-    result.messages.reduce(
-      (newest, message) => Math.max(newest, message.seq),
-      afterSeq
-    )
+    { afterSeq, limit },
+    options
   )
-  return { committedSeq, result }
 }
 
-function createCachedPage(
-  messages: ClientMessageList["messages"],
-  limit: number,
-  hasMoreBefore: boolean,
-  hasMoreAfter = false,
-  fallbackSeq = 0
-): ClientMessageList {
-  const seqs = messages.map((message) => message.seq)
-  return {
-    messages,
-    page: {
-      hasMoreAfter,
-      hasMoreBefore,
-      limit,
-      newestSeq: seqs.length > 0 ? Math.max(...seqs) : fallbackSeq,
-      oldestSeq: seqs.length > 0 ? Math.min(...seqs) : fallbackSeq,
-    },
-  }
+export function persistLatest(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  result: ClientMessageList
+): Promise<void> {
+  return persistLatestHttpPage(target, conversationId, result)
+}
+
+export function persistBefore(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  requestedBeforeSeq: number,
+  result: ClientMessageList
+): Promise<void> {
+  return persistBeforeHttpPage(target, conversationId, requestedBeforeSeq, result)
+}
+
+export function persistAfter(
+  target: AuthenticatedTarget,
+  conversationId: string,
+  requestedAfterSeq: number,
+  result: ClientMessageList
+): Promise<number> {
+  return persistAfterHttpPage(target, conversationId, requestedAfterSeq, result)
+}
+
+export function persistMessages(
+  target: AuthenticatedTarget,
+  messages: ClientMessage[]
+): Promise<void> {
+  return persistRealtimeMessages(target, messages)
 }

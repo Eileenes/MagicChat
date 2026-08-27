@@ -241,6 +241,7 @@ export function ConversationDetailsScreen() {
   function showError(error: unknown, fallback: string) {
     toast.show({
       message: error instanceof ApiRequestError ? error.message : fallback,
+      modal: false,
       type: "error",
     })
   }

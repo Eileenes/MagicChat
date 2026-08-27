@@ -10,10 +10,11 @@ import { AppAvatar } from "@/components/avatar/app-avatar"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { AppHeader } from "@/components/navigation/app-header"
 import { queryKeys } from "@/data/query"
+import { contactManager } from "@/data/contacts"
 import { prepareAvatar } from "@/data/users/avatar-image"
 import { uploadCurrentUserAvatar } from "@/data/users/current-user-api"
 import { useAuthenticatedSession } from "@/providers/auth-provider"
-import { useClientData } from "@/providers/client-data-provider"
+import { useClientSession } from "@/providers/client-data-provider"
 import { createMediaPickerRequest } from "@/features/media-picker/media-picker-registry"
 import {
   XGUIActionSheet,
@@ -27,7 +28,7 @@ import {
 export function ProfileScreen() {
   const router = useRouter()
   const session = useAuthenticatedSession()
-  const { currentUser } = useClientData()
+  const { currentUser } = useClientSession()
   const queryClient = useQueryClient()
   const { colors } = useXGUITheme()
   const toast = useXGUIToast()
@@ -40,11 +41,10 @@ export function ProfileScreen() {
     "当前账号"
 
   async function refreshProfileQueries() {
-    await Promise.all([
+    await Promise.allSettled([
       queryClient.invalidateQueries({ queryKey: queryKeys.currentUser(session) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.contacts(session) }),
+      contactManager.refreshUsers(session, [session.userId]),
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations(session) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfiles(session) }),
     ])
   }
 
@@ -86,15 +86,16 @@ export function ProfileScreen() {
       setSavingAvatar(true)
       const prepared = await prepareAvatar(result.assets[0])
       try {
-        await uploadCurrentUserAvatar(session.url, prepared.uri)
+        await uploadCurrentUserAvatar(session, prepared.uri)
         await refreshProfileQueries()
-        toast.show({ message: "头像已更新", type: "success" })
+        toast.show({ message: "头像已更新", modal: false, type: "success" })
       } finally {
         prepared.cleanup()
       }
     } catch (error) {
       toast.show({
         message: error instanceof Error ? error.message : "修改头像失败，请稍后重试",
+        modal: false,
         type: "error",
       })
     } finally {
@@ -108,12 +109,12 @@ export function ProfileScreen() {
     try {
       const prepared = await prepareAvatar(source)
       try {
-        await uploadCurrentUserAvatar(session.url, prepared.uri)
+        await uploadCurrentUserAvatar(session, prepared.uri)
         await refreshProfileQueries()
-        toast.show({ message: "头像已更新", type: "success" })
+        toast.show({ message: "头像已更新", modal: false, type: "success" })
       } finally { prepared.cleanup() }
     } catch (error) {
-      toast.show({ message: error instanceof Error ? error.message : "修改头像失败，请稍后重试", type: "error" })
+      toast.show({ message: error instanceof Error ? error.message : "修改头像失败，请稍后重试", modal: false, type: "error" })
     } finally { setSavingAvatar(false) }
   }
 

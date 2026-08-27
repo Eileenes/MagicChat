@@ -1,5 +1,8 @@
-import { useRef } from "react"
-import { View } from "react-native"
+// Tabler exposes per-icon runtime entry points without per-icon declarations.
+// eslint-disable-next-line import/no-unresolved
+import IconAlertCircleFilled from "@tabler/icons-react-native/IconAlertCircleFilled"
+import { memo, useRef } from "react"
+import { Pressable, View } from "react-native"
 import {
   Button,
   Paragraph,
@@ -21,10 +24,11 @@ import {
   type MessageMentionLabelResolver,
   type PresentedMessage,
 } from "@/domain/messages/message-presenter"
-import { useXGUITheme } from "@/xgui"
+import { XGUILoadingIcon, useXGUITheme } from "@/xgui"
 
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   currentUserId,
+  highlighted = false,
   message,
   messageActionsEnabled = true,
   canAddReaction,
@@ -37,6 +41,9 @@ export function MessageBubble({
   onMessageLongPress,
   onOpenTopic,
   onResourceError,
+  onRetryMessage,
+  optimisticClientMessageId,
+  optimisticStatus,
   onResourcePress,
   onRespondChoice,
   onSetReaction,
@@ -50,6 +57,7 @@ export function MessageBubble({
   canCreateTopic: boolean
   canRespondToChoice: boolean
   currentUserId: string
+  highlighted?: boolean
   message: PresentedMessage
   messageActionsEnabled?: boolean
   onAvatarLongPress?: (sender: EntityReference) => void
@@ -58,6 +66,9 @@ export function MessageBubble({
   onMentionPress: (target: EntityReference) => void
   onMessageLongPress: (message: PresentedMessage) => void
   onOpenTopic: (conversationId: string) => void
+  onRetryMessage?: (clientMessageId: string) => void
+  optimisticClientMessageId?: string
+  optimisticStatus?: "sending" | "failed"
   onResourceError: (fileId: string) => void
   onResourcePress: (fileId: string) => void
   onRespondChoice?: (messageId: string, optionIds: string[]) => Promise<void>
@@ -77,7 +88,7 @@ export function MessageBubble({
 
   if (message.role === "system") {
     return (
-      <XStack justify="center" px="$5">
+      <XStack bg={highlighted ? colors.brand1 : undefined} justify="center" px="$5">
         <XStack maxW="85%">
           <SizableText color={colors.textPlaceholder} size="$2" text="center">
             {formatClientMessageBodySummary(message.body, resolveMentionLabel)}
@@ -157,6 +168,7 @@ export function MessageBubble({
 
   return (
     <XStack
+      bg={highlighted ? colors.brand1 : undefined}
       gap="$2"
       items="flex-start"
       justify={fromMe ? "flex-end" : "flex-start"}
@@ -184,9 +196,46 @@ export function MessageBubble({
           nativeID={messageSelectionNativeId}
           style={{
             maxWidth: "100%",
+            position: "relative",
             width: structuredBubbleWidth ? "100%" : undefined,
           }}
         >
+          {fromMe && optimisticStatus ? (
+            <View
+              style={{
+                left: -28,
+                position: "absolute",
+                top: "50%",
+                transform: [{ translateY: -10 }],
+              }}
+            >
+              {optimisticStatus === "sending" ? (
+                <View
+                  accessibilityLabel="消息发送中"
+                  accessibilityRole="progressbar"
+                >
+                  <XGUILoadingIcon color={colors.textPlaceholder} size={20} />
+                </View>
+              ) : (
+                <Pressable
+                  accessibilityLabel="重新发送消息"
+                  accessibilityRole="button"
+                  disabled={!onRetryMessage || !optimisticClientMessageId}
+                  hitSlop={8}
+                  onPress={() => {
+                    if (optimisticClientMessageId) {
+                      onRetryMessage?.(optimisticClientMessageId)
+                    }
+                  }}
+                >
+                  <IconAlertCircleFilled
+                    color={colors.destructive}
+                    size={20}
+                  />
+                </Pressable>
+              )}
+            </View>
+          ) : null}
           <YStack
             bg={
               fromMe
@@ -305,7 +354,7 @@ export function MessageBubble({
       {fromMe ? avatar : null}
     </XStack>
   )
-}
+})
 
 function MessageAvatar({
   avatar,

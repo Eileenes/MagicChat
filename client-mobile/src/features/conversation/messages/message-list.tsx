@@ -1,5 +1,6 @@
 import { ArrowDown } from "lucide-react-native"
-import { useEffect, useMemo, useRef, useState } from "react"
+import type { OptimisticMessage } from "@/features/conversation/optimistic-message-model"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   FlatList,
   StyleSheet,
@@ -7,6 +8,7 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewToken,
 } from "react-native"
 import {
   SizableText,
@@ -38,6 +40,7 @@ export function MessageList({
   currentUserId,
   error,
   hasOlder,
+  initialMessageId,
   isFetchingOlder,
   isLoading,
   messages,
@@ -48,6 +51,8 @@ export function MessageList({
   onLoadOlder,
   onMessageLongPress,
   onRetry,
+  onRetryMessage,
+  optimisticMessages,
   onResourceError,
   onResourcePress,
   onRespondChoice,
@@ -68,9 +73,11 @@ export function MessageList({
   currentUserId: string
   error: Error | null
   hasOlder: boolean
+  initialMessageId?: string
   isFetchingOlder: boolean
   isLoading: boolean
   messages: PresentedMessage[]
+  optimisticMessages: OptimisticMessage[]
   onAvatarLongPress?: (sender: EntityReference) => void
   onAvatarPress: (sender: EntityReference) => void
   onContentTouch: () => void
@@ -78,6 +85,7 @@ export function MessageList({
   onLoadOlder: () => void
   onMessageLongPress: (message: PresentedMessage) => void
   onRetry: () => void
+  onRetryMessage: (clientMessageId: string) => void
   onResourceError: (fileId: string) => void
   onResourcePress: (fileId: string) => void
   onRespondChoice?: (messageId: string, optionIds: string[]) => Promise<void>
@@ -96,7 +104,15 @@ export function MessageList({
   topicSourceMessage?: PresentedMessage
 }) {
   const { colors } = useXGUITheme()
+  const listStyle = useMemo(
+    () => [styles.list, { backgroundColor: colors.background0 }],
+    [colors.background0]
+  )
   const listItems = useMemo(() => buildMessageListItems(messages), [messages])
+  const optimisticById = useMemo(
+    () => new Map(optimisticMessages.map((item) => [item.message.id, item] as const)),
+    [optimisticMessages]
+  )
   const listRef = useRef<FlatList<MessageListItem>>(null)
   const nearBottomRef = useRef(true)
   const initializedMessagesRef = useRef(false)
@@ -104,6 +120,34 @@ export function MessageList({
   const previousNewestMessageIdRef = useRef<string | null>(null)
   const previousMessagesLengthRef = useRef(0)
   const pendingScrollRef = useRef<PendingScroll>(null)
+  const focusedMessageIdRef = useRef("")
+  const pendingFocusedMessageIdRef = useRef("")
+  const targetScrollRetriesRef = useRef(0)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [viewabilityConfig] = useState(() => ({ itemVisiblePercentThreshold: 50 }))
+  const [highlightedMessageId, setHighlightedMessageId] = useState("")
+  const handleViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken<MessageListItem>[] }) => {
+      const pendingMessageId = pendingFocusedMessageIdRef.current
+      if (!pendingMessageId) return
+      const targetIsVisible = viewableItems.some(
+        (token) =>
+          token.isViewable &&
+          token.item.type === "message" &&
+          token.item.message.id === pendingMessageId
+      )
+      if (!targetIsVisible) return
+      pendingFocusedMessageIdRef.current = ""
+      focusedMessageIdRef.current = pendingMessageId
+      setHighlightedMessageId(pendingMessageId)
+      clearTimeout(highlightTimerRef.current)
+      highlightTimerRef.current = setTimeout(
+        () => setHighlightedMessageId(""),
+        2_000
+      )
+    },
+    []
+  )
   const [pendingNewMessageCount, setPendingNewMessageCount] = useState(0)
 
   useEffect(() => {
@@ -114,6 +158,11 @@ export function MessageList({
       initializedMessagesRef.current = false
       nearBottomRef.current = true
       pendingScrollRef.current = null
+      focusedMessageIdRef.current = ""
+      pendingFocusedMessageIdRef.current = ""
+      targetScrollRetriesRef.current = 0
+      clearTimeout(highlightTimerRef.current)
+      setHighlightedMessageId("")
       setPendingNewMessageCount(0)
     }
 
@@ -122,7 +171,7 @@ export function MessageList({
         initializedMessagesRef.current = true
         previousNewestMessageIdRef.current = messages[0]?.id ?? null
         previousMessagesLengthRef.current = messages.length
-        if (messages.length > 0) {
+        if (messages.length > 0 && !initialMessageId) {
           scheduleScrollToLatest(listRef, pendingScrollRef, false)
         }
       }
@@ -152,28 +201,76 @@ export function MessageList({
 
     previousNewestMessageIdRef.current = newestMessageId
     previousMessagesLengthRef.current = messages.length
-  }, [conversationId, isLoading, messages])
+  }, [conversationId, initialMessageId, isLoading, messages])
 
-  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
-    const nearBottom = event.nativeEvent.contentOffset.y <= 80
-    nearBottomRef.current = nearBottom
-
-    if (nearBottom) {
-      setPendingNewMessageCount((currentCount) =>
-        currentCount === 0 ? currentCount : 0
-      )
+  useEffect(() => {
+    if (!initialMessageId || focusedMessageIdRef.current === initialMessageId) {
+      return
     }
-  }
+    const targetIndex = listItems.findIndex(
+      (item) => item.type === "message" && item.message.id === initialMessageId
+    )
+    if (targetIndex < 0) return
+    pendingFocusedMessageIdRef.current = initialMessageId
+    targetScrollRetriesRef.current = 0
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex({
+        animated: false,
+        index: targetIndex,
+        viewPosition: 0.5,
+      })
+    })
+  }, [initialMessageId, listItems])
 
-  function handleContentSizeChange() {
+  useEffect(
+    () => () => {
+      clearTimeout(highlightTimerRef.current)
+    },
+    []
+  )
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const nearBottom = event.nativeEvent.contentOffset.y <= 80
+      nearBottomRef.current = nearBottom
+
+      if (nearBottom) {
+        setPendingNewMessageCount((currentCount) =>
+          currentCount === 0 ? currentCount : 0
+        )
+      }
+    },
+    []
+  )
+
+  const handleContentSizeChange = useCallback(() => {
     performPendingScroll(listRef, pendingScrollRef)
-  }
+  }, [])
 
-  function handleJumpToLatest() {
+  const handleScrollToIndexFailed = useCallback((info: {
+    averageItemLength: number
+    index: number
+  }) => {
+    if (targetScrollRetriesRef.current >= 2) return
+    targetScrollRetriesRef.current += 1
+    listRef.current?.scrollToOffset({
+      animated: false,
+      offset: info.averageItemLength * info.index,
+    })
+    setTimeout(() => {
+      listRef.current?.scrollToIndex({
+        animated: false,
+        index: info.index,
+        viewPosition: 0.5,
+      })
+    }, 100)
+  }, [])
+
+  const handleJumpToLatest = useCallback(() => {
     nearBottomRef.current = true
     setPendingNewMessageCount(0)
     scheduleScrollToLatest(listRef, pendingScrollRef, true)
-  }
+  }, [])
 
   if (error && messages.length === 0) {
     return (
@@ -204,10 +301,10 @@ export function MessageList({
         contentContainerStyle={styles.content}
         data={listItems}
         inverted
-        ItemSeparatorComponent={() => <YStack height="$1" />}
+        ItemSeparatorComponent={MessageItemSeparator}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
-        keyExtractor={(item) => item.key}
+        keyExtractor={messageItemKeyExtractor}
         ListFooterComponent={
           <>
             {isFetchingOlder ? (
@@ -239,15 +336,14 @@ export function MessageList({
             ) : null}
           </>
         }
-        maintainVisibleContentPosition={{
-          autoscrollToTopThreshold: 80,
-          minIndexForVisible: 0,
-        }}
+        maintainVisibleContentPosition={maintainVisibleContentPosition}
         onContentSizeChange={handleContentSizeChange}
         onEndReached={hasOlder && !isFetchingOlder ? onLoadOlder : undefined}
         onEndReachedThreshold={0.2}
         onScroll={handleScroll}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
         onTouchStart={onContentTouch}
+        onViewableItemsChanged={handleViewableItemsChanged}
         renderItem={({ item }) =>
           item.type === "time" ? (
             <MessageTimeMarker
@@ -260,7 +356,13 @@ export function MessageList({
               canCreateTopic={canCreateTopic}
               canRespondToChoice={canRespondToChoice}
               currentUserId={currentUserId}
+              highlighted={item.message.id === highlightedMessageId}
               message={item.message}
+              optimisticClientMessageId={
+                optimisticById.get(item.message.id)?.message.clientMessageId
+              }
+              optimisticStatus={optimisticById.get(item.message.id)?.status}
+              onRetryMessage={onRetryMessage}
               onAvatarLongPress={onAvatarLongPress}
               onAvatarPress={onAvatarPress}
               onImagePress={onImagePress}
@@ -281,7 +383,8 @@ export function MessageList({
         }
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        style={[styles.list, { backgroundColor: colors.background0 }]}
+        style={listStyle}
+        viewabilityConfig={viewabilityConfig}
       />
 
       {pendingNewMessageCount > 0 ? (
@@ -308,6 +411,19 @@ export function MessageList({
       ) : null}
     </YStack>
   )
+}
+
+const maintainVisibleContentPosition = {
+  autoscrollToTopThreshold: 80,
+  minIndexForVisible: 0,
+} as const
+
+function MessageItemSeparator() {
+  return <YStack height="$1" />
+}
+
+function messageItemKeyExtractor(item: MessageListItem) {
+  return item.key
 }
 
 type PendingScroll = {

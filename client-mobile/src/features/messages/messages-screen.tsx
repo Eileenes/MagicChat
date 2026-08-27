@@ -1,16 +1,20 @@
-import { useQueryClient } from "@tanstack/react-query"
+import { type InfiniteData, useQueries, useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { InteractionManager } from "react-native"
 
-import { isUnauthorizedError } from "@/data/api-client"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import {
   useDismissConversation,
   useSetConversationMuted,
   useSetConversationPinned,
 } from "@/data/conversations/conversation-hooks"
-import type { ClientConversation } from "@/core/models"
-import { hydrateConversationMessagesQuery } from "@/data/messages"
+import type { ClientConversation, ClientMessageList } from "@/core/models"
+import {
+  hydrateConversationMessagesQuery,
+  subscribeConversationMessages,
+} from "@/data/messages"
+import { applyConversationMessagesChangedEvent } from "@/data/messages/message-query-cache"
 import {
   useAuth,
   useAuthenticatedSession,
@@ -22,6 +26,7 @@ import {
 import { ConversationList } from "@/features/messages/conversation-list"
 import {
   buildConversationListItems,
+  collectLatestConversationMessages,
   type ConversationListItemModel,
 } from "@/features/messages/conversation-list-model"
 import { DismissConversationActionSheet } from "@/features/messages/dismiss-conversation-dialog"
@@ -30,9 +35,10 @@ import { subscribeToMessagesTabReselected } from "@/features/messages/messages-t
 import { useClientData } from "@/providers/client-data-provider"
 import { useXGUITheme, useXGUIToast } from "@/xgui"
 import { buildConversationHref } from "@/navigation/conversations"
+import { queryKeys } from "@/data/query"
 
 const MESSAGE_PAGE_SIZE = 20
-const PREWARM_CONVERSATION_COUNT = 30
+const PREWARM_CONVERSATION_COUNT = 10
 const CONVERSATION_LIST_CLOCK_INTERVAL_MS = 60_000
 
 export function MessagesScreen() {
@@ -80,19 +86,46 @@ export function MessagesScreen() {
   const [scrollToUnreadRequest, setScrollToUnreadRequest] = useState(0)
   const [listNow, setListNow] = useState(() => new Date())
   const {
+    blockingBootstrapError,
     contacts,
-    contactsError,
     conversations,
-    conversationsError,
     currentUser,
-    currentUserError,
     isBootstrapRefreshing,
     refreshBootstrap,
   } = useClientData()
-  const bootstrapError =
-    currentUserError ?? contactsError ?? conversationsError
-  const networkFailure =
-    bootstrapError !== null && !isUnauthorizedError(bootstrapError)
+  const messageQueries = useQueries({
+    queries: conversations.map((conversation) => ({
+      enabled: false,
+      queryKey: queryKeys.conversationMessages(session, conversation.id),
+    })),
+  })
+  const latestMessages = useMemo(() => {
+    return collectLatestConversationMessages(
+      conversations.map((conversation, index) => {
+        const data = messageQueries[index]?.data as
+          | InfiniteData<ClientMessageList, number | null>
+          | undefined
+        return { conversationId: conversation.id, pages: data?.pages }
+      })
+    )
+  }, [conversations, messageQueries])
+  useEffect(() => {
+    const unsubscribers = conversations.map((conversation) =>
+      subscribeConversationMessages(session, conversation.id, (event) => {
+        applyConversationMessagesChangedEvent(
+          queryClient,
+          session,
+          conversation.id,
+          event
+        )
+      })
+    )
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe()
+    }
+  }, [conversations, queryClient, session])
+
+  const networkFailure = blockingBootstrapError !== null
   const items = useMemo(
     () =>
       buildConversationListItems({
@@ -100,9 +133,10 @@ export function MessagesScreen() {
         conversations,
         currentUserId: currentUser?.id ?? session.userId,
         keyword: "",
+        latestMessages,
         now: listNow,
       }),
-    [contacts, conversations, currentUser?.id, listNow, session.userId]
+    [contacts, conversations, currentUser?.id, latestMessages, listNow, session.userId]
   )
 
   useEffect(() => {
@@ -122,10 +156,22 @@ export function MessagesScreen() {
   )
 
   useEffect(() => {
-    for (const item of items.slice(0, PREWARM_CONVERSATION_COUNT)) {
-      void prepareConversationMessages(item.conversation.id)
-    }
+    const task = InteractionManager.runAfterInteractions(() => {
+      for (const item of items.slice(0, PREWARM_CONVERSATION_COUNT)) {
+        void prepareConversationMessages(item.conversation.id)
+      }
+    })
+    return () => task.cancel()
   }, [items, prepareConversationMessages])
+
+  const handleConversationsVisible = useCallback(
+    (conversationIds: string[]) => {
+      for (const conversationId of conversationIds) {
+        void prepareConversationMessages(conversationId)
+      }
+    },
+    [prepareConversationMessages]
+  )
 
   function handleConversationPress(conversationId: string) {
     void prepareConversationMessages(conversationId)
@@ -272,6 +318,7 @@ export function MessagesScreen() {
           }
           onConversationPress={handleConversationPress}
           onConversationPressIn={handleConversationPressIn}
+          onConversationsVisible={handleConversationsVisible}
           onSearchPress={() => router.push("/search")}
           scrollToUnreadRequest={scrollToUnreadRequest}
           server={session}
@@ -340,6 +387,7 @@ function showErrorToast(
   toast.show({
     duration: 2000,
     message: detail && detail !== title ? `${title}\n${detail}` : title,
+    modal: false,
     type: "error",
   })
 }

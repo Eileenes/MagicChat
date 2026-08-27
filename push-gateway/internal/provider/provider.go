@@ -13,6 +13,7 @@ type Registration struct {
 }
 
 type Notification struct {
+	ID          string
 	Token       string
 	Platform    string
 	Environment string

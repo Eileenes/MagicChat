@@ -1,9 +1,10 @@
+import type { AuthenticatedTarget } from "@/core/server-target"
 import type { ContactUser, ResolvedClientUser } from "@/core/models"
 import {
   ApiRequestError,
-  createApiClient,
   type ApiFetch,
 } from "@/data/api-client"
+import { createProtectedApiClient } from "@/data/protected-api-client"
 
 type ContactUserResponse = {
   avatar?: string
@@ -22,11 +23,11 @@ type ResolveUsersResponse = {
 }
 
 export async function resolveClientUsers(
-  serverUrl: string,
+  target: AuthenticatedTarget,
   userIds: string[],
   options: { fetcher?: ApiFetch; signal?: AbortSignal } = {}
 ): Promise<ResolvedClientUser[]> {
-  const data = await createApiClient(serverUrl, options.fetcher).request<
+  const data = await createProtectedApiClient(target, options.fetcher).request<
     ResolveUsersResponse
   >("/api/client/users/resolve", {
     body: JSON.stringify({ user_ids: userIds }),
