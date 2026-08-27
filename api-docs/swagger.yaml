@@ -1748,6 +1748,24 @@ definitions:
         example: 企业 SSO
         type: string
     type: object
+  client.pushGrantResponse:
+    properties:
+      expires_at:
+        type: string
+      grant_id:
+        type: string
+      installation_id:
+        type: string
+      platform:
+        type: string
+    type: object
+  client.pushRouteResponse:
+    properties:
+      conversation_id:
+        type: string
+      message_id:
+        type: string
+    type: object
   client.readTemporaryFileURLsRequest:
     properties:
       file_ids:
@@ -1761,6 +1779,19 @@ definitions:
         items:
           $ref: '#/definitions/client.temporaryFileReadURLResponse'
         type: array
+    type: object
+  client.registerPushGrantRequest:
+    properties:
+      expires_at:
+        type: string
+      grant_id:
+        type: string
+      installation_id:
+        type: string
+      platform:
+        type: string
+      send_token:
+        type: string
     type: object
   client.requestEmailCodeRequest:
     properties:
@@ -7371,6 +7402,107 @@ paths:
       summary: 添加任务评论
       tags:
       - 客户端任务
+  /api/client/push/grants:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 推送授权
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.registerPushGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.pushGrantResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 注册当前手机的公共推送授权
+      tags:
+      - 客户端推送
+  /api/client/push/grants/{installation_id}:
+    delete:
+      parameters:
+      - description: 安装实例 ID
+        in: path
+        name: installation_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 删除当前手机的本地推送授权
+      tags:
+      - 客户端推送
+  /api/client/push/routes/{route_token}:
+    get:
+      parameters:
+      - description: 匿名路由 Token
+        in: path
+        name: route_token
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.pushRouteResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 解析通知点击路由
+      tags:
+      - 客户端推送
   /api/client/search/messages:
     get:
       description: 在滚动最近一年内搜索当前用户有权查看的聊天记录。keyword 必填，其他过滤条件可选，按消息时间倒序最多返回 10 条。

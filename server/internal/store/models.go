@@ -137,6 +137,59 @@ type UserSession struct {
 	IP         string    `gorm:"size:64"`
 }
 
+type UserPushGrant struct {
+	ID                  string    `gorm:"type:uuid;primaryKey"`
+	UserID              string    `gorm:"type:uuid;not null;index:user_push_grants_user_active_index,priority:1"`
+	User                User      `gorm:"constraint:OnDelete:CASCADE;"`
+	InstallationID      string    `gorm:"type:uuid;not null;uniqueIndex"`
+	GatewayGrantID      string    `gorm:"type:uuid;not null;uniqueIndex"`
+	SendTokenCiphertext []byte    `gorm:"not null"`
+	Platform            string    `gorm:"size:16;not null"`
+	ExpiresAt           time.Time `gorm:"not null;index:user_push_grants_user_active_index,priority:3"`
+	Status              string    `gorm:"size:16;not null;index:user_push_grants_user_active_index,priority:2"`
+	LastSeenAt          time.Time `gorm:"not null"`
+	CreatedAt           time.Time `gorm:"not null"`
+	UpdatedAt           time.Time `gorm:"not null"`
+}
+
+func (UserPushGrant) TableName() string { return "user_push_grants" }
+
+type MobilePushRoute struct {
+	TokenHash      []byte       `gorm:"primaryKey"`
+	UserID         string       `gorm:"type:uuid;not null;index"`
+	User           User         `gorm:"constraint:OnDelete:CASCADE;"`
+	ConversationID string       `gorm:"type:uuid;not null;index"`
+	Conversation   Conversation `gorm:"constraint:OnDelete:CASCADE;"`
+	MessageID      string       `gorm:"type:uuid;not null"`
+	ExpiresAt      time.Time    `gorm:"not null;index"`
+	CreatedAt      time.Time    `gorm:"not null"`
+}
+
+func (MobilePushRoute) TableName() string { return "mobile_push_routes" }
+
+type MobilePushJob struct {
+	ID                   string        `gorm:"type:uuid;primaryKey"`
+	GrantID              string        `gorm:"type:uuid;not null;uniqueIndex:mobile_push_jobs_grant_message_unique,priority:1"`
+	Grant                UserPushGrant `gorm:"constraint:OnDelete:CASCADE;"`
+	UserID               string        `gorm:"type:uuid;not null;index:mobile_push_jobs_user_message_index,priority:1"`
+	User                 User          `gorm:"constraint:OnDelete:CASCADE;"`
+	ConversationID       string        `gorm:"type:uuid;not null"`
+	Conversation         Conversation  `gorm:"constraint:OnDelete:CASCADE;"`
+	MessageID            string        `gorm:"type:uuid;not null;uniqueIndex:mobile_push_jobs_grant_message_unique,priority:2;index:mobile_push_jobs_user_message_index,priority:2"`
+	RouteTokenCiphertext []byte        `gorm:"not null"`
+	Status               string        `gorm:"size:16;not null;index:mobile_push_jobs_dispatch_index,priority:1"`
+	Attempts             int           `gorm:"not null"`
+	NextAttemptAt        time.Time     `gorm:"not null;index:mobile_push_jobs_dispatch_index,priority:2"`
+	ExpiresAt            time.Time     `gorm:"not null"`
+	LockedAt             *time.Time
+	LockToken            string    `gorm:"not null"`
+	LastErrorCode        string    `gorm:"size:120;not null"`
+	CreatedAt            time.Time `gorm:"not null;index:mobile_push_jobs_dispatch_index,priority:3"`
+	UpdatedAt            time.Time `gorm:"not null"`
+}
+
+func (MobilePushJob) TableName() string { return "mobile_push_jobs" }
+
 type Conversation struct {
 	ID                 string    `gorm:"type:uuid;primaryKey"`
 	Kind               string    `gorm:"size:32;not null;index"`

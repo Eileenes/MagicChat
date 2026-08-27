@@ -25,6 +25,7 @@ import (
 	"app/internal/application/identityprovider"
 	messageapp "app/internal/application/message"
 	messagecontentapp "app/internal/application/messagecontent"
+	mobilepushapp "app/internal/application/mobilepush"
 	projectapp "app/internal/application/project"
 	searchapp "app/internal/application/search"
 	settingsapp "app/internal/application/settings"
@@ -71,6 +72,8 @@ type Server struct {
 	messages            *messageapp.Service
 	messageContents     *messagecontentapp.Service
 	clientMessages      *clientapi.MessageAPI
+	mobilePush          *mobilepushapp.Service
+	clientPush          *clientapi.PushAPI
 	searches            *searchapp.Service
 	clientSearch        *clientapi.SearchAPI
 	settings            *settingsapp.Service
@@ -225,6 +228,25 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		DirectMessaging: directMessaging,
 	})
 	server.clientMessages = clientapi.NewMessageAPI(server.messages, server.files)
+	var pushCipher *mobilepushapp.TokenCipher
+	var pushGateway mobilepushapp.GatewayClient
+	if cfg.Push.Enabled {
+		pushKeys := append([][]byte{cfg.Push.CredentialEncryptionKey}, cfg.Push.PreviousEncryptionKeys...)
+		var err error
+		pushCipher, err = mobilepushapp.NewTokenCipher(pushKeys...)
+		if err != nil {
+			panic(err)
+		}
+		pushGateway = mobilepushapp.NewGatewayClient()
+	}
+	var mobilePushErr error
+	server.mobilePush, mobilePushErr = mobilepushapp.NewService(mobilepushapp.Dependencies{
+		DB: db, Cipher: pushCipher, Gateway: pushGateway, Enabled: cfg.Push.Enabled,
+	})
+	if mobilePushErr != nil {
+		panic(mobilePushErr)
+	}
+	server.clientPush = clientapi.NewPushAPI(server.mobilePush)
 	server.searches = searchapp.NewService(searchapp.Dependencies{
 		Backend:       searchinfra.NewPostgresMessageBackend(db),
 		Conversations: server.conversations,
@@ -260,6 +282,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientConversations.RegisterRoutes(client)
 	server.clientContacts.RegisterRoutes(client)
 	server.clientMessages.RegisterRoutes(client)
+	server.clientPush.RegisterRoutes(client)
 	server.clientSearch.RegisterRoutes(client)
 	client.GET("/ws", server.clientWebSocket)
 	client.GET("/asr/realtime", server.clientASRWebSocket)
@@ -274,6 +297,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.adminProviders.RegisterRoutes(admin)
 	if workerContext != nil {
 		go server.tasks.RunReminderWorker(workerContext)
+		go server.mobilePush.RunWorker(workerContext)
 	}
 	return router
 }

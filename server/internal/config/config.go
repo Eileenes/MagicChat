@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/url"
@@ -16,6 +17,7 @@ type Config struct {
 	Storage  StorageConfig
 	Apps     AppsConfig
 	ASRModel ASRModelConfig
+	Push     PushConfig
 }
 
 type ServerConfig struct {
@@ -46,6 +48,12 @@ type AppsConfig struct {
 
 type ASRModelConfig struct {
 	APIKey string
+}
+
+type PushConfig struct {
+	Enabled                 bool
+	CredentialEncryptionKey []byte
+	PreviousEncryptionKeys  [][]byte
 }
 
 type StorageConfig struct {
@@ -95,6 +103,11 @@ func Load() (Config, error) {
 	if cfg.ASRModel.APIKey, err = requiredEnv("ASRMODEL_API_KEY"); err != nil {
 		return Config{}, err
 	}
+	push, err := loadPushConfig()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Push = push
 	storage, err := loadStorageConfig()
 	if err != nil {
 		return Config{}, err
@@ -168,6 +181,35 @@ func loadDatabaseConfig() (DatabaseConfig, error) {
 		RawQuery: "sslmode=disable",
 	}).String()
 	return DatabaseConfig{DSN: dsn}, nil
+}
+
+func loadPushConfig() (PushConfig, error) {
+	enabled, err := boolFromEnv("PUSH_GATEWAY_ENABLED", false)
+	if err != nil {
+		return PushConfig{}, err
+	}
+	cfg := PushConfig{Enabled: enabled}
+	if !enabled {
+		return cfg, nil
+	}
+	encodedKey, err := requiredEnv("PUSH_CREDENTIAL_ENCRYPTION_KEY")
+	if err != nil {
+		return PushConfig{}, err
+	}
+	cfg.CredentialEncryptionKey, err = base64.StdEncoding.DecodeString(encodedKey)
+	if err != nil || len(cfg.CredentialEncryptionKey) != 32 {
+		return PushConfig{}, fmt.Errorf("PUSH_CREDENTIAL_ENCRYPTION_KEY must be a base64-encoded 32-byte key")
+	}
+	if previous := strings.TrimSpace(os.Getenv("PUSH_CREDENTIAL_PREVIOUS_KEYS")); previous != "" {
+		for index, encoded := range strings.Split(previous, ",") {
+			key, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+			if decodeErr != nil || len(key) != 32 {
+				return PushConfig{}, fmt.Errorf("PUSH_CREDENTIAL_PREVIOUS_KEYS entry %d must be a base64-encoded 32-byte key", index)
+			}
+			cfg.PreviousEncryptionKeys = append(cfg.PreviousEncryptionKeys, key)
+		}
+	}
+	return cfg, nil
 }
 
 func loadStorageConfig() (StorageConfig, error) {

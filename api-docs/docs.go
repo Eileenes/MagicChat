@@ -8430,6 +8430,170 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/push/grants": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端推送"
+                ],
+                "summary": "注册当前手机的公共推送授权",
+                "parameters": [
+                    {
+                        "description": "推送授权",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.registerPushGrantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.pushGrantResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/push/grants/{installation_id}": {
+            "delete": {
+                "tags": [
+                    "客户端推送"
+                ],
+                "summary": "删除当前手机的本地推送授权",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "安装实例 ID",
+                        "name": "installation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/push/routes/{route_token}": {
+            "get": {
+                "tags": [
+                    "客户端推送"
+                ],
+                "summary": "解析通知点击路由",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "匿名路由 Token",
+                        "name": "route_token",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.pushRouteResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/search/messages": {
             "get": {
                 "description": "在滚动最近一年内搜索当前用户有权查看的聊天记录。keyword 必填，其他过滤条件可选，按消息时间倒序最多返回 10 条。",
@@ -11413,6 +11577,34 @@ const docTemplate = `{
                 }
             }
         },
+        "client.pushGrantResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "grant_id": {
+                    "type": "string"
+                },
+                "installation_id": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.pushRouteResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.readTemporaryFileURLsRequest": {
             "type": "object",
             "properties": {
@@ -11432,6 +11624,26 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/client.temporaryFileReadURLResponse"
                     }
+                }
+            }
+        },
+        "client.registerPushGrantRequest": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "grant_id": {
+                    "type": "string"
+                },
+                "installation_id": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "string"
+                },
+                "send_token": {
+                    "type": "string"
                 }
             }
         },

@@ -11,12 +11,19 @@ import (
 func (s *Server) PublishMessageCreated(ctx context.Context, deliveries []messageapp.Delivery) {
 	mutedTargets := s.loadDeliveryNotificationMutedTargets(ctx, deliveries)
 	for _, delivery := range deliveries {
+		muted := mutedTargets[notificationTargetKey(delivery.Message.ConversationID, delivery.UserID)]
 		s.realtime.SendToUsers(
 			[]string{delivery.UserID},
-			realtimeMessageCreatedEvent(
-				legacyMessageResponse(delivery.Message),
-				mutedTargets[notificationTargetKey(delivery.Message.ConversationID, delivery.UserID)],
-			),
+			realtimeMessageCreatedEvent(legacyMessageResponse(delivery.Message), muted),
+		)
+		delegatedType, delegatedID := "", ""
+		if delivery.Message.DelegatedBy != nil {
+			delegatedType, delegatedID = delivery.Message.DelegatedBy.Type, delivery.Message.DelegatedBy.ID
+		}
+		s.enqueueMobileMessagePush(
+			ctx, delivery.UserID, delivery.Message.ConversationID, delivery.Message.ID,
+			delivery.Message.Sender.Type, delivery.Message.Sender.ID,
+			delegatedType, delegatedID, delivery.Message.Body, muted,
 		)
 	}
 }
@@ -24,9 +31,19 @@ func (s *Server) PublishMessageCreated(ctx context.Context, deliveries []message
 func (s *Server) PublishSharedMessageCreated(ctx context.Context, userIDs []string, message messageapp.Message) {
 	mutedTargets := s.loadNotificationMutedTargets(ctx, message.ConversationID, userIDs)
 	for _, userID := range userIDs {
+		muted := mutedTargets[userID]
 		s.realtime.SendToUsers(
 			[]string{userID},
-			realtimeMessageCreatedEvent(legacyMessageResponse(message), mutedTargets[userID]),
+			realtimeMessageCreatedEvent(legacyMessageResponse(message), muted),
+		)
+		delegatedType, delegatedID := "", ""
+		if message.DelegatedBy != nil {
+			delegatedType, delegatedID = message.DelegatedBy.Type, message.DelegatedBy.ID
+		}
+		s.enqueueMobileMessagePush(
+			ctx, userID, message.ConversationID, message.ID,
+			message.Sender.Type, message.Sender.ID,
+			delegatedType, delegatedID, message.Body, muted,
 		)
 	}
 }

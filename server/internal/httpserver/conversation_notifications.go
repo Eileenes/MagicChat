@@ -10,12 +10,19 @@ import (
 func (s *Server) PublishConversationMessage(ctx context.Context, userIDs []string, message conversationapp.Message) {
 	mutedTargets := s.loadNotificationMutedTargets(ctx, message.ConversationID, userIDs)
 	for _, userID := range userIDs {
+		muted := mutedTargets[userID]
 		s.realtime.SendToUsers(
 			[]string{userID},
-			realtimeMessageCreatedEvent(
-				newConversationApplicationMessageResponse(message),
-				mutedTargets[userID],
-			),
+			realtimeMessageCreatedEvent(newConversationApplicationMessageResponse(message), muted),
+		)
+		delegatedType, delegatedID := "", ""
+		if message.DelegatedBy != nil {
+			delegatedType, delegatedID = message.DelegatedBy.Type, message.DelegatedBy.ID
+		}
+		s.enqueueMobileMessagePush(
+			ctx, userID, message.ConversationID, message.ID,
+			message.Sender.Type, message.Sender.ID,
+			delegatedType, delegatedID, message.Body, muted,
 		)
 	}
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"net/url"
 	"strings"
 	"testing"
@@ -109,6 +110,36 @@ func TestLoadUsesEnvironmentDefaults(t *testing.T) {
 	if cfg.Storage.Lifecycle.TemporaryExpireDays != 180 || cfg.Storage.Lifecycle.AbortMultipartDays != 7 {
 		t.Fatalf("Storage.Lifecycle = %#v", cfg.Storage.Lifecycle)
 	}
+	if cfg.Push.Enabled {
+		t.Fatal("Push.Enabled = true, want default false")
+	}
+}
+
+func TestLoadReadsOptionalPushConfiguration(t *testing.T) {
+	setRequiredEnvironment(t)
+	currentKey := make([]byte, 32)
+	previousKey := make([]byte, 32)
+	previousKey[0] = 1
+	t.Setenv("PUSH_GATEWAY_ENABLED", "true")
+	t.Setenv("PUSH_CREDENTIAL_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(currentKey))
+	t.Setenv("PUSH_CREDENTIAL_PREVIOUS_KEYS", base64.StdEncoding.EncodeToString(previousKey))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Push.Enabled || len(cfg.Push.CredentialEncryptionKey) != 32 || len(cfg.Push.PreviousEncryptionKeys) != 1 {
+		t.Fatalf("Push configuration = %#v", cfg.Push)
+	}
+}
+
+func TestLoadRequiresPushEncryptionKeyWhenEnabled(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("PUSH_GATEWAY_ENABLED", "true")
+	t.Setenv("PUSH_CREDENTIAL_ENCRYPTION_KEY", "")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "PUSH_CREDENTIAL_ENCRYPTION_KEY") {
+		t.Fatalf("Load() error = %v", err)
+	}
 }
 
 func TestLoadRejectsMissingRequiredEnvironment(t *testing.T) {
@@ -162,6 +193,7 @@ func TestLoadRejectsInvalidEnvironment(t *testing.T) {
 		{name: "path style", envName: "S3_FORCE_PATH_STYLE", envValue: "sometimes", errorText: "S3_FORCE_PATH_STYLE"},
 		{name: "temporary expiration", envName: "TEMPORARY_ASSETS_EXPIRE_DAYS", envValue: "0", errorText: "TEMPORARY_ASSETS_EXPIRE_DAYS"},
 		{name: "multipart expiration", envName: "S3_ABORT_MULTIPART_DAYS", envValue: "abc", errorText: "S3_ABORT_MULTIPART_DAYS"},
+		{name: "push enabled", envName: "PUSH_GATEWAY_ENABLED", envValue: "sometimes", errorText: "PUSH_GATEWAY_ENABLED"},
 	}
 
 	for _, test := range tests {
