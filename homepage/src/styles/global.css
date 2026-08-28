@@ -325,6 +325,8 @@ body.page-legal .brand img { filter: saturate(.75) brightness(1.1); }
 .download-option p { margin: 4px 0 0; color: rgb(231 243 238 / 58%); font-size: 10px; line-height: 1.4; }
 .download-option-action { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 5px; padding: 0 10px; color: var(--green-deep); background: var(--green); border: 1px solid var(--green); border-radius: 3px; font-size: 11px; font-weight: 750; transition: color 160ms var(--ease), background 160ms var(--ease), border-color 160ms var(--ease); }
 .download-option-action:hover { color: #fff; background: var(--green-dark); border-color: var(--green-dark); }
+.download-option-action.is-disabled,
+.download-option-action.is-disabled:hover { color: rgb(231 243 238 / 56%); background: rgb(231 243 238 / 10%); border-color: rgb(231 243 238 / 18%); cursor: default; }
 .download-option-action svg { flex: 0 0 auto; }
 .scene-page.is-download-open { isolation: isolate; overflow: visible; }
 .site-footer { position: relative; z-index: 1; overflow: hidden; margin-top: 50px; color: rgb(227 241 236 / 72%); background: #040b0a; }
@@ -382,8 +384,9 @@ body.page-legal .brand img { filter: saturate(.75) brightness(1.1); }
 }
 .site-footer .brand { color: #fff; }
 .footer-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .65fr) minmax(0, .85fr) minmax(356px, 1.65fr); gap: clamp(20px, 2.5vw, 34px); width: min(calc(100% - 40px), var(--container)); margin: 0 auto; padding: 72px var(--content-gutter) 54px; contain: layout paint; }
+.footer-brand-line { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .footer-intro { max-width: 320px; margin: 20px 0 0; color: rgb(227 241 236 / 58%); font-size: 14px; line-height: 1.85; }
-.footer-slogan { max-width: 320px; margin: 22px 0 0; color: #fff; font-size: 18px; font-weight: 650; line-height: 1.45; }
+.footer-slogan { max-width: 320px; margin: 0; color: #fff; font-size: 16px; font-weight: 800; line-height: 1.6; letter-spacing: .08em; }
 .footer-column { display: flex; flex-direction: column; align-items: flex-start; gap: 11px; }
 .footer-column h2 { margin: 5px 0 9px; color: var(--green); font-size: 18px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .footer-column a, .footer-column span { color: rgb(227 241 236 / 72%); font-size: 13px; transition: color 160ms var(--ease); }
