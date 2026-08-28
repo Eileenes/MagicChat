@@ -40,6 +40,17 @@ func (m *SMTPMailer) SendLoginCode(ctx context.Context, message emailauth.Mail) 
 	return sendSMTP(ctx, message, content)
 }
 
+func (m *SMTPMailer) SendAccountDeactivationCode(ctx context.Context, message emailauth.Mail) error {
+	minutes := int(message.ExpiresIn.Minutes())
+	plain := fmt.Sprintf("%s 账号注销验证码\n\n你的账号注销验证码是：%s\n\n验证码将在 %d 分钟后失效，请勿向他人透露。若非本人操作，请忽略此邮件。\n\n%s\n", message.AppName, message.Code, minutes, message.OrganizationName)
+	htmlBody := fmt.Sprintf("<html><body><h1>%s 账号注销验证码</h1><p>你的账号注销验证码是：<strong>%s</strong></p><p>验证码将在 %d 分钟后失效，请勿向他人透露。若非本人操作，请忽略此邮件。</p></body></html>", template.HTMLEscapeString(message.AppName), template.HTMLEscapeString(message.Code), minutes)
+	content, err := renderAlternativeMessage(message, "【"+message.AppName+"】账号注销验证码", plain, htmlBody)
+	if err != nil {
+		return err
+	}
+	return sendSMTP(ctx, message, content)
+}
+
 func (m *SMTPMailer) SendTestEmail(ctx context.Context, message emailauth.Mail) error {
 	content, err := renderTestEmailMessage(message)
 	if err != nil {

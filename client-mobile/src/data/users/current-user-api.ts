@@ -2,7 +2,10 @@ import type { AuthenticatedTarget } from "@/core/server-target"
 import { File } from "expo-file-system"
 
 import { ApiRequestError, type ApiFetch } from "@/data/api-client"
-import { createProtectedApiClient } from "@/data/protected-api-client"
+import {
+  createProtectedApiClient,
+  createStoredAccountApiClient,
+} from "@/data/protected-api-client"
 import type { ClientUser } from "@/core/models"
 import { createNicknameRequest } from "@/domain/users/profile-edit"
 
@@ -55,8 +58,28 @@ export async function fetchCurrentUser(
     method: "GET",
     signal: options.signal,
   })
-  const user = data?.user
+  return normalizeCurrentUser(data)
+}
 
+export async function fetchStoredCurrentUser(
+  target: AuthenticatedTarget,
+  accountId: string,
+  options: { fetcher?: ApiFetch; signal?: AbortSignal } = {}
+) {
+  const data = await createStoredAccountApiClient(
+    target,
+    accountId,
+    options.fetcher
+  ).request<CurrentUserResponse>("/api/client/me", {
+    errorMessage: "加载账号资料失败",
+    method: "GET",
+    signal: options.signal,
+  })
+  return normalizeCurrentUser(data)
+}
+
+function normalizeCurrentUser(data: CurrentUserResponse | undefined) {
+  const user = data?.user
   if (!user?.created_at || !user.email || !user.id || !user.name) {
     throw new ApiRequestError("当前用户响应格式不正确")
   }

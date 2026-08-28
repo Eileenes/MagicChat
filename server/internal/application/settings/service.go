@@ -41,6 +41,27 @@ func (s *Service) ContactDirectoryMode(ctx context.Context) (string, error) {
 	return newSettings(value).ContactDirectoryMode, nil
 }
 
+func (s *Service) UserNicknameEditingAllowed(ctx context.Context) (bool, error) {
+	value, err := s.getOrCreate(ctx)
+	if err != nil {
+		return false, internalError(err)
+	}
+	return value.AllowUserNicknameEditing, nil
+}
+
+func (s *Service) WithUserNicknameEditingPolicy(ctx context.Context, operation func(*gorm.DB, bool) error) error {
+	if _, err := s.getOrCreate(ctx); err != nil {
+		return internalError(err)
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var value store.AppSettings
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).First(&value, "id = ?", store.AppSettingsID).Error; err != nil {
+			return err
+		}
+		return operation(tx, value.AllowUserNicknameEditing)
+	})
+}
+
 func (s *Service) Get(ctx context.Context) (Settings, error) {
 	value, err := s.getOrCreate(ctx)
 	if err != nil {
@@ -69,20 +90,32 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (Settings, erro
 	if contactDirectoryMode != ContactDirectoryModeOrganization && contactDirectoryMode != ContactDirectoryModeFriends {
 		return Settings{}, newError(CodeInvalidRequest, "通讯录模式不支持", nil)
 	}
+	updatedAt := s.now().UTC()
+	updates := map[string]any{
+		"app_name":               appName,
+		"organization_name":      organizationName,
+		"contact_directory_mode": contactDirectoryMode,
+		"updated_at":             updatedAt,
+	}
+	if cmd.AllowUserNicknameEditing != nil {
+		updates["allow_user_nickname_editing"] = *cmd.AllowUserNicknameEditing
+	}
 	if err := s.db.WithContext(ctx).Model(&store.AppSettings{}).
 		Where("id = ?", store.AppSettingsID).
-		Updates(map[string]any{
-			"app_name":               appName,
-			"organization_name":      organizationName,
-			"contact_directory_mode": contactDirectoryMode,
-			"updated_at":             s.now().UTC(),
-		}).Error; err != nil {
+		Updates(updates).Error; err != nil {
+		return Settings{}, internalError(err)
+	}
+	updated, err := s.getOrCreate(ctx)
+	if err != nil {
 		return Settings{}, internalError(err)
 	}
 	if s.notifications != nil && newSettings(stored).ContactDirectoryMode != contactDirectoryMode {
 		s.notifications.PublishContactDirectoryModeUpdated(ctx, contactDirectoryMode)
 	}
-	return Settings{AppName: appName, OrganizationName: organizationName, ContactDirectoryMode: contactDirectoryMode}, nil
+	if s.notifications != nil && stored.AllowUserNicknameEditing != updated.AllowUserNicknameEditing {
+		s.notifications.PublishUserNicknamePolicyUpdated(ctx, updated.AllowUserNicknameEditing, updatedAt)
+	}
+	return newSettings(updated), nil
 }
 
 func (s *Service) GetPublicInfo(ctx context.Context) (PublicInfo, error) {
@@ -235,7 +268,7 @@ func newSettings(value store.AppSettings) Settings {
 	if mode == "" {
 		mode = ContactDirectoryModeOrganization
 	}
-	return Settings{AppName: value.AppName, OrganizationName: value.OrganizationName, ContactDirectoryMode: mode}
+	return Settings{AppName: value.AppName, OrganizationName: value.OrganizationName, ContactDirectoryMode: mode, AllowUserNicknameEditing: value.AllowUserNicknameEditing}
 }
 
 func newEmailLoginSettings(value store.AppSettings) EmailLoginSettings {
@@ -294,3 +327,4 @@ var _ PublicService = (*Service)(nil)
 var _ EmailLoginSettingsService = (*Service)(nil)
 var _ PasswordLoginSettingsService = (*Service)(nil)
 var _ PasswordLoginPolicy = (*Service)(nil)
+var _ UserNicknamePolicy = (*Service)(nil)

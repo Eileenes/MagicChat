@@ -137,6 +137,18 @@ type UserSession struct {
 	IP         string    `gorm:"size:64"`
 }
 
+type AccountDeactivationChallenge struct {
+	ID             string    `gorm:"type:uuid;primaryKey"`
+	UserID         string    `gorm:"type:uuid;not null;index"`
+	Email          string    `gorm:"not null"`
+	CodeMAC        []byte    `gorm:"column:code_mac;not null"`
+	ExpiresAt      time.Time `gorm:"not null"`
+	ConsumedAt     *time.Time
+	FailedAttempts int       `gorm:"not null"`
+	CreatedAt      time.Time `gorm:"not null"`
+	UpdatedAt      time.Time `gorm:"not null"`
+}
+
 type UserPushGrant struct {
 	ID                  string      `gorm:"type:uuid;primaryKey"`
 	UserID              string      `gorm:"type:uuid;not null;index:user_push_grants_user_active_index,priority:1"`
@@ -592,6 +604,7 @@ type AppSettings struct {
 	AppName                      string    `gorm:"size:120;not null"`
 	OrganizationName             string    `gorm:"size:160;not null"`
 	ContactDirectoryMode         string    `gorm:"size:32;not null;default:organization"`
+	AllowUserNicknameEditing     bool      `gorm:"not null;default:true"`
 	PasswordLoginEnabled         bool      `gorm:"not null;default:true"`
 	EmailCodeLoginEnabled        bool      `gorm:"not null;default:false"`
 	EmailCodeRegistrationEnabled bool      `gorm:"not null;default:false"`

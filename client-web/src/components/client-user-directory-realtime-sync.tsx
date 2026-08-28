@@ -11,6 +11,7 @@ export function ClientUserDirectoryRealtimeSync() {
   const {
     invalidateUsers,
     refreshContacts,
+    refreshMe,
     updateUserPresence,
     usersById,
   } = useClientData()
@@ -45,20 +46,26 @@ export function ClientUserDirectoryRealtimeSync() {
       (payload) => {
         const update = readPresenceUpdate(payload)
         if (update) {
-          updateUserPresence(
-            update.userId,
-            update.online,
-            update.lastOnlineAt
-          )
+          updateUserPresence(update.userId, update.online, update.lastOnlineAt)
         }
+      }
+    )
+    const unsubscribeNicknamePolicy = subscribeRealtimeEvent(
+      "user.nickname.policy.updated",
+      (payload) => {
+        const update = readNicknamePolicyUpdate(payload)
+        if (!update) return
+        invalidateUsers(Object.keys(usersByIdRef.current), update.updatedAt)
+        void refreshMe().catch(() => undefined)
       }
     )
     return () => {
       unsubscribe()
       unsubscribePresence()
+      unsubscribeNicknamePolicy()
       channel?.close()
     }
-  }, [invalidateUsers, subscribeRealtimeEvent, updateUserPresence])
+  }, [invalidateUsers, refreshMe, subscribeRealtimeEvent, updateUserPresence])
 
   React.useEffect(() => {
     const refreshFriendData = () => {
@@ -94,6 +101,14 @@ function readProfileUpdate(payload: unknown) {
     : null
 }
 
+function readNicknamePolicyUpdate(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null
+  const value = payload as { updated_at?: unknown }
+  return typeof value.updated_at === "string"
+    ? { updatedAt: value.updated_at }
+    : null
+}
+
 function readBroadcastProfileUpdate(payload: unknown) {
   if (!payload || typeof payload !== "object") return null
   const value = payload as {
@@ -120,7 +135,9 @@ function readPresenceUpdate(payload: unknown) {
   }
   return {
     lastOnlineAt:
-      typeof value.last_online_at === "string" ? value.last_online_at : undefined,
+      typeof value.last_online_at === "string"
+        ? value.last_online_at
+        : undefined,
     online: value.online,
     userId: value.user_id,
   }

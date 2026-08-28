@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+type UserNicknamePolicy interface {
+	UserNicknameEditingAllowed(context.Context) (bool, error)
+}
+
 const (
 	MaxGroupMembers            = 500
 	MaxGroupNameLength         = 120

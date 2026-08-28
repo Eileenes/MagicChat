@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"encoding/json"
 
 	messageapp "app/internal/application/message"
 	"app/internal/realtime"
@@ -67,12 +68,15 @@ func (s *Server) PublishMessageReactionsUpdated(_ context.Context, userIDs []str
 	s.realtime.SendToUsers(userIDs, realtimeMessageReactionsUpdatedEvent(event))
 }
 
-func (s *Server) DeliverAppEvents(_ context.Context, events []messageapp.AppEvent) {
+func (s *Server) DeliverAppEvents(ctx context.Context, events []messageapp.AppEvent) {
 	if s.appConnections == nil {
 		return
 	}
 	for _, event := range events {
-		s.appConnections.SendToApp(event.AppID, realtime.NewCursorEvent(event.Cursor, event.Event, event.Payload))
+		_ = s.withAppEventPayload(ctx, event.Payload, func(payload json.RawMessage) error {
+			s.appConnections.SendToApp(event.AppID, realtime.NewCursorEvent(event.Cursor, event.Event, payload))
+			return nil
+		})
 	}
 }
 

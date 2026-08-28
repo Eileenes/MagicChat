@@ -11,6 +11,7 @@ export const realtimeEvents = {
   messageReactionsUpdated: "message.reactions_updated",
   messageUpdated: "message.updated",
   systemReady: "system.ready",
+  userNicknamePolicyUpdated: "user.nickname.policy.updated",
   topicArchived: "topic.archived",
   topicCreated: "topic.created",
   topicParticipated: "topic.participated",

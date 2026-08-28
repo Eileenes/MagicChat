@@ -124,20 +124,24 @@ export function MeScreen() {
   )
 
   function confirmLogout() {
+    if (isSigningOut) return
     setLogoutSheetOpen(true)
   }
 
   async function handleLogout() {
+    toast.show({ duration: 0, message: "正在退出登录", modal: true, type: "loading" })
     try {
       await signOut()
+      toast.hide()
       router.replace("/account-management" as Href)
     } catch (error: unknown) {
-      Alert.alert(
-        "退出登录失败",
-        error instanceof ApiRequestError
+      toast.show({
+        message: error instanceof ApiRequestError
           ? error.message
-          : "暂时无法退出登录，请稍后重试。"
-      )
+          : "暂时无法退出登录，请稍后重试。",
+        modal: false,
+        type: "error",
+      })
     }
   }
 
@@ -331,15 +335,11 @@ export function MeScreen() {
 
             <XGUIList size="large">
               <XGUIListItem
+                centerContent
+                destructive
                 icon={({ color, size, strokeWidth }) => <IconSwitchHorizontal color={color} size={size} strokeWidth={strokeWidth} />}
                 onPress={() => router.push("/account-management" as Href)}
-                title="账号管理"
-              />
-              <XGUIListItem
-                icon={({ size, strokeWidth }) => <IconDatabase color={colors.blue} size={size} strokeWidth={strokeWidth} />}
-                onPress={() => router.push("/server-management?mode=manage" as Href)}
-                separator
-                title="服务器管理"
+                title="切换账号"
               />
             </XGUIList>
 
@@ -347,10 +347,9 @@ export function MeScreen() {
               <XGUIListItem
                 centerContent
                 destructive
-                disabled={isSigningOut}
                 icon={({ color, size, strokeWidth }) => <IconLogout color={color} size={size} strokeWidth={strokeWidth} />}
-                onPress={isSigningOut ? undefined : confirmLogout}
-                title={isSigningOut ? "正在退出…" : "退出登录"}
+                onPress={confirmLogout}
+                title="退出登录"
               />
             </XGUIList>
           </YStack>
@@ -374,6 +373,7 @@ export function MeScreen() {
       <XGUIActionSheet
         actions={[
           {
+            deferUntilClosed: true,
             destructive: true,
             label: "退出登录",
             onPress: () => void handleLogout(),

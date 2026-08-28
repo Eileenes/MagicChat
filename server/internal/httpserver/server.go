@@ -11,12 +11,13 @@ import (
 	clientapi "app/internal/api/http/client"
 	"app/internal/appconnection"
 	"app/internal/application/account"
+	"app/internal/application/accountdeactivation"
 	"app/internal/application/adminauth"
 	appapp "app/internal/application/app"
 	contactapp "app/internal/application/contact"
 	conversationapp "app/internal/application/conversation"
-	"app/internal/application/directmessagepolicy"
 	"app/internal/application/dashboard"
+	"app/internal/application/directmessagepolicy"
 	documentapp "app/internal/application/document"
 	"app/internal/application/emailauth"
 	entitycardapp "app/internal/application/entitycard"
@@ -110,6 +111,9 @@ func NewRouterWithTaskReminderWorker(ctx context.Context, db *gorm.DB, cfg confi
 }
 
 func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options, workerContext context.Context) *echo.Echo {
+	if err := store.InstallUserNicknamePolicy(db); err != nil {
+		panic(err)
+	}
 	server := &Server{
 		db:             db,
 		cfg:            cfg,
@@ -140,6 +144,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		DB:                   db,
 		Files:                server.files,
 		PasswordLoginPolicy:  server.settings,
+		UserNicknamePolicy:   server.settings,
 		ProfileNotifications: server,
 	})
 	server.clientAccounts = clientapi.NewAccountAPI(
@@ -149,6 +154,11 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 			c.Set(currentUserContextKey, legacyUserFromAccount(session.Account))
 		},
 	)
+	deactivation := accountdeactivation.NewService(accountdeactivation.Dependencies{
+		DB: db, Settings: server.settings, Mailer: mailinfra.NewSMTPMailer(),
+		Secret: cfg.Apps.AIAssistantSecret, Presence: server.realtime,
+	})
+	clientDeactivation := clientapi.NewAccountDeactivationAPI(deactivation)
 	emailAuth := emailauth.NewService(emailauth.Dependencies{
 		Accounts: server.accounts, Settings: server.settings, Mailer: mailinfra.NewSMTPMailer(),
 		ClientOrigin: cfg.Server.ClientOrigin(),
@@ -157,8 +167,9 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.adminEmailLogin = adminapi.NewEmailLoginSettingsAPI(server.settings, emailAuth)
 	server.clientInfo = clientapi.NewInfoAPI(server.settings, server.accounts)
 	server.projects = projectapp.NewService(projectapp.Dependencies{
-		DB:    db,
-		Files: server.files,
+		DB:             db,
+		Files:          server.files,
+		NicknamePolicy: server.settings,
 	})
 	server.clientProjects = clientapi.NewProjectAPI(server.projects)
 	server.documents = documentapp.NewService(documentapp.Dependencies{DB: db})
@@ -168,14 +179,15 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	})
 	directMessaging := directmessagepolicy.New(server.settings)
 	server.conversations = conversationapp.NewService(conversationapp.Dependencies{
-		AppEvents:      server,
-		AppEventLocker: &server.appEventMu,
-		DB:             db,
-		Apps:           cfg.Apps,
-		Files:          server.files,
-		Projects:       server.projects,
-		Notifications:  server,
+		AppEvents:       server,
+		AppEventLocker:  &server.appEventMu,
+		DB:              db,
+		Apps:            cfg.Apps,
+		Files:           server.files,
+		Projects:        server.projects,
+		Notifications:   server,
 		DirectMessaging: directMessaging,
+		NicknamePolicy:  server.settings,
 	})
 	server.clientConversations = clientapi.NewConversationAPI(server.conversations, server.projects)
 	server.tasks = taskapp.NewService(taskapp.Dependencies{
@@ -188,7 +200,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	})
 	server.adminDashboard = adminapi.NewDashboardAPI(server.dashboard)
 	server.userManagement = usermanagement.NewService(usermanagement.Dependencies{
-		DB: db, Presence: server.realtime, AppConnections: server.appConnections, ProfileNotifications: server,
+		DB: db, Presence: server.realtime, AppConnections: server.appConnections, ProfileNotifications: server, NicknamePolicy: server.settings,
 	})
 	server.adminUsers = adminapi.NewUserAPI(server.userManagement)
 	server.identityProviders = identityprovider.NewService(identityprovider.Dependencies{DB: db})
@@ -199,7 +211,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientExternalAuth = clientapi.NewExternalAuthAPI(server.externalAuth, cfg.Server.ClientOrigin())
 	server.contacts = contactapp.NewService(contactapp.Dependencies{
 		DB: db, Apps: cfg.Apps, UserPresence: server.realtime, AppPresence: server.appConnections,
-		Settings: server.settings, Notifications: server, FriendshipMessages: server,
+		Settings: server.settings, NicknamePolicy: server.settings, Notifications: server, FriendshipMessages: server,
 	})
 	server.clientContacts = clientapi.NewContactAPI(server.contacts)
 	server.messageContents = messagecontentapp.NewService(messagecontentapp.Dependencies{
@@ -275,6 +287,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 
 	client := router.Group("/api/client", server.clientAccounts.RequireSession)
 	server.clientAccounts.RegisterProtectedRoutes(client)
+	clientDeactivation.RegisterRoutes(client)
 	server.clientApps.RegisterRoutes(client)
 	server.clientFiles.RegisterRoutes(client)
 	server.clientProjects.RegisterRoutes(client)

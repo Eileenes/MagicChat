@@ -33,6 +33,7 @@ type Dependencies struct {
 	DB                   *gorm.DB
 	Files                fileapp.PublicUploader
 	PasswordLoginPolicy  PasswordLoginPolicy
+	UserNicknamePolicy   UserNicknamePolicy
 	ProfileNotifications ProfileNotifications
 	Now                  func() time.Time
 	GenerateSessionToken func() (string, error)
@@ -44,6 +45,7 @@ type Service struct {
 	db                   *gorm.DB
 	files                fileapp.PublicUploader
 	passwordLoginPolicy  PasswordLoginPolicy
+	userNicknamePolicy   UserNicknamePolicy
 	profileNotifications ProfileNotifications
 	now                  func() time.Time
 	generateSessionToken func() (string, error)
@@ -73,6 +75,7 @@ func NewService(deps Dependencies) *Service {
 		db:                   deps.DB,
 		files:                deps.Files,
 		passwordLoginPolicy:  deps.PasswordLoginPolicy,
+		userNicknamePolicy:   deps.UserNicknamePolicy,
 		profileNotifications: deps.ProfileNotifications,
 		now:                  now,
 		generateSessionToken: generateSessionToken,
@@ -203,7 +206,6 @@ func emailName(email string) string {
 }
 
 func (s *Service) createLoginSession(ctx context.Context, user store.User, userAgent string, ip string) (LoginResult, error) {
-
 	token, err := s.generateSessionToken()
 	if err != nil {
 		return LoginResult{}, internalError(err)
@@ -219,7 +221,20 @@ func (s *Service) createLoginSession(ctx context.Context, user store.User, userA
 		UserAgent:  userAgent,
 		IP:         ip,
 	}
-	if err := s.db.WithContext(ctx).Create(&session).Error; err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked store.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, "id = ?", user.ID).Error; err != nil {
+			return err
+		}
+		if locked.Status != store.UserStatusActive {
+			return invalidCredentials()
+		}
+		user = locked
+		return tx.Create(&session).Error
+	}); err != nil {
+		if ErrorCodeOf(err) == CodeInvalidCredentials {
+			return LoginResult{}, err
+		}
 		return LoginResult{}, internalError(err)
 	}
 
@@ -326,9 +341,27 @@ func (s *Service) UpdateProfile(ctx context.Context, cmd UpdateProfileCommand) (
 		return Account{}, newError(CodeInvalidRequest, "至少需要修改一个字段", nil)
 	}
 
-	if err := s.db.WithContext(ctx).Model(&store.User{}).
-		Where("id = ?", strings.TrimSpace(cmd.AccountID)).
-		Updates(updates).Error; err != nil {
+	updateProfile := func(db *gorm.DB) error {
+		return db.Model(&store.User{}).
+			Where("id = ?", strings.TrimSpace(cmd.AccountID)).
+			Updates(updates).Error
+	}
+	var err error
+	if cmd.Nickname != nil && s.userNicknamePolicy != nil {
+		err = s.userNicknamePolicy.WithUserNicknameEditingPolicy(ctx, func(tx *gorm.DB, allowed bool) error {
+			if !allowed {
+				return newError(CodeNicknameDisabled, "当前服务器禁止修改昵称", nil)
+			}
+			return updateProfile(tx)
+		})
+	} else {
+		err = updateProfile(s.db.WithContext(ctx))
+	}
+	if err != nil {
+		var accountErr *Error
+		if errors.As(err, &accountErr) {
+			return Account{}, err
+		}
 		return Account{}, internalError(err)
 	}
 	profile, err := s.GetProfile(ctx, cmd.AccountID)

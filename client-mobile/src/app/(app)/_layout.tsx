@@ -35,6 +35,7 @@ export default function AppStackLayout() {
       <Stack.Screen name="search" />
       <Stack.Screen name="profile" />
       <Stack.Screen name="profile-nickname" />
+      <Stack.Screen name="account-deactivation" />
       <Stack.Screen name="media-picker" />
       <Stack.Screen name="qr-scanner" />
       <Stack.Screen name="qr-result" />

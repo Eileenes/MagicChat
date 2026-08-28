@@ -267,6 +267,28 @@ func TestServiceUpdatesProfileAndOnlineActivity(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsNicknameUpdateWhenServerDisablesIt(t *testing.T) {
+	db := openAccountTestDB(t)
+	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)
+	user := insertAccountTestUser(t, db, "nickname-disabled@example.com", "test-password", now)
+	service := NewService(Dependencies{DB: db, UserNicknamePolicy: fixedUserNicknamePolicy(false)})
+	nickname := "New Nickname"
+
+	_, err := service.UpdateProfile(context.Background(), UpdateProfileCommand{
+		AccountID: user.ID,
+		Nickname:  &nickname,
+	})
+	if ErrorCodeOf(err) != CodeNicknameDisabled || ErrorMessage(err) != "当前服务器禁止修改昵称" {
+		t.Fatalf("update nickname error = %v, code = %q", err, ErrorCodeOf(err))
+	}
+}
+
+type fixedUserNicknamePolicy bool
+
+func (policy fixedUserNicknamePolicy) WithUserNicknameEditingPolicy(_ context.Context, operation func(*gorm.DB, bool) error) error {
+	return operation(nil, bool(policy))
+}
+
 func TestServiceUploadsAvatarThroughStoragePort(t *testing.T) {
 	db := openAccountTestDB(t)
 	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)

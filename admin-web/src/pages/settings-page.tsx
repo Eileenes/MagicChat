@@ -155,9 +155,11 @@ const thirdPartyLoginProviderOptions: ThirdPartyLoginProviderOption[] = [
 
 export default function SettingsPage() {
   const { setAppName: setProductName } = useProductInfo()
+  const allowUserNicknameEditingId = useId()
   const appNameId = useId()
   const contactDirectoryModeId = useId()
   const organizationNameId = useId()
+  const [allowUserNicknameEditing, setAllowUserNicknameEditing] = useState(true)
   const [appName, setAppName] = useState("")
   const [contactDirectoryMode, setContactDirectoryMode] =
     useState<ContactDirectoryMode>("organization")
@@ -172,6 +174,8 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [organizationName, setOrganizationName] = useState("")
   const [providers, setProviders] = useState<ThirdPartyLoginProvider[]>([])
+  const [savedAllowUserNicknameEditing, setSavedAllowUserNicknameEditing] =
+    useState(true)
   const [savedAppName, setSavedAppName] = useState("")
   const [savedContactDirectoryMode, setSavedContactDirectoryMode] =
     useState<ContactDirectoryMode>("organization")
@@ -180,6 +184,7 @@ export default function SettingsPage() {
     null
   )
   const hasInfoSettingsChanged =
+    allowUserNicknameEditing !== savedAllowUserNicknameEditing ||
     appName.trim() !== savedAppName ||
     contactDirectoryMode !== savedContactDirectoryMode ||
     organizationName.trim() !== savedOrganizationName
@@ -206,9 +211,11 @@ export default function SettingsPage() {
           return
         }
 
+        setAllowUserNicknameEditing(settings.allowUserNicknameEditing)
         setAppName(settings.appName)
         setContactDirectoryMode(settings.contactDirectoryMode)
         setOrganizationName(settings.organizationName)
+        setSavedAllowUserNicknameEditing(settings.allowUserNicknameEditing)
         setSavedAppName(settings.appName)
         setSavedContactDirectoryMode(settings.contactDirectoryMode)
         setSavedOrganizationName(settings.organizationName)
@@ -248,15 +255,18 @@ export default function SettingsPage() {
 
     try {
       const settings = await updateInfoSettings({
+        allowUserNicknameEditing,
         appName,
         contactDirectoryMode,
         organizationName,
       })
 
+      setAllowUserNicknameEditing(settings.allowUserNicknameEditing)
       setAppName(settings.appName)
       setProductName(settings.appName)
       setContactDirectoryMode(settings.contactDirectoryMode)
       setOrganizationName(settings.organizationName)
+      setSavedAllowUserNicknameEditing(settings.allowUserNicknameEditing)
       setSavedAppName(settings.appName)
       setSavedContactDirectoryMode(settings.contactDirectoryMode)
       setSavedOrganizationName(settings.organizationName)
@@ -441,6 +451,22 @@ export default function SettingsPage() {
                   <FieldDescription>
                     好友通讯录仅改变联系人列表，不限制业务场景中的用户资料。
                   </FieldDescription>
+                </Field>
+                <Field orientation="horizontal">
+                  <div className="flex flex-1 flex-col gap-1">
+                    <FieldLabel htmlFor={allowUserNicknameEditingId}>
+                      允许用户修改昵称
+                    </FieldLabel>
+                    <FieldDescription>
+                      关闭后，所有用户的昵称统一显示为真实姓名，且用户无法修改昵称。原昵称数据不会被删除。
+                    </FieldDescription>
+                  </div>
+                  <Switch
+                    checked={allowUserNicknameEditing}
+                    disabled={isLoading || isSaving}
+                    id={allowUserNicknameEditingId}
+                    onCheckedChange={setAllowUserNicknameEditing}
+                  />
                 </Field>
                 <Field>
                   <FieldLabel htmlFor={organizationNameId}>组织名称</FieldLabel>
@@ -786,15 +812,22 @@ function EmailLoginSettingsCard() {
 
           <Field orientation="horizontal">
             <div className="flex flex-1 flex-col gap-1">
-              <FieldLabel htmlFor={registrationEnabledId}>允许新用户通过邮箱验证码注册</FieldLabel>
-              <FieldDescription>关闭后，仅已有的正常用户可以接收验证码并登录。</FieldDescription>
+              <FieldLabel htmlFor={registrationEnabledId}>
+                允许新用户通过邮箱验证码注册
+              </FieldLabel>
+              <FieldDescription>
+                关闭后，仅已有的正常用户可以接收验证码并登录。
+              </FieldDescription>
             </div>
             <Switch
               checked={settings.registrationEnabled}
               disabled={!settings.enabled || isLoading || isSaving}
               id={registrationEnabledId}
               onCheckedChange={(checked) =>
-                setSettings((current) => ({ ...current, registrationEnabled: checked }))
+                setSettings((current) => ({
+                  ...current,
+                  registrationEnabled: checked,
+                }))
               }
             />
           </Field>

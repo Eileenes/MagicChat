@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { Redirect, type Href, useLocalSearchParams, useRouter } from "expo-router"
 import { useRef, useState } from "react"
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,10 +11,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context"
 import { YStack } from "tamagui"
 
+import { AppHeader } from "@/components/navigation/app-header"
 import type { ServerConfig } from "@/core/server-model"
 import { queryKeys } from "@/data/query"
 import { ServerListItem } from "@/features/servers/server-list-item"
 import { parseServerManagementMode } from "@/features/accounts/account-management-model"
+import { AppUpdateDialog } from "@/features/updates/app-update-dialog"
+import { useAppUpdate } from "@/features/updates/use-app-update"
 import { useAuth } from "@/providers/auth-provider"
 import { useServers } from "@/providers/server-provider"
 import {
@@ -22,6 +26,7 @@ import {
   XGUIFooter,
   XGUIList,
   useXGUITheme,
+  useXGUIToast,
 } from "@/xgui"
 
 export function ServerManagementScreen() {
@@ -37,7 +42,10 @@ export function ServerManagementScreen() {
     servers,
   } = useServers()
   const { colors } = useXGUITheme()
+  const toast = useXGUIToast()
+  const appUpdate = useAppUpdate()
   const { height: windowHeight } = useWindowDimensions()
+  const updateConfirmedRef = useRef(false)
   const [serverForActions, setServerForActions] =
     useState<ServerConfig | null>(null)
   const [serverToDelete, setServerToDelete] = useState<ServerConfig | null>(null)
@@ -114,21 +122,39 @@ export function ServerManagementScreen() {
     setServerToDelete(null)
   }
 
+  async function handleCheckForUpdates() {
+    toast.show({ duration: 0, message: "正在检查更新", type: "loading" })
+    try {
+      const release = await appUpdate.checkForUpdates()
+      toast.hide()
+      if (!release) toast.show({ message: "已经是最新版本", modal: false, type: "success" })
+    } catch (error: unknown) {
+      toast.show({
+        message: error instanceof Error ? error.message : "检查更新失败",
+        modal: false,
+        type: "error",
+      })
+    }
+  }
+
+  function startAvailableUpdate() {
+    if (appUpdate.platform === "ios") {
+      appUpdate.cancelUpdate()
+      toast.show({ message: "iOS 暂不支持应用内安装，请联系管理员更新", modal: false, type: "text" })
+      return
+    }
+    void appUpdate.startUpdate()
+  }
+
   return (
     <YStack bg={colors.background0} flex={1}>
+      {mode !== "default" ? <AppHeader onBackPress={() => router.back()} title="" /> : null}
       <SafeAreaView
-        edges={["top", "bottom"]}
+        edges={mode === "default" ? ["top", "bottom"] : ["bottom"]}
         style={[styles.fill, { backgroundColor: colors.background0 }]}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <YStack grow={1} items="center" onPress={closeOpenSwipeable}>
-            {mode !== "default" ? (
-              <YStack maxW={440} pt="$3" px="$4" width="100%">
-                <XGUIButton accessibilityLabel={mode === "add-account" ? "取消添加账号" : "返回账号设置"} onPress={() => router.back()} size="mini" variant="secondary">
-                  返回
-                </XGUIButton>
-              </YStack>
-            ) : null}
             <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>
               {mode === "manage" ? "服务器管理" : mode === "add-account" ? "选择要添加账号的服务器" : "选择服务器"}
             </Text>
@@ -165,7 +191,23 @@ export function ServerManagementScreen() {
                 </XGUIButton>
               </YStack>
             </YStack>
-            <YStack mt="auto" pb="$4" pt="$8">
+            <YStack items="center" mt="auto" pb="$4" pt="$8">
+              {mode === "default" ? (
+                <Pressable
+                  accessibilityLabel={`检查更新，当前版本 ${appUpdate.installedVersion.label}`}
+                  accessibilityRole="button"
+                  disabled={appUpdate.status !== "idle"}
+                  onPress={() => void handleCheckForUpdates()}
+                  style={({ pressed }) => [
+                    styles.updateLink,
+                    { opacity: appUpdate.status !== "idle" ? 0.45 : pressed ? 0.6 : 1 },
+                  ]}
+                >
+                  <Text style={[styles.updateVersion, { color: colors.textSecondary }]}>版本 {appUpdate.installedVersion.label}</Text>
+                  <Text style={[styles.updateSeparator, { color: colors.textSecondary }]}> · </Text>
+                  <Text style={[styles.updateAction, { color: colors.brand }]}>检查更新</Text>
+                </Pressable>
+              ) : null}
               <XGUIFooter
                 links={[
                   { label: "即应", url: "https://jiying.chat/" },
@@ -227,6 +269,39 @@ export function ServerManagementScreen() {
         open={serverToDelete !== null}
         title="删除服务器"
       />
+
+      <XGUIActionSheet
+        actions={[
+          {
+            label: "更新",
+            onBeforePress: () => {
+              updateConfirmedRef.current = true
+            },
+            onPress: startAvailableUpdate,
+          },
+        ]}
+        description={
+          appUpdate.release
+            ? `当前版本 ${appUpdate.installedVersion.version}，最新版本 ${appUpdate.release.version}`
+            : undefined
+        }
+        onOpenChange={(open) => {
+          if (!open && appUpdate.status === "available") {
+            if (updateConfirmedRef.current) updateConfirmedRef.current = false
+            else appUpdate.cancelUpdate()
+          }
+        }}
+        open={appUpdate.status === "available"}
+        title="发现新版本，是否更新？"
+      />
+
+      <AppUpdateDialog
+        onCancel={appUpdate.cancelUpdate}
+        onConfirm={() => void appUpdate.startUpdate()}
+        progress={appUpdate.progress}
+        release={appUpdate.release}
+        status={appUpdate.status}
+      />
     </YStack>
   )
 }
@@ -245,5 +320,24 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+  },
+  updateAction: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  updateLink: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 12,
+  },
+  updateSeparator: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  updateVersion: {
+    fontSize: 14,
+    lineHeight: 20,
   },
 })

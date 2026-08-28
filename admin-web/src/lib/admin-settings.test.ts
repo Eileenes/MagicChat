@@ -26,6 +26,7 @@ describe("admin settings", () => {
         JSON.stringify({
           success: true,
           data: {
+            allow_user_nickname_editing: true,
             app_name: "即应",
             contact_directory_mode: "organization",
             organization_name: "长亭科技",
@@ -43,6 +44,7 @@ describe("admin settings", () => {
     const settings = await getInfoSettings(fetcher)
 
     expect(settings).toEqual({
+      allowUserNicknameEditing: true,
       appName: "即应",
       contactDirectoryMode: "organization",
       organizationName: "长亭科技",
@@ -59,6 +61,7 @@ describe("admin settings", () => {
         JSON.stringify({
           success: true,
           data: {
+            allow_user_nickname_editing: false,
             app_name: "星环协作",
             contact_directory_mode: "friends",
             organization_name: "长亭科技企业安全",
@@ -75,6 +78,7 @@ describe("admin settings", () => {
 
     const settings = await updateInfoSettings(
       {
+        allowUserNicknameEditing: false,
         appName: " 星环协作 ",
         contactDirectoryMode: "friends",
         organizationName: " 长亭科技企业安全 ",
@@ -83,12 +87,14 @@ describe("admin settings", () => {
     )
 
     expect(settings).toEqual({
+      allowUserNicknameEditing: false,
       appName: "星环协作",
       contactDirectoryMode: "friends",
       organizationName: "长亭科技企业安全",
     })
     expect(fetcher).toHaveBeenCalledWith("/api/admin/settings/info", {
       body: JSON.stringify({
+        allow_user_nickname_editing: false,
         app_name: "星环协作",
         contact_directory_mode: "friends",
         organization_name: "长亭科技企业安全",
@@ -123,6 +129,7 @@ describe("admin settings", () => {
     await expect(
       updateInfoSettings(
         {
+          allowUserNicknameEditing: true,
           appName: "",
           contactDirectoryMode: "organization",
           organizationName: "长亭科技",

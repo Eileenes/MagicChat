@@ -148,7 +148,15 @@ func (s *Service) listUsers(db *gorm.DB, keyword string, userIDs []string) ([]Us
 	}
 	if keyword != "" {
 		like := "%" + keyword + "%"
-		query = query.Where("LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(nickname) LIKE ? OR phone LIKE ?", like, like, like, like)
+		allowNicknameSearch, err := s.userNicknameEditingAllowed(db.Statement.Context)
+		if err != nil {
+			return nil, err
+		}
+		if allowNicknameSearch {
+			query = query.Where("LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(nickname) LIKE ? OR phone LIKE ?", like, like, like, like)
+		} else {
+			query = query.Where("LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR phone LIKE ?", like, like, like)
+		}
 	}
 	var values []store.User
 	if err := query.Order("name ASC").Order("email ASC").Order("id ASC").Find(&values).Error; err != nil {

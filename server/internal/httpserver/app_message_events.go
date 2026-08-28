@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -46,7 +47,7 @@ type appMessageSenderPayload struct {
 	Type     string `json:"type"`
 }
 
-func (s *Server) replayAppEvents(appID string, conn *appconnection.Connection) error {
+func (s *Server) replayAppEvents(ctx context.Context, appID string, conn *appconnection.Connection) error {
 	var ack store.AppEventAck
 	lastAckedCursor := int64(0)
 	err := s.db.First(&ack, "app_id = ?", appID).Error
@@ -67,13 +68,60 @@ func (s *Server) replayAppEvents(appID string, conn *appconnection.Connection) e
 			return err
 		}
 		for _, event := range events {
-			if !conn.EnqueueReliable(realtime.NewCursorEvent(event.ID, event.Event, event.Payload)) {
-				return errors.New("app connection closed during event replay")
+			if err := s.withAppEventPayload(ctx, event.Payload, func(payload json.RawMessage) error {
+				if !conn.EnqueueReliable(realtime.NewCursorEvent(event.ID, event.Event, payload)) {
+					return errors.New("app connection closed during event replay")
+				}
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 		if len(events) < appEventReplayPageSize {
 			return nil
 		}
 		nextCursor = events[len(events)-1].ID
+	}
+}
+
+func (s *Server) withAppEventPayload(ctx context.Context, payload json.RawMessage, operation func(json.RawMessage) error) error {
+	return s.settings.WithUserNicknameEditingPolicy(ctx, func(_ *gorm.DB, allowed bool) error {
+		if allowed {
+			return operation(payload)
+		}
+		masked, err := maskNicknameFields(payload)
+		if err != nil {
+			return err
+		}
+		return operation(masked)
+	})
+}
+
+func maskNicknameFields(payload json.RawMessage) (json.RawMessage, error) {
+	var value any
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return nil, err
+	}
+	maskNicknameValue(value)
+	return json.Marshal(value)
+}
+
+func maskNicknameValue(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		if identityType, _ := typed["type"].(string); identityType == store.MessageSenderTypeUser {
+			if name, ok := typed["name"].(string); ok {
+				if _, hasNickname := typed["nickname"]; hasNickname {
+					typed["nickname"] = name
+				}
+			}
+		}
+		for _, child := range typed {
+			maskNicknameValue(child)
+		}
+	case []any:
+		for _, child := range typed {
+			maskNicknameValue(child)
+		}
 	}
 }

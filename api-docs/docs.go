@@ -785,7 +785,7 @@ const docTemplate = `{
         },
         "/api/admin/settings/info": {
             "get": {
-                "description": "管理员读取 App 名称和组织名称。",
+                "description": "管理员读取 App 名称、组织名称、通讯录模式和用户昵称策略。",
                 "produces": [
                     "application/json"
                 ],
@@ -827,7 +827,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "管理员更新 App 名称和组织名称。",
+                "description": "管理员更新 App 名称、组织名称、通讯录模式和用户昵称策略。",
                 "consumes": [
                     "application/json"
                 ],
@@ -6952,6 +6952,122 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/me/deactivation": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端认证"
+                ],
+                "summary": "注销当前账号",
+                "parameters": [
+                    {
+                        "description": "8 位数字验证码",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.deactivationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.successEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/me/deactivation/code": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端认证"
+                ],
+                "summary": "请求账号注销验证码",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.deactivationCodeResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/projects": {
             "get": {
                 "security": [
@@ -9413,6 +9529,10 @@ const docTemplate = `{
         "admin.infoSettingsResponse": {
             "type": "object",
             "properties": {
+                "allow_user_nickname_editing": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "app_name": {
                     "type": "string",
                     "example": "即应"
@@ -9676,6 +9796,10 @@ const docTemplate = `{
         "admin.updateInfoSettingsRequest": {
             "type": "object",
             "properties": {
+                "allow_user_nickname_editing": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "app_name": {
                     "type": "string",
                     "example": "即应"
@@ -10541,6 +10665,25 @@ const docTemplate = `{
             "properties": {
                 "file": {
                     "$ref": "#/definitions/client.temporaryFileResponse"
+                }
+            }
+        },
+        "client.deactivationCodeResponse": {
+            "type": "object",
+            "properties": {
+                "expires_in_seconds": {
+                    "type": "integer"
+                },
+                "retry_after_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.deactivationRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
                 }
             }
         },

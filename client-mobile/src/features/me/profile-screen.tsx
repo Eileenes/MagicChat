@@ -34,6 +34,7 @@ export function ProfileScreen() {
   const toast = useXGUIToast()
   const [savingAvatar, setSavingAvatar] = useState(false)
   const [avatarSheetOpen, setAvatarSheetOpen] = useState(false)
+  const [deactivationSheetOpen, setDeactivationSheetOpen] = useState(false)
   const displayName =
     currentUser?.nickname.trim() ||
     currentUser?.name.trim() ||
@@ -165,6 +166,9 @@ export function ProfileScreen() {
               valuePlaceholder={!currentUser?.phone.trim()}
             />
           </XGUIList>
+          <XGUIList size="large">
+            <XGUIListItem centerContent destructive onPress={() => setDeactivationSheetOpen(true)} title="注销账号" />
+          </XGUIList>
         </YStack>
       </KeyboardAwareScreen>
 
@@ -186,6 +190,13 @@ export function ProfileScreen() {
         onOpenChange={setAvatarSheetOpen}
         open={avatarSheetOpen}
         title="修改头像"
+      />
+      <XGUIActionSheet
+        actions={[{ deferUntilClosed: true, destructive: true, label: "继续注销", onPress: () => router.push("/account-deactivation" as Href) }]}
+        description="注销后账号将无法登录，无法自行恢复；如需恢复请联系管理员。"
+        onOpenChange={setDeactivationSheetOpen}
+        open={deactivationSheetOpen}
+        title="注销账号"
       />
     </View>
   )

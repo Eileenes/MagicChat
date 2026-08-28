@@ -100,6 +100,32 @@ func TestServiceDeleteRemovesTaskReminders(t *testing.T) {
 	}
 }
 
+func TestServiceMemberPageUsesRealNameWhenNicknamesAreDisabled(t *testing.T) {
+	db := openProjectTestDB(t)
+	now := time.Date(2026, 7, 15, 6, 0, 0, 0, time.UTC)
+	owner := insertProjectTestUser(t, db, "member-page@example.com", now)
+	if err := db.Model(&store.User{}).Where("id = ?", owner.ID).Updates(map[string]any{
+		"name": "Zulu Name", "nickname": "Alpha Alias",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Dependencies{DB: db, NicknamePolicy: fixedProjectNicknamePolicy(false)})
+
+	members, err := service.loadMemberPage(context.Background(), store.Project{ID: uuid.NewString(), OwnerUserID: owner.ID}, nil, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 1 || members[0].Nickname != "Zulu Name" || members[0].DisplayName != "Zulu Name" {
+		t.Fatalf("members = %#v", members)
+	}
+}
+
+type fixedProjectNicknamePolicy bool
+
+func (policy fixedProjectNicknamePolicy) UserNicknameEditingAllowed(context.Context) (bool, error) {
+	return bool(policy), nil
+}
+
 func TestServiceBindsGroupsAndUploadsAvatarThroughPorts(t *testing.T) {
 	db := openProjectTestDB(t)
 	now := time.Date(2026, 7, 15, 6, 0, 0, 0, time.UTC)

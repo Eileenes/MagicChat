@@ -43,6 +43,30 @@ func TestServiceListsActiveUsersWithPresence(t *testing.T) {
 	}
 }
 
+func TestServiceDoesNotSearchHiddenNicknames(t *testing.T) {
+	db := openContactTestDB(t)
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	user := insertContactTestUser(t, db, "real-name@example.com", "Real Name", store.UserStatusActive, now)
+	if err := db.Model(&store.User{}).Where("id = ?", user.ID).Update("nickname", "Hidden Alias").Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Dependencies{DB: db, NicknamePolicy: fixedNicknamePolicy(false)})
+
+	result, err := service.ListUsers(context.Background(), ListUsersCommand{Keyword: "hidden alias"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Users) != 0 {
+		t.Fatalf("users = %#v, want hidden nickname excluded", result.Users)
+	}
+}
+
+type fixedNicknamePolicy bool
+
+func (policy fixedNicknamePolicy) UserNicknameEditingAllowed(context.Context) (bool, error) {
+	return bool(policy), nil
+}
+
 func TestServiceResolvesActiveUsersByIDInRequestOrder(t *testing.T) {
 	db := openContactTestDB(t)
 	now := time.Date(2026, 7, 15, 10, 30, 0, 0, time.UTC)
