@@ -263,8 +263,9 @@ assert_contains "homepage/src/components/SiteHeader.astro" 'target="_blank"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'rel="noopener noreferrer"'
 assert_contains "homepage/src/components/SiteHeader.astro" 'name="tabler:brand-github-filled"'
 assert_contains "homepage/src/pages/index.astro" 'href="https://app.jiying.chat/"'
-assert_contains "homepage/src/components/SiteFooter.astro" 'href={`${import.meta.env.BASE_URL}privacy-policy/`}'
-assert_contains "homepage/src/components/SiteFooter.astro" 'href={`${import.meta.env.BASE_URL}user-agreement/`}'
+assert_not_contains "homepage/src/components/SiteFooter.astro" 'href={`${import.meta.env.BASE_URL}privacy-policy/`}'
+assert_not_contains "homepage/src/components/SiteFooter.astro" 'href={`${import.meta.env.BASE_URL}user-agreement/`}'
+assert_contains "homepage/src/components/SiteFooter.astro" 'href={`${import.meta.env.BASE_URL}user-service/`}'
 assert_not_contains "homepage/src/pages/index.astro" "chat.chaitin.net"
 assert_not_contains "homepage/src/components/SiteFooter.astro" "chat.chaitin.net"
 assert_not_contains "homepage/src/components/SiteHeader.astro" "desktop-nav"
