@@ -442,30 +442,36 @@ body.page-legal .brand img { filter: saturate(.75) brightness(1.1); }
   outline-offset: 3px;
 }
 
-/* Legal pages retain the homepage's full-bleed visual treatment. */
-.legal-page { position: relative; isolation: isolate; min-height: 100svh; overflow: hidden; padding: 142px 0 110px; color: var(--white); background: var(--night); }
-.legal-page::before, .legal-page::after { position: absolute; inset: 0; z-index: -1; content: ""; }
-.legal-page::before { background: var(--legal-image) center / cover fixed no-repeat; filter: grayscale(1) contrast(1.1) brightness(.68); transform: scale(1.03); }
-.legal-page::after { background: rgb(4 13 12 / 84%); }
-.legal-content { max-width: 860px; padding: 42px 0; margin: 0 auto; }
+/* Legal pages share the homepage's atmospheric gradients without a photo background. */
+.legal-page { position: relative; isolation: isolate; min-height: 100svh; overflow: visible; padding: 142px 0 110px; color: var(--white); background:
+  radial-gradient(ellipse 88% 66% at 64% 58%, rgb(18 112 105 / 40%) 0%, rgb(10 78 73 / 22%) 34%, rgb(4 38 36 / 8%) 54%, transparent 74%),
+  radial-gradient(ellipse 62% 54% at 12% 20%, rgb(27 119 112 / 20%) 0%, rgb(10 63 60 / 11%) 42%, transparent 72%),
+  linear-gradient(180deg, #031716 0%, #062522 24%, #07302d 52%, #052421 78%, #031716 100%); }
+.legal-content { max-width: 1180px; padding: 42px 0; margin: 0 auto; }
 .legal-content .eyebrow { display: inline-block; margin-bottom: 10px; color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .1em; }
 .legal-content h1 { margin: 0 0 18px; color: #fff; font-size: 38px; line-height: 1.2; }
+.legal-title-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+.legal-title-row h1 { margin: 0; }
 .legal-content h2 { margin: 37px 0 9px; color: #fff; font-size: 20px; }
 .legal-content p { color: rgb(231 243 238 / 82%); line-height: 1.9; }
 .legal-lead { margin-top: 0; color: rgb(239 249 246 / 88%) !important; }
-.legal-updated { color: rgb(231 243 238 / 62%) !important; font-size: 13px; }
+.legal-updated { color: rgb(231 243 238 / 62%) !important; font-size: 13px; text-align: right; }
+.legal-home-link { display: inline-flex; min-height: 42px; flex: 0 0 auto; align-items: center; gap: 7px; margin-top: 0; padding: 0 16px; color: var(--green); border: 1px solid rgb(91 217 202 / 38%); border-radius: 8px; background: rgb(20 184 166 / 10%); font-size: 13px; font-weight: 750; line-height: 1; transition: color 180ms var(--ease), background 180ms var(--ease), border-color 180ms var(--ease), transform 180ms var(--ease); }
+.legal-document .legal-home-link { text-decoration: none; }
+.legal-home-link::before { content: '←'; font-size: 16px; line-height: 1; }
+.legal-home-link:hover { color: #fff; border-color: rgb(91 217 202 / 72%); background: rgb(20 184 166 / 24%); transform: translateX(-2px); }
 .legal-document { padding-top: 12px; padding-bottom: 0; }
-.legal-header { padding-bottom: 28px; border-bottom: 1px solid rgb(255 255 255 / 24%); }
+.legal-header { padding-bottom: 28px; }
 .legal-header .legal-updated { margin-bottom: 0; }
 .legal-body { display: block; margin-top: 34px; }
+.legal-main { min-width: 0; }
 .legal-nav { margin: 0 0 34px; padding: 0 0 16px; }
-.legal-nav-track { transition: transform 280ms var(--ease); will-change: transform; }
+.legal-nav-track { width: 100%; }
 .legal-nav ol { display: flex; width: max-content; gap: 8px; padding: 0; margin: 0; list-style: none; }
 .legal-nav li, .legal-nav li:last-child { min-width: 0; background: rgb(4 14 12 / 58%); }
-.legal-nav a { display: flex; min-height: 43px; align-items: center; gap: 10px; padding: 9px 10px; color: rgb(231 243 238 / 76%); font-size: 12px; line-height: 1.4; text-decoration: none; transition: color 160ms var(--ease), background 160ms var(--ease); }
+.legal-nav a { display: flex; min-height: 46px; align-items: center; gap: 10px; padding: 10px 12px; color: rgb(231 243 238 / 76%); font-size: 15px; line-height: 1.45; text-decoration: none; transition: color 160ms var(--ease), background 160ms var(--ease); }
 .legal-nav a:hover { color: #fff; background: rgb(20 184 166 / 18%); }
-.legal-nav a.is-current { color: #fff; background: rgb(20 184 166 / 22%); box-shadow: inset 3px 0 0 var(--green); }
-.legal-nav b { flex: 0 0 auto; color: var(--green); font-size: 10px; font-weight: 800; }
+.legal-nav b { flex: 0 0 auto; color: var(--green); font-size: 13px; font-weight: 800; }
 .legal-sections { min-width: 0; }
 .legal-document section { margin-top: 0; scroll-margin-top: 96px; }
 .legal-document section + section { margin-top: 34px; }
@@ -479,11 +485,12 @@ body.page-legal .brand img { filter: saturate(.75) brightness(1.1); }
 .legal-document .legal-nav a { text-decoration: none; }
 
 @media (min-width: 1260px) {
-  .legal-nav { position: fixed; top: 50%; left: max(24px, calc(50% - 640px)); z-index: 10; width: 152px; height: 43px; overflow: visible; margin: 0; padding: 0; }
-  .legal-nav-track { position: absolute; top: 0; left: 0; width: 100%; }
-  .legal-nav ol { display: grid; width: auto; grid-template-columns: 1fr; gap: 0; }
+  .legal-body { display: grid; grid-template-columns: minmax(190px, 220px) minmax(0, 860px); gap: clamp(34px, 5vw, 76px); align-items: start; margin-top: 0; }
+  .legal-nav { position: sticky; top: 88px; z-index: 5; width: auto; margin: 0; padding: 0; }
+  .legal-nav-track { width: 100%; }
+  .legal-nav ol { display: grid; width: auto; grid-template-columns: 1fr; gap: 2px; }
   .legal-nav li, .legal-nav li:last-child { border: 0; background: transparent; }
-  .legal-nav a { min-height: 43px; padding: 9px 10px; white-space: normal; }
+  .legal-nav a { min-height: 46px; padding: 10px 12px; white-space: normal; }
 }
 
 @media (min-width: 901px) {
@@ -2297,6 +2304,23 @@ body.page-scene .scene-page > .dual-section {
   }
 }
 
+/* The reveal script is deferred, so keep all of its targets hidden before
+   it runs. :where() keeps this guard weaker than the state rules below. */
+.js :where(
+  .scene-page .scene-hero .scene-content > *,
+  .scene-page .scene-why .scene-text-block,
+  .scene-page .scene-why .pain-mosaic,
+  .scene-page .scene-solution .scene-text-block,
+  .scene-page .feature-explorer,
+  .scene-page .comparison-heading,
+  .scene-page .comparison-panel,
+  .scene-page .faq-inner,
+  .scene-page .footer-grid > *
+) {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+}
+
 .js .motion-reveal {
   opacity: 0;
   transform: translate3d(0, 18px, 0);
@@ -3021,7 +3045,7 @@ body.page-scene .scene-page > .dual-section {
   .legal-nav a {
     min-height: 38px;
     padding: 7px 10px;
-    font-size: 12px;
+    font-size: 14px;
     white-space: nowrap;
   }
 }
