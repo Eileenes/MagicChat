@@ -194,7 +194,7 @@ export function ServerManagementScreen() {
             <YStack items="center" mt="auto" pb="$4" pt="$8">
               {mode === "default" ? (
                 <Pressable
-                  accessibilityLabel={`检查更新，当前版本 ${appUpdate.installedVersion.label}`}
+                  accessibilityLabel={`检查更新，当前版本 ${appUpdate.installedVersion.version}`}
                   accessibilityRole="button"
                   disabled={appUpdate.status !== "idle"}
                   onPress={() => void handleCheckForUpdates()}
@@ -203,8 +203,7 @@ export function ServerManagementScreen() {
                     { opacity: appUpdate.status !== "idle" ? 0.45 : pressed ? 0.6 : 1 },
                   ]}
                 >
-                  <Text style={[styles.updateVersion, { color: colors.textSecondary }]}>版本 {appUpdate.installedVersion.label}</Text>
-                  <Text style={[styles.updateSeparator, { color: colors.textSecondary }]}> · </Text>
+                  <Text style={[styles.updateVersion, { color: colors.foreground2 }]}>版本 {appUpdate.installedVersion.version}</Text>
                   <Text style={[styles.updateAction, { color: colors.brand }]}>检查更新</Text>
                 </Pressable>
               ) : null}
@@ -324,6 +323,7 @@ const styles = StyleSheet.create({
   updateAction: {
     fontSize: 14,
     lineHeight: 20,
+    marginLeft: 8,
   },
   updateLink: {
     alignItems: "center",
@@ -331,10 +331,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 44,
     paddingHorizontal: 12,
-  },
-  updateSeparator: {
-    fontSize: 14,
-    lineHeight: 20,
   },
   updateVersion: {
     fontSize: 14,
