@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { MemoryRouter, Route, Routes } from "react-router"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AppLayout } from "@/components/app-layout"
 import { LoginPage } from "@/pages/login-page"
@@ -39,6 +39,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.clientData.conversations = []
   mocks.clientData.incomingFriendRequests = []
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 vi.mock("@/lib/client-data-context", () => ({
@@ -86,9 +90,7 @@ describe("AppLayout", () => {
       </MemoryRouter>
     )
 
-    expect(
-      screen.getByLabelText("通讯录，有新的好友申请")
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText("通讯录，有新的好友申请")).toBeInTheDocument()
   })
 
   it("splits profile and settings actions in the user avatar menu", async () => {
@@ -132,6 +134,24 @@ describe("AppLayout", () => {
 
   it("shows download options for all client platforms", async () => {
     const user = userEvent.setup()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: () =>
+          Promise.resolve({
+            android: { url: "https://downloads.example/client.apk" },
+            "linux-amd": {
+              url: "https://downloads.example/client-x64.AppImage",
+            },
+            "linux-arm": {
+              url: "https://downloads.example/client-arm64.AppImage",
+            },
+            macos: { url: "https://downloads.example/client.dmg" },
+            windows: { url: "https://downloads.example/client.exe" },
+          }),
+        ok: true,
+      })
+    )
 
     render(
       <MemoryRouter initialEntries={["/chat"]}>
@@ -147,13 +167,14 @@ describe("AppLayout", () => {
     expect(within(dialog).getByText("Windows")).toBeInTheDocument()
     expect(within(dialog).getByText("macOS")).toBeInTheDocument()
     expect(within(dialog).getByText("Android")).toBeInTheDocument()
+    expect(within(dialog).getByText("Linux")).toBeInTheDocument()
     expect(within(dialog).getByText("iOS")).toBeInTheDocument()
     expect(
       within(dialog).getByRole("link", {
         name: "下载 Windows 客户端",
       })
     ).toMatchObject({
-      href: "https://jiying.chat/releases/jiying.exe",
+      href: "https://downloads.example/client.exe",
       target: "_blank",
     })
     expect(
@@ -161,7 +182,7 @@ describe("AppLayout", () => {
         name: "下载 macOS 客户端",
       })
     ).toMatchObject({
-      href: "https://jiying.chat/releases/jiying.dmg",
+      href: "https://downloads.example/client.dmg",
       target: "_blank",
     })
     expect(
@@ -169,12 +190,37 @@ describe("AppLayout", () => {
         name: "下载 Android 客户端",
       })
     ).toMatchObject({
-      href: "https://jiying.chat/releases/jiying.apk",
+      href: "https://downloads.example/client.apk",
       target: "_blank",
     })
     expect(
-      within(dialog).getAllByRole("button", { name: "敬请期待" })
+      within(dialog).getAllByRole("button", {
+        name: "iOS 客户端敬请期待",
+      })
     ).toHaveLength(1)
+    await user.click(
+      within(dialog).getByRole("button", { name: "下载 Linux 客户端" })
+    )
+    expect(
+      screen.getByRole("menuitem", {
+        name: "下载 Linux x64 / AMD64 客户端",
+      })
+    ).toMatchObject({
+      href: "https://downloads.example/client-x64.AppImage",
+      target: "_blank",
+    })
+    expect(
+      screen.getByRole("menuitem", {
+        name: "下载 Linux ARM64 客户端",
+      })
+    ).toMatchObject({
+      href: "https://downloads.example/client-arm64.AppImage",
+      target: "_blank",
+    })
+
+    await user.keyboard("{Escape}")
+    expect(dialog).toBeInTheDocument()
+    expect(dialog).toHaveAttribute("data-state", "open")
   })
 
   it("opens the product homepage in a new tab", () => {
