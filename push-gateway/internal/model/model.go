@@ -74,6 +74,7 @@ type Job struct {
 	ExpiresAt         time.Time `gorm:"not null"`
 	LockedAt          *time.Time
 	LockToken         string    `gorm:"not null"`
+	ProviderRequestID string    `gorm:"not null"`
 	ProviderMessageID string    `gorm:"not null"`
 	LastErrorCode     string    `gorm:"not null"`
 	CreatedAt         time.Time `gorm:"not null;index:push_jobs_dispatch_index,priority:3"`

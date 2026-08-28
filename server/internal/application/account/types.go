@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -98,4 +100,8 @@ type ProfileNotifications interface {
 
 type PasswordLoginPolicy interface {
 	PasswordLoginEnabled(context.Context) (bool, error)
+}
+
+type UserNicknamePolicy interface {
+	WithUserNicknameEditingPolicy(context.Context, func(*gorm.DB, bool) error) error
 }

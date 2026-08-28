@@ -78,7 +78,7 @@ func (s *Server) appWebSocket(c echo.Context) error {
 		conn.Serve()
 		close(serveDone)
 	}()
-	replayErr := s.replayAppEvents(app.ID, conn)
+	replayErr := s.replayAppEvents(c.Request().Context(), app.ID, conn)
 	s.appEventMu.Unlock()
 	if replayErr != nil {
 		s.appConnections.Unregister(conn)

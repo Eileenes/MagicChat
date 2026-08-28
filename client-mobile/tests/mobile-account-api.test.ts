@@ -17,7 +17,7 @@ import {
 
 const validLogin = {
   data: {
-    user: { email: "a@example.com", id: "user-1", name: "Alice" },
+    user: { avatar: "/assets/avatars/alice.webp", email: "a@example.com", id: "user-1", name: "Alice" },
     mobile_session: { token: "secret-token", expires_at: "2999-01-01T00:00:00Z" },
   },
   success: true,
@@ -31,9 +31,10 @@ test("密码和邮箱验证码登录协商 Mobile Session，且匿名请求不�
     return json(validLogin)
   }
   let consumed = ""
-  await login("https://example.com", { account: "a", password: "p" }, { fetcher, onMobileSession: (value) => { consumed = value.token } })
+  const user = await login("https://example.com", { account: "a", password: "p" }, { fetcher, onMobileSession: (value) => { consumed = value.token } })
   await loginWithEmailCode("https://example.com", { email: "a", code: "1" }, { fetcher })
   assert.equal(consumed, "secret-token")
+  assert.equal(user.avatar, "/assets/avatars/alice.webp")
   for (const headers of seen) {
     assert.equal(headers.get("X-Dianbao-Mobile-Session"), "1")
     assert.equal(headers.has("Authorization"), false)
@@ -117,6 +118,29 @@ test("401 归属账号、触发 callback 且错误脱敏", async () => {
     return true
   })
   assert.equal(callbackAccount, "account-a")
+})
+
+test("401 业务码默认仍使 Session 失效，只有调用点显式声明才豁免", async () => {
+  let unauthorizedCalls = 0
+  let leakedOption = false
+  const auth = {
+    auth: async () => ({ accountId: "account-a", generation: 1, token: "token-a" }),
+    isCurrent: () => true,
+    onUnauthorized: () => { unauthorizedCalls++ },
+  }
+  const fetcher: ApiFetch = async (_url, init) => {
+    leakedOption = "nonSessionUnauthorizedCodes" in (init ?? {})
+    return json({ success: false, error: { code: "invalid_code", message: "验证码错误" } }, 401)
+  }
+  const client = createApiClient("https://example.com", fetcher, { auth })
+  await assert.rejects(client.request("/protected", { errorMessage: "失败" }), AccountUnauthorizedError)
+  assert.equal(unauthorizedCalls, 1)
+  await assert.rejects(
+    client.request("/protected", { errorMessage: "失败", nonSessionUnauthorizedCodes: ["invalid_code"] }),
+    (error: unknown) => error instanceof ApiRequestError && !(error instanceof AccountUnauthorizedError) && error.code === "invalid_code"
+  )
+  assert.equal(unauthorizedCalls, 1)
+  assert.equal(leakedOption, false)
 })
 
 test("认证 resolver 受请求超时和父级取消控制", async () => {

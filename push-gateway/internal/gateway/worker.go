@@ -184,18 +184,39 @@ func (s *Service) dispatchJob(ctx context.Context, job model.Job) error {
 	if !ok {
 		return s.finishJob(ctx, job, model.JobStatusFailed, "unsupported_event", "")
 	}
-	sendCtx, cancelSend := context.WithTimeout(ctx, providerSendLimit)
-	defer cancelSend()
-	receipt, err := pushProvider.Send(sendCtx, provider.Notification{
+	notification := provider.Notification{
 		ID: job.ID, Token: providerToken, Platform: job.Grant.Installation.Platform,
 		Environment: job.Grant.Installation.Environment,
 		Title:       template.Title, Body: template.Body, Event: job.EventType,
 		GrantID: job.GrantID, RouteToken: job.RouteToken,
-		CollapseKey: job.CollapseKey, ExpiresAt: job.ExpiresAt,
-	})
+		CollapseKey: job.CollapseKey, RequestIdentifier: job.ProviderRequestID,
+		ExpiresAt: job.ExpiresAt,
+	}
+	if identifierProvider, ok := pushProvider.(provider.RequestIdentifierProvider); ok && notification.RequestIdentifier == "" {
+		identifierCtx, cancelIdentifier := context.WithTimeout(ctx, providerSendLimit)
+		identifier, identifierErr := identifierProvider.NewRequestIdentifier(identifierCtx)
+		cancelIdentifier()
+		if identifierErr != nil {
+			return s.handleProviderError(ctx, job, identifierErr)
+		}
+		updated := s.db.WithContext(ctx).Model(&model.Job{}).
+			Where("id = ? AND status = ? AND lock_token = ?", job.ID, model.JobStatusSending, job.LockToken).
+			Update("provider_request_id", identifier)
+		if updated.Error != nil || updated.RowsAffected != 1 {
+			return updated.Error
+		}
+		notification.RequestIdentifier = identifier
+	}
+	sendCtx, cancelSend := context.WithTimeout(ctx, providerSendLimit)
+	defer cancelSend()
+	receipt, err := pushProvider.Send(sendCtx, notification)
 	if err == nil {
 		return s.finishJob(ctx, job, model.JobStatusAccepted, "", receipt.MessageID)
 	}
+	return s.handleProviderError(ctx, job, err)
+}
+
+func (s *Service) handleProviderError(ctx context.Context, job model.Job, err error) error {
 	var sendErr *provider.SendError
 	if !errors.As(err, &sendErr) {
 		sendErr = &provider.SendError{Kind: provider.ErrorTransient, Code: "provider_error", Err: err}

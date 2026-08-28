@@ -251,3 +251,30 @@ func createUserManagementSession(t *testing.T, db *gorm.DB, user store.User, suf
 		t.Fatalf("create session: %v", err)
 	}
 }
+
+func TestServiceDoesNotSearchHiddenNicknames(t *testing.T) {
+	db := openUserManagementTestDB(t)
+	now := time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC)
+	user := store.User{
+		ID: uuid.NewString(), Email: "real-name@example.com", Name: "Real Name", Nickname: "Hidden Alias",
+		Avatar: store.DefaultUserAvatar, PasswordHash: "hash", Status: store.UserStatusActive, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Dependencies{DB: db, NicknamePolicy: fixedNicknamePolicy(false)})
+
+	result, err := service.List(context.Background(), ListCommand{Keyword: "hidden alias"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 0 || len(result.Users) != 0 {
+		t.Fatalf("result = %#v, want hidden nickname excluded", result)
+	}
+}
+
+type fixedNicknamePolicy bool
+
+func (policy fixedNicknamePolicy) UserNicknameEditingAllowed(context.Context) (bool, error) {
+	return bool(policy), nil
+}

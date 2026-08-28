@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"encoding/json"
 
 	conversationapp "app/internal/application/conversation"
 	"app/internal/realtime"
@@ -56,12 +57,15 @@ func (s *Server) PublishTopicEvent(_ context.Context, userIDs []string, event co
 	}))
 }
 
-func (s *Server) DeliverConversationAppEvents(_ context.Context, events []conversationapp.AppEvent) {
+func (s *Server) DeliverConversationAppEvents(ctx context.Context, events []conversationapp.AppEvent) {
 	if s.appConnections == nil {
 		return
 	}
 	for _, event := range events {
-		s.appConnections.SendToApp(event.AppID, realtime.NewCursorEvent(event.Cursor, event.Event, event.Payload))
+		_ = s.withAppEventPayload(ctx, event.Payload, func(payload json.RawMessage) error {
+			s.appConnections.SendToApp(event.AppID, realtime.NewCursorEvent(event.Cursor, event.Event, payload))
+			return nil
+		})
 	}
 }
 

@@ -17,14 +17,22 @@ import (
 )
 
 type recordingProvider struct {
-	mu            sync.Mutex
-	notifications []provider.Notification
-	errors        []error
+	mu                     sync.Mutex
+	notifications          []provider.Notification
+	errors                 []error
+	requestIdentifierCalls int
 }
 
 func (*recordingProvider) Name() string { return "fake" }
 
 func (*recordingProvider) ValidateRegistration(provider.Registration) error { return nil }
+
+func (p *recordingProvider) NewRequestIdentifier(context.Context) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.requestIdentifierCalls++
+	return "provider-request-identifier", nil
+}
 
 func (p *recordingProvider) Send(_ context.Context, notification provider.Notification) (provider.Receipt, error) {
 	p.mu.Lock()
@@ -373,6 +381,13 @@ func TestTransientProviderFailureRetries(t *testing.T) {
 	_ = db.First(&stored, "id = ?", job.JobID).Error
 	if stored.Status != model.JobStatusAccepted || stored.Attempts != 2 {
 		t.Fatalf("job after retry = %#v", stored)
+	}
+	if pushProvider.requestIdentifierCalls != 1 || len(pushProvider.notifications) != 2 ||
+		pushProvider.notifications[0].RequestIdentifier != "provider-request-identifier" ||
+		pushProvider.notifications[1].RequestIdentifier != "provider-request-identifier" ||
+		stored.ProviderRequestID != "provider-request-identifier" {
+		t.Fatalf("provider request identifiers = calls:%d notifications:%#v stored:%q",
+			pushProvider.requestIdentifierCalls, pushProvider.notifications, stored.ProviderRequestID)
 	}
 }
 

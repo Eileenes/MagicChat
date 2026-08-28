@@ -13,27 +13,29 @@ import (
 )
 
 type Dependencies struct {
-	AppEvents      AppEventPort
-	AppEventLocker AppEventLocker
-	DB             *gorm.DB
-	Apps           config.AppsConfig
-	Files          fileapp.PublicUploader
-	Projects       ProjectReader
-	Notifications  NotificationPort
+	AppEvents       AppEventPort
+	AppEventLocker  AppEventLocker
+	DB              *gorm.DB
+	Apps            config.AppsConfig
+	Files           fileapp.PublicUploader
+	Projects        ProjectReader
+	Notifications   NotificationPort
 	DirectMessaging *directmessagepolicy.Policy
-	Now            func() time.Time
+	NicknamePolicy  UserNicknamePolicy
+	Now             func() time.Time
 }
 
 type Service struct {
-	appEvents      AppEventPort
-	appEventLocker AppEventLocker
-	db             *gorm.DB
-	apps           config.AppsConfig
-	files          fileapp.PublicUploader
-	projects       ProjectReader
-	notifications  NotificationPort
+	appEvents       AppEventPort
+	appEventLocker  AppEventLocker
+	db              *gorm.DB
+	apps            config.AppsConfig
+	files           fileapp.PublicUploader
+	projects        ProjectReader
+	notifications   NotificationPort
 	directMessaging *directmessagepolicy.Policy
-	now            func() time.Time
+	nicknamePolicy  UserNicknamePolicy
+	now             func() time.Time
 }
 
 func NewService(deps Dependencies) *Service {
@@ -44,7 +46,7 @@ func NewService(deps Dependencies) *Service {
 	return &Service{
 		appEvents: deps.AppEvents, appEventLocker: deps.AppEventLocker,
 		db: deps.DB, apps: deps.Apps, files: deps.Files, projects: deps.Projects,
-		notifications: deps.Notifications, directMessaging: deps.DirectMessaging, now: now,
+		notifications: deps.Notifications, directMessaging: deps.DirectMessaging, nicknamePolicy: deps.NicknamePolicy, now: now,
 	}
 }
 

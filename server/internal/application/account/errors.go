@@ -15,6 +15,7 @@ const (
 	CodeConflict           ErrorCode = "conflict"
 	CodeRequestTooLarge    ErrorCode = "request_too_large"
 	CodeLoginUnavailable   ErrorCode = "password_login_unavailable"
+	CodeNicknameDisabled   ErrorCode = "nickname_editing_disabled"
 	CodeInternal           ErrorCode = "internal_error"
 )
 

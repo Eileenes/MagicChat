@@ -181,11 +181,22 @@ func (s *Server) metrics(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
+	recentFailedQuery := s.db.WithContext(ctx).Model(&model.Job{}).
+		Where("status = ? AND updated_at >= ?", model.JobStatusFailed, now.Add(-10*time.Minute))
+	var recentFailedJobs int64
+	if err := recentFailedQuery.Count(&recentFailedJobs).Error; err != nil {
+		return err
+	}
+	recentFailedJobCounts, err := metricErrorCodeCounts(recentFailedQuery)
+	if err != nil {
+		return err
+	}
 	oldestJobAge, err := metricOldestAge(
 		s.db.WithContext(ctx).Model(&model.Job{}).Where(
 			"status IN ?", []string{model.JobStatusQueued, model.JobStatusRetry, model.JobStatusSending},
 		),
-		time.Now().UTC(),
+		now,
 	)
 	if err != nil {
 		return err
@@ -202,6 +213,15 @@ func (s *Server) metrics(c echo.Context) error {
 			count.Provider, count.Platform, count.Status, count.Count,
 		)
 	}
+	output.WriteString("# HELP push_gateway_recent_failed_jobs Gateway push jobs that failed during the last ten minutes.\n")
+	output.WriteString("# TYPE push_gateway_recent_failed_jobs gauge\n")
+	fmt.Fprintf(&output, "push_gateway_recent_failed_jobs %d\n", recentFailedJobs)
+	writeMetricErrorCodeCounts(
+		&output,
+		"push_gateway_recent_failed_jobs_by_code",
+		"Gateway push jobs that failed during the last ten minutes by anonymous error code.",
+		recentFailedJobCounts,
+	)
 	output.WriteString("# HELP push_gateway_oldest_pending_job_age_seconds Age of the oldest pending Gateway push job.\n")
 	output.WriteString("# TYPE push_gateway_oldest_pending_job_age_seconds gauge\n")
 	fmt.Fprintf(&output, "push_gateway_oldest_pending_job_age_seconds %.0f\n", oldestJobAge)
@@ -220,12 +240,24 @@ type metricInstallationCount struct {
 	Count    int64
 }
 
+type metricErrorCodeCount struct {
+	Code  string
+	Count int64
+}
+
 func metricStatusCounts(query *gorm.DB) ([]metricStatusCount, error) {
 	var counts []metricStatusCount
 	err := query.Select("status, count(*) AS count").Group("status").Scan(&counts).Error
 	sort.Slice(counts, func(first, second int) bool {
 		return counts[first].Status < counts[second].Status
 	})
+	return counts, err
+}
+
+func metricErrorCodeCounts(db *gorm.DB) ([]metricErrorCodeCount, error) {
+	var counts []metricErrorCodeCount
+	err := db.Select("last_error_code AS code, count(*) AS count").
+		Group("last_error_code").Order("last_error_code ASC").Scan(&counts).Error
 	return counts, err
 }
 
@@ -254,6 +286,21 @@ func metricOldestAge(query *gorm.DB, now time.Time) (float64, error) {
 		return 0, nil
 	}
 	return now.Sub(oldest.CreatedAt).Seconds(), nil
+}
+
+func writeMetricErrorCodeCounts(
+	output *strings.Builder,
+	name string,
+	help string,
+	counts []metricErrorCodeCount,
+) {
+	fmt.Fprintf(output, "# HELP %s %s\n", name, help)
+	fmt.Fprintf(output, "# TYPE %s gauge\n", name)
+	for _, count := range counts {
+		if count.Code != "" {
+			fmt.Fprintf(output, "%s{code=%q} %d\n", name, count.Code, count.Count)
+		}
+	}
 }
 
 func writeMetricStatusCounts(

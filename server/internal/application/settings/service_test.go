@@ -23,17 +23,19 @@ func TestServiceCreatesDefaultsAndUpdatesSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get settings: %v", err)
 	}
-	if value.AppName != store.DefaultAppName || value.OrganizationName != store.DefaultOrganizationName || value.ContactDirectoryMode != ContactDirectoryModeOrganization {
+	if value.AppName != store.DefaultAppName || value.OrganizationName != store.DefaultOrganizationName || value.ContactDirectoryMode != ContactDirectoryModeOrganization || !value.AllowUserNicknameEditing {
 		t.Fatalf("default settings = %#v", value)
 	}
 
+	allowUserNicknameEditing := false
 	updated, err := service.Update(context.Background(), UpdateCommand{
 		AppName: "  星环协作  ", OrganizationName: " 长亭科技企业安全 ", ContactDirectoryMode: ContactDirectoryModeFriends,
+		AllowUserNicknameEditing: &allowUserNicknameEditing,
 	})
 	if err != nil {
 		t.Fatalf("update settings: %v", err)
 	}
-	if updated.AppName != "星环协作" || updated.OrganizationName != "长亭科技企业安全" || updated.ContactDirectoryMode != ContactDirectoryModeFriends {
+	if updated.AppName != "星环协作" || updated.OrganizationName != "长亭科技企业安全" || updated.ContactDirectoryMode != ContactDirectoryModeFriends || updated.AllowUserNicknameEditing {
 		t.Fatalf("updated settings = %#v", updated)
 	}
 
@@ -41,11 +43,14 @@ func TestServiceCreatesDefaultsAndUpdatesSettings(t *testing.T) {
 	if err := db.First(&stored, "id = ?", store.AppSettingsID).Error; err != nil {
 		t.Fatalf("load stored settings: %v", err)
 	}
-	if stored.AppName != updated.AppName || stored.OrganizationName != updated.OrganizationName || stored.ContactDirectoryMode != ContactDirectoryModeFriends || !stored.UpdatedAt.Equal(now) {
+	if stored.AppName != updated.AppName || stored.OrganizationName != updated.OrganizationName || stored.ContactDirectoryMode != ContactDirectoryModeFriends || stored.AllowUserNicknameEditing || !stored.UpdatedAt.Equal(now) {
 		t.Fatalf("stored settings = %#v", stored)
 	}
 	if notifications.mode != ContactDirectoryModeFriends {
 		t.Fatalf("notified directory mode = %q", notifications.mode)
+	}
+	if notifications.allowUserNicknameEditing || !notifications.nicknamePolicyUpdatedAt.Equal(now) {
+		t.Fatalf("nickname policy notification = %#v", notifications)
 	}
 
 	passwordSettings, err := service.GetPasswordLogin(context.Background())
@@ -186,10 +191,19 @@ func openSettingsTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-type settingsNotificationRecorder struct{ mode string }
+type settingsNotificationRecorder struct {
+	mode                     string
+	allowUserNicknameEditing bool
+	nicknamePolicyUpdatedAt  time.Time
+}
 
 func (r *settingsNotificationRecorder) PublishContactDirectoryModeUpdated(_ context.Context, mode string) {
 	r.mode = mode
+}
+
+func (r *settingsNotificationRecorder) PublishUserNicknamePolicyUpdated(_ context.Context, allowed bool, updatedAt time.Time) {
+	r.allowUserNicknameEditing = allowed
+	r.nicknamePolicyUpdatedAt = updatedAt
 }
 
 func newSettingsTestProvider(key, name string, enabled bool, sortOrder int) store.ThirdPartyLoginProvider {

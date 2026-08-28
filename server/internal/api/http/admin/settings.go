@@ -13,10 +13,11 @@ type SettingsAPI struct {
 }
 
 type infoSettingsResponse struct {
-	AppName              string                             `json:"app_name" example:"即应"`
-	OrganizationName     string                             `json:"organization_name" example:"长亭科技"`
-	ContactDirectoryMode string                             `json:"contact_directory_mode" enums:"organization,friends" example:"organization"`
-	ThirdPartyProviders  []publicThirdPartyProviderResponse `json:"third_party_providers"`
+	AppName                  string                             `json:"app_name" example:"即应"`
+	OrganizationName         string                             `json:"organization_name" example:"长亭科技"`
+	ContactDirectoryMode     string                             `json:"contact_directory_mode" enums:"organization,friends" example:"organization"`
+	AllowUserNicknameEditing bool                               `json:"allow_user_nickname_editing" example:"true"`
+	ThirdPartyProviders      []publicThirdPartyProviderResponse `json:"third_party_providers"`
 }
 
 type publicThirdPartyProviderResponse struct {
@@ -25,9 +26,10 @@ type publicThirdPartyProviderResponse struct {
 }
 
 type updateInfoSettingsRequest struct {
-	AppName              string `json:"app_name" example:"即应"`
-	OrganizationName     string `json:"organization_name" example:"长亭科技"`
-	ContactDirectoryMode string `json:"contact_directory_mode" enums:"organization,friends" example:"organization"`
+	AppName                  string `json:"app_name" example:"即应"`
+	OrganizationName         string `json:"organization_name" example:"长亭科技"`
+	ContactDirectoryMode     string `json:"contact_directory_mode" enums:"organization,friends" example:"organization"`
+	AllowUserNicknameEditing *bool  `json:"allow_user_nickname_editing" example:"true"`
 }
 
 type successEnvelope struct {
@@ -57,7 +59,7 @@ func (a *SettingsAPI) RegisterRoutes(group *echo.Group) {
 // getInfoSettings godoc
 //
 // @Summary 获取系统基础信息设置
-// @Description 管理员读取 App 名称和组织名称。
+// @Description 管理员读取 App 名称、组织名称、通讯录模式和用户昵称策略。
 // @Tags 管理员设置
 // @Produce json
 // @Success 200 {object} successEnvelope{data=infoSettingsResponse}
@@ -75,7 +77,7 @@ func (a *SettingsAPI) getInfoSettings(c echo.Context) error {
 // updateInfoSettings godoc
 //
 // @Summary 更新系统基础信息设置
-// @Description 管理员更新 App 名称和组织名称。
+// @Description 管理员更新 App 名称、组织名称、通讯录模式和用户昵称策略。
 // @Tags 管理员设置
 // @Accept json
 // @Produce json
@@ -91,9 +93,10 @@ func (a *SettingsAPI) updateInfoSettings(c echo.Context) error {
 		return writeFailure(c, http.StatusBadRequest, string(settingsapp.CodeInvalidRequest), "请求格式错误")
 	}
 	value, err := a.settings.Update(c.Request().Context(), settingsapp.UpdateCommand{
-		AppName:              req.AppName,
-		OrganizationName:     req.OrganizationName,
-		ContactDirectoryMode: req.ContactDirectoryMode,
+		AppName:                  req.AppName,
+		OrganizationName:         req.OrganizationName,
+		ContactDirectoryMode:     req.ContactDirectoryMode,
+		AllowUserNicknameEditing: req.AllowUserNicknameEditing,
 	})
 	if err != nil {
 		return writeSettingsError(c, err)
@@ -103,10 +106,11 @@ func (a *SettingsAPI) updateInfoSettings(c echo.Context) error {
 
 func newInfoSettingsResponse(value settingsapp.Settings) infoSettingsResponse {
 	return infoSettingsResponse{
-		AppName:              value.AppName,
-		OrganizationName:     value.OrganizationName,
-		ContactDirectoryMode: value.ContactDirectoryMode,
-		ThirdPartyProviders:  []publicThirdPartyProviderResponse{},
+		AppName:                  value.AppName,
+		OrganizationName:         value.OrganizationName,
+		ContactDirectoryMode:     value.ContactDirectoryMode,
+		AllowUserNicknameEditing: value.AllowUserNicknameEditing,
+		ThirdPartyProviders:      []publicThirdPartyProviderResponse{},
 	}
 }
 

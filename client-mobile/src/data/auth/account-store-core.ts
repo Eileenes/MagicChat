@@ -7,6 +7,7 @@ export type AccountRecord = {
   serverId: string
   url: string
   userId: string
+  avatar?: string
   name: string
   email?: string
   lastUsedAt: string
@@ -23,6 +24,7 @@ export type AccountIndexV2 = {
 }
 
 export type SessionCredential = { token: string; expiresAt: string }
+export type AccountProfileMetadata = { avatar: string; email: string; name: string }
 
 export type CredentialResult =
   | { status: "valid"; credential: SessionCredential }
@@ -191,11 +193,24 @@ export function createAccountStore(options: {
 
     getCredential: (accountId: AccountId) => serialized(() => credential(accountId)),
 
+    updateAccountProfile: (accountId: AccountId, profile: AccountProfileMetadata) => serialized(async () => {
+      const index = await readIndex()
+      const position = index.accounts.findIndex((account) => account.id === accountId)
+      if (position < 0) throw new Error("账号不存在")
+      const account = index.accounts[position]!
+      if (account.avatar === profile.avatar && account.email === profile.email && account.name === profile.name) return cloneIndex(index)
+      const accounts = [...index.accounts]
+      accounts[position] = { ...account, avatar: profile.avatar, email: profile.email, name: profile.name }
+      const next = { ...index, accounts, revision: index.revision + 1 }
+      await writeIndex(next)
+      return cloneIndex(next)
+    }),
+
     /** Imports non-secret legacy identity only. It never writes SecureStore. */
     importReauthRequired: (record: AccountRecord) => serialized(async () => {
       const normalized = createAccountRecord({
         serverId: record.serverId, url: record.url, userId: record.userId,
-        name: record.name, email: record.email, lastUsedAt: record.lastUsedAt,
+        avatar: record.avatar, name: record.name, email: record.email, lastUsedAt: record.lastUsedAt,
         status: "reauth-required",
       })
       if (record.id !== normalized.id) throw new Error("账号标识与身份不匹配")
@@ -214,6 +229,7 @@ export function createAccountStore(options: {
         serverId: record.serverId,
         url: record.url,
         userId: record.userId,
+        avatar: record.avatar,
         name: record.name,
         email: record.email,
         lastUsedAt: record.lastUsedAt,
@@ -287,7 +303,7 @@ export function createAccountStore(options: {
     restoreAccount: (record: AccountRecord, value: SessionCredential | null) => serialized(async () => {
       const normalized = createAccountRecord({
         serverId: record.serverId, url: record.url, userId: record.userId,
-        name: record.name, email: record.email, lastUsedAt: record.lastUsedAt,
+        avatar: record.avatar, name: record.name, email: record.email, lastUsedAt: record.lastUsedAt,
         status: value ? "ready" : "reauth-required",
       })
       if (normalized.id !== record.id) throw new Error("账号标识与身份不匹配")
@@ -357,7 +373,8 @@ export function createAccountStore(options: {
 function parseAccountRecord(value: unknown): AccountRecord | null {
   if (!isObject(value) || typeof value.id !== "string" || typeof value.serverId !== "string" ||
     typeof value.url !== "string" || typeof value.userId !== "string" || typeof value.name !== "string" ||
-    typeof value.lastUsedAt !== "string" || (value.email !== undefined && typeof value.email !== "string") ||
+    typeof value.lastUsedAt !== "string" || (value.avatar !== undefined && typeof value.avatar !== "string") ||
+    (value.email !== undefined && typeof value.email !== "string") ||
     (value.status !== undefined && value.status !== "ready" && value.status !== "reauth-required")) return null
   try {
     if (createAccountId(value.url, value.userId) !== value.id || normalizeServerUrl(value.url) !== value.url || !Number.isFinite(Date.parse(value.lastUsedAt))) return null

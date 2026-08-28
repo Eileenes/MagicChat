@@ -9,10 +9,13 @@ import { migrateLegacyAccount } from "@/data/auth/account-migration"
 import { createAccountRecord, type AccountIndexV2, type AccountRecord } from "@/data/auth/account-store"
 import { accountAuthRuntime, accountStore } from "@/data/auth/account-runtime-instance"
 import { logout, type MobileSessionCredential } from "@/data/auth/auth-api"
+import { deactivateCurrentAccount } from "@/data/auth/account-deactivation-api"
+import { isSafeAccountDeactivationRejection } from "@/data/auth/account-deactivation-failure"
 import { createSessionBootstrapOperations, sessionBootstrapCoordinator } from "@/features/bootstrap/session-bootstrap"
 import { migrateLegacyLoginAssistance } from "@/data/auth/credential-store"
 import { runAccountSignOutTransaction, selectRecentReadyAccount } from "@/data/auth/sign-out-transaction"
 import { runInstallAccountTransaction } from "@/data/auth/install-account-transaction"
+import { fetchStoredCurrentUser } from "@/data/users/current-user-api"
 import type { PushAccountIdentity } from "@/notifications/push-types"
 import { usePushCoordinator } from "@/providers/push-coordinator-provider"
 
@@ -28,14 +31,16 @@ type AuthContextValue = {
   phase: AuthPhase
   switchAccount(accountId: string): Promise<void>
   signOutAccount(accountId: string, localOnly?: boolean): Promise<void>
+  deactivateActiveAccount(code: string): Promise<string | null>
   markReauthRequired(accountId: string): Promise<void>
+  refreshMissingAccountProfiles(): Promise<void>
   installAndActivate(server: ServerTarget, user: AuthenticatedUser, credential: MobileSessionCredential): Promise<void>
   // Transitional, non-persisting API for the existing login screen.
   beginSignIn(session: AuthSession): void
   commitSignIn(session: AuthSession): Promise<void>
   rollbackSignIn(session: AuthSession): Promise<void>
   invalidateSession(): Promise<void>
-  signOut(): Promise<void>
+  signOut(): Promise<string | null>
   isAuthenticated: boolean
   isHydrated: boolean
   isPreparingSignIn: boolean
@@ -198,10 +203,60 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
     })
   }), [bootstrapBeforeCommit, publish, pushCoordinator, serialize])
 
+  const deactivateActiveAccount = useCallback((code: string) => serialize(async () => {
+    const old = stateRef.current.active
+    if (!old) throw new Error("当前账号已失效")
+    const accountId = old.accountId
+    pushCoordinator.pause()
+    setPhase("signing-out")
+    const before = await accountStore.hydrate()
+    const candidate = selectRecentReadyAccount(before.accounts, accountId)
+    await runAccountSignOutTransaction({
+      isCurrent: true,
+      prepareCandidate: () => candidate ? bootstrapBeforeCommit(candidate) : Promise.resolve(undefined),
+      cancelPreparation: (preparation) => accountAuthRuntime.cancelPreparation(preparation),
+      logout: async () => {
+        await deactivateCurrentAccount(old.target, old.accountId, code)
+        return true
+      },
+      // The endpoint already revoked every server Push grant; bookkeeping must
+      // never block deletion of the local account credential.
+      afterLogout: async () => undefined,
+      remove: async () => {
+        sessionBootstrapCoordinator.invalidate(old.target)
+        await accountStore.removeAccount(accountId)
+      },
+      commitCandidate: async () => {
+        const next = await accountStore.hydrate()
+        await accountStore.commitActive(candidate!.id, next.revision)
+      },
+      onSuccess: async (preparation) => {
+        const next = await accountStore.hydrate()
+        if (candidate && preparation) {
+          const currentCandidate = next.accounts.find((item) => item.id === candidate.id)!
+          publish(next, { accountId: candidate.id, account: currentCandidate, target: targetOf(currentCandidate), generation: preparation.generation }, "authenticated")
+        } else publish(next, null, "anonymous")
+      },
+      onSafeRollback: async (error) => {
+        if (isSafeAccountDeactivationRejection(error)) {
+          publish(await accountStore.hydrate(), old, "authenticated")
+          return
+        }
+        await accountStore.markReauthRequired(accountId).catch(() => undefined)
+        publish(await accountStore.hydrate().catch(() => before), null, "degraded")
+      },
+      onUnsafeFailure: async () => {
+        await accountStore.markReauthRequired(accountId).catch(() => undefined)
+        publish(await accountStore.hydrate().catch(() => before), null, "degraded")
+      },
+    })
+    return candidate?.id ?? null
+  }), [bootstrapBeforeCommit, publish, pushCoordinator, serialize])
+
   const installAndActivate = useCallback((server: ServerTarget, user: AuthenticatedUser, credential: MobileSessionCredential) => serialize(async () => {
     const old = stateRef.current.active
     setPhase("preparing")
-    const record = createAccountRecord({ serverId: server.id, url: server.url, userId: user.id, name: user.name, email: user.email, lastUsedAt: new Date().toISOString(), status: "ready" })
+    const record = createAccountRecord({ serverId: server.id, url: server.url, userId: user.id, avatar: user.avatar, name: user.name, email: user.email, lastUsedAt: new Date().toISOString(), status: "ready" })
     const before = await accountStore.hydrate()
     const previousRecord = before.accounts.find((item) => item.id === record.id)
     const previousCredential = previousRecord ? await accountStore.getCredential(record.id) : null
@@ -238,12 +293,45 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
   }), [bootstrapBeforeCommit, publish, serialize])
 
   const invalidateSession = useCallback(async () => { const id = stateRef.current.active?.accountId; if (id) await markReauthRequired(id) }, [markReauthRequired])
+  const refreshMissingAccountProfiles = useCallback(async () => {
+    const candidates = stateRef.current.index.accounts.filter((account) => !account.avatar && account.status === "ready")
+    const profiles: { accountId: string; avatar: string; email: string; name: string; userId: string }[] = []
+    for (let offset = 0; offset < candidates.length; offset += 3) {
+      const batch = await Promise.all(candidates.slice(offset, offset + 3).map(async (account) => {
+        try {
+          const profile = await fetchStoredCurrentUser(targetOf(account), account.id)
+          if (profile.id !== account.userId || !profile.avatar) return null
+          return { accountId: account.id, avatar: profile.avatar, email: profile.email, name: profile.name, userId: profile.id }
+        } catch { return null }
+      }))
+      profiles.push(...batch.filter((profile): profile is NonNullable<typeof profile> => profile !== null))
+    }
+    if (!profiles.length) return
+    await serialize(async () => {
+      let next = await accountStore.hydrate()
+      for (const profile of profiles) {
+        const account = next.accounts.find((item) => item.id === profile.accountId)
+        if (!account || account.userId !== profile.userId) continue
+        next = await accountStore.updateAccountProfile(profile.accountId, profile)
+      }
+      const current = stateRef.current.active
+      const nextActive = current ? { ...current, account: next.accounts.find((account) => account.id === current.accountId) ?? current.account } : null
+      stateRef.current = { ...stateRef.current, active: nextActive, index: next }
+      setIndex(next)
+      setActive(nextActive)
+    })
+  }, [serialize])
   const beginSignIn = useCallback((session: AuthSession) => { stagedRef.current = session; setPhase("preparing") }, [])
   const commitSignIn = useCallback(async (session: AuthSession) => { if (!stagedRef.current || session.userId !== stagedRef.current.userId) throw new Error("登录初始化已失效"); const next = await accountStore.hydrate(); const account = next.accounts.find(a => a.serverId === session.id && a.url === session.url && a.userId === session.userId && a.status === "ready"); if (!account) throw new Error("登录凭据尚未安装"); stagedRef.current = null; if (stateRef.current.active?.accountId === account.id) { setPhase("authenticated"); return } await switchAccount(account.id) }, [switchAccount])
   const rollbackSignIn = useCallback(async () => { stagedRef.current = null; setPhase(stateRef.current.active ? "authenticated" : "anonymous") }, [])
-  const signOut = useCallback(async () => { const id = stateRef.current.active?.accountId; if (id) await signOutAccount(id) }, [signOutAccount])
+  const signOut = useCallback(async () => {
+    const id = stateRef.current.active?.accountId
+    if (!id) return null
+    await signOutAccount(id)
+    return stateRef.current.active?.accountId ?? null
+  }, [signOutAccount])
 
-  const value = useMemo<AuthContextValue>(() => ({ accounts: index.accounts, active, activeAccount: active?.account ?? null, generation: active?.generation ?? 0, phase, switchAccount, signOutAccount, markReauthRequired, installAndActivate, beginSignIn, commitSignIn, rollbackSignIn, invalidateSession, signOut, isAuthenticated: Boolean(active) && (phase === "authenticated" || phase === "degraded"), isHydrated: hydrated, isPreparingSignIn: phase === "preparing" || phase === "switching", isSigningOut: phase === "signing-out", session: active?.target ?? null }), [active, beginSignIn, commitSignIn, hydrated, index.accounts, installAndActivate, invalidateSession, markReauthRequired, phase, rollbackSignIn, signOut, signOutAccount, switchAccount])
+  const value = useMemo<AuthContextValue>(() => ({ accounts: index.accounts, active, activeAccount: active?.account ?? null, generation: active?.generation ?? 0, phase, switchAccount, signOutAccount, deactivateActiveAccount, markReauthRequired, refreshMissingAccountProfiles, installAndActivate, beginSignIn, commitSignIn, rollbackSignIn, invalidateSession, signOut, isAuthenticated: Boolean(active), isHydrated: hydrated, isPreparingSignIn: phase === "preparing" || phase === "switching", isSigningOut: phase === "signing-out", session: active?.target ?? null }), [active, beginSignIn, commitSignIn, deactivateActiveAccount, hydrated, index.accounts, installAndActivate, invalidateSession, markReauthRequired, phase, refreshMissingAccountProfiles, rollbackSignIn, signOut, signOutAccount, switchAccount])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

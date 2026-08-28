@@ -18,6 +18,7 @@ type fakePushService struct {
 	register             mobilepush.RegisterGrantCommand
 	revokeUserID         string
 	revokeInstallationID string
+	revokeGrantID        string
 	routeUserID          string
 	routeToken           string
 	err                  error
@@ -34,8 +35,8 @@ func (s *fakePushService) RegisterGrant(_ context.Context, cmd mobilepush.Regist
 	}, nil
 }
 
-func (s *fakePushService) RevokeGrant(_ context.Context, userID, installationID string) error {
-	s.revokeUserID, s.revokeInstallationID = userID, installationID
+func (s *fakePushService) RevokeGrant(_ context.Context, userID, installationID, grantID string) error {
+	s.revokeUserID, s.revokeInstallationID, s.revokeGrantID = userID, installationID, grantID
 	return s.err
 }
 
@@ -61,11 +62,15 @@ func TestPushAPIRoutesAuthenticatedUser(t *testing.T) {
 	if register.Code != http.StatusOK || service.register.UserID != "user-1" || service.register.SessionID != "00000000-0000-0000-0000-000000000010" || !service.register.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("register = %d/%s, command = %#v", register.Code, register.Body.String(), service.register)
 	}
-	revoke := servePushRequest(router, http.MethodDelete, "/api/client/push/grants/00000000-0000-0000-0000-000000000001", "")
-	if revoke.Code != http.StatusNoContent || service.revokeUserID != "user-1" {
+	revoke := servePushRequest(router, http.MethodPost, "/api/client/push/grants/00000000-0000-0000-0000-000000000001/revoke", `{
+		"grant_id":"00000000-0000-0000-0000-000000000002"
+	}`)
+	if revoke.Code != http.StatusNoContent || service.revokeUserID != "user-1" || service.revokeGrantID != "00000000-0000-0000-0000-000000000002" {
 		t.Fatalf("revoke = %d, service = %#v", revoke.Code, service)
 	}
-	resolve := servePushRequest(router, http.MethodGet, "/api/client/push/routes/route-token-abcdefghijklmnopqrstuvwxyz", "")
+	resolve := servePushRequest(router, http.MethodPost, "/api/client/push/routes/resolve", `{
+		"route_token":"route-token-abcdefghijklmnopqrstuvwxyz"
+	}`)
 	if resolve.Code != http.StatusOK || service.routeUserID != "user-1" || !strings.Contains(resolve.Body.String(), "conversation-1") {
 		t.Fatalf("resolve = %d/%s, service = %#v", resolve.Code, resolve.Body.String(), service)
 	}

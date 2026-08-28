@@ -62,13 +62,36 @@ test("install/upsert stores only metadata in AsyncStorage and replaces same iden
   const { store, index, secure } = fixture()
   const first = record()
   await store.installAccount(first, { token, expiresAt: future })
-  await store.installAccount({ ...first, serverId: "renamed", name: "Renamed" }, { token: `${token}_NEW`, expiresAt: future })
+  await store.installAccount({ ...first, avatar: "/avatars/user.webp", serverId: "renamed", name: "Renamed" }, { token: `${token}_NEW`, expiresAt: future })
   const hydrated = await store.hydrate()
   assert.equal(hydrated.accounts.length, 1)
+  assert.equal(hydrated.accounts[0]?.avatar, "/avatars/user.webp")
   assert.equal(hydrated.accounts[0]?.serverId, "renamed")
   assert.equal(index.values.get(ACCOUNT_INDEX_STORAGE_KEY)?.includes(token), false)
   assert.equal([...secure.values.values()].some((value) => value.includes(token)), true)
   assert.equal(JSON.stringify(hydrated).includes(token), false)
+})
+
+test("profile metadata refresh persists avatar without touching credentials", async () => {
+  const { store, index } = fixture()
+  const account = record()
+  await store.installAccount(account, { token, expiresAt: future })
+  const before = await store.hydrate()
+  const updated = await store.updateAccountProfile(account.id, {
+    avatar: "/avatars/user.webp",
+    email: "updated@example.com",
+    name: "Updated",
+  })
+  assert.equal(updated.accounts[0]?.avatar, "/avatars/user.webp")
+  assert.equal(updated.accounts[0]?.email, "updated@example.com")
+  assert.equal(updated.revision, before.revision + 1)
+  assert.equal(index.values.get(ACCOUNT_INDEX_STORAGE_KEY)?.includes(token), false)
+  const unchanged = await store.updateAccountProfile(account.id, {
+    avatar: "/avatars/user.webp",
+    email: "updated@example.com",
+    name: "Updated",
+  })
+  assert.equal(unchanged.revision, updated.revision)
 })
 
 test("active account commit uses revision CAS and maintains one active id", async () => {

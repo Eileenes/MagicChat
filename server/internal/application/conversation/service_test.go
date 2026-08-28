@@ -244,6 +244,34 @@ func TestServiceDirectAndAppConversationsRemainIdempotent(t *testing.T) {
 	}
 }
 
+func TestServiceAppSearchDoesNotMatchHiddenNickname(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 15, 6, 0, 0, 0, time.UTC)
+	owner := insertConversationTestUser(t, db, "owner-search@example.com", "Owner", now)
+	member := insertConversationTestUser(t, db, "member-search@example.com", "Member", now)
+	if err := db.Model(&store.User{}).Where("id = ?", member.ID).Update("nickname", "Hidden Alias").Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Dependencies{DB: db, NicknamePolicy: fixedConversationNicknamePolicy(false), Now: func() time.Time { return now }})
+	if _, err := service.CreateDirect(context.Background(), CreateDirectCommand{Actor: actorFromTestUser(owner), UserID: member.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.ListForActor(context.Background(), AppListCommand{ActorID: owner.ID, Keyword: "hidden alias", Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Conversations) != 0 {
+		t.Fatalf("conversations = %#v, want hidden nickname excluded", result.Conversations)
+	}
+}
+
+type fixedConversationNicknamePolicy bool
+
+func (policy fixedConversationNicknamePolicy) UserNicknameEditingAllowed(context.Context) (bool, error) {
+	return bool(policy), nil
+}
+
 func TestServiceAppConversationUsesCurrentAppProfile(t *testing.T) {
 	db := openConversationTestDB(t)
 	now := time.Date(2026, 7, 17, 6, 0, 0, 0, time.UTC)

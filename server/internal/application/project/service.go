@@ -46,15 +46,21 @@ var (
 )
 
 type Dependencies struct {
-	DB    *gorm.DB
-	Files fileapp.PublicUploader
-	Now   func() time.Time
+	DB             *gorm.DB
+	Files          fileapp.PublicUploader
+	NicknamePolicy UserNicknamePolicy
+	Now            func() time.Time
+}
+
+type UserNicknamePolicy interface {
+	UserNicknameEditingAllowed(context.Context) (bool, error)
 }
 
 type Service struct {
-	db    *gorm.DB
-	files fileapp.PublicUploader
-	now   func() time.Time
+	db             *gorm.DB
+	files          fileapp.PublicUploader
+	nicknamePolicy UserNicknamePolicy
+	now            func() time.Time
 }
 
 type projectListCursor struct {
@@ -96,7 +102,7 @@ func NewService(deps Dependencies) *Service {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, files: deps.Files, now: now}
+	return &Service{db: deps.DB, files: deps.Files, nicknamePolicy: deps.NicknamePolicy, now: now}
 }
 
 func ProvisionPersonalWorkspace(tx *gorm.DB, accountID string, now time.Time) error {
@@ -881,14 +887,28 @@ func (s *Service) conversationMemberCounts(ctx context.Context, ids []string) (m
 }
 
 func (s *Service) loadMemberPage(ctx context.Context, value store.Project, cursor *memberListCursor, limit int) ([]Member, error) {
-	query := `SELECT member_page.id, member_page.name, member_page.nickname, member_page.email, member_page.avatar, member_page.status, member_page.display_name
-		FROM (SELECT member_base.id, member_base.name, member_base.nickname, member_base.email, member_base.avatar, member_base.status,
-		CASE WHEN TRIM(member_base.nickname) <> '' THEN member_base.nickname ELSE member_base.name END AS display_name
+	allowUserNicknameEditing := true
+	if s.nicknamePolicy != nil {
+		var err error
+		allowUserNicknameEditing, err = s.nicknamePolicy.UserNicknameEditingAllowed(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	nicknameExpression := "member_base.nickname"
+	displayNameExpression := "CASE WHEN TRIM(member_base.nickname) <> '' THEN member_base.nickname ELSE member_base.name END"
+	if !allowUserNicknameEditing {
+		nicknameExpression = "member_base.name"
+		displayNameExpression = "member_base.name"
+	}
+	query := fmt.Sprintf(`SELECT member_page.id, member_page.name, member_page.nickname, member_page.email, member_page.avatar, member_page.status, member_page.display_name
+		FROM (SELECT member_base.id, member_base.name, %s AS nickname, member_base.email, member_base.avatar, member_base.status,
+		%s AS display_name
 		FROM (SELECT u.id, u.name, u.nickname, u.email, u.avatar, u.status FROM users u WHERE u.id = ?
 		UNION SELECT u.id, u.name, u.nickname, u.email, u.avatar, u.status FROM users u
 		JOIN conversation_members cm ON cm.member_id = u.id JOIN conversations c ON c.id = cm.conversation_id
 		JOIN project_groups pg ON pg.conversation_id = c.id WHERE pg.project_id = ? AND c.kind = ? AND c.status = ?
-		AND cm.member_type = ? AND cm.left_at IS NULL) member_base) member_page`
+		AND cm.member_type = ? AND cm.left_at IS NULL) member_base) member_page`, nicknameExpression, displayNameExpression)
 	args := []any{value.OwnerUserID, value.ID, store.ConversationKindGroup, store.ConversationStatusActive, store.ConversationMemberTypeUser}
 	if cursor != nil {
 		query += ` WHERE member_page.display_name > ? OR (member_page.display_name = ? AND member_page.id > ?)`

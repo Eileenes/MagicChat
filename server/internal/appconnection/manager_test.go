@@ -23,6 +23,22 @@ func TestDefaultMaxMessageBytesIsOneMiB(t *testing.T) {
 	}
 }
 
+func TestManagerCloseAllDisconnectsEveryApp(t *testing.T) {
+	manager := NewManager(Options{})
+	_, first := newUnservedManagedWebSocket(t, manager)
+	_, second := newUnservedManagedWebSocket(t, manager)
+	second.appID = "app-2"
+	manager.Register(first)
+	manager.Register(second)
+
+	if closed := manager.CloseAll(); closed != 2 {
+		t.Fatalf("CloseAll() = %d, want 2", closed)
+	}
+	if manager.IsOnline("app-1") || manager.IsOnline("app-2") {
+		t.Fatal("connections remain online after CloseAll")
+	}
+}
+
 func TestConnectionAcceptsRequestLargerThan64KiB(t *testing.T) {
 	received := make(chan int, 1)
 	manager := NewManager(Options{RequestHandler: func(appID string, request realtime.Envelope) realtime.Envelope {

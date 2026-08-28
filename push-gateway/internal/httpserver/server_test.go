@@ -80,11 +80,40 @@ func TestAPIRoutesInstallationGrantAndNotification(t *testing.T) {
 		`push_gateway_jobs{status="queued"} 1`,
 		`push_gateway_grants{status="active"} 1`,
 		`push_gateway_installations{provider="fake",platform="android",status="active"} 1`,
+		"push_gateway_recent_failed_jobs 0",
+		"# TYPE push_gateway_recent_failed_jobs_by_code gauge",
 		"push_gateway_oldest_pending_job_age_seconds",
 	} {
 		if !strings.Contains(metrics.Body.String(), expected) {
 			t.Fatalf("metrics do not contain %q: %s", expected, metrics.Body.String())
 		}
+	}
+}
+
+func TestRecentGatewayFailureMetricsAreGroupedByAnonymousCode(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open metrics database: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Job{}); err != nil {
+		t.Fatalf("migrate metrics database: %v", err)
+	}
+	now := time.Now().UTC()
+	jobs := []model.Job{
+		{ID: uuid.NewString(), GrantID: uuid.NewString(), IdempotencyKey: "metrics-failure-1", EventType: gateway.EventMessageCreated, RouteToken: "route-1", Status: model.JobStatusFailed, LastErrorCode: "jpush_1004", NextAttemptAt: now, ExpiresAt: now.Add(time.Minute), CreatedAt: now, UpdatedAt: now},
+		{ID: uuid.NewString(), GrantID: uuid.NewString(), IdempotencyKey: "metrics-failure-2", EventType: gateway.EventMessageCreated, RouteToken: "route-2", Status: model.JobStatusFailed, LastErrorCode: "jpush_1004", NextAttemptAt: now, ExpiresAt: now.Add(time.Minute), CreatedAt: now, UpdatedAt: now},
+	}
+	if err := db.Create(&jobs).Error; err != nil {
+		t.Fatalf("create failed jobs: %v", err)
+	}
+	counts, err := metricErrorCodeCounts(db.Model(&model.Job{}).Where("status = ?", model.JobStatusFailed))
+	if err != nil || len(counts) != 1 || counts[0].Code != "jpush_1004" || counts[0].Count != 2 {
+		t.Fatalf("failure counts = %#v, err = %v", counts, err)
+	}
+	var output strings.Builder
+	writeMetricErrorCodeCounts(&output, "push_gateway_recent_failed_jobs_by_code", "test", counts)
+	if !strings.Contains(output.String(), `push_gateway_recent_failed_jobs_by_code{code="jpush_1004"} 2`) {
+		t.Fatalf("metric output = %s", output.String())
 	}
 }
 

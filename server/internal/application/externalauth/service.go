@@ -292,7 +292,16 @@ func (s *Service) createSession(ctx context.Context, userID, userAgent, ip strin
 		ID: s.newID(), TokenHash: auth.HashSessionToken(token), UserID: userID,
 		ExpiresAt: now.Add(s.sessionTTL), CreatedAt: now, LastSeenAt: now, UserAgent: userAgent, IP: ip,
 	}
-	if err := s.db.WithContext(ctx).Create(&session).Error; err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user store.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
+		if user.Status != store.UserStatusActive {
+			return errors.New("user is not active")
+		}
+		return tx.Create(&session).Error
+	}); err != nil {
 		return SessionCredential{}, err
 	}
 	return SessionCredential{Token: token, ExpiresAt: session.ExpiresAt}, nil

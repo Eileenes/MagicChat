@@ -159,6 +159,23 @@ func (m *Manager) CloseApp(appID string) int {
 	return len(connections)
 }
 
+func (m *Manager) CloseAll() int {
+	m.mu.Lock()
+	connections := make([]*Connection, 0)
+	for _, appConns := range m.connsByApp {
+		for conn := range appConns {
+			connections = append(connections, conn)
+		}
+	}
+	m.connsByApp = make(map[string]map[*Connection]struct{})
+	m.mu.Unlock()
+
+	for _, conn := range connections {
+		conn.Close()
+	}
+	return len(connections)
+}
+
 func (m *Manager) appConnections(appID string) []*Connection {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

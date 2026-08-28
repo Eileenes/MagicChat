@@ -52,7 +52,7 @@ test("inactive revocation resolves that account credential and never falls back 
   runtime.install({ accountId: accountA, generation: 3, target: a })
   installAccountAuthRuntime(runtime)
   let authorization = ""
-  await revokePrivatePushGrant(b, accountB, "installation-B", { fetcher: async (_url, init) => {
+  await revokePrivatePushGrant(b, accountB, "installation-B", "grant-B", { fetcher: async (_url, init) => {
     authorization = new Headers(init?.headers).get("authorization") ?? ""
     return Response.json({ success: true, data: {} })
   } })
@@ -66,7 +66,7 @@ test("inactive revocation 401 is isolated from active runtime", async () => {
   runtime.install({ accountId: accountA, generation: 3, target: a })
   runtime.setUnauthorizedHandler(async (id) => { marked.push(id) })
   installAccountAuthRuntime(runtime)
-  await assert.rejects(revokePrivatePushGrant(b, accountB, "installation-B", { fetcher: async () =>
+  await assert.rejects(revokePrivatePushGrant(b, accountB, "installation-B", "grant-B", { fetcher: async () =>
     Response.json({ success: false }, { status: 401 }) }))
   assert.deepEqual(marked, [])
   assert.equal(runtime.isCurrent({ accountId: accountA, generation: 3 }), true)

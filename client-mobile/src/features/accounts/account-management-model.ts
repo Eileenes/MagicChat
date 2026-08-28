@@ -4,18 +4,17 @@ import type { ServerTarget } from "@/core/server-target"
 export type AccountListItem = {
   accountId: string
   accessibilityLabel: string
+  avatar: string
   email: string
   isCurrent: boolean
   name: string
-  serverLabel: string
   status: "current" | "ready" | "reauth-required"
   target: { id: string; url: string; userId: string }
 }
 
 export function buildAccountListItems(
   accounts: readonly AccountRecord[],
-  activeAccountId: string | null,
-  serverNames: ReadonlyMap<string, string>
+  activeAccountId: string | null
 ): AccountListItem[] {
   return [...accounts]
     .sort((left, right) => {
@@ -27,15 +26,14 @@ export function buildAccountListItems(
       const isCurrent = account.id === activeAccountId
       const status = isCurrent ? "current" as const : account.status === "reauth-required" ? "reauth-required" as const : "ready" as const
       const name = account.name.trim() || account.email?.trim() || account.userId
-      const serverLabel = serverNames.get(account.serverId)?.trim() || account.url
       const statusLabel = status === "current" ? "当前账号" : status === "reauth-required" ? "需要重新登录" : "可切换"
       return {
         accountId: account.id,
-        accessibilityLabel: `${name}，${account.email ?? "无邮箱"}，${serverLabel}，${statusLabel}`,
-        email: account.email?.trim() ?? "",
+        accessibilityLabel: `${account.email ?? name}，${account.url}，${statusLabel}`,
+        avatar: account.avatar?.trim() ?? "",
+        email: account.email?.trim() || name,
         isCurrent,
         name,
-        serverLabel,
         status,
         target: { id: account.serverId, url: account.url, userId: account.userId },
       }

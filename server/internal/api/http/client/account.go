@@ -396,6 +396,8 @@ func writeAccountError(c echo.Context, err error) error {
 		status = http.StatusRequestEntityTooLarge
 	case account.CodeLoginUnavailable:
 		status = http.StatusServiceUnavailable
+	case account.CodeNicknameDisabled:
+		status = http.StatusForbidden
 	}
 	return writeFailure(c, status, string(account.ErrorCodeOf(err)), account.ErrorMessage(err))
 }

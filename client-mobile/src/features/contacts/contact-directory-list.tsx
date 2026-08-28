@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useMemo,
   useRef,
   type ComponentProps,
@@ -12,7 +11,6 @@ import {
   Platform,
   StyleSheet,
   View,
-  type ViewToken,
 } from "react-native"
 
 import { ContentState } from "@/components/feedback/content-state"
@@ -21,19 +19,13 @@ import { ListItemContent } from "@/components/lists/list-item-content"
 import { ElasticOverscroll } from "@/components/layout/elastic-overscroll"
 import type { ServerTarget } from "@/core/server-target"
 import { getContactDisplayName } from "@/domain/contacts/contact-display"
-import {
-  ContactAlphabetIndex,
-  type ContactAlphabetIndexHandle,
-} from "@/features/contacts/contact-alphabet-index"
 import { ContactDirectoryAvatar } from "@/features/contacts/contact-directory-avatar"
-import {
-  CONTACT_INDEX_LABELS,
-  type DirectoryItem,
-  type DirectorySection,
+import type {
+  DirectoryItem,
+  DirectorySection,
 } from "@/features/contacts/contact-directory-model"
 import { XGUIListCountFooter, useXGUITheme } from "@/xgui"
 
-const CONTACT_VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 10 }
 const DIRECTORY_ROW_HEIGHT = PixelRatio.roundToNearestPixel(64)
 
 type DirectoryListRow = {
@@ -42,7 +34,6 @@ type DirectoryListRow = {
 }
 
 export function ContactDirectoryList({
-  alphabetIndex = false,
   emptyLabel,
   emptyMessageColor,
   errorMessage,
@@ -52,7 +43,6 @@ export function ContactDirectoryList({
   sections,
   server,
 }: {
-  alphabetIndex?: boolean
   emptyLabel: string
   emptyMessageColor?: ComponentProps<typeof ContentState>["messageColor"]
   errorMessage?: string
@@ -63,11 +53,7 @@ export function ContactDirectoryList({
   server: ServerTarget
 }) {
   const { colors } = useXGUITheme()
-  const listRef = useRef<FlatList<DirectoryListRow>>(null)
-  const alphabetIndexRef = useRef<ContactAlphabetIndexHandle>(null)
-  const indexDraggingRef = useRef(false)
   const listHeaderHeightRef = useRef(0)
-  const pendingItemIndexRef = useRef<number | null>(null)
   const rows = useMemo(
     () =>
       sections.flatMap((section) =>
@@ -78,77 +64,6 @@ export function ContactDirectoryList({
       ),
     [sections]
   )
-  const indexedSections = useMemo(
-    () =>
-      sections.reduce<{ itemIndex: number; label: string }[]>(
-        (indexed, section) => [
-          ...indexed,
-          {
-            itemIndex:
-              (indexed.at(-1)?.itemIndex ?? 0) +
-              (sections[indexed.length - 1]?.data.length ?? 0),
-            label: section.title ?? "#",
-          },
-        ],
-        []
-      ),
-    [sections]
-  )
-  const handleViewableItemsChanged = useCallback(
-    ({ viewableItems }: { viewableItems: ViewToken<DirectoryListRow>[] }) => {
-      if (indexDraggingRef.current) return
-
-      const firstVisibleLabel = viewableItems.find(
-        (token) => token.isViewable && token.item?.sectionTitle
-      )?.item?.sectionTitle
-      if (firstVisibleLabel) {
-        alphabetIndexRef.current?.setActiveLabel(firstVisibleLabel)
-      }
-    },
-    []
-  )
-
-  const scrollToItem = useCallback((itemIndex: number) => {
-    pendingItemIndexRef.current = itemIndex
-    listRef.current?.scrollToIndex({
-      animated: false,
-      index: itemIndex,
-      viewPosition: 0,
-    })
-  }, [])
-
-  const handleIndexSelect = useCallback(
-    (label: string) => {
-      const requestedLabelIndex = CONTACT_INDEX_LABELS.indexOf(
-        label as (typeof CONTACT_INDEX_LABELS)[number]
-      )
-      const target =
-        indexedSections.find(
-          (section) =>
-            CONTACT_INDEX_LABELS.indexOf(
-              section.label as (typeof CONTACT_INDEX_LABELS)[number]
-            ) >= requestedLabelIndex
-        ) ?? indexedSections[indexedSections.length - 1]
-
-      if (target) scrollToItem(target.itemIndex)
-    },
-    [indexedSections, scrollToItem]
-  )
-
-  const handleScrollToIndexFailed = useCallback(
-    ({ averageItemLength, index }: { averageItemLength: number; index: number }) => {
-      listRef.current?.scrollToOffset({
-        animated: false,
-        offset: listHeaderHeightRef.current + averageItemLength * index,
-      })
-      const pendingItemIndex = pendingItemIndexRef.current
-      if (pendingItemIndex !== null) {
-        requestAnimationFrame(() => scrollToItem(pendingItemIndex))
-      }
-    },
-    [scrollToItem]
-  )
-
   return (
     <View style={styles.listContainer}>
       <ElasticOverscroll>
@@ -157,7 +72,6 @@ export function ContactDirectoryList({
         alwaysBounceVertical
         bounces
         overScrollMode={Platform.OS === "android" ? "never" : "always"}
-        ref={listRef}
         contentContainerStyle={
           rows.length === 0 && !listHeader
             ? [styles.content, styles.emptyContent]
@@ -194,12 +108,9 @@ export function ContactDirectoryList({
           </View>
         }
         maxToRenderPerBatch={32}
-        onScrollToIndexFailed={handleScrollToIndexFailed}
-        onViewableItemsChanged={handleViewableItemsChanged}
         removeClippedSubviews={false}
         renderItem={({ item: row }) => (
           <DirectoryListItem
-            alphabetIndex={alphabetIndex}
             item={row.item}
             last={false}
             onPress={() => onItemPress(row.item)}
@@ -209,32 +120,19 @@ export function ContactDirectoryList({
         showsVerticalScrollIndicator={false}
         style={[styles.list, { backgroundColor: colors.background0 }]}
         updateCellsBatchingPeriod={16}
-        viewabilityConfig={CONTACT_VIEWABILITY_CONFIG}
         windowSize={51}
       />}
       </ElasticOverscroll>
-      {alphabetIndex && indexedSections.length > 0 ? (
-        <ContactAlphabetIndex
-          ref={alphabetIndexRef}
-          activeLabel={indexedSections[0]?.label ?? null}
-          onDragStateChange={(dragging) => {
-            indexDraggingRef.current = dragging
-          }}
-          onSelect={handleIndexSelect}
-        />
-      ) : null}
     </View>
   )
 }
 
 function DirectoryListItem({
-  alphabetIndex,
   item,
   last,
   onPress,
   server,
 }: {
-  alphabetIndex: boolean
   item: DirectoryItem
   last: boolean
   onPress: () => void
@@ -297,7 +195,6 @@ function DirectoryListItem({
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
-        alphabetIndex && styles.indexedRow,
         {
           backgroundColor: pressed ? colors.background1 : colors.background2,
         },
@@ -335,9 +232,6 @@ const styles = StyleSheet.create({
   listContainer: {
     flex: 1,
     position: "relative",
-  },
-  indexedRow: {
-    paddingRight: 36,
   },
   row: {
     alignItems: "center",

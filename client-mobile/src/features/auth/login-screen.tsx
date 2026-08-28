@@ -8,16 +8,12 @@ import { Image, Paragraph, XStack, YStack } from "tamagui"
 import { KeyboardAwareScreen } from "@/components/layout/keyboard-aware-screen"
 import { ContentState } from "@/components/feedback/content-state"
 import { PageHeader } from "@/components/navigation/page-header"
-import type { AuthenticatedUser } from "@/core/models"
-import { ApiRequestError } from "@/data/api-client"
 import { useAppInfoQuery } from "@/data/auth/auth-hooks"
 import { queryKeys } from "@/data/query"
-import { runLoginBootstrap } from "@/features/auth/login-bootstrap"
 import { LoginForm } from "@/features/auth/login-form"
 import { isAccountLoginMode, resolveLoginTarget, shouldRedirectAuthenticatedLogin } from "@/features/accounts/account-management-model"
 import { useAuth } from "@/providers/auth-provider"
 import { useServers } from "@/providers/server-provider"
-import { useRealtime } from "@/realtime/realtime-context"
 import { useXGUITheme, useXGUIToast } from "@/xgui"
 
 const CONNECTION_TIMEOUT_MS = 5_000
@@ -30,14 +26,10 @@ export function LoginScreen() {
   const queryClient = useQueryClient()
   const {
     accounts,
-    beginSignIn,
-    commitSignIn,
     isAuthenticated,
     isHydrated: authHydrated,
     isPreparingSignIn,
-    rollbackSignIn,
   } = useAuth()
-  const { waitUntilReady } = useRealtime()
   const {
     isHydrated: serversHydrated,
     markServerAsRecentlyUsed,
@@ -169,30 +161,11 @@ export function LoginScreen() {
     }
   }
 
-  async function handleLoginSuccess(user: AuthenticatedUser) {
-    const authenticatedTarget = {
-      id: loginServer.id,
-      url: loginServer.url,
-      userId: user.id,
-    }
-    beginSignIn(authenticatedTarget)
-
-    try {
-      await runLoginBootstrap({
-        queryClient,
-        target: authenticatedTarget,
-        waitForRealtime: waitUntilReady,
-      })
-      markServerAsRecentlyUsed(loginServer.id)
-      await commitSignIn(authenticatedTarget)
-      hideToast()
-      router.replace("/messages")
-    } catch (error: unknown) {
-      await rollbackSignIn(authenticatedTarget)
-      throw new ApiRequestError(
-        error instanceof Error ? error.message : "登录初始化失败"
-      )
-    }
+  function handleLoginSuccess() {
+    markServerAsRecentlyUsed(loginServer.id)
+    hideToast()
+    router.replace("/messages")
+    return Promise.resolve()
   }
 
   return (
@@ -209,6 +182,7 @@ export function LoginScreen() {
       <KeyboardAwareScreen
         contentBackground={colors.background0}
         edges={["left", "right", "bottom"]}
+        keyboardShouldPersistTaps="always"
         items="center"
         pb={128}
         pt="$2"

@@ -4,13 +4,21 @@ import * as ImagePicker from "expo-image-picker"
 
 import type { PreparedClientMessageUpload } from "@/data/messages/message-upload"
 import { prepareImageMessage } from "@/data/messages/message-image"
+import {
+  MediaPermissionSettingsRequiredError,
+  requestPermissionForUserAction,
+} from "@/features/permissions/media-permission"
 
 export const FILE_MESSAGE_MAX_BYTES = 20 * 1024 * 1024
 
 export async function pickCameraImageMessage() {
-  const permission = await ImagePicker.requestCameraPermissionsAsync()
-  if (!permission.granted) {
-    throw new Error("需要相机权限才能拍摄图片")
+  const permission = await requestPermissionForUserAction(
+    ImagePicker.getCameraPermissionsAsync,
+    ImagePicker.requestCameraPermissionsAsync
+  )
+  if (permission === "denied") return null
+  if (permission === "settings") {
+    throw new MediaPermissionSettingsRequiredError("camera")
   }
 
   const result = await ImagePicker.launchCameraAsync({
@@ -24,9 +32,13 @@ export async function pickCameraImageMessage() {
 }
 
 export async function pickLibraryImageMessage() {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-  if (!permission.granted) {
-    throw new Error("需要照片权限才能选择图片")
+  const permission = await requestPermissionForUserAction(
+    ImagePicker.getMediaLibraryPermissionsAsync,
+    ImagePicker.requestMediaLibraryPermissionsAsync
+  )
+  if (permission === "denied") return null
+  if (permission === "settings") {
+    throw new MediaPermissionSettingsRequiredError("photos")
   }
 
   const result = await ImagePicker.launchImageLibraryAsync({

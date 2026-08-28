@@ -1,6 +1,11 @@
 package settings
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"gorm.io/gorm"
+)
 
 const (
 	ContactDirectoryModeOrganization = "organization"
@@ -8,9 +13,10 @@ const (
 )
 
 type Settings struct {
-	AppName              string
-	OrganizationName     string
-	ContactDirectoryMode string
+	AppName                  string
+	OrganizationName         string
+	ContactDirectoryMode     string
+	AllowUserNicknameEditing bool
 }
 
 type PublicProvider struct {
@@ -26,9 +32,10 @@ type PublicInfo struct {
 }
 
 type UpdateCommand struct {
-	AppName              string
-	OrganizationName     string
-	ContactDirectoryMode string
+	AppName                  string
+	OrganizationName         string
+	ContactDirectoryMode     string
+	AllowUserNicknameEditing *bool
 }
 
 type PasswordLoginSettings struct {
@@ -71,11 +78,17 @@ type UpdateEmailLoginCommand struct {
 
 type Notifications interface {
 	PublishContactDirectoryModeUpdated(context.Context, string)
+	PublishUserNicknamePolicyUpdated(context.Context, bool, time.Time)
 }
 
 type AdminService interface {
 	Get(context.Context) (Settings, error)
 	Update(context.Context, UpdateCommand) (Settings, error)
+}
+
+type UserNicknamePolicy interface {
+	UserNicknameEditingAllowed(context.Context) (bool, error)
+	WithUserNicknameEditingPolicy(context.Context, func(*gorm.DB, bool) error) error
 }
 
 type PublicService interface {

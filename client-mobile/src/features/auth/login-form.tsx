@@ -123,8 +123,7 @@ export function LoginForm({
     emailCodeLoginMutation.isPending ||
     requestEmailCodeMutation.isPending
   const isFormUnavailable = isCredentialsLoading || isPending
-  const areInputsUnavailable =
-    isCredentialsLoading || requestEmailCodeMutation.isPending
+  const areInputsUnavailable = isCredentialsLoading
   const canSignIn =
     !isCredentialsLoading &&
     account.trim().length > 0 &&
@@ -270,6 +269,7 @@ export function LoginForm({
     toast.show({
       duration: 0,
       message: "正在登录",
+      modal: false,
       type: "loading",
     })
     setIsLoginInitializing(true)
@@ -349,6 +349,7 @@ export function LoginForm({
                     placeholder="输入验证码"
                     ref={emailCodeInputRef}
                     returnKeyType="done"
+                    submitBehavior="submit"
                     textContentType="oneTimeCode"
                     trailing={
                       <EmailCodeAction
@@ -434,6 +435,7 @@ export function LoginForm({
                     ref={passwordInputRef}
                     returnKeyType="done"
                     secureTextEntry={!passwordVisible}
+                    submitBehavior="submit"
                     trailing={
                       <PasswordVisibilityAction
                         disabled={isFormUnavailable}
