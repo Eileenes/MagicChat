@@ -17,6 +17,11 @@ import { useAuthenticatedSession } from "@/providers/auth-provider"
 import { useClientSession } from "@/providers/client-data-provider"
 import { createMediaPickerRequest } from "@/features/media-picker/media-picker-registry"
 import {
+  type MediaPermissionKind,
+  requestPermissionForUserAction,
+} from "@/features/permissions/media-permission"
+import { MediaPermissionSettingsDialog } from "@/components/permissions/media-permission-settings-dialog"
+import {
   XGUIActionSheet,
   XGUILoadingIcon,
   XGUIList,
@@ -35,6 +40,8 @@ export function ProfileScreen() {
   const [savingAvatar, setSavingAvatar] = useState(false)
   const [avatarSheetOpen, setAvatarSheetOpen] = useState(false)
   const [deactivationSheetOpen, setDeactivationSheetOpen] = useState(false)
+  const [permissionSettingsRequired, setPermissionSettingsRequired] =
+    useState<MediaPermissionKind | null>(null)
   const displayName =
     currentUser?.nickname.trim() ||
     currentUser?.name.trim() ||
@@ -73,8 +80,15 @@ export function ProfileScreen() {
     }
     try {
       if (source === "camera") {
-        const permission = await ImagePicker.requestCameraPermissionsAsync()
-        if (!permission.granted) throw new Error("请先允许相机权限")
+        const permission = await requestPermissionForUserAction(
+          ImagePicker.getCameraPermissionsAsync,
+          ImagePicker.requestCameraPermissionsAsync
+        )
+        if (permission === "denied") return
+        if (permission === "settings") {
+          setPermissionSettingsRequired("camera")
+          return
+        }
       }
       const options: ImagePicker.ImagePickerOptions = {
         allowsEditing: true,
@@ -172,6 +186,10 @@ export function ProfileScreen() {
         </YStack>
       </KeyboardAwareScreen>
 
+      <MediaPermissionSettingsDialog
+        kind={permissionSettingsRequired}
+        onCancel={() => setPermissionSettingsRequired(null)}
+      />
       <XGUIActionSheet
         actions={[
           {

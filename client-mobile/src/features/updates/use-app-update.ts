@@ -20,6 +20,7 @@ export function useAppUpdate() {
   const installedVersion = getInstalledAppVersion()
   const platform = getMobileUpdatePlatform()
   const activeDownloadRef = useRef<AndroidUpdateDownload | null>(null)
+  const installToastOperationRef = useRef<number | null>(null)
   const operationRef = useRef(0)
   const [progress, setProgress] = useState(0)
   const [release, setRelease] = useState<AppRelease | null>(null)
@@ -80,22 +81,45 @@ export function useAppUpdate() {
 
       activeDownloadRef.current = null
       setStatus("installing")
+      installToastOperationRef.current = operation
+      toast.show({
+        duration: 0,
+        message: "正在打开系统安装器",
+        modal: true,
+        type: "loading",
+      })
       await installAndroidUpdate(fileUri)
-      if (operation !== operationRef.current) return null
+      if (operation !== operationRef.current) {
+        hideInstallToast(operation)
+        return null
+      }
 
+      hideInstallToast(operation)
       setRelease(null)
       setStatus("idle")
     } catch (error: unknown) {
-      if (operation !== operationRef.current) return null
+      if (operation !== operationRef.current) {
+        hideInstallToast(operation)
+        return null
+      }
       activeDownloadRef.current = null
+      installToastOperationRef.current = null
       setRelease(null)
       setStatus("idle")
       toast.show({ message: `${"更新失败"}：${getUpdateErrorMessage(error)}`, modal: false, type: "text", duration: 1_000 })
     }
   }
 
+  function hideInstallToast(operation: number) {
+    if (installToastOperationRef.current !== operation) return
+    installToastOperationRef.current = null
+    toast.hide()
+  }
+
   function cancelUpdate() {
+    const operation = operationRef.current
     operationRef.current += 1
+    hideInstallToast(operation)
     const download = activeDownloadRef.current
     activeDownloadRef.current = null
     setProgress(0)

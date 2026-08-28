@@ -427,7 +427,6 @@ export function MeScreen() {
 
       <AppUpdateDialog
         onCancel={appUpdate.cancelUpdate}
-        onConfirm={() => void appUpdate.startUpdate()}
         progress={appUpdate.progress}
         release={appUpdate.release}
         status={appUpdate.status}
