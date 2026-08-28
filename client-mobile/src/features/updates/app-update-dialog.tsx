@@ -1,7 +1,7 @@
-import { Progress, SizableText, XStack, YStack } from "tamagui"
+import { SizableText, XStack, YStack } from "tamagui"
 
 import type { AppRelease } from "@/features/updates/app-update-model"
-import { XGUIDialog } from "@/xgui"
+import { XGUIDialog, XGUIProgress, useXGUITheme } from "@/xgui"
 
 export type AppUpdateDialogStatus =
   | "idle"
@@ -21,6 +21,7 @@ export function AppUpdateDialog({
   release: AppRelease | null
   status: AppUpdateDialogStatus
 }) {
+  const { colors } = useXGUITheme()
   const percent = Math.round(progress * 100)
 
   return (
@@ -32,16 +33,17 @@ export function AppUpdateDialog({
     >
       <YStack gap="$2" mt="$4">
         <XStack items="center" justify="space-between">
-          <SizableText color="$gray10" size="$3">
+          <SizableText color={colors.textSecondary} size="$3">
             正在下载安装包
           </SizableText>
-          <SizableText color="$color10" size="$3">
+          <SizableText color={colors.brand} size="$3">
             {percent}%
           </SizableText>
         </XStack>
-        <Progress bg="$color3" height={8} value={percent}>
-          <Progress.Indicator bg="$color10" />
-        </Progress>
+        <XGUIProgress
+          accessibilityLabel="安装包下载进度"
+          value={percent}
+        />
       </YStack>
     </XGUIDialog>
   )

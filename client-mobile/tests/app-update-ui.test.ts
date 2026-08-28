@@ -6,10 +6,10 @@ const source = (path: string) => readFile(new URL(`../${path}`, import.meta.url)
 
 test("更新下载使用 XGUI Dialog 并保留进度和取消", async () => {
   const dialog = await source("src/features/updates/app-update-dialog.tsx")
-  assert.match(dialog, /import \{ XGUIDialog \} from "@\/xgui"/)
+  assert.match(dialog, /import \{ XGUIDialog, XGUIProgress, useXGUITheme \} from "@\/xgui"/)
   assert.match(dialog, /<XGUIDialog[\s\S]*?label: "取消下载"[\s\S]*?status === "downloading"/)
-  assert.match(dialog, /正在下载安装包[\s\S]*?\{percent\}%[\s\S]*?<Progress/)
-  assert.doesNotMatch(dialog, /import \{[^\n]*Dialog[^\n]*\} from "tamagui"|正在打开系统安装器/)
+  assert.match(dialog, /正在下载安装包[\s\S]*?\{percent\}%[\s\S]*?<XGUIProgress[\s\S]*?value=\{percent\}/)
+  assert.doesNotMatch(dialog, /<Progress|\$color(?:3|10)|import \{[^\n]*(?:Dialog|Progress)[^\n]*\} from "tamagui"|正在打开系统安装器/)
 })
 
 test("安装器跳转使用可清理的模态 XGUI Loading Toast", async () => {
