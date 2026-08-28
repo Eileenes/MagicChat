@@ -73,8 +73,8 @@ func (s *Service) RegisterGrant(ctx context.Context, cmd RegisterGrantCommand) (
 	return s.grants.Register(ctx, cmd)
 }
 
-func (s *Service) RevokeGrant(ctx context.Context, userID, installationID string) error {
-	return s.grants.Revoke(ctx, userID, installationID)
+func (s *Service) RevokeGrant(ctx context.Context, userID, installationID, gatewayGrantID string) error {
+	return s.grants.Revoke(ctx, userID, installationID, gatewayGrantID)
 }
 
 func (s *Service) ResolveRoute(ctx context.Context, userID, routeToken string) (Route, error) {

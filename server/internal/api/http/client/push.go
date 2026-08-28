@@ -33,14 +33,22 @@ type pushRouteResponse struct {
 	MessageID      string `json:"message_id"`
 }
 
+type revokePushGrantRequest struct {
+	GrantID string `json:"grant_id"`
+}
+
+type resolvePushRouteRequest struct {
+	RouteToken string `json:"route_token"`
+}
+
 func NewPushAPI(push mobilepush.ClientService) *PushAPI {
 	return &PushAPI{push: push}
 }
 
 func (a *PushAPI) RegisterRoutes(group *echo.Group) {
 	group.PUT("/push/grants", a.registerGrant)
-	group.DELETE("/push/grants/:installation_id", a.revokeGrant)
-	group.GET("/push/routes/:route_token", a.resolveRoute)
+	group.POST("/push/grants/:installation_id/revoke", a.revokeGrant)
+	group.POST("/push/routes/resolve", a.resolveRoute)
 }
 
 // registerGrant godoc
@@ -85,17 +93,23 @@ func (a *PushAPI) registerGrant(c echo.Context) error {
 //
 // @Summary 删除当前手机的本地推送授权
 // @Tags 客户端推送
+// @Accept json
 // @Param installation_id path string true "安装实例 ID"
+// @Param request body revokePushGrantRequest true "待撤销的公共授权"
 // @Success 204
 // @Failure 400 {object} errorEnvelope
 // @Failure 401 {object} errorEnvelope
-// @Router /api/client/push/grants/{installation_id} [delete]
+// @Router /api/client/push/grants/{installation_id}/revoke [post]
 func (a *PushAPI) revokeGrant(c echo.Context) error {
 	current, ok := CurrentAccount(c)
 	if !ok {
 		return writeFailure(c, http.StatusUnauthorized, "unauthorized", "未登录")
 	}
-	if err := a.push.RevokeGrant(c.Request().Context(), current.ID, c.Param("installation_id")); err != nil {
+	var request revokePushGrantRequest
+	if err := decodeStrictJSON(c, &request); err != nil {
+		return writeFailure(c, http.StatusBadRequest, "invalid_request", "请求格式错误")
+	}
+	if err := a.push.RevokeGrant(c.Request().Context(), current.ID, c.Param("installation_id"), request.GrantID); err != nil {
 		return writePushError(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -105,18 +119,23 @@ func (a *PushAPI) revokeGrant(c echo.Context) error {
 //
 // @Summary 解析通知点击路由
 // @Tags 客户端推送
-// @Param route_token path string true "匿名路由 Token"
+// @Accept json
+// @Param request body resolvePushRouteRequest true "匿名路由 Token"
 // @Success 200 {object} successEnvelope{data=pushRouteResponse}
 // @Failure 400 {object} errorEnvelope
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
-// @Router /api/client/push/routes/{route_token} [get]
+// @Router /api/client/push/routes/resolve [post]
 func (a *PushAPI) resolveRoute(c echo.Context) error {
 	current, ok := CurrentAccount(c)
 	if !ok {
 		return writeFailure(c, http.StatusUnauthorized, "unauthorized", "未登录")
 	}
-	route, err := a.push.ResolveRoute(c.Request().Context(), current.ID, c.Param("route_token"))
+	var request resolvePushRouteRequest
+	if err := decodeStrictJSON(c, &request); err != nil {
+		return writeFailure(c, http.StatusBadRequest, "invalid_request", "请求格式错误")
+	}
+	route, err := a.push.ResolveRoute(c.Request().Context(), current.ID, request.RouteToken)
 	if err != nil {
 		return writePushError(c, err)
 	}

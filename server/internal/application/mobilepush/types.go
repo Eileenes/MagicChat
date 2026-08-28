@@ -83,6 +83,6 @@ type GatewayClient interface {
 
 type ClientService interface {
 	RegisterGrant(context.Context, RegisterGrantCommand) (Grant, error)
-	RevokeGrant(context.Context, string, string) error
+	RevokeGrant(context.Context, string, string, string) error
 	ResolveRoute(context.Context, string, string) (Route, error)
 }

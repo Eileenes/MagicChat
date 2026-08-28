@@ -55,7 +55,7 @@ func TestGrantRegistrationTransfersInstallationAndEncryptsCapability(t *testing.
 	bob := insertPushUser(t, db, "bob@example.com")
 	installationID := uuid.NewString()
 	firstGrantID := uuid.NewString()
-	first, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	first, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: alice.ID, InstallationID: installationID, GatewayGrantID: firstGrantID,
 		SendToken: "first-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 		ExpiresAt: now.Add(24 * time.Hour),
@@ -64,7 +64,7 @@ func TestGrantRegistrationTransfersInstallationAndEncryptsCapability(t *testing.
 		t.Fatalf("first registration = %#v, err = %v", first, err)
 	}
 	secondGrantID := uuid.NewString()
-	_, err = service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, err = registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: bob.ID, InstallationID: installationID, GatewayGrantID: secondGrantID,
 		SendToken: "second-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "android",
 		ExpiresAt: now.Add(48 * time.Hour),
@@ -86,7 +86,7 @@ func TestGrantRegistrationTransfersInstallationAndEncryptsCapability(t *testing.
 }
 
 func TestGrantRegistrationRequiresLiveSessionWhenProvided(t *testing.T) {
-	service, db, _, now := newPushTestService(t)
+	service, db, gateway, now := newPushTestService(t)
 	user := insertPushUser(t, db, "session-bound-grant@example.com")
 	session := store.UserSession{
 		ID: uuid.NewString(), TokenHash: uuid.NewString(), UserID: user.ID,
@@ -99,18 +99,69 @@ func TestGrantRegistrationRequiresLiveSessionWhenProvided(t *testing.T) {
 		UserID: user.ID, SessionID: session.ID,
 		InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "session-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
-		ExpiresAt: now.Add(time.Hour),
+		ExpiresAt: now.Add(24 * time.Hour),
 	}
-	if _, err := service.RegisterGrant(t.Context(), command); err != nil {
+	grant, err := registerPushTestGrant(t, service, db, command)
+	if err != nil {
 		t.Fatalf("register with live session: %v", err)
+	}
+	if !grant.ExpiresAt.Equal(session.ExpiresAt) {
+		t.Fatalf("grant expiry = %v, want session expiry %v", grant.ExpiresAt, session.ExpiresAt)
+	}
+	var stored store.UserPushGrant
+	if err := db.First(&stored, "gateway_grant_id = ?", command.GatewayGrantID).Error; err != nil || stored.SessionID != session.ID {
+		t.Fatalf("stored session-bound grant = %#v, err = %v", stored, err)
+	}
+	other := insertPushUser(t, db, "session-bound-sender@example.com")
+	conversation := insertPushConversation(t, db, user, other, now)
+	if err := enqueueTestMessage(service, MessageDelivery{
+		UserID: user.ID, ConversationID: conversation.ID, MessageID: uuid.NewString(),
+		SenderType: store.MessageSenderTypeUser, SenderID: other.ID,
+	}); err != nil {
+		t.Fatalf("enqueue session-bound message: %v", err)
 	}
 	if err := db.Delete(&session).Error; err != nil {
 		t.Fatalf("delete session: %v", err)
 	}
+	if _, err := service.DispatchBatch(t.Context(), 1); err != nil || len(gateway.calls) != 0 {
+		t.Fatalf("dispatch after session deletion: calls=%#v err=%v", gateway.calls, err)
+	}
 	command.InstallationID = uuid.NewString()
 	command.GatewayGrantID = uuid.NewString()
-	if _, err := service.RegisterGrant(t.Context(), command); failureCode(err) != "unauthorized" {
+	if _, err := registerPushTestGrant(t, service, db, command); failureCode(err) != "unauthorized" {
 		t.Fatalf("register after logout error = %v", err)
+	}
+}
+
+func TestStaleGrantRevocationCannotDeleteReplacement(t *testing.T) {
+	service, db, _, now := newPushTestService(t)
+	user := insertPushUser(t, db, "generation-safe-revoke@example.com")
+	installationID := uuid.NewString()
+	oldGrantID := uuid.NewString()
+	if _, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
+		UserID: user.ID, InstallationID: installationID, GatewayGrantID: oldGrantID,
+		SendToken: "old-generation-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+		ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("register old grant: %v", err)
+	}
+	newGrantID := uuid.NewString()
+	if _, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
+		UserID: user.ID, InstallationID: installationID, GatewayGrantID: newGrantID,
+		SendToken: "new-generation-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
+		ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("register replacement grant: %v", err)
+	}
+	if err := service.RevokeGrant(t.Context(), user.ID, installationID, oldGrantID); err != nil {
+		t.Fatalf("revoke stale grant: %v", err)
+	}
+	var stored store.UserPushGrant
+	if err := db.First(&stored, "installation_id = ?", installationID).Error; err != nil {
+		t.Fatalf("load replacement grant: %v", err)
+	}
+	if stored.GatewayGrantID != newGrantID {
+		t.Fatalf("remaining grant = %#v", stored)
 	}
 }
 
@@ -118,7 +169,7 @@ func TestGrantRegistrationLimitsDevicesPerUser(t *testing.T) {
 	service, db, _, now := newPushTestService(t)
 	user := insertPushUser(t, db, "device-limit@example.com")
 	for index := 0; index < maxGrantsPerUser; index++ {
-		if _, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		if _, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 			UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 			SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 			ExpiresAt: now.Add(time.Hour),
@@ -126,7 +177,7 @@ func TestGrantRegistrationLimitsDevicesPerUser(t *testing.T) {
 			t.Fatalf("register grant %d: %v", index, err)
 		}
 	}
-	if _, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	if _, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 		ExpiresAt: now.Add(time.Hour),
@@ -139,7 +190,7 @@ func TestGrantRegistrationIgnoresDisabledDevicesAtLimit(t *testing.T) {
 	service, db, _, now := newPushTestService(t)
 	user := insertPushUser(t, db, "device-replacement@example.com")
 	for index := 0; index < maxGrantsPerUser; index++ {
-		if _, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		if _, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 			UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 			SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 			ExpiresAt: now.Add(time.Hour),
@@ -156,7 +207,7 @@ func TestGrantRegistrationIgnoresDisabledDevicesAtLimit(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("disable grant: %v", err)
 	}
-	if _, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	if _, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "replacement-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 		ExpiresAt: now.Add(time.Hour),
@@ -169,7 +220,7 @@ func TestGrantRegistrationCannotReactivateDisabledDeviceBeyondLimit(t *testing.T
 	service, db, _, now := newPushTestService(t)
 	user := insertPushUser(t, db, "reactivation-limit@example.com")
 	for index := 0; index < maxGrantsPerUser; index++ {
-		if _, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		if _, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 			UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 			SendToken: "active-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 			ExpiresAt: now.Add(time.Hour),
@@ -186,7 +237,7 @@ func TestGrantRegistrationCannotReactivateDisabledDeviceBeyondLimit(t *testing.T
 	if err := db.Create(&disabled).Error; err != nil {
 		t.Fatalf("create disabled grant: %v", err)
 	}
-	_, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: disabled.InstallationID, GatewayGrantID: uuid.NewString(),
 		SendToken: "reactivated-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 		ExpiresAt: now.Add(time.Hour),
@@ -202,7 +253,7 @@ func TestGrantRegistrationDropsQueuedJobsWhenInstallationChangesOwner(t *testing
 	bob := insertPushUser(t, db, "queued-bob@example.com")
 	conversation := insertPushConversation(t, db, alice, bob, now)
 	installationID := uuid.NewString()
-	first, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	first, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: alice.ID, InstallationID: installationID, GatewayGrantID: uuid.NewString(),
 		SendToken: "first-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 		ExpiresAt: now.Add(time.Hour),
@@ -216,7 +267,7 @@ func TestGrantRegistrationDropsQueuedJobsWhenInstallationChangesOwner(t *testing
 	}); err != nil {
 		t.Fatalf("enqueue old-account message: %v", err)
 	}
-	second, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	second, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: bob.ID, InstallationID: installationID, GatewayGrantID: uuid.NewString(),
 		SendToken: "second-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 		ExpiresAt: now.Add(time.Hour),
@@ -241,7 +292,7 @@ func TestMessageTransactionDurablyCreatesAndExpandsPushEvent(t *testing.T) {
 	user := insertPushUser(t, db, "event-recipient@example.com")
 	sender := insertPushUser(t, db, "event-sender@example.com")
 	conversation := insertPushConversation(t, db, user, sender, now)
-	_, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 		ExpiresAt: now.Add(time.Hour),
@@ -321,7 +372,7 @@ func TestPushEventFanoutRechecksCurrentAccessAndMuteState(t *testing.T) {
 			recipient := insertPushUser(t, db, "fanout-"+strings.ReplaceAll(test.name, " ", "-")+"@example.com")
 			sender := insertPushUser(t, db, "fanout-sender-"+strings.ReplaceAll(test.name, " ", "-")+"@example.com")
 			conversation := insertPushConversation(t, db, recipient, sender, now)
-			_, _ = service.RegisterGrant(t.Context(), RegisterGrantCommand{
+			_, _ = registerPushTestGrant(t, service, db, RegisterGrantCommand{
 				UserID: recipient.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 				SendToken: "fanout-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 				ExpiresAt: now.Add(time.Hour),
@@ -392,7 +443,7 @@ func TestMessageDeliveryCreatesRouteAndDispatches(t *testing.T) {
 		t.Fatalf("create registry: %v", err)
 	}
 	grantID := uuid.NewString()
-	_, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: grantID,
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios",
 		ExpiresAt: now.Add(24 * time.Hour),
@@ -439,12 +490,79 @@ func TestMessageDeliveryCreatesRouteAndDispatches(t *testing.T) {
 	}
 }
 
+func TestDispatchRevalidatesMuteAndMessageRevocation(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		change func(*testing.T, *gorm.DB, store.Conversation, string, store.User, time.Time)
+	}{
+		{
+			name: "muted after fanout",
+			change: func(t *testing.T, db *gorm.DB, conversation store.Conversation, _ string, user store.User, now time.Time) {
+				preference := store.ConversationUserPreference{
+					UserID: user.ID, ConversationID: conversation.ID, NotificationMuted: true,
+					CreatedAt: now, UpdatedAt: now,
+				}
+				if err := db.Create(&preference).Error; err != nil {
+					t.Fatalf("mute conversation: %v", err)
+				}
+			},
+		},
+		{
+			name: "message revoked after fanout",
+			change: func(t *testing.T, db *gorm.DB, _ store.Conversation, messageID string, _ store.User, now time.Time) {
+				if err := db.Model(&store.MessageRegistry{}).Where("id = ?", messageID).Update("revoked_at", now).Error; err != nil {
+					t.Fatalf("revoke registry: %v", err)
+				}
+			},
+		},
+	} {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			service, db, gateway, now := newPushTestService(t)
+			user := insertPushUser(t, db, "policy-user-"+uuid.NewString()+"@example.com")
+			sender := insertPushUser(t, db, "policy-sender-"+uuid.NewString()+"@example.com")
+			conversation := insertPushConversation(t, db, user, sender, now)
+			_, _ = registerPushTestGrant(t, service, db, RegisterGrantCommand{
+				UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
+				SendToken: "policy-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
+			})
+			messageID := uuid.NewString()
+			if err := enqueueTestMessage(service, MessageDelivery{
+				UserID: user.ID, ConversationID: conversation.ID, MessageID: messageID,
+				SenderType: store.MessageSenderTypeUser, SenderID: sender.ID,
+			}); err != nil {
+				t.Fatalf("enqueue: %v", err)
+			}
+			var job store.MobilePushJob
+			if err := db.First(&job).Error; err != nil {
+				t.Fatalf("load job: %v", err)
+			}
+			routeToken, err := service.cipher.Decrypt(job.RouteTokenCiphertext, []byte(job.ID))
+			if err != nil {
+				t.Fatalf("decrypt route: %v", err)
+			}
+			testCase.change(t, db, conversation, messageID, user, now)
+			if _, err := service.DispatchBatch(t.Context(), 1); err != nil {
+				t.Fatalf("dispatch: %v", err)
+			}
+			if len(gateway.calls) != 0 {
+				t.Fatalf("gateway calls = %#v", gateway.calls)
+			}
+			if testCase.name == "message revoked after fanout" {
+				if _, err := service.ResolveRoute(t.Context(), user.ID, routeToken); failureCode(err) != "route_not_found" {
+					t.Fatalf("revoked route error = %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestDispatchUsesRemainingLocalTTL(t *testing.T) {
 	service, db, gateway, now := newPushTestService(t)
 	user := insertPushUser(t, db, "ttl@example.com")
 	sender := insertPushUser(t, db, "ttl-sender@example.com")
 	conversation := insertPushConversation(t, db, user, sender, now)
-	_, _ = service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, _ = registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
 	})
@@ -466,7 +584,7 @@ func TestDispatchUsesRemainingLocalTTL(t *testing.T) {
 func TestMessageDeliverySkipsMutedAndSelfMessages(t *testing.T) {
 	service, db, _, now := newPushTestService(t)
 	user := insertPushUser(t, db, "self@example.com")
-	_, _ = service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, _ = registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
 	})
@@ -490,7 +608,7 @@ func TestReclaimedJobRejectsStaleWorker(t *testing.T) {
 	user := insertPushUser(t, db, "lease@example.com")
 	other := insertPushUser(t, db, "lease-other@example.com")
 	conversation := insertPushConversation(t, db, user, other, now)
-	_, _ = service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, _ = registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
 	})
@@ -528,7 +646,7 @@ func TestStaleRevocationDoesNotDisableRotatedGrant(t *testing.T) {
 	conversation := insertPushConversation(t, db, user, other, now)
 	installationID := uuid.NewString()
 	oldGatewayGrantID := uuid.NewString()
-	_, _ = service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, _ = registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: installationID, GatewayGrantID: oldGatewayGrantID,
 		SendToken: "old-gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
 	})
@@ -541,7 +659,7 @@ func TestStaleRevocationDoesNotDisableRotatedGrant(t *testing.T) {
 		t.Fatalf("claim = %#v, %v", claimed, err)
 	}
 	newGatewayGrantID := uuid.NewString()
-	_, err = service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	_, err = registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: installationID, GatewayGrantID: newGatewayGrantID,
 		SendToken: "new-gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "ios", ExpiresAt: now.Add(time.Hour),
 	})
@@ -567,7 +685,7 @@ func TestRevokedGatewayResponseDisablesLocalGrant(t *testing.T) {
 	other := insertPushUser(t, db, "other@example.com")
 	conversation := insertPushConversation(t, db, user, other, now)
 	messageID := uuid.NewString()
-	grant, _ := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+	grant, _ := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 		UserID: user.ID, InstallationID: uuid.NewString(), GatewayGrantID: uuid.NewString(),
 		SendToken: "gateway-send-token-abcdefghijklmnopqrstuvwxyz", Platform: "android", ExpiresAt: now.Add(time.Hour),
 	})
@@ -589,6 +707,10 @@ func TestRevokedGatewayResponseDisablesLocalGrant(t *testing.T) {
 	if stored.Status != GrantStatusDisabled {
 		t.Fatalf("grant status = %q", stored.Status)
 	}
+	metrics, err := service.QueueMetrics(t.Context())
+	if err != nil || metrics.RecentFailedJobs != 1 || metrics.RecentFailedJobCounts["grant_revoked"] != 1 {
+		t.Fatalf("recent failed job metrics = %#v, err = %v", metrics, err)
+	}
 }
 
 func enqueueTestMessage(service *Service, delivery MessageDelivery) error {
@@ -598,6 +720,16 @@ func enqueueTestMessage(service *Service, delivery MessageDelivery) error {
 	}
 	now := service.now().UTC()
 	return service.db.Transaction(func(tx *gorm.DB) error {
+		registry := store.MessageRegistry{
+			ID: delivery.MessageID, ConversationID: delivery.ConversationID, Seq: 1,
+			SenderType: delivery.SenderType, CreatedAt: now, PartitionYear: int16(now.Year()),
+		}
+		if delivery.SenderID != "" {
+			registry.SenderID = &delivery.SenderID
+		}
+		if err := tx.Where("id = ?", delivery.MessageID).FirstOrCreate(&registry).Error; err != nil {
+			return err
+		}
 		var grants []store.UserPushGrant
 		if err := tx.Where(
 			"user_id = ? AND status = ? AND expires_at > ?", delivery.UserID, GrantStatusActive, now,
@@ -642,6 +774,23 @@ func newPushTestService(t *testing.T) (*Service, *gorm.DB, *fakeGateway, time.Ti
 	return service, db, gateway, now
 }
 
+func registerPushTestGrant(
+	t *testing.T,
+	service *Service,
+	db *gorm.DB,
+	command RegisterGrantCommand,
+) (Grant, error) {
+	t.Helper()
+	if command.SessionID == "" {
+		var session store.UserSession
+		if err := db.Where("user_id = ?", command.UserID).Order("created_at ASC").First(&session).Error; err != nil {
+			t.Fatalf("load push test session: %v", err)
+		}
+		command.SessionID = session.ID
+	}
+	return service.RegisterGrant(t.Context(), command)
+}
+
 func insertPushUser(t *testing.T, db *gorm.DB, email string) store.User {
 	t.Helper()
 	user := store.User{
@@ -651,6 +800,14 @@ func insertPushUser(t *testing.T, db *gorm.DB, email string) store.User {
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
+	}
+	session := store.UserSession{
+		ID: uuid.NewString(), TokenHash: uuid.NewString(), UserID: user.ID,
+		ExpiresAt: time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+		CreatedAt: user.CreatedAt, LastSeenAt: user.CreatedAt,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create push test session: %v", err)
 	}
 	return user
 }

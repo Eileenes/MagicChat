@@ -61,7 +61,7 @@ func TestServiceLoginAuthenticateAndLogout(t *testing.T) {
 	}
 	installationID := uuid.NewString()
 	if err := db.Create(&store.UserPushGrant{
-		ID: uuid.NewString(), UserID: user.ID, InstallationID: installationID,
+		ID: uuid.NewString(), UserID: user.ID, SessionID: storedSession.ID, InstallationID: installationID,
 		GatewayGrantID: uuid.NewString(), SendTokenCiphertext: []byte("encrypted"),
 		Platform: "ios", ExpiresAt: now.Add(time.Hour), Status: "active",
 		LastSeenAt: now, CreatedAt: now, UpdatedAt: now,
@@ -83,6 +83,44 @@ func TestServiceLoginAuthenticateAndLogout(t *testing.T) {
 	}
 	if grantCount != 0 {
 		t.Fatalf("push grants after logout = %d, want 0", grantCount)
+	}
+}
+
+func TestDelayedOldSessionLogoutDoesNotDeleteReplacementGrant(t *testing.T) {
+	db := openAccountTestDB(t)
+	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)
+	user := insertAccountTestUser(t, db, "push-session-generation@example.com", "test-password", now)
+	oldSession := store.UserSession{
+		ID: uuid.NewString(), TokenHash: auth.HashSessionToken("old-session-token"), UserID: user.ID,
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now, LastSeenAt: now,
+	}
+	newSession := store.UserSession{
+		ID: uuid.NewString(), TokenHash: auth.HashSessionToken("new-session-token"), UserID: user.ID,
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now.Add(time.Second), LastSeenAt: now.Add(time.Second),
+	}
+	if err := db.Create(&[]store.UserSession{oldSession, newSession}).Error; err != nil {
+		t.Fatalf("create sessions: %v", err)
+	}
+	installationID := uuid.NewString()
+	grant := store.UserPushGrant{
+		ID: uuid.NewString(), UserID: user.ID, SessionID: newSession.ID,
+		InstallationID: installationID, GatewayGrantID: uuid.NewString(),
+		SendTokenCiphertext: []byte("encrypted"), Platform: "ios",
+		ExpiresAt: now.Add(time.Hour), Status: "active", LastSeenAt: now,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&grant).Error; err != nil {
+		t.Fatalf("create replacement grant: %v", err)
+	}
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
+	if err := service.Logout(t.Context(), LogoutCommand{
+		Token: "old-session-token", InstallationID: installationID,
+	}); err != nil {
+		t.Fatalf("logout old session: %v", err)
+	}
+	var grantCount int64
+	if err := db.Model(&store.UserPushGrant{}).Where("id = ?", grant.ID).Count(&grantCount).Error; err != nil || grantCount != 1 {
+		t.Fatalf("replacement grant count = %d, err = %v", grantCount, err)
 	}
 }
 

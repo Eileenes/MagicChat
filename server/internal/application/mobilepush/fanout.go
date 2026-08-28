@@ -86,6 +86,98 @@ func (s *Service) fanoutEvent(ctx context.Context, event store.MobilePushEvent) 
 	})
 }
 
+func (s *Service) pushJobStillEligible(
+	ctx context.Context,
+	job store.MobilePushJob,
+	now time.Time,
+) (bool, error) {
+	db := s.db.WithContext(ctx)
+	var sessionCount int64
+	if err := db.Model(&store.UserSession{}).
+		Joins("JOIN users ON users.id = user_sessions.user_id").
+		Where(
+			"user_sessions.id = ? AND user_sessions.user_id = ? AND user_sessions.expires_at > ? AND users.status = ?",
+			job.Grant.SessionID, job.UserID, now, store.UserStatusActive,
+		).Count(&sessionCount).Error; err != nil {
+		return false, err
+	}
+	if sessionCount == 0 {
+		return false, nil
+	}
+
+	var registry store.MessageRegistry
+	result := db.Where(
+		"id = ? AND conversation_id = ? AND deleted_at IS NULL AND revoked_at IS NULL",
+		job.MessageID, job.ConversationID,
+	).Limit(1).Find(&registry)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return false, result.Error
+	}
+	actorUserID := ""
+	if registry.SenderType == store.MessageSenderTypeUser && registry.SenderID != nil {
+		actorUserID = *registry.SenderID
+	} else {
+		message, found, err := loadRegisteredPushMessage(ctx, db, registry)
+		if err != nil || !found || message.DeletedAt != nil || message.RevokedAt != nil {
+			return false, err
+		}
+		actorUserID = pushMessageActorUserID(message)
+	}
+	access, err := conversationaccess.Load(db, job.ConversationID, false)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if access.Conversation.Status != store.ConversationStatusActive ||
+		(access.ParentConversation != nil && access.ParentConversation.Status != store.ConversationStatusActive) {
+		return false, nil
+	}
+	activeUserIDs, err := conversationaccess.ActiveUserIDs(db, access)
+	if err != nil {
+		return false, err
+	}
+	active := false
+	for _, userID := range activeUserIDs {
+		if userID == job.UserID {
+			active = true
+			break
+		}
+	}
+	if !active {
+		return false, nil
+	}
+	visibleUserIDs, err := filterVisiblePushUserIDs(db, access, []string{job.UserID}, registry.Seq)
+	if err != nil || len(visibleUserIDs) == 0 {
+		return false, err
+	}
+	muted, err := loadMutedPushUsers(db, job.ConversationID, []string{job.UserID})
+	if err != nil {
+		return false, err
+	}
+	return actorUserID != job.UserID && !muted[job.UserID], nil
+}
+
+func loadRegisteredPushMessage(
+	ctx context.Context,
+	db *gorm.DB,
+	registry store.MessageRegistry,
+) (store.Message, bool, error) {
+	if store.MessagePartitioningEnabled(db) {
+		message, err := store.LoadMessageByRegistry(ctx, db, registry)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return store.Message{}, false, nil
+		}
+		return message, err == nil, err
+	}
+	var message store.Message
+	result := db.Where(
+		"id = ? AND conversation_id = ? AND seq = ?", registry.ID, registry.ConversationID, registry.Seq,
+	).Limit(1).Find(&message)
+	return message, result.RowsAffected > 0, result.Error
+}
+
 func loadPushEventMessage(
 	ctx context.Context,
 	db *gorm.DB,
@@ -105,11 +197,7 @@ func loadPushEventMessage(
 	if result.Error != nil || result.RowsAffected == 0 {
 		return store.Message{}, false, result.Error
 	}
-	message, err := store.LoadMessageByRegistry(ctx, db, registry)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return store.Message{}, false, nil
-	}
-	return message, err == nil, err
+	return loadRegisteredPushMessage(ctx, db, registry)
 }
 
 func filterVisiblePushUserIDs(

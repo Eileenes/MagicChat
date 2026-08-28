@@ -1818,6 +1818,11 @@ definitions:
         example: 5
         type: integer
     type: object
+  client.resolvePushRouteRequest:
+    properties:
+      route_token:
+        type: string
+    type: object
   client.resolveUsersRequest:
     properties:
       user_ids:
@@ -1843,6 +1848,11 @@ definitions:
         $ref: '#/definitions/client.messageResponse'
       system_message:
         $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.revokePushGrantRequest:
+    properties:
+      grant_id:
+        type: string
     type: object
   client.searchContactUsersRequest:
     properties:
@@ -7522,14 +7532,22 @@ paths:
       summary: 注册当前手机的公共推送授权
       tags:
       - 客户端推送
-  /api/client/push/grants/{installation_id}:
-    delete:
+  /api/client/push/grants/{installation_id}/revoke:
+    post:
+      consumes:
+      - application/json
       parameters:
       - description: 安装实例 ID
         in: path
         name: installation_id
         required: true
         type: string
+      - description: 待撤销的公共授权
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.revokePushGrantRequest'
       responses:
         "204":
           description: No Content
@@ -7544,14 +7562,17 @@ paths:
       summary: 删除当前手机的本地推送授权
       tags:
       - 客户端推送
-  /api/client/push/routes/{route_token}:
-    get:
+  /api/client/push/routes/resolve:
+    post:
+      consumes:
+      - application/json
       parameters:
       - description: 匿名路由 Token
-        in: path
-        name: route_token
+        in: body
+        name: request
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/client.resolvePushRouteRequest'
       responses:
         "200":
           description: OK

@@ -45,7 +45,7 @@ func (s *routeService) authorize(ctx context.Context, route store.MobilePushRout
 	db := s.db.WithContext(ctx)
 	var registry store.MessageRegistry
 	if err := db.Where(
-		"id = ? AND conversation_id = ? AND deleted_at IS NULL", route.MessageID, route.ConversationID,
+		"id = ? AND conversation_id = ? AND deleted_at IS NULL AND revoked_at IS NULL", route.MessageID, route.ConversationID,
 	).First(&registry).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return failure("route_not_found", "推送路由不存在")

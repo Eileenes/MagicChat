@@ -138,6 +138,14 @@ export function pushGatewayCredentialIsInvalid(error: unknown) {
   )
 }
 
+export function pushGatewayInstallationIsDisabled(error: unknown) {
+  return (
+    error instanceof PushGatewayRequestError &&
+    error.status === 410 &&
+    error.code === "installation_disabled"
+  )
+}
+
 async function gatewayRequest<T = unknown>(
   path: string,
   options: {

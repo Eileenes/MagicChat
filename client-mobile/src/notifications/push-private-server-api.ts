@@ -29,13 +29,16 @@ export async function revokePrivatePushGrant(
   target: AuthenticatedTarget,
   accountId: string,
   installationId: string,
+  grantId: string,
   options: { fetcher?: ApiFetch } = {}
 ) {
   await createStoredAccountApiClient(target, accountId, options.fetcher).request(
-    `/api/client/push/grants/${encodeURIComponent(installationId)}`,
+    `/api/client/push/grants/${encodeURIComponent(installationId)}/revoke`,
     {
+      body: JSON.stringify({ grant_id: grantId }),
       errorMessage: "撤销手机推送失败",
-      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
     }
   )
 }
@@ -48,9 +51,11 @@ export async function resolvePrivatePushRoute(
   const value = await createProtectedApiClient(target, options.fetcher).request<{
     conversation_id?: string
     message_id?: string
-  }>(`/api/client/push/routes/${encodeURIComponent(routeToken)}`, {
+  }>("/api/client/push/routes/resolve", {
+    body: JSON.stringify({ route_token: routeToken }),
     errorMessage: "打开通知失败",
-    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
   })
   if (!value?.conversation_id || !value.message_id) {
     throw new ApiRequestError("通知路由响应格式不正确")

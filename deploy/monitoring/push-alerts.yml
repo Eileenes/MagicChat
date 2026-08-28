@@ -41,6 +41,22 @@ groups:
         annotations:
           summary: 公共 Push Gateway 投递已积压
 
+      - alert: MagicChatPrivatePushRecentFailures
+        expr: magicchat_mobile_push_enabled == 1 and (sum(magicchat_mobile_push_recent_failed_events_by_code{code=~".+"}) > 0 or sum(magicchat_mobile_push_recent_failed_jobs_by_code{code=~".+",code!~"grant_revoked|grant_expired|grant_not_found|installation_disabled|grant_inactive|grant_owner_changed"}) > 0)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: MagicChat 私有推送最近持续出现失败
+
+      - alert: MagicChatGatewayRecentFailures
+        expr: sum(push_gateway_recent_failed_jobs_by_code{code=~".+",code!~"bad_device_token|device_token_not_for_topic|unregistered|invalid_registration_id|jpush_1011"}) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 公共 Push Gateway 最近持续出现投递失败
+
       - alert: MagicChatPushCriticalBacklog
         expr: magicchat_mobile_push_enabled == 1 and (magicchat_mobile_push_oldest_pending_event_age_seconds > 300 or magicchat_mobile_push_oldest_pending_job_age_seconds > 300)
         for: 10m

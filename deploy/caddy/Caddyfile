@@ -32,6 +32,12 @@ https://{$PUBLIC_HOSTNAME:localhost} {
 		}
 	}
 
+	@legacy_push_route {
+		path /api/client/push/routes/*
+		not path /api/client/push/routes/resolve
+	}
+	log_skip @legacy_push_route
+
 	route {
 		handle /gateway-healthz {
 			respond "ok" 200
@@ -80,6 +86,12 @@ https://{$PUBLIC_HOSTNAME:localhost}:1443 {
 			roll_keep_for 720h
 		}
 	}
+
+	@legacy_push_route {
+		path /api/client/push/routes/*
+		not path /api/client/push/routes/resolve
+	}
+	log_skip @legacy_push_route
 
 	route {
 		handle /gateway-healthz {

@@ -17,12 +17,32 @@ import {
   getPushRetryDelay,
   isPendingPushRouteExpired,
   parsePendingPushRouteQueue,
+  parsePushDelegation,
   parsePushNotificationData,
   pushSynchronizationShouldRetry,
   shouldRefreshPrivateRegistration,
   shouldRenewPushGrant,
   targetsMatch,
 } from "@/notifications/push-types"
+
+test("legacy delegations require the current private registration version", () => {
+  const parsed = parsePushDelegation({
+    accountId: "account-1",
+    expiresAt: "2099-01-01T00:00:00Z",
+    grantId: "grant-1",
+    installationId: "installation-1",
+    lastSyncedAt: "2026-08-28T00:00:00Z",
+    platform: "ios",
+    sendToken: "send-token",
+    status: "registered",
+    target: {
+      id: "server-1",
+      url: "https://private.example",
+      userId: "user-1",
+    },
+  })
+  assert.equal(parsed?.privateRegistrationVersion, 1)
+})
 
 test("parses only fixed-template push notification routes", () => {
   assert.deepEqual(
@@ -240,8 +260,12 @@ test("registers grants and resolves routes only through the mapped private serve
   assert.equal(requests[0]?.init?.credentials, "include")
   assert.equal(
     requests[1]?.url,
-    `https://private.example/api/client/push/routes/${"r".repeat(43)}`
+    "https://private.example/api/client/push/routes/resolve"
   )
+  assert.equal(requests[1]?.init?.method, "POST")
+  assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), {
+    route_token: "r".repeat(43),
+  })
   assert.deepEqual(route, {
     conversationId: "conversation-1",
     messageId: "message-1",

@@ -252,7 +252,7 @@ func (s *Service) Logout(ctx context.Context, cmd LogoutCommand) error {
 		}
 		found = true
 		if installationID != "" {
-			if err := tx.Where("user_id = ? AND installation_id = ?", session.UserID, installationID).
+			if err := tx.Where("session_id = ? AND installation_id = ?", session.ID, installationID).
 				Delete(&store.UserPushGrant{}).Error; err != nil {
 				return err
 			}

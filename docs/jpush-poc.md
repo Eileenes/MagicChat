@@ -27,7 +27,7 @@ Master Secret、RegistrationID、厂商 token、management token、send token �
 3. 阅读极光数据处理说明，选择“同意并启用”。
 4. 同意 Android 13+ 通知权限。
 5. 设置页状态最终应从“正在同步”变为“已启用”。
-6. 关闭后应撤销 Gateway/private Server grant，并调用 JPush `stopPush`。
+6. 关闭后应撤销 Gateway/private Server grant，并调用 JPush `stopPush`；再次启用必须调用 `resumePush` 并重新取得 RegistrationID。
 
 在用户明确同意前，应用不得调用任何 JPush SDK API。
 
@@ -37,6 +37,8 @@ Master Secret、RegistrationID、厂商 token、management token、send token �
 - App 后台：只展示一条固定文案通知。
 - App 被系统杀死：通知可达，点击后冷启动并定位目标消息。
 - 同一通知响应重复回调：只导航一次。
+- 同一会话连续通知：新通知清理该会话先前的通知栏条目。
+- Gateway 在不确定响应后重试：复用同一个持久化 JPush CID，不产生第二次推送。
 - 无网络后恢复：RegistrationID 和 grant 自动重试。
 - 退出当前账号：Server session 与 private grant 原子删除，Gateway grant 后续撤销。
 - 切换账号：旧账号 route 不得在新账号打开。

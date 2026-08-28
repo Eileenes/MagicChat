@@ -65,6 +65,8 @@ To rotate `DATA_ENCRYPTION_KEY`, move the old value into `DATA_ENCRYPTION_PREVIO
 - `push_gateway_jobs{status}`
 - `push_gateway_grants{status}`
 - `push_gateway_installations{provider,platform,status}`
+- `push_gateway_recent_failed_jobs`
+- `push_gateway_recent_failed_jobs_by_code{code}`
 - `push_gateway_oldest_pending_job_age_seconds`
 
 No installation ID, grant ID, provider token, route token, user identity, private-server address, conversation ID, or message ID is included.

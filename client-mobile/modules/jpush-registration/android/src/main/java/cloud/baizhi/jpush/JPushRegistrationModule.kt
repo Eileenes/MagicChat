@@ -41,6 +41,9 @@ class JPushRegistrationModule : Module(), JPushNotificationResponseListener {
           JPushInterface.setLinkMergeEnable(context, false)
           JPushInterface.setDebugMode(BuildConfig.DEBUG)
           JPushInterface.init(context)
+          if (JPushInterface.isPushStopped(context)) {
+            JPushInterface.resumePush(context)
+          }
         } catch (error: Throwable) {
           initialized.set(false)
           throw error

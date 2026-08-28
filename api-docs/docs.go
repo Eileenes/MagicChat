@@ -8647,8 +8647,11 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/client/push/grants/{installation_id}": {
-            "delete": {
+        "/api/client/push/grants/{installation_id}/revoke": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
                 "tags": [
                     "客户端推送"
                 ],
@@ -8660,6 +8663,15 @@ const docTemplate = `{
                         "name": "installation_id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "待撤销的公共授权",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.revokePushGrantRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -8681,19 +8693,24 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/client/push/routes/{route_token}": {
-            "get": {
+        "/api/client/push/routes/resolve": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
                 "tags": [
                     "客户端推送"
                 ],
                 "summary": "解析通知点击路由",
                 "parameters": [
                     {
-                        "type": "string",
                         "description": "匿名路由 Token",
-                        "name": "route_token",
-                        "in": "path",
-                        "required": true
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.resolvePushRouteRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -11835,6 +11852,14 @@ const docTemplate = `{
                 }
             }
         },
+        "client.resolvePushRouteRequest": {
+            "type": "object",
+            "properties": {
+                "route_token": {
+                    "type": "string"
+                }
+            }
+        },
         "client.resolveUsersRequest": {
             "type": "object",
             "properties": {
@@ -11873,6 +11898,14 @@ const docTemplate = `{
                 },
                 "system_message": {
                     "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.revokePushGrantRequest": {
+            "type": "object",
+            "properties": {
+                "grant_id": {
+                    "type": "string"
                 }
             }
         },

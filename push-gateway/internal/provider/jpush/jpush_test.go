@@ -65,6 +65,7 @@ func TestSendUsesFixedTemplateAndAnonymousRouteData(t *testing.T) {
 		Token: "registration-id-123456", Platform: "android", Environment: "production",
 		Title: "即应", Body: "你收到一条新消息", Event: "message.created",
 		GrantID: "grant-opaque", RouteToken: "route-opaque",
+		CollapseKey: "conversation-opaque", RequestIdentifier: "provider-cid",
 		ExpiresAt: now.Add(125 * time.Second),
 	})
 	if err != nil {
@@ -73,7 +74,7 @@ func TestSendUsesFixedTemplateAndAnonymousRouteData(t *testing.T) {
 	if receipt.MessageID != "18100287008546343" {
 		t.Fatalf("receipt = %#v", receipt)
 	}
-	if captured.Platform != "android" || len(captured.Audience.RegistrationIDs) != 1 ||
+	if captured.CID != "provider-cid" || captured.Platform != "android" || len(captured.Audience.RegistrationIDs) != 1 ||
 		captured.Audience.RegistrationIDs[0] != "registration-id-123456" ||
 		captured.Notification.Android.Title != "即应" ||
 		captured.Notification.Android.Alert != "你收到一条新消息" ||
@@ -83,7 +84,8 @@ func TestSendUsesFixedTemplateAndAnonymousRouteData(t *testing.T) {
 	}
 	if captured.Notification.Android.Extras["event"] != "message.created" ||
 		captured.Notification.Android.Extras["grant_id"] != "grant-opaque" ||
-		captured.Notification.Android.Extras["route_token"] != "route-opaque" {
+		captured.Notification.Android.Extras["route_token"] != "route-opaque" ||
+		captured.Notification.Android.Extras["collapse_key"] != "conversation-opaque" {
 		t.Fatalf("request extras = %#v", captured.Notification.Android.Extras)
 	}
 }
@@ -96,7 +98,7 @@ func TestSendClassifiesJPushFailures(t *testing.T) {
 		wantKind provider.ErrorKind
 		wantCode string
 	}{
-		{name: "invalid registration", status: 400, body: `{"error":{"code":1003,"message":"invalid"}}`, wantKind: provider.ErrorInvalidDevice, wantCode: "jpush_1003"},
+		{name: "invalid request", status: 400, body: `{"error":{"code":1003,"message":"invalid"}}`, wantKind: provider.ErrorPermanent, wantCode: "jpush_1003"},
 		{name: "no target", status: 400, body: `{"error":{"code":1011,"message":"missing"}}`, wantKind: provider.ErrorInvalidDevice, wantCode: "jpush_1011"},
 		{name: "rate limited", status: 429, body: `{"error":{"code":2002,"message":"limited"}}`, wantKind: provider.ErrorTransient, wantCode: "jpush_2002"},
 		{name: "timeout", status: 503, body: `{"error":{"code":1030,"message":"timeout"}}`, wantKind: provider.ErrorTransient, wantCode: "jpush_1030"},
@@ -123,6 +125,27 @@ func TestSendClassifiesJPushFailures(t *testing.T) {
 				t.Fatalf("send error = %#v, want kind=%s code=%s", err, testCase.wantKind, testCase.wantCode)
 			}
 		})
+	}
+}
+
+func TestNewRequestIdentifierObtainsJPushCID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/v3/push/cid" ||
+			request.URL.Query().Get("count") != "1" || request.URL.Query().Get("type") != "push" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.String())
+		}
+		_, _ = response.Write([]byte(`{"cidlist":["jpush-issued-cid"]}`))
+	}))
+	defer server.Close()
+	value, err := New(Config{
+		AppKey: "app-key", MasterSecret: "master-secret", CIDEndpoint: server.URL + "/v3/push/cid",
+	})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	identifier, err := value.NewRequestIdentifier(t.Context())
+	if err != nil || identifier != "jpush-issued-cid" {
+		t.Fatalf("identifier = %q, err = %v", identifier, err)
 	}
 }
 

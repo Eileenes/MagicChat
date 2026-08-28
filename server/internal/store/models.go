@@ -138,18 +138,20 @@ type UserSession struct {
 }
 
 type UserPushGrant struct {
-	ID                  string    `gorm:"type:uuid;primaryKey"`
-	UserID              string    `gorm:"type:uuid;not null;index:user_push_grants_user_active_index,priority:1"`
-	User                User      `gorm:"constraint:OnDelete:CASCADE;"`
-	InstallationID      string    `gorm:"type:uuid;not null;uniqueIndex"`
-	GatewayGrantID      string    `gorm:"type:uuid;not null;uniqueIndex"`
-	SendTokenCiphertext []byte    `gorm:"not null"`
-	Platform            string    `gorm:"size:16;not null"`
-	ExpiresAt           time.Time `gorm:"not null;index:user_push_grants_user_active_index,priority:3"`
-	Status              string    `gorm:"size:16;not null;index:user_push_grants_user_active_index,priority:2"`
-	LastSeenAt          time.Time `gorm:"not null"`
-	CreatedAt           time.Time `gorm:"not null"`
-	UpdatedAt           time.Time `gorm:"not null"`
+	ID                  string      `gorm:"type:uuid;primaryKey"`
+	UserID              string      `gorm:"type:uuid;not null;index:user_push_grants_user_active_index,priority:1"`
+	User                User        `gorm:"constraint:OnDelete:CASCADE;"`
+	SessionID           string      `gorm:"type:uuid;not null;index"`
+	Session             UserSession `gorm:"constraint:OnDelete:CASCADE;"`
+	InstallationID      string      `gorm:"type:uuid;not null;uniqueIndex"`
+	GatewayGrantID      string      `gorm:"type:uuid;not null;uniqueIndex"`
+	SendTokenCiphertext []byte      `gorm:"not null"`
+	Platform            string      `gorm:"size:16;not null"`
+	ExpiresAt           time.Time   `gorm:"not null;index:user_push_grants_user_active_index,priority:3"`
+	Status              string      `gorm:"size:16;not null;index:user_push_grants_user_active_index,priority:2"`
+	LastSeenAt          time.Time   `gorm:"not null"`
+	CreatedAt           time.Time   `gorm:"not null"`
+	UpdatedAt           time.Time   `gorm:"not null"`
 }
 
 func (UserPushGrant) TableName() string { return "user_push_grants" }

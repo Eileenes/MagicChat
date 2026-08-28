@@ -40,6 +40,7 @@ export type PushDelegation = {
   installationId: string
   lastSyncedAt: string | null
   platform: PushPlatform
+  privateRegistrationVersion?: number
   sendToken: string
   status: PushDelegationStatus
   target: AuthenticatedTarget
@@ -49,6 +50,7 @@ export type PendingPushRevocation = {
   accountId: string
   grantId: string
   installationId: string
+  gatewayRevoked?: boolean
   privateRevoked?: boolean
   queuedAt: string
   target: AuthenticatedTarget
@@ -214,6 +216,11 @@ export function parsePushDelegation(value: unknown): PushDelegation | null {
     installationId: value.installationId,
     lastSyncedAt: value.lastSyncedAt,
     platform,
+    privateRegistrationVersion:
+      typeof value.privateRegistrationVersion === "number" &&
+      Number.isInteger(value.privateRegistrationVersion)
+        ? value.privateRegistrationVersion
+        : 1,
     sendToken: value.sendToken,
     status: value.status,
     target: value.target,
@@ -227,7 +234,8 @@ export function parsePendingPushRevocation(value: unknown): PendingPushRevocatio
     typeof value.installationId !== "string" || !value.installationId ||
     typeof value.queuedAt !== "string" || !Number.isFinite(Date.parse(value.queuedAt))) return null
   return { accountId: value.accountId, grantId: value.grantId, installationId: value.installationId,
-    privateRevoked: value.privateRevoked === true, queuedAt: value.queuedAt, target: value.target }
+    gatewayRevoked: value.gatewayRevoked === true, privateRevoked: value.privateRevoked === true,
+    queuedAt: value.queuedAt, target: value.target }
 }
 
 export function parsePendingPushRevocationQueue(value: unknown): PendingPushRevocation[] | null {
