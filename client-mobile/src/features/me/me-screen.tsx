@@ -71,7 +71,7 @@ export function MeScreen() {
   const session = useAuthenticatedSession()
   const appInfoQuery = useCachedAppInfo(session)
   const { currentUser } = useClientSession()
-  const { active, isSigningOut, signOut } = useAuth()
+  const { active, isSigningOut, phase, signOut } = useAuth()
   const pushCoordinator = usePushCoordinator()
   const pushState = usePushSynchronizationState()
   const pushStatus = presentPushSynchronizationState(pushState)
@@ -84,6 +84,7 @@ export function MeScreen() {
   } = useAppTheme()
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [logoutSheetOpen, setLogoutSheetOpen] = useState(false)
+  const [completedLogoutAccountId, setCompletedLogoutAccountId] = useState<string | null>(null)
   const [pendingTheme, setPendingTheme] = useState<ThemePreference>(themePreference)
 
   const organizationName =
@@ -123,6 +124,19 @@ export function MeScreen() {
     [toast]
   )
 
+  useEffect(() => {
+    if (!completedLogoutAccountId || active?.accountId !== completedLogoutAccountId || phase !== "authenticated") return
+    toast.hide()
+    let secondFrame: number | null = null
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => router.dismissTo("/messages"))
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame)
+    }
+  }, [active?.accountId, completedLogoutAccountId, phase, router, toast])
+
   function confirmLogout() {
     if (isSigningOut) return
     setLogoutSheetOpen(true)
@@ -131,10 +145,11 @@ export function MeScreen() {
   async function handleLogout() {
     toast.show({ duration: 0, message: "正在退出登录", modal: true, type: "loading" })
     try {
-      await signOut()
-      toast.hide()
-      router.replace("/account-management" as Href)
+      const nextAccountId = await signOut()
+      if (nextAccountId) setCompletedLogoutAccountId(nextAccountId)
+      else toast.hide()
     } catch (error: unknown) {
+      setCompletedLogoutAccountId(null)
       toast.show({
         message: error instanceof ApiRequestError
           ? error.message

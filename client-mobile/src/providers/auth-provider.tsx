@@ -40,7 +40,7 @@ type AuthContextValue = {
   commitSignIn(session: AuthSession): Promise<void>
   rollbackSignIn(session: AuthSession): Promise<void>
   invalidateSession(): Promise<void>
-  signOut(): Promise<void>
+  signOut(): Promise<string | null>
   isAuthenticated: boolean
   isHydrated: boolean
   isPreparingSignIn: boolean
@@ -324,7 +324,12 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
   const beginSignIn = useCallback((session: AuthSession) => { stagedRef.current = session; setPhase("preparing") }, [])
   const commitSignIn = useCallback(async (session: AuthSession) => { if (!stagedRef.current || session.userId !== stagedRef.current.userId) throw new Error("登录初始化已失效"); const next = await accountStore.hydrate(); const account = next.accounts.find(a => a.serverId === session.id && a.url === session.url && a.userId === session.userId && a.status === "ready"); if (!account) throw new Error("登录凭据尚未安装"); stagedRef.current = null; if (stateRef.current.active?.accountId === account.id) { setPhase("authenticated"); return } await switchAccount(account.id) }, [switchAccount])
   const rollbackSignIn = useCallback(async () => { stagedRef.current = null; setPhase(stateRef.current.active ? "authenticated" : "anonymous") }, [])
-  const signOut = useCallback(async () => { const id = stateRef.current.active?.accountId; if (id) await signOutAccount(id) }, [signOutAccount])
+  const signOut = useCallback(async () => {
+    const id = stateRef.current.active?.accountId
+    if (!id) return null
+    await signOutAccount(id)
+    return stateRef.current.active?.accountId ?? null
+  }, [signOutAccount])
 
   const value = useMemo<AuthContextValue>(() => ({ accounts: index.accounts, active, activeAccount: active?.account ?? null, generation: active?.generation ?? 0, phase, switchAccount, signOutAccount, deactivateActiveAccount, markReauthRequired, refreshMissingAccountProfiles, installAndActivate, beginSignIn, commitSignIn, rollbackSignIn, invalidateSession, signOut, isAuthenticated: Boolean(active), isHydrated: hydrated, isPreparingSignIn: phase === "preparing" || phase === "switching", isSigningOut: phase === "signing-out", session: active?.target ?? null }), [active, beginSignIn, commitSignIn, deactivateActiveAccount, hydrated, index.accounts, installAndActivate, invalidateSession, markReauthRequired, phase, refreshMissingAccountProfiles, rollbackSignIn, signOut, signOutAccount, switchAccount])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

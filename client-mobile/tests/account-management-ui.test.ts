@@ -188,6 +188,7 @@ test("切换阶段保持 active 账号的认证与已登录路由", async () => 
     readFile(new URL("../src/providers/auth-provider.tsx", import.meta.url), "utf8"),
   ])
   assert.match(authSource, /isAuthenticated: Boolean\(active\)/)
+  assert.match(authSource, /await signOutAccount\(id\)[\s\S]*?return stateRef\.current\.active\?\.accountId \?\? null/)
   assert.doesNotMatch(authSource, /isAuthenticated: Boolean\(active\) &&/)
   assert.match(layoutSource, /if \(!isAuthenticated\) \{\s*return <Redirect href="\/server-management" \/>/)
 })
@@ -196,6 +197,9 @@ test("设置页账号入口和退出登录保持静态 Toast 交互", async () =
   const source = await readFile(new URL("../src/features/me/me-screen.tsx", import.meta.url), "utf8")
   assert.match(source, /<XGUIListItem\s*centerContent\s*destructive[\s\S]*?\/account-management[\s\S]*?title="切换账号"/)
   assert.match(source, /toast\.show\(\{ duration: 0, message: "正在退出登录", modal: true, type: "loading" \}\)/)
+  assert.match(source, /const nextAccountId = await signOut\(\)[\s\S]*?setCompletedLogoutAccountId\(nextAccountId\)[\s\S]*?else toast\.hide\(\)/)
+  assert.match(source, /active\?\.accountId !== completedLogoutAccountId \|\| phase !== "authenticated"[\s\S]*?router\.dismissTo\("\/messages"\)/)
+  assert.doesNotMatch(source, /await signOut\(\)[\s\S]{0,200}?\/account-management/)
   assert.match(source, /deferUntilClosed: true,[\s\S]*?label: "退出登录"[\s\S]*?handleLogout/)
   assert.match(source, /onPress=\{confirmLogout\}[\s\S]*?title="退出登录"/)
   assert.doesNotMatch(source, /title=\{isSigningOut \? "正在退出…"|disabled=\{isSigningOut\}/)
