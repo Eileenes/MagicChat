@@ -71,7 +71,7 @@ export function MeScreen() {
   const session = useAuthenticatedSession()
   const appInfoQuery = useCachedAppInfo(session)
   const { currentUser } = useClientSession()
-  const { active, isSigningOut, signOut } = useAuth()
+  const { active, isSigningOut, phase, signOut } = useAuth()
   const pushCoordinator = usePushCoordinator()
   const pushState = usePushSynchronizationState()
   const pushStatus = presentPushSynchronizationState(pushState)
@@ -84,6 +84,7 @@ export function MeScreen() {
   } = useAppTheme()
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [logoutSheetOpen, setLogoutSheetOpen] = useState(false)
+  const [completedLogoutAccountId, setCompletedLogoutAccountId] = useState<string | null>(null)
   const [pendingTheme, setPendingTheme] = useState<ThemePreference>(themePreference)
 
   const organizationName =
@@ -123,21 +124,39 @@ export function MeScreen() {
     [toast]
   )
 
+  useEffect(() => {
+    if (!completedLogoutAccountId || active?.accountId !== completedLogoutAccountId || phase !== "authenticated") return
+    toast.hide()
+    let secondFrame: number | null = null
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => router.dismissTo("/messages"))
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame)
+    }
+  }, [active?.accountId, completedLogoutAccountId, phase, router, toast])
+
   function confirmLogout() {
+    if (isSigningOut) return
     setLogoutSheetOpen(true)
   }
 
   async function handleLogout() {
+    toast.show({ duration: 0, message: "正在退出登录", modal: true, type: "loading" })
     try {
-      await signOut()
-      router.replace("/account-management" as Href)
+      const nextAccountId = await signOut()
+      if (nextAccountId) setCompletedLogoutAccountId(nextAccountId)
+      else toast.hide()
     } catch (error: unknown) {
-      Alert.alert(
-        "退出登录失败",
-        error instanceof ApiRequestError
+      setCompletedLogoutAccountId(null)
+      toast.show({
+        message: error instanceof ApiRequestError
           ? error.message
-          : "暂时无法退出登录，请稍后重试。"
-      )
+          : "暂时无法退出登录，请稍后重试。",
+        modal: false,
+        type: "error",
+      })
     }
   }
 
@@ -331,15 +350,11 @@ export function MeScreen() {
 
             <XGUIList size="large">
               <XGUIListItem
+                centerContent
+                destructive
                 icon={({ color, size, strokeWidth }) => <IconSwitchHorizontal color={color} size={size} strokeWidth={strokeWidth} />}
                 onPress={() => router.push("/account-management" as Href)}
-                title="账号管理"
-              />
-              <XGUIListItem
-                icon={({ size, strokeWidth }) => <IconDatabase color={colors.blue} size={size} strokeWidth={strokeWidth} />}
-                onPress={() => router.push("/server-management?mode=manage" as Href)}
-                separator
-                title="服务器管理"
+                title="切换账号"
               />
             </XGUIList>
 
@@ -347,10 +362,9 @@ export function MeScreen() {
               <XGUIListItem
                 centerContent
                 destructive
-                disabled={isSigningOut}
                 icon={({ color, size, strokeWidth }) => <IconLogout color={color} size={size} strokeWidth={strokeWidth} />}
-                onPress={isSigningOut ? undefined : confirmLogout}
-                title={isSigningOut ? "正在退出…" : "退出登录"}
+                onPress={confirmLogout}
+                title="退出登录"
               />
             </XGUIList>
           </YStack>
@@ -374,6 +388,7 @@ export function MeScreen() {
       <XGUIActionSheet
         actions={[
           {
+            deferUntilClosed: true,
             destructive: true,
             label: "退出登录",
             onPress: () => void handleLogout(),
@@ -412,7 +427,6 @@ export function MeScreen() {
 
       <AppUpdateDialog
         onCancel={appUpdate.cancelUpdate}
-        onConfirm={() => void appUpdate.startUpdate()}
         progress={appUpdate.progress}
         release={appUpdate.release}
         status={appUpdate.status}

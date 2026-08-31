@@ -15,6 +15,7 @@ export type XGUIColors = {
   brand5: string
   destructive: string
   foreground0Half: string
+  foreground2: string
   foreground3: string
   foreground4: string
   foreground5: string
@@ -53,6 +54,7 @@ export const xguiColors = {
     brand5: "#059A4C",
     destructive: "#FA5151",
     foreground0Half: "rgba(0,0,0,0.9)",
+    foreground2: "rgba(0,0,0,0.3)",
     foreground3: "rgba(0,0,0,0.1)",
     foreground4: "rgba(0,0,0,0.15)",
     foreground5: "rgba(0,0,0,0.05)",
@@ -89,6 +91,7 @@ export const xguiColors = {
     brand5: "#38CD7F",
     destructive: "#FA5151",
     foreground0Half: "rgba(255,255,255,0.6)",
+    foreground2: "rgba(255,255,255,0.3)",
     foreground3: "rgba(255,255,255,0.1)",
     foreground4: "rgba(255,255,255,0.15)",
     foreground5: "rgba(255,255,255,0.1)",

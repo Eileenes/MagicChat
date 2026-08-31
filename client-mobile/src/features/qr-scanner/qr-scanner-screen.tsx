@@ -6,20 +6,22 @@ import {
 } from "expo-camera"
 import { type Href, useIsFocused, useRouter } from "expo-router"
 import { useEffect, useRef, useState } from "react"
-import { Linking, StyleSheet, Text, View } from "react-native"
+import { StyleSheet, Text, View } from "react-native"
 
 import { AppHeader } from "@/components/navigation/app-header"
+import { MediaPermissionSettingsDialog } from "@/components/permissions/media-permission-settings-dialog"
 import { classifyQrContent } from "@/features/qr-scanner/qr-content-classifier"
-import { XGUIActionSheet, XGUILoadingIcon, useXGUITheme } from "@/xgui"
+import { XGUILoadingIcon, useXGUITheme, useXGUIToast } from "@/xgui"
 
 export function QrScannerScreen() {
   const router = useRouter()
   const isFocused = useIsFocused()
   const { colors } = useXGUITheme()
+  const toast = useXGUIToast()
   const [permission, requestPermission] = useCameraPermissions()
   const [cameraError, setCameraError] = useState<string | null>(null)
-  const [permissionSheetOpen, setPermissionSheetOpen] = useState(false)
-  const permissionPromptedRef = useRef(false)
+  const [permissionDialogOpen, setPermissionDialogOpen] = useState(false)
+  const permissionAttemptedRef = useRef(false)
   const scanLockedRef = useRef(false)
 
   useEffect(() => {
@@ -27,14 +29,34 @@ export function QrScannerScreen() {
       !isFocused ||
       !permission ||
       permission.granted ||
-      permissionPromptedRef.current
+      permissionAttemptedRef.current
     ) {
       return
     }
 
-    permissionPromptedRef.current = true
-    setPermissionSheetOpen(true)
-  }, [isFocused, permission])
+    permissionAttemptedRef.current = true
+    if (!permission.canAskAgain) {
+      const timer = setTimeout(() => setPermissionDialogOpen(true), 0)
+      return () => clearTimeout(timer)
+    }
+
+    void requestPermission()
+      .then((response) => {
+        if (!response.granted) router.back()
+      })
+      .catch((error: unknown) => {
+        toast.show({
+          duration: 1_000,
+          message:
+            error instanceof Error
+              ? `无法申请相机权限：${error.message}`
+              : "无法申请相机权限，请稍后重试",
+          modal: false,
+          type: "error",
+        })
+        router.back()
+      })
+  }, [isFocused, permission, requestPermission, router, toast])
 
   function handleBarcodeScanned({ data, type }: BarcodeScanningResult) {
     if (scanLockedRef.current || type !== "qr") return
@@ -96,21 +118,9 @@ export function QrScannerScreen() {
         <AppHeader onBackPress={() => router.back()} title="扫一扫" />
         <View style={styles.content}>{content}</View>
       </View>
-      <XGUIActionSheet
-        actions={[
-          {
-            deferUntilClosed: true,
-            label: permission?.canAskAgain ? "允许使用相机" : "前往系统设置",
-            onPress: () =>
-              void (permission?.canAskAgain
-                ? requestPermission()
-                : Linking.openSettings()),
-          },
-        ]}
-        description="相机仅用于扫描二维码"
-        onOpenChange={setPermissionSheetOpen}
-        open={permissionSheetOpen}
-        title="需要相机权限"
+      <MediaPermissionSettingsDialog
+        kind={permissionDialogOpen ? "camera" : null}
+        onCancel={() => router.back()}
       />
     </>
   )

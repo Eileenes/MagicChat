@@ -48,6 +48,10 @@ export {
 } from "@/xgui/components/xgui-popover-menu"
 export type { XGUIPopoverPlacement } from "@/xgui/components/xgui-popover-menu-model"
 export {
+  XGUIProgress,
+  type XGUIProgressProps,
+} from "@/xgui/components/xgui-progress"
+export {
   XGUILoadmore,
   type XGUILoadmoreProps,
   type XGUILoadmoreVariant,

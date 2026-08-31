@@ -25,6 +25,10 @@ func TestMobilePushMetricsEndpoint(t *testing.T) {
 	for _, expected := range []string{
 		"magicchat_mobile_push_enabled 0",
 		"# TYPE magicchat_mobile_push_events gauge",
+		"magicchat_mobile_push_recent_failed_events 0",
+		"# TYPE magicchat_mobile_push_recent_failed_events_by_code gauge",
+		"magicchat_mobile_push_recent_failed_jobs 0",
+		"# TYPE magicchat_mobile_push_recent_failed_jobs_by_code gauge",
 		"magicchat_mobile_push_oldest_pending_event_age_seconds 0",
 		"magicchat_mobile_push_oldest_pending_job_age_seconds 0",
 	} {

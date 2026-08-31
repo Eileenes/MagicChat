@@ -92,7 +92,6 @@ export function ContactsScreen() {
       scrollable={false}
     >
       <ContactDirectoryList
-        alphabetIndex
         emptyLabel="联系人"
         errorMessage={contactsError?.message}
         footerNoun="联系人"

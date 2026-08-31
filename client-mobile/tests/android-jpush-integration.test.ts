@@ -11,11 +11,18 @@ const MODULE_ROOT = new URL(
 )
 
 test("Android JPush module is credential-gated and privacy-gated", async () => {
-  const [gradle, moduleSource, manifest] = await Promise.all([
+  const [gradle, moduleSource, receiverSource, manifest] = await Promise.all([
     readFile(new URL("android/build.gradle", MODULE_ROOT), "utf8"),
     readFile(
       new URL(
         "android/src/main/java/cloud/baizhi/jpush/JPushRegistrationModule.kt",
+        MODULE_ROOT
+      ),
+      "utf8"
+    ),
+    readFile(
+      new URL(
+        "android/src/main/java/cloud/baizhi/jpush/JPushNotificationReceiver.kt",
         MODULE_ROOT
       ),
       "utf8"
@@ -41,6 +48,9 @@ test("Android JPush module is credential-gated and privacy-gated", async () => {
   assert.match(moduleSource, /JPushInterface\.setGeofenceEnable\(context, false\)/)
   assert.match(moduleSource, /JPushInterface\.setLinkMergeEnable\(context, false\)/)
   assert.match(moduleSource, /JPushInterface\.stopPush\(context\)/)
+  assert.match(moduleSource, /JPushInterface\.resumePush\(context\)/)
+  assert.match(receiverSource, /collapse_key/)
+  assert.match(receiverSource, /clearNotificationById/)
   assert.match(manifest, /JPushNotificationReceiver/)
   for (const permission of [
     "ACCESS_BACKGROUND_LOCATION",

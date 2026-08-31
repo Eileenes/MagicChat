@@ -19,17 +19,20 @@ import {
 
 const account = (userId: string, lastUsedAt: string, status: "ready" | "reauth-required" = "ready") =>
   createAccountRecord({ serverId: "server", url: "https://chat.example.com", userId,
-    name: `Name ${userId}`, email: `${userId}@example.com`, lastUsedAt, status })
+    avatar: `/avatars/${userId}.webp`, name: `Name ${userId}`, email: `${userId}@example.com`, lastUsedAt, status })
 
 test("account list maps current/reauth state and sorts current then recent", () => {
   const current = account("current", "2026-01-01T00:00:00Z")
   const recent = account("recent", "2026-01-03T00:00:00Z")
   const reauth = account("reauth", "2026-01-04T00:00:00Z", "reauth-required")
-  const items = buildAccountListItems([recent, current, reauth], current.id, new Map([["server", "工作服务器"]]))
+  const items = buildAccountListItems([recent, current, reauth], current.id)
   assert.deepEqual(items.map((item) => [item.accountId, item.status]), [
     [current.id, "current"], [reauth.id, "reauth-required"], [recent.id, "ready"],
   ])
   assert.match(items[1]!.accessibilityLabel, /需要重新登录/)
+  assert.equal(items[0]!.avatar, "/avatars/current.webp")
+  assert.equal(items[0]!.email, "current@example.com")
+  assert.equal(items[0]!.target.url, "https://chat.example.com")
   assert.equal(JSON.stringify(items).toLowerCase().includes("token"), false)
 })
 
@@ -143,8 +146,62 @@ test("add, cancel, reauth and authenticated route guards remain separate", () =>
 
 test("account UI has explicit accessibility labels and never serializes credentials", async () => {
   const source = await readFile(new URL("../src/features/accounts/account-management-screen.tsx", import.meta.url), "utf8")
-  assert.match(source, /accessibilityLabel={`退出账号\$\{item\.name\}`}/)
-  assert.match(source, /accessibilityRole="progressbar"/)
-  assert.match(source, /minHeight: 44/)
+  assert.match(source, /accessibilityLabel={`登出账号\$\{item\.email\}`}/)
+  assert.match(source, /<YStack px="\$4">\s*<XGUIList variant="form-radio">/)
+  assert.match(source, /avatar=\{avatar\}/)
+  assert.match(source, /disabled=\{disabled \|\| item\.isCurrent\}/)
+  assert.match(source, /\{item\.isCurrent \? "当前" : "切换"\}/)
+  assert.match(source, /<XGUIListItem[\s\S]*?separator=\{index > 0\}/)
+  assert.doesNotMatch(source, /borderTopWidth=\{index/)
+  assert.equal(source.match(/size="xmini"/g)?.length, 2)
+  assert.equal(source.match(/hitSlop=\{\{ bottom: 8, left: 4, right: 4, top: 8 \}\}/g)?.length, 2)
+  assert.equal(source.match(/minHeight: 28, paddingHorizontal: 8/g)?.length, 2)
+  assert.equal(source.match(/fontSize: 12, lineHeight: 16/g)?.length, 2)
+  assert.match(source, /variant="danger"/)
+  assert.match(source, />\s*登出\s*<\/XGUIButton>/)
+  assert.match(source, /title=\{item\.email\}/)
+  assert.match(source, /description=\{item\.target\.url\}/)
+  assert.doesNotMatch(source, /\{item\.status === "current" \? "当前"/)
+  assert.match(source, /refreshMissingAccountProfiles/)
+  assert.match(source, /toast\.show\(\{ duration: 0, message: "正在登出账号", type: "loading" \}\)/)
+  assert.match(source, /toast\.show\(\{ duration: 0, message: "正在切换账号", modal: true, type: "loading" \}\)/)
+  assert.match(source, /presentation === "logout-toast" && !failed\) toast\.hide\(\)/)
+  assert.match(source, /}, "switch-toast"\)\.catch/)
+  assert.match(source, /setSwitchItemsSnapshot\(items\)/)
+  assert.match(source, /const displayedItems = switchItemsSnapshot \?\? items/)
+  assert.match(source, /active\?\.accountId !== completedSwitchAccountId \|\| phase !== "authenticated"/)
+  assert.match(source, /requestAnimationFrame\(\(\) => router\.dismissTo\("\/messages"\)\)/)
+  assert.doesNotMatch(source, /navigate: \(\) => router\.replace\("\/messages"\)/)
+  assert.match(source, /const globallyBusy = phase === "preparing"/)
+  assert.doesNotMatch(source, /phase === "switching" \|\| phase === "preparing"|正在切换账号…|accessibilityRole="progressbar"/)
+  assert.doesNotMatch(source, /phase === "signing-out" \? "正在登出账号/)
+  assert.match(source, /setLogoutAvatarSnapshot\(\{ accountId: active\.accountId, avatar: currentUser\.avatar \}\)/)
+  assert.match(source, /logoutAvatarSnapshot\?\.accountId === item\.accountId/)
+  assert.match(source, /accessibilityLabel="添加账号"[\s\S]*?variant="secondary"/)
+  assert.doesNotMatch(source, /accessibilityLabel="管理服务器"|>\s*服务器管理\s*</)
   assert.doesNotMatch(source, /token|authorization|localOnly/i)
+})
+
+test("切换阶段保持 active 账号的认证与已登录路由", async () => {
+  const [layoutSource, authSource] = await Promise.all([
+    readFile(new URL("../src/app/(app)/_layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/providers/auth-provider.tsx", import.meta.url), "utf8"),
+  ])
+  assert.match(authSource, /isAuthenticated: Boolean\(active\)/)
+  assert.match(authSource, /await signOutAccount\(id\)[\s\S]*?return stateRef\.current\.active\?\.accountId \?\? null/)
+  assert.doesNotMatch(authSource, /isAuthenticated: Boolean\(active\) &&/)
+  assert.match(layoutSource, /if \(!isAuthenticated\) \{\s*return <Redirect href="\/server-management" \/>/)
+})
+
+test("设置页账号入口和退出登录保持静态 Toast 交互", async () => {
+  const source = await readFile(new URL("../src/features/me/me-screen.tsx", import.meta.url), "utf8")
+  assert.match(source, /<XGUIListItem\s*centerContent\s*destructive[\s\S]*?\/account-management[\s\S]*?title="切换账号"/)
+  assert.match(source, /toast\.show\(\{ duration: 0, message: "正在退出登录", modal: true, type: "loading" \}\)/)
+  assert.match(source, /const nextAccountId = await signOut\(\)[\s\S]*?setCompletedLogoutAccountId\(nextAccountId\)[\s\S]*?else toast\.hide\(\)/)
+  assert.match(source, /active\?\.accountId !== completedLogoutAccountId \|\| phase !== "authenticated"[\s\S]*?router\.dismissTo\("\/messages"\)/)
+  assert.doesNotMatch(source, /await signOut\(\)[\s\S]{0,200}?\/account-management/)
+  assert.match(source, /deferUntilClosed: true,[\s\S]*?label: "退出登录"[\s\S]*?handleLogout/)
+  assert.match(source, /onPress=\{confirmLogout\}[\s\S]*?title="退出登录"/)
+  assert.doesNotMatch(source, /title=\{isSigningOut \? "正在退出…"|disabled=\{isSigningOut\}/)
+  assert.doesNotMatch(source, /title="账号管理"|title="服务器管理"|\/server-management\?mode=manage/)
 })

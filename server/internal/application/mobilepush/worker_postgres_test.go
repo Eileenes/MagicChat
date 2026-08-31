@@ -101,7 +101,7 @@ func TestPostgresLogoutAndGrantRegistrationLeaveNoLiveGrant(t *testing.T) {
 	logoutResult := make(chan error, 1)
 	go func() {
 		<-start
-		_, err := service.RegisterGrant(t.Context(), RegisterGrantCommand{
+		_, err := registerPushTestGrant(t, service, db, RegisterGrantCommand{
 			UserID: user.ID, SessionID: session.ID,
 			InstallationID: installationID, GatewayGrantID: uuid.NewString(),
 			SendToken: strings.Repeat("s", 43), Platform: "ios",

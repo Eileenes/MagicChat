@@ -22,11 +22,16 @@ import (
 
 const initialPasswordLength = 16
 
+type UserNicknamePolicy interface {
+	UserNicknameEditingAllowed(context.Context) (bool, error)
+}
+
 type Dependencies struct {
 	DB                      *gorm.DB
 	Presence                PresencePort
 	AppConnections          AppConnectionPort
 	ProfileNotifications    ProfileNotifications
+	NicknamePolicy          UserNicknamePolicy
 	Now                     func() time.Time
 	NewID                   func() string
 	GenerateInitialPassword func(int) (string, error)
@@ -39,6 +44,7 @@ type Service struct {
 	presence                PresencePort
 	appConnections          AppConnectionPort
 	profileNotifications    ProfileNotifications
+	nicknamePolicy          UserNicknamePolicy
 	now                     func() time.Time
 	newID                   func() string
 	generateInitialPassword func(int) (string, error)
@@ -68,7 +74,7 @@ func NewService(deps Dependencies) *Service {
 		generateAvatar = randomBuiltinAvatar
 	}
 	return &Service{
-		db: deps.DB, presence: deps.Presence, appConnections: deps.AppConnections, profileNotifications: deps.ProfileNotifications, now: now, newID: newID,
+		db: deps.DB, presence: deps.Presence, appConnections: deps.AppConnections, profileNotifications: deps.ProfileNotifications, nicknamePolicy: deps.NicknamePolicy, now: now, newID: newID,
 		generateInitialPassword: generateInitialPassword, hashPassword: hashPassword,
 		generateAvatar: generateAvatar,
 	}
@@ -91,7 +97,18 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	keyword := strings.ToLower(strings.TrimSpace(cmd.Keyword))
 	if keyword != "" {
 		like := "%" + keyword + "%"
-		query = query.Where("LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(nickname) LIKE ? OR phone LIKE ?", like, like, like, like)
+		allowNicknameSearch := true
+		if s.nicknamePolicy != nil {
+			allowNicknameSearch, err = s.nicknamePolicy.UserNicknameEditingAllowed(ctx)
+			if err != nil {
+				return ListResult{}, internalError(err)
+			}
+		}
+		if allowNicknameSearch {
+			query = query.Where("LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(nickname) LIKE ? OR phone LIKE ?", like, like, like, like)
+		} else {
+			query = query.Where("LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR phone LIKE ?", like, like, like)
+		}
 	}
 	var onlineStatus map[string]bool
 	if onlineFilter != nil {
@@ -187,6 +204,13 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (CreateResult, 
 			return CreateResult{}, newError(CodeConflict, "手机号已存在", nil)
 		}
 	}
+	allowUserNicknameEditing := true
+	if s.nicknamePolicy != nil {
+		allowUserNicknameEditing, err = s.nicknamePolicy.UserNicknameEditingAllowed(ctx)
+		if err != nil {
+			return CreateResult{}, internalError(err)
+		}
+	}
 	initialPassword, err := s.generateInitialPassword(initialPasswordLength)
 	if err != nil {
 		return CreateResult{}, internalError(err)
@@ -211,6 +235,9 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (CreateResult, 
 			return CreateResult{}, newError(CodeConflict, "邮箱或手机号已存在", userInsertErr)
 		}
 		return CreateResult{}, internalError(err)
+	}
+	if !allowUserNicknameEditing {
+		storedUser.Nickname = storedUser.Name
 	}
 	return CreateResult{
 		User: newUser(storedUser, false), InitialPassword: initialPassword,

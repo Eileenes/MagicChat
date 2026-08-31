@@ -1,7 +1,7 @@
 import { useRouter, type Href } from "expo-router"
-import { useMemo, useRef, useState } from "react"
-import { Pressable, ScrollView } from "react-native"
-import { Paragraph, SizableText, XStack, YStack } from "tamagui"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { ScrollView } from "react-native"
+import { Paragraph, XStack, YStack } from "tamagui"
 
 import { AppAvatar } from "@/components/avatar/app-avatar"
 import { ContentState } from "@/components/feedback/content-state"
@@ -9,48 +9,77 @@ import { AppHeader } from "@/components/navigation/app-header"
 import { ApiRequestError } from "@/data/api-client"
 import { accountLoginHref, AccountActionSingleFlight, addAccountServerHref, buildAccountListItems, performAccountLogout, performAccountSwitch } from "@/features/accounts/account-management-model"
 import { useAuth } from "@/providers/auth-provider"
+import { useClientSession } from "@/providers/client-data-provider"
 import { useServers } from "@/providers/server-provider"
-import { XGUIActionSheet, XGUIButton, XGUIList, useXGUITheme, useXGUIToast } from "@/xgui"
+import { XGUIActionSheet, XGUIButton, XGUIList, XGUIListItem, useXGUITheme, useXGUIToast } from "@/xgui"
 
 export function AccountManagementScreen() {
   const router = useRouter()
   const toast = useXGUIToast()
   const { colors } = useXGUITheme()
   const { addServer, servers, selectServer } = useServers()
-  const { accounts, active, isHydrated, phase, signOutAccount, switchAccount } = useAuth()
+  const { currentUser } = useClientSession()
+  const { accounts, active, isHydrated, phase, refreshMissingAccountProfiles, signOutAccount, switchAccount } = useAuth()
   const [busyAccountId, setBusyAccountId] = useState<string | null>(null)
   const [actionError, setActionError] = useState("")
   const [logoutAccountId, setLogoutAccountId] = useState<string | null>(null)
   const flight = useRef(new AccountActionSingleFlight())
+  const [logoutAvatarSnapshot, setLogoutAvatarSnapshot] = useState<{ accountId: string; avatar: string } | null>(null)
   const retryActionRef = useRef<(() => void) | null>(null)
-  const serverNames = useMemo(() => new Map(servers.map((server) => [server.id, server.name])), [servers])
-  const items = useMemo(() => buildAccountListItems(accounts, active?.accountId ?? null, serverNames), [accounts, active?.accountId, serverNames])
-  const logoutItem = items.find((item) => item.accountId === logoutAccountId)
-  const globallyBusy = phase === "switching" || phase === "signing-out" || phase === "preparing"
+  const items = useMemo(() => buildAccountListItems(accounts, active?.accountId ?? null), [accounts, active?.accountId])
+  const [switchItemsSnapshot, setSwitchItemsSnapshot] = useState<typeof items | null>(null)
+  const [completedSwitchAccountId, setCompletedSwitchAccountId] = useState<string | null>(null)
+  const displayedItems = switchItemsSnapshot ?? items
+  const logoutItem = displayedItems.find((item) => item.accountId === logoutAccountId)
+  const globallyBusy = phase === "preparing"
 
-  async function runAccountAction(accountId: string, operation: () => Promise<void>) {
-    retryActionRef.current = () => { void runAccountAction(accountId, operation).catch(() => undefined) }
+  useEffect(() => {
+    if (!isHydrated || !accounts.some((account) => !account.avatar && account.status === "ready")) return
+    void refreshMissingAccountProfiles().catch(() => undefined)
+  }, [accounts, isHydrated, refreshMissingAccountProfiles])
+
+  useEffect(() => {
+    if (!completedSwitchAccountId || active?.accountId !== completedSwitchAccountId || phase !== "authenticated") return
+    toast.hide()
+    let secondFrame: number | null = null
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => router.dismissTo("/messages"))
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame)
+    }
+  }, [active?.accountId, completedSwitchAccountId, phase, router, toast])
+
+  async function runAccountAction(accountId: string, operation: () => Promise<void>, presentation: "inline" | "logout-toast" | "switch-toast" = "inline") {
+    if (presentation === "inline") retryActionRef.current = () => { void runAccountAction(accountId, operation).catch(() => undefined) }
     const result = await flight.current.run(accountId, async () => {
-      setBusyAccountId(accountId)
-      setActionError("")
+      if (presentation === "logout-toast") toast.show({ duration: 0, message: "正在登出账号", type: "loading" })
+      else if (presentation === "switch-toast") toast.show({ duration: 0, message: "正在切换账号", modal: true, type: "loading" })
+      else { setBusyAccountId(accountId); setActionError("") }
+      let failed = false
       try { await operation() }
       catch (error) {
+        failed = true
         const message = error instanceof ApiRequestError || error instanceof Error ? error.message : "账号操作失败，请稍后重试"
-        setActionError(message)
+        if (presentation === "inline") setActionError(message)
         toast.show({ message, modal: false, type: "error" })
         throw error
-      } finally { setBusyAccountId(null) }
+      } finally {
+        if (presentation === "logout-toast" && !failed) toast.hide()
+        if (presentation === "inline") setBusyAccountId(null)
+      }
     })
     return result
   }
 
   function openLogin(accountId: string) {
-    const item = items.find((candidate) => candidate.accountId === accountId)
+    const item = displayedItems.find((candidate) => candidate.accountId === accountId)
     if (!item) return
     const existingServer = servers.find((server) => server.id === item.target.id || server.url === item.target.url)
     if (existingServer) selectServer(existingServer.id)
     else {
-      const added = addServer(item.serverLabel, item.target.url)
+      const added = addServer(item.target.url, item.target.url)
       if (added.status !== "added") {
         toast.show({ message: "无法恢复账号服务器，请先在服务器管理中添加", modal: false, type: "error" })
         return
@@ -61,26 +90,29 @@ export function AccountManagementScreen() {
   }
 
   function handleAccountPress(accountId: string) {
-    const item = items.find((candidate) => candidate.accountId === accountId)
+    const item = displayedItems.find((candidate) => candidate.accountId === accountId)
     if (!item || globallyBusy || busyAccountId) return
     if (item.status === "reauth-required") { openLogin(accountId); return }
     if (item.isCurrent) return
+    setSwitchItemsSnapshot(items)
+    setCompletedSwitchAccountId(null)
     void runAccountAction(accountId, async () => {
       await performAccountSwitch({ accountId, currentAccountId: active?.accountId ?? null,
-        switchAccount, navigate: () => router.replace("/messages") })
-    }).catch(() => undefined)
+        switchAccount, navigate: () => setCompletedSwitchAccountId(accountId) })
+    }, "switch-toast").catch(() => setSwitchItemsSnapshot(null))
   }
 
   function confirmLogout() {
     const accountId = logoutAccountId
     setLogoutAccountId(null)
     if (!accountId) return
+    if (active?.accountId && currentUser?.avatar) setLogoutAvatarSnapshot({ accountId: active.accountId, avatar: currentUser.avatar })
     void runAccountAction(accountId, async () => {
       await performAccountLogout({ accountId, signOutAccount, navigate: () => {
         const remaining = accounts.filter((account) => account.id !== accountId)
         router.replace((remaining.length ? "/account-management" : "/login") as Href)
       } })
-    }).catch(() => undefined)
+    }, "logout-toast").catch(() => undefined).finally(() => setLogoutAvatarSnapshot(null))
   }
 
   if (!isHydrated) return <ContentState loading message="正在加载账号" />
@@ -94,74 +126,79 @@ export function AccountManagementScreen() {
           <XGUIButton accessibilityLabel="重试账号操作" disabled={globallyBusy || busyAccountId !== null} onPress={() => retryActionRef.current?.()} size="mini" variant="secondary">重试</XGUIButton>
         </YStack>
       ) : null}
-      {globallyBusy || busyAccountId ? (
-        <Paragraph accessibilityLiveRegion="polite" accessibilityRole="progressbar" color={colors.textSecondary} px="$4" py="$2">
-          {phase === "signing-out" ? "正在退出账号…" : "正在切换账号…"}
-        </Paragraph>
-      ) : null}
       <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
         <YStack maxW={440} self="center" width="100%">
-          {items.length ? (
-            <XGUIList>
-              {items.map((item, index) => {
-                const disabled = globallyBusy || busyAccountId !== null
-                return (
-                  <XStack borderTopWidth={index ? 1 : 0} borderColor={colors.separator} key={item.accountId} minH={72}>
-                    <Pressable
+          {displayedItems.length ? (
+            <YStack px="$4">
+              <XGUIList variant="form-radio">
+                {displayedItems.map((item, index) => {
+                  const loadedAvatar = item.isCurrent ? currentUser?.avatar : ""
+                  const logoutAvatar = logoutAvatarSnapshot?.accountId === item.accountId ? logoutAvatarSnapshot.avatar : ""
+                  const avatar = item.avatar || loadedAvatar || logoutAvatar
+                  const disabled = globallyBusy || busyAccountId !== null
+                  return (
+                    <XGUIListItem
                       accessibilityLabel={item.accessibilityLabel}
-                      accessibilityRole="button"
-                      accessibilityState={{ busy: busyAccountId === item.accountId, disabled, selected: item.isCurrent }}
+                      description={item.target.url}
                       disabled={disabled}
+                      key={item.accountId}
+                      leading={<AppAvatar accessibilityLabel={`${item.name}头像`} avatar={avatar} server={item.target} size={44} type="user" />}
+                      minHeight={72}
                       onPress={() => handleAccountPress(item.accountId)}
-                      style={({ pressed }) => ({ flex: 1, minHeight: 72, opacity: pressed ? 0.72 : 1 })}
-                    >
-                      <XStack gap="$3" items="center" minH={72} px="$4" py="$3">
-                        <AppAvatar accessibilityLabel={`${item.name}头像`} server={item.target} size={44} type="user" />
-                        <YStack flex={1} gap="$1">
-                          <XStack gap="$2" items="center">
-                            <SizableText color={colors.textPrimary} flex={1} fontWeight="600" numberOfLines={1}>{item.name}</SizableText>
-                            <SizableText color={item.status === "reauth-required" ? colors.destructive : colors.brand} size="$2">
-                              {item.status === "current" ? "当前" : item.status === "reauth-required" ? "需重新登录" : "切换"}
-                            </SizableText>
-                          </XStack>
-                          {item.email ? <Paragraph color={colors.textSecondary} numberOfLines={1}>{item.email}</Paragraph> : null}
-                          <Paragraph color={colors.textPlaceholder} numberOfLines={1}>{item.serverLabel}</Paragraph>
-                        </YStack>
-                      </XStack>
-                    </Pressable>
-                    <Pressable
-                      accessibilityLabel={`退出账号${item.name}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ disabled }}
-                      disabled={disabled}
-                      onPress={() => setLogoutAccountId(item.accountId)}
-                      style={{ alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 64 }}
-                    >
-                      <SizableText color={colors.destructive} size="$3">退出</SizableText>
-                    </Pressable>
-                  </XStack>
-                )
-              })}
-            </XGUIList>
+                      separator={index > 0}
+                      title={item.email}
+                      trailing={(
+                        <XStack gap="$2">
+                          <XGUIButton
+                            accessibilityLabel={item.isCurrent ? `当前账号${item.email}` : `切换到账号${item.email}`}
+                            accessibilityState={{ busy: busyAccountId === item.accountId, disabled: disabled || item.isCurrent }}
+                            disabled={disabled || item.isCurrent}
+                            loading={!item.isCurrent && busyAccountId === item.accountId}
+                            hitSlop={{ bottom: 8, left: 4, right: 4, top: 8 }}
+                            onPress={() => handleAccountPress(item.accountId)}
+                            size="xmini"
+                            style={{ minHeight: 28, paddingHorizontal: 8 }}
+                            textStyle={{ fontSize: 12, lineHeight: 16 }}
+                          >
+                            {item.isCurrent ? "当前" : "切换"}
+                          </XGUIButton>
+                          <XGUIButton
+                            accessibilityLabel={`登出账号${item.email}`}
+                            accessibilityState={{ busy: busyAccountId === item.accountId, disabled }}
+                            disabled={disabled}
+                            loading={busyAccountId === item.accountId}
+                            hitSlop={{ bottom: 8, left: 4, right: 4, top: 8 }}
+                            onPress={() => setLogoutAccountId(item.accountId)}
+                            size="xmini"
+                            style={{ minHeight: 28, paddingHorizontal: 8 }}
+                            textStyle={{ fontSize: 12, lineHeight: 16 }}
+                            variant="danger"
+                          >
+                            登出
+                          </XGUIButton>
+                        </XStack>
+                      )}
+                    />
+                  )
+                })}
+              </XGUIList>
+            </YStack>
           ) : (
             <ContentState message="本机还没有账号" />
           )}
-          <YStack gap="$3" p="$4">
-            <XGUIButton accessibilityLabel="添加账号" disabled={globallyBusy || busyAccountId !== null} onPress={() => router.push(addAccountServerHref() as Href)}>
+          <YStack p="$4">
+            <XGUIButton accessibilityLabel="添加账号" disabled={globallyBusy || busyAccountId !== null} onPress={() => router.push(addAccountServerHref() as Href)} variant="secondary">
               添加账号
-            </XGUIButton>
-            <XGUIButton accessibilityLabel="管理服务器" disabled={globallyBusy || busyAccountId !== null} onPress={() => router.push("/server-management?mode=manage" as Href)} variant="secondary">
-              服务器管理
             </XGUIButton>
           </YStack>
         </YStack>
       </ScrollView>
       <XGUIActionSheet
-        actions={logoutItem ? [{ accessibilityLabel: `确认退出账号${logoutItem.name}`, destructive: true, label: "退出登录", onPress: confirmLogout }] : []}
-        description={logoutItem ? `确定退出“${logoutItem.name}”吗？网络失败时账号会保留在本机。` : undefined}
+        actions={logoutItem ? [{ accessibilityLabel: `确认登出账号${logoutItem.email}`, destructive: true, label: "登出", onPress: confirmLogout }] : []}
+        description={logoutItem ? `确定登出“${logoutItem.email}”吗？网络失败时账号会保留在本机。` : undefined}
         onOpenChange={(open) => { if (!open) setLogoutAccountId(null) }}
         open={Boolean(logoutItem)}
-        title="退出账号"
+        title="登出账号"
       />
     </YStack>
   )

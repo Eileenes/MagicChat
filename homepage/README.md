@@ -45,7 +45,7 @@ PUBLIC_GA_ID=G-XXXXXXXXXX npm run build
 - canonical、robots、Open Graph、Twitter Card 与 `hreflang`
 - Organization 与 SoftwareApplication JSON-LD
 - 构建生成 `/sitemap.xml` 和 `/robots.txt`
-- 独立 `/privacy/` 页面
+- 独立 `/user-service/` 用户服务页，以及 `/privacy-policy/`、`/user-agreement/` 文档页
 
 ## Docker 部署
 

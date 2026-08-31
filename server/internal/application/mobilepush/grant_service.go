@@ -52,6 +52,9 @@ func (s *grantService) Register(ctx context.Context, cmd RegisterGrantCommand) (
 		return Grant{}, failure("invalid_request", "推送授权格式错误")
 	}
 
+	if cmd.SessionID == "" {
+		return Grant{}, failure("unauthorized", "登录状态已失效")
+	}
 	var stored store.UserPushGrant
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockRegistrationKey(tx, "user:"+userID); err != nil {
@@ -63,16 +66,14 @@ func (s *grantService) Register(ctx context.Context, cmd RegisterGrantCommand) (
 		if err := lockRegistrationKey(tx, "grant:"+gatewayGrantID); err != nil {
 			return err
 		}
-		if sessionID != "" {
-			var sessionCount int64
-			if err := tx.Model(&store.UserSession{}).Where(
-				"id = ? AND user_id = ? AND expires_at > ?", sessionID, userID, now,
-			).Count(&sessionCount).Error; err != nil {
-				return err
-			}
-			if sessionCount == 0 {
+		var session store.UserSession
+		if err := tx.Where(
+			"id = ? AND user_id = ? AND expires_at > ?", sessionID, userID, now,
+		).First(&session).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return failure("unauthorized", "登录状态已失效")
 			}
+			return err
 		}
 		queryErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("installation_id = ?", installationID).First(&stored).Error
@@ -120,11 +121,12 @@ func (s *grantService) Register(ctx context.Context, cmd RegisterGrantCommand) (
 			return err
 		}
 		stored.UserID = userID
+		stored.SessionID = sessionID
 		stored.InstallationID = installationID
 		stored.GatewayGrantID = gatewayGrantID
 		stored.SendTokenCiphertext = ciphertext
 		stored.Platform = cmd.Platform
-		stored.ExpiresAt = cmd.ExpiresAt.UTC()
+		stored.ExpiresAt = minTime(cmd.ExpiresAt.UTC(), session.ExpiresAt.UTC())
 		stored.Status = GrantStatusActive
 		stored.LastSeenAt = now
 		stored.UpdatedAt = now
@@ -139,7 +141,7 @@ func (s *grantService) Register(ctx context.Context, cmd RegisterGrantCommand) (
 	}, nil
 }
 
-func (s *grantService) Revoke(ctx context.Context, userID, installationID string) error {
+func (s *grantService) Revoke(ctx context.Context, userID, installationID, gatewayGrantID string) error {
 	userID, err := normalizeUUID(userID)
 	if err != nil {
 		return err
@@ -148,7 +150,24 @@ func (s *grantService) Revoke(ctx context.Context, userID, installationID string
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).
-		Where("user_id = ? AND installation_id = ?", userID, installationID).
-		Delete(&store.UserPushGrant{}).Error
+	gatewayGrantID, err = normalizeUUID(gatewayGrantID)
+	if err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := store.LockMobilePushInstallation(tx, installationID); err != nil {
+			return err
+		}
+		return tx.Where(
+			"user_id = ? AND installation_id = ? AND gateway_grant_id = ?",
+			userID, installationID, gatewayGrantID,
+		).Delete(&store.UserPushGrant{}).Error
+	})
+}
+
+func minTime(first, second time.Time) time.Time {
+	if first.Before(second) {
+		return first
+	}
+	return second
 }

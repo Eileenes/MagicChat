@@ -230,6 +230,13 @@ func (s *Service) dispatchJob(ctx context.Context, job store.MobilePushJob) erro
 	if job.Grant.Status != GrantStatusActive || !job.Grant.ExpiresAt.After(now) {
 		return s.finishJob(ctx, job, JobStatusFailed, "grant_inactive")
 	}
+	eligible, err := s.pushJobStillEligible(ctx, job, now)
+	if err != nil {
+		return err
+	}
+	if !eligible {
+		return s.finishJob(ctx, job, JobStatusExpired, "policy_changed")
+	}
 	sendToken, err := s.cipher.Decrypt(job.Grant.SendTokenCiphertext, []byte(job.Grant.ID))
 	if err != nil {
 		return s.finishJob(ctx, job, JobStatusFailed, "send_token_decryption_failed")

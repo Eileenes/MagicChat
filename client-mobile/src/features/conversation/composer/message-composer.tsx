@@ -65,6 +65,7 @@ import { useComposerVoice } from "@/features/conversation/voice/use-composer-voi
 import { VoiceRecordButton } from "@/features/conversation/voice/voice-record-button"
 import { XGUIButton, useXGUITheme } from "@/xgui"
 import { createMediaPickerRequest } from "@/features/media-picker/media-picker-registry"
+import { MediaPermissionSettingsDialog } from "@/components/permissions/media-permission-settings-dialog"
 import { prepareImageMessage } from "@/data/messages/message-image"
 
 export type MessageComposerHandle = {
@@ -659,6 +660,10 @@ export const MessageComposer = forwardRef<
         onSelectMultiple={handleMultipleMentionSelect}
         open={mentionPickerOpen}
         server={server}
+      />
+      <MediaPermissionSettingsDialog
+        kind={upload.permissionSettingsRequired}
+        onCancel={upload.dismissPermissionSettings}
       />
       <MessageUploadDialog
         onCancel={handleUploadCancel}

@@ -14,7 +14,7 @@ export type MobileSessionCredential = Readonly<{ token: string; expiresAt: strin
 
 type LoginResponse = {
   mobile_session?: { token?: unknown; expires_at?: unknown }
-  user?: { email?: unknown; id?: unknown; name?: unknown }
+  user?: { avatar?: unknown; email?: unknown; id?: unknown; name?: unknown }
 }
 
 type EmailCodeRequestResponse = {
@@ -222,6 +222,11 @@ function normalizeLoginResponse(data: LoginResponse | undefined): {
   }
   return {
     credential: Object.freeze({ token, expiresAt }),
-    user: { email: user.email, id: user.id, name: user.name },
+    user: {
+      avatar: typeof user.avatar === "string" ? user.avatar : "",
+      email: user.email,
+      id: user.id,
+      name: user.name,
+    },
   }
 }

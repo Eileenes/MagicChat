@@ -8,6 +8,7 @@ import { prepareMessageNotifications } from "@/notifications/message-notificatio
 import {
   createActivePushGrant,
   pushGatewayCredentialIsInvalid,
+  pushGatewayInstallationIsDisabled,
   registerPushInstallation,
   renewPushGrant,
   revokePushGrant,
@@ -41,6 +42,8 @@ import {
   type PushProviderName,
   type PendingPushRevocation,
 } from "@/notifications/push-types"
+
+const PRIVATE_PUSH_REGISTRATION_VERSION = 2
 
 export function synchronizePushDelegation(
   identity: PushAccountIdentity,
@@ -180,7 +183,7 @@ async function synchronizeRemotePush(
     } catch (error) {
       if (!pushGatewayCredentialIsInvalid(error)) throw error
       if (delegation) {
-        await clearPushDelegation()
+        await abandonInvalidDelegation(delegation, installation)
         delegation = null
       }
       installation = await createInstallation(
@@ -222,22 +225,22 @@ async function synchronizeRemotePush(
       await savePushDelegation(delegation)
     } catch (error) {
       if (!pushGatewayCredentialIsInvalid(error)) throw error
-      await clearPushDelegation()
+      await abandonInvalidDelegation(delegation, installation)
       delegation = null
     }
   }
 
   if (!delegation) {
-    const grant = await createActivePushGrant(
-      installation.installationId,
-      installation.managementToken
-    )
+    const recovered = await createGrantWithInstallationRecovery(installation)
+    installation = recovered.installation
+    const grant = recovered.grant
     delegation = {
       expiresAt: grant.expiresAt,
       grantId: grant.grantId,
       installationId: installation.installationId,
       lastSyncedAt: null,
       platform: installation.platform,
+      privateRegistrationVersion: PRIVATE_PUSH_REGISTRATION_VERSION,
       sendToken: grant.sendToken,
       status: "pending_registration",
       accountId: identity.accountId,
@@ -248,6 +251,7 @@ async function synchronizeRemotePush(
 
   if (
     delegation.status !== "registered" ||
+    delegation.privateRegistrationVersion !== PRIVATE_PUSH_REGISTRATION_VERSION ||
     shouldRefreshPrivateRegistration(delegation.lastSyncedAt)
   ) {
     try {
@@ -261,6 +265,7 @@ async function synchronizeRemotePush(
     delegation = {
       ...delegation,
       lastSyncedAt: new Date().toISOString(),
+      privateRegistrationVersion: PRIVATE_PUSH_REGISTRATION_VERSION,
       status: "registered",
     }
     await savePushDelegation(delegation)
@@ -316,6 +321,7 @@ async function revokeStoredDelegation(
 ) {
   let gatewayError: unknown
   if (
+    !delegation.gatewayRevoked &&
     installation &&
     installation.installationId === delegation.installationId
   ) {
@@ -329,17 +335,102 @@ async function revokeStoredDelegation(
     }
   }
   if (!delegation.privateRevoked) {
-    try { await revokePrivatePushGrant(delegation.target, delegation.accountId, delegation.installationId) }
-    catch (error) { if (!isUnauthorizedError(error)) throw error }
+    try {
+      await revokePrivatePushGrant(
+        delegation.target,
+        delegation.accountId,
+        delegation.installationId,
+        delegation.grantId
+      )
+    } catch (error) {
+      if (!isUnauthorizedError(error)) throw error
+    }
   }
   if (gatewayError) throw gatewayError
-  await clearPushDelegation()
 }
 
-function toPendingRevocation(delegation: PushDelegation, privateRevoked = false): PendingPushRevocation {
-  return { accountId: delegation.accountId, grantId: delegation.grantId,
-    installationId: delegation.installationId, privateRevoked,
-    queuedAt: new Date().toISOString(), target: delegation.target }
+function toPendingRevocation(
+  delegation: PushDelegation,
+  privateRevoked = false,
+  gatewayRevoked = false
+): PendingPushRevocation {
+  return {
+    accountId: delegation.accountId,
+    gatewayRevoked,
+    grantId: delegation.grantId,
+    installationId: delegation.installationId,
+    privateRevoked,
+    queuedAt: new Date().toISOString(),
+    target: delegation.target,
+  }
+}
+
+async function abandonInvalidDelegation(
+  delegation: PushDelegation,
+  installation: PushInstallation | null
+) {
+  setActiveRemotePushTarget(null)
+  const pending = toPendingRevocation(delegation, false, true)
+  await enqueuePendingPushRevocation(pending)
+  await clearPushDelegation()
+  try {
+    await revokeStoredDelegation(pending, installation)
+    await replacePendingPushRevocations(
+      (await loadPendingPushRevocations()).filter(
+        (item) =>
+          !(item.accountId === pending.accountId && item.grantId === pending.grantId)
+      )
+    )
+  } catch {
+    // The durable queue retries private cleanup without blocking a replacement grant.
+  }
+}
+
+async function createGrantWithInstallationRecovery(
+  installation: PushInstallation
+) {
+  try {
+    return {
+      grant: await createActivePushGrant(
+        installation.installationId,
+        installation.managementToken
+      ),
+      installation,
+    }
+  } catch (error) {
+    if (pushGatewayInstallationIsDisabled(error)) {
+      await updatePushProviderToken(
+        installation.installationId,
+        installation.managementToken,
+        {
+          appVersion: installation.appVersion,
+          providerToken: installation.providerToken,
+        }
+      )
+      return {
+        grant: await createActivePushGrant(
+          installation.installationId,
+          installation.managementToken
+        ),
+        installation,
+      }
+    }
+    if (!pushGatewayCredentialIsInvalid(error)) throw error
+    const replacement = await createInstallation(
+      installation.providerToken,
+      installation.environment,
+      installation.platform,
+      installation.provider,
+      installation.appVersion
+    )
+    return {
+      grant: await createActivePushGrant(
+        replacement.installationId,
+        replacement.managementToken
+      ),
+      installation: replacement,
+    }
+  }
 }
 
 async function readRemotePushDevice(

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (payload: unknown) => void>(),
   invalidateUsers: vi.fn(),
   postMessage: vi.fn(),
+  refreshMe: vi.fn().mockResolvedValue(undefined),
   updateUserPresence: vi.fn(),
 }))
 
@@ -16,8 +17,9 @@ vi.mock("@/lib/client-data-context", () => ({
     invalidateUsers: mocks.invalidateUsers,
     refreshContacts: vi.fn().mockResolvedValue(undefined),
     refreshFriendRequests: vi.fn().mockResolvedValue(undefined),
+    refreshMe: mocks.refreshMe,
     updateUserPresence: mocks.updateUserPresence,
-    usersById: {},
+    usersById: { "user-2": { id: "user-2" } },
   }),
 }))
 
@@ -41,6 +43,7 @@ describe("ClientUserDirectoryRealtimeSync", () => {
     mocks.handlers.clear()
     mocks.invalidateUsers.mockReset()
     mocks.postMessage.mockReset()
+    mocks.refreshMe.mockReset().mockResolvedValue(undefined)
     mocks.updateUserPresence.mockReset()
     vi.stubGlobal(
       "BroadcastChannel",
@@ -77,6 +80,26 @@ describe("ClientUserDirectoryRealtimeSync", () => {
       updatedAt: "2026-07-09T01:00:01Z",
       userId: "user-2",
     })
+  })
+
+  it("refreshes cached profiles when the nickname policy changes", () => {
+    render(
+      <MemoryRouter>
+        <ClientUserDirectoryRealtimeSync />
+      </MemoryRouter>
+    )
+
+    act(() => {
+      mocks.handlers.get("user.nickname.policy.updated")?.({
+        updated_at: "2026-07-09T01:00:03Z",
+      })
+    })
+
+    expect(mocks.invalidateUsers).toHaveBeenCalledWith(
+      ["user-2"],
+      "2026-07-09T01:00:03Z"
+    )
+    expect(mocks.refreshMe).toHaveBeenCalled()
   })
 
   it("patches cached presence without resolving the full profile", () => {

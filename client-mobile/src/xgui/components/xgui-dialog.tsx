@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import {
   Modal,
   Pressable,
@@ -21,6 +22,7 @@ export type XGUIDialogAction = {
 
 export type XGUIDialogProps = {
   actions: XGUIDialogAction[]
+  children?: ReactNode
   description?: string
   dismissible?: boolean
   onOpenChange?: (open: boolean) => void
@@ -30,6 +32,7 @@ export type XGUIDialogProps = {
 
 export function XGUIDialog({
   actions,
+  children,
   description,
   dismissible = false,
   onOpenChange,
@@ -73,6 +76,7 @@ export function XGUIDialog({
                 {description}
               </Text>
             ) : null}
+            {children}
           </View>
           <View
             style={[styles.actions, { borderTopColor: colors.separator }]}

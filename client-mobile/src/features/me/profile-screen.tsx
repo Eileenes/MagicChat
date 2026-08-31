@@ -17,6 +17,11 @@ import { useAuthenticatedSession } from "@/providers/auth-provider"
 import { useClientSession } from "@/providers/client-data-provider"
 import { createMediaPickerRequest } from "@/features/media-picker/media-picker-registry"
 import {
+  type MediaPermissionKind,
+  requestPermissionForUserAction,
+} from "@/features/permissions/media-permission"
+import { MediaPermissionSettingsDialog } from "@/components/permissions/media-permission-settings-dialog"
+import {
   XGUIActionSheet,
   XGUILoadingIcon,
   XGUIList,
@@ -34,6 +39,9 @@ export function ProfileScreen() {
   const toast = useXGUIToast()
   const [savingAvatar, setSavingAvatar] = useState(false)
   const [avatarSheetOpen, setAvatarSheetOpen] = useState(false)
+  const [deactivationSheetOpen, setDeactivationSheetOpen] = useState(false)
+  const [permissionSettingsRequired, setPermissionSettingsRequired] =
+    useState<MediaPermissionKind | null>(null)
   const displayName =
     currentUser?.nickname.trim() ||
     currentUser?.name.trim() ||
@@ -72,8 +80,15 @@ export function ProfileScreen() {
     }
     try {
       if (source === "camera") {
-        const permission = await ImagePicker.requestCameraPermissionsAsync()
-        if (!permission.granted) throw new Error("请先允许相机权限")
+        const permission = await requestPermissionForUserAction(
+          ImagePicker.getCameraPermissionsAsync,
+          ImagePicker.requestCameraPermissionsAsync
+        )
+        if (permission === "denied") return
+        if (permission === "settings") {
+          setPermissionSettingsRequired("camera")
+          return
+        }
       }
       const options: ImagePicker.ImagePickerOptions = {
         allowsEditing: true,
@@ -165,9 +180,16 @@ export function ProfileScreen() {
               valuePlaceholder={!currentUser?.phone.trim()}
             />
           </XGUIList>
+          <XGUIList size="large">
+            <XGUIListItem centerContent destructive onPress={() => setDeactivationSheetOpen(true)} title="注销账号" />
+          </XGUIList>
         </YStack>
       </KeyboardAwareScreen>
 
+      <MediaPermissionSettingsDialog
+        kind={permissionSettingsRequired}
+        onCancel={() => setPermissionSettingsRequired(null)}
+      />
       <XGUIActionSheet
         actions={[
           {
@@ -186,6 +208,13 @@ export function ProfileScreen() {
         onOpenChange={setAvatarSheetOpen}
         open={avatarSheetOpen}
         title="修改头像"
+      />
+      <XGUIActionSheet
+        actions={[{ deferUntilClosed: true, destructive: true, label: "继续注销", onPress: () => router.push("/account-deactivation" as Href) }]}
+        description="注销后账号将无法登录，无法自行恢复；如需恢复请联系管理员。"
+        onOpenChange={setDeactivationSheetOpen}
+        open={deactivationSheetOpen}
+        title="注销账号"
       />
     </View>
   )

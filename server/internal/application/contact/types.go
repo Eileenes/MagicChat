@@ -169,6 +169,10 @@ type DirectorySettings interface {
 	ContactDirectoryMode(context.Context) (string, error)
 }
 
+type UserNicknamePolicy interface {
+	UserNicknameEditingAllowed(context.Context) (bool, error)
+}
+
 type ListForIdentityCommand struct {
 	Identity Identity
 	Keyword  string

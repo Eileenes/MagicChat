@@ -19,6 +19,7 @@ type AdminSettingsErrorEnvelope = {
 }
 
 type InfoSettingsResponse = {
+  allow_user_nickname_editing?: boolean
   app_name?: string
   contact_directory_mode?: string
   organization_name?: string
@@ -58,6 +59,7 @@ type ThirdPartyLoginProviderResponse = {
 export type ContactDirectoryMode = "friends" | "organization"
 
 export type InfoSettings = {
+  allowUserNicknameEditing: boolean
   appName: string
   contactDirectoryMode: ContactDirectoryMode
   organizationName: string
@@ -110,6 +112,7 @@ export type ThirdPartyLoginProvider = {
 }
 
 export type UpdateInfoSettingsInput = {
+  allowUserNicknameEditing: boolean
   appName: string
   contactDirectoryMode: ContactDirectoryMode
   organizationName: string
@@ -160,6 +163,7 @@ export async function updateInfoSettings(
 ) {
   const response = await fetcher("/api/admin/settings/info", {
     body: JSON.stringify({
+      allow_user_nickname_editing: input.allowUserNicknameEditing,
       app_name: input.appName.trim(),
       contact_directory_mode: input.contactDirectoryMode,
       organization_name: input.organizationName.trim(),
@@ -551,6 +555,7 @@ function normalizeInfoSettings(
   if (
     !settings?.app_name ||
     !settings.organization_name ||
+    typeof settings.allow_user_nickname_editing !== "boolean" ||
     (settings.contact_directory_mode !== "organization" &&
       settings.contact_directory_mode !== "friends")
   ) {
@@ -558,6 +563,7 @@ function normalizeInfoSettings(
   }
 
   return {
+    allowUserNicknameEditing: settings.allow_user_nickname_editing,
     appName: settings.app_name,
     contactDirectoryMode: settings.contact_directory_mode,
     organizationName: settings.organization_name,

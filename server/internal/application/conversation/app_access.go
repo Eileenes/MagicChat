@@ -20,6 +20,23 @@ func (s *Service) ListForActor(ctx context.Context, cmd AppListCommand) (AppList
 		Where("conversations.status = ?", store.ConversationStatusActive)
 	if keyword != "" {
 		likeKeyword := "%" + keyword + "%"
+		allowNicknameSearch := true
+		if s.nicknamePolicy != nil {
+			var err error
+			allowNicknameSearch, err = s.nicknamePolicy.UserNicknameEditingAllowed(ctx)
+			if err != nil {
+				return AppListResult{}, err
+			}
+		}
+		directUserConditions := `LOWER(direct_other.name) LIKE ? OR direct_other.name LIKE ?`
+		queryArgs := []any{
+			likeKeyword, likeKeyword, store.UserStatusActive, actorID, actorID, store.ConversationKindDirect,
+			likeKeyword, likeKeyword,
+		}
+		if allowNicknameSearch {
+			directUserConditions += ` OR LOWER(direct_other.nickname) LIKE ? OR direct_other.nickname LIKE ?`
+			queryArgs = append(queryArgs, likeKeyword, likeKeyword)
+		}
 		query = query.Where(
 			`LOWER(conversations.name) LIKE ? OR conversations.name LIKE ? OR EXISTS (
 				SELECT 1
@@ -32,15 +49,9 @@ func (s *Service) ListForActor(ctx context.Context, cmd AppListCommand) (AppList
 					)
 				WHERE dc.conversation_id = conversations.id
 					AND conversations.kind = ?
-					AND (
-						LOWER(direct_other.name) LIKE ?
-						OR direct_other.name LIKE ?
-						OR LOWER(direct_other.nickname) LIKE ?
-						OR direct_other.nickname LIKE ?
-					)
+					AND (`+directUserConditions+`)
 			)`,
-			likeKeyword, likeKeyword, store.UserStatusActive, actorID, actorID, store.ConversationKindDirect,
-			likeKeyword, likeKeyword, likeKeyword, likeKeyword,
+			queryArgs...,
 		)
 	}
 	var conversations []store.Conversation

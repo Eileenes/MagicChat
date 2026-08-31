@@ -7,6 +7,7 @@ export type AppInfo = {
 }
 
 export type AuthenticatedUser = {
+  avatar: string
   email: string
   id: string
   name: string

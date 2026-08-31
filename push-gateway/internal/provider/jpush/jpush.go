@@ -19,6 +19,7 @@ import (
 const (
 	providerName       = "jpush"
 	pushEndpoint       = "https://api.jpush.cn/v3/push"
+	cidEndpoint        = "https://api.jpush.cn/v3/push/cid"
 	maxResponseBytes   = 1 << 20
 	maxTokenBytes      = 255
 	maxAppKeyBytes     = 128
@@ -31,6 +32,7 @@ type Config struct {
 	MasterSecret string
 	HTTPClient   *http.Client
 	Endpoint     string
+	CIDEndpoint  string
 	Now          func() time.Time
 }
 
@@ -38,6 +40,7 @@ type Provider struct {
 	authorization string
 	client        *http.Client
 	endpoint      string
+	cidEndpoint   string
 	now           func() time.Time
 }
 
@@ -55,6 +58,10 @@ func New(config Config) (*Provider, error) {
 	if endpoint == "" {
 		endpoint = pushEndpoint
 	}
+	configuredCIDEndpoint := strings.TrimSpace(config.CIDEndpoint)
+	if configuredCIDEndpoint == "" {
+		configuredCIDEndpoint = cidEndpoint
+	}
 	now := config.Now
 	if now == nil {
 		now = time.Now
@@ -64,6 +71,7 @@ func New(config Config) (*Provider, error) {
 		authorization: "Basic " + credential,
 		client:        client,
 		endpoint:      endpoint,
+		cidEndpoint:   configuredCIDEndpoint,
 		now:           now,
 	}, nil
 }
@@ -95,6 +103,7 @@ func (p *Provider) Send(ctx context.Context, notification provider.Notification)
 		}
 	}
 	payload := pushRequest{
+		CID:      strings.TrimSpace(notification.RequestIdentifier),
 		Platform: "android",
 		Audience: pushAudience{RegistrationIDs: []string{strings.TrimSpace(notification.Token)}},
 		Notification: pushNotification{Android: androidNotification{
@@ -102,9 +111,10 @@ func (p *Provider) Send(ctx context.Context, notification provider.Notification)
 			Title:     notification.Title,
 			ChannelID: "messages",
 			Extras: map[string]string{
-				"event":       notification.Event,
-				"grant_id":    notification.GrantID,
-				"route_token": notification.RouteToken,
+				"event":        notification.Event,
+				"grant_id":     notification.GrantID,
+				"route_token":  notification.RouteToken,
+				"collapse_key": notification.CollapseKey,
 			},
 		}},
 		Options: pushOptions{TimeToLive: notificationTTL(notification.ExpiresAt, p.now().UTC())},
@@ -148,6 +158,7 @@ func (p *Provider) Send(ctx context.Context, notification provider.Notification)
 }
 
 type pushRequest struct {
+	CID          string           `json:"cid,omitempty"`
 	Platform     string           `json:"platform"`
 	Audience     pushAudience     `json:"audience"`
 	Notification pushNotification `json:"notification"`
@@ -177,11 +188,47 @@ type pushResponse struct {
 	MessageID any `json:"msg_id"`
 }
 
+type cidResponse struct {
+	CIDList []string `json:"cidlist"`
+}
+
 type errorResponse struct {
 	Error struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+func (p *Provider) NewRequestIdentifier(ctx context.Context) (string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.cidEndpoint+"?count=1&type=push", nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Authorization", p.authorization)
+	response, err := p.client.Do(request)
+	if err != nil {
+		return "", classifyTransportError(err)
+	}
+	defer response.Body.Close()
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
+	if readErr != nil {
+		return "", &provider.SendError{Kind: provider.ErrorTransient, Code: "cid_response_read_failed", Err: readErr}
+	}
+	if len(body) > maxResponseBytes {
+		return "", &provider.SendError{Kind: provider.ErrorPermanent, Code: "cid_response_too_large"}
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return "", classifyResponseError(response.StatusCode, body)
+	}
+	var result cidResponse
+	if err := json.Unmarshal(body, &result); err != nil || len(result.CIDList) != 1 {
+		return "", &provider.SendError{Kind: provider.ErrorTransient, Code: "invalid_cid_response", Err: err}
+	}
+	identifier := strings.TrimSpace(result.CIDList[0])
+	if identifier == "" || len(identifier) > 512 {
+		return "", &provider.SendError{Kind: provider.ErrorTransient, Code: "invalid_cid_response"}
+	}
+	return identifier, nil
 }
 
 func notificationTTL(expiresAt, now time.Time) int {
@@ -223,7 +270,7 @@ func classifyResponseError(status int, body []byte) error {
 	}
 	kind := provider.ErrorPermanent
 	switch {
-	case code == 1003 || code == 1011:
+	case code == 1011:
 		kind = provider.ErrorInvalidDevice
 	case code == 1000 || code == 1012 || code == 1030 || code == 2002:
 		kind = provider.ErrorTransient

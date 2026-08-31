@@ -25,11 +25,13 @@
   </div>
   <div class="container footer-grid">
     <div class="footer-intro-block">
-      <a class="brand brand-light" href={import.meta.env.BASE_URL} aria-label="即应官网首页">
-        <img src={`${import.meta.env.BASE_URL}favicon.webp`} width="34" height="34" alt="" />
-        <span>即应</span>
-      </a>
-      <p class="footer-slogan">AI 时代的团队协作入口</p>
+      <div class="footer-brand-line">
+        <a class="brand brand-light" href={import.meta.env.BASE_URL} aria-label="即应官网首页">
+          <img src={`${import.meta.env.BASE_URL}favicon.webp`} width="34" height="34" alt="" />
+          <span>即应</span>
+        </a>
+        <p class="footer-slogan">AI 时代的团队协作入口</p>
+      </div>
       <p class="footer-intro">即应是一款开源的即时通讯工具，连接消息、知识与任务，让 Agent 深度融入工作流，成为真正能参与协作、推动执行的数字员工。</p>
     </div>
     <div class="footer-column">
@@ -42,6 +44,7 @@
       <a href="https://www.chaitin.cn/" target="_blank" rel="noopener noreferrer">长亭科技</a>
       <a href="https://www.baizhi.cloud/" target="_blank" rel="noopener noreferrer">长亭百智云</a>
       <a href="https://agent-compose.ai/zh/" target="_blank" rel="noopener noreferrer">长亭 Agent 运行编排平台</a>
+      <a href={`${import.meta.env.BASE_URL}user-service/`}>用户服务</a>
     </div>
     <div class="footer-community">
       <h2>技术交流群</h2>

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   FlatList,
   Image,
-  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 import * as MediaLibrary from "expo-media-library/legacy"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
+import { MediaPermissionSettingsDialog } from "@/components/permissions/media-permission-settings-dialog"
 import { XGUIActionSheet } from "@/xgui/components/xgui-action-sheet"
 import { XGUIButton } from "@/xgui/components/xgui-button"
 import { useXGUIToast } from "@/xgui/components/xgui-toast"
@@ -52,36 +52,31 @@ export function XGUIMediaPicker({
   const [selected, setSelected] = useState<MediaLibrary.Asset[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [albumSheetOpen, setAlbumSheetOpen] = useState(false)
-  const [permissionSheetOpen, setPermissionSheetOpen] = useState(true)
-  const permissionRequestPendingRef = useRef(false)
+  const [permissionDialogOpen, setPermissionDialogOpen] = useState(false)
+  const permissionAttemptedRef = useRef(false)
 
-  const requestPhotoPermission = useCallback(async () => {
-    try {
-      const response = await requestPermission()
-      if (!response.granted) {
-        toast.show({ message: "未获得照片访问权限", modal: false, type: "error" })
-        onCancel()
-      }
-    } catch (cause) {
-      toast.show({
-        message: cause instanceof Error ? cause.message : "无法申请照片访问权限",
-        modal: false, type: "error",
+  useEffect(() => {
+    if (!permission || permission.granted || permissionAttemptedRef.current) return
+    permissionAttemptedRef.current = true
+
+    if (!permission.canAskAgain) {
+      const timer = setTimeout(() => setPermissionDialogOpen(true), 0)
+      return () => clearTimeout(timer)
+    }
+
+    void requestPermission()
+      .then((response) => {
+        if (!response.granted) onCancel()
       })
-      onCancel()
-    } finally {
-      permissionRequestPendingRef.current = false
-    }
-  }, [onCancel, requestPermission, toast])
-
-  const openPhotoPermissionSettings = useCallback(async () => {
-    toast.show({ message: "请在系统设置中允许访问照片", modal: false, type: "error" })
-    try {
-      await Linking.openSettings()
-    } finally {
-      permissionRequestPendingRef.current = false
-      onCancel()
-    }
-  }, [onCancel, toast])
+      .catch((cause: unknown) => {
+        toast.show({
+          message: cause instanceof Error ? cause.message : "无法申请照片访问权限",
+          modal: false,
+          type: "error",
+        })
+        onCancel()
+      })
+  }, [onCancel, permission, requestPermission, toast])
 
   const load = useCallback(async (reset: boolean, targetAlbum?: MediaLibrary.Album) => {
     if (loading || (!reset && !hasNextPage)) return
@@ -158,34 +153,12 @@ export function XGUIMediaPicker({
     })),
   ], [albums, load])
 
-  if (!permission?.granted) {
+  if (permissionDialogOpen || !permission?.granted) {
     return (
       <View style={styles.root}>
-        <XGUIActionSheet
-          actions={[
-            {
-              deferUntilClosed: true,
-              label: permission?.canAskAgain === false ? "打开系统设置" : "允许访问",
-              onBeforePress: () => {
-                permissionRequestPendingRef.current = true
-              },
-              onPress: () =>
-                void (permission?.canAskAgain === false
-                  ? openPhotoPermissionSettings()
-                  : requestPhotoPermission()),
-            },
-          ]}
-          description={
-            permission?.canAskAgain === false
-              ? "需要在系统设置中开启照片访问权限"
-              : "允许访问后才能浏览并选择图片"
-          }
-          onOpenChange={(open) => {
-            setPermissionSheetOpen(open)
-            if (!open && !permissionRequestPendingRef.current) onCancel()
-          }}
-          open={permissionSheetOpen}
-          title="访问照片"
+        <MediaPermissionSettingsDialog
+          kind={permissionDialogOpen ? "photos" : null}
+          onCancel={onCancel}
         />
       </View>
     )

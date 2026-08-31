@@ -162,6 +162,9 @@ definitions:
     type: object
   admin.infoSettingsResponse:
     properties:
+      allow_user_nickname_editing:
+        example: true
+        type: boolean
       app_name:
         example: 即应
         type: string
@@ -339,6 +342,9 @@ definitions:
     type: object
   admin.updateInfoSettingsRequest:
     properties:
+      allow_user_nickname_editing:
+        example: true
+        type: boolean
       app_name:
         example: 即应
         type: string
@@ -940,6 +946,18 @@ definitions:
     properties:
       file:
         $ref: '#/definitions/client.temporaryFileResponse'
+    type: object
+  client.deactivationCodeResponse:
+    properties:
+      expires_in_seconds:
+        type: integer
+      retry_after_seconds:
+        type: integer
+    type: object
+  client.deactivationRequest:
+    properties:
+      code:
+        type: string
     type: object
   client.deleteDocumentResponse:
     properties:
@@ -1818,6 +1836,11 @@ definitions:
         example: 5
         type: integer
     type: object
+  client.resolvePushRouteRequest:
+    properties:
+      route_token:
+        type: string
+    type: object
   client.resolveUsersRequest:
     properties:
       user_ids:
@@ -1843,6 +1866,11 @@ definitions:
         $ref: '#/definitions/client.messageResponse'
       system_message:
         $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.revokePushGrantRequest:
+    properties:
+      grant_id:
+        type: string
     type: object
   client.searchContactUsersRequest:
     properties:
@@ -2699,7 +2727,7 @@ paths:
       - 管理员设置
   /api/admin/settings/info:
     get:
-      description: 管理员读取 App 名称和组织名称。
+      description: 管理员读取 App 名称、组织名称、通讯录模式和用户昵称策略。
       produces:
       - application/json
       responses:
@@ -2726,7 +2754,7 @@ paths:
     put:
       consumes:
       - application/json
-      description: 管理员更新 App 名称和组织名称。
+      description: 管理员更新 App 名称、组织名称、通讯录模式和用户昵称策略。
       parameters:
       - description: 基础信息设置
         in: body
@@ -6499,6 +6527,74 @@ paths:
       summary: 上传当前用户头像
       tags:
       - 客户端认证
+  /api/client/me/deactivation:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 8 位数字验证码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.deactivationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.successEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: 注销当前账号
+      tags:
+      - 客户端认证
+  /api/client/me/deactivation/code:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.deactivationCodeResponse'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: 请求账号注销验证码
+      tags:
+      - 客户端认证
   /api/client/projects:
     get:
       description: 获取当前用户可访问的项目及个人项目，按更新时间倒序分页。
@@ -7522,14 +7618,22 @@ paths:
       summary: 注册当前手机的公共推送授权
       tags:
       - 客户端推送
-  /api/client/push/grants/{installation_id}:
-    delete:
+  /api/client/push/grants/{installation_id}/revoke:
+    post:
+      consumes:
+      - application/json
       parameters:
       - description: 安装实例 ID
         in: path
         name: installation_id
         required: true
         type: string
+      - description: 待撤销的公共授权
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.revokePushGrantRequest'
       responses:
         "204":
           description: No Content
@@ -7544,14 +7648,17 @@ paths:
       summary: 删除当前手机的本地推送授权
       tags:
       - 客户端推送
-  /api/client/push/routes/{route_token}:
-    get:
+  /api/client/push/routes/resolve:
+    post:
+      consumes:
+      - application/json
       parameters:
       - description: 匿名路由 Token
-        in: path
-        name: route_token
+        in: body
+        name: request
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/client.resolvePushRouteRequest'
       responses:
         "200":
           description: OK

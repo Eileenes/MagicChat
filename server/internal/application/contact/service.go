@@ -1,6 +1,7 @@
 package contact
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ type Dependencies struct {
 	UserPresence       UserPresencePort
 	AppPresence        AppPresencePort
 	Settings           DirectorySettings
+	NicknamePolicy     UserNicknamePolicy
 	Notifications      FriendNotifications
 	FriendshipMessages FriendshipMessageRecorder
 	Now                func() time.Time
@@ -26,6 +28,7 @@ type Service struct {
 	userPresence       UserPresencePort
 	appPresence        AppPresencePort
 	settings           DirectorySettings
+	nicknamePolicy     UserNicknamePolicy
 	notifications      FriendNotifications
 	friendshipMessages FriendshipMessageRecorder
 	now                func() time.Time
@@ -40,12 +43,20 @@ func NewService(deps Dependencies) *Service {
 		db: deps.DB, apps: deps.Apps,
 		userPresence: deps.UserPresence, appPresence: deps.AppPresence,
 		settings: deps.Settings, notifications: deps.Notifications,
+		nicknamePolicy:     deps.NicknamePolicy,
 		friendshipMessages: deps.FriendshipMessages, now: now,
 	}
 }
 
 func normalizeKeyword(keyword string) string {
 	return strings.ToLower(strings.TrimSpace(keyword))
+}
+
+func (s *Service) userNicknameEditingAllowed(ctx context.Context) (bool, error) {
+	if s.nicknamePolicy == nil {
+		return true, nil
+	}
+	return s.nicknamePolicy.UserNicknameEditingAllowed(ctx)
 }
 
 var _ ClientService = (*Service)(nil)

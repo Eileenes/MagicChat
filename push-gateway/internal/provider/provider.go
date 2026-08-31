@@ -13,17 +13,18 @@ type Registration struct {
 }
 
 type Notification struct {
-	ID          string
-	Token       string
-	Platform    string
-	Environment string
-	Title       string
-	Body        string
-	Event       string
-	GrantID     string
-	RouteToken  string
-	CollapseKey string
-	ExpiresAt   time.Time
+	ID                string
+	Token             string
+	Platform          string
+	Environment       string
+	Title             string
+	Body              string
+	Event             string
+	GrantID           string
+	RouteToken        string
+	CollapseKey       string
+	RequestIdentifier string
+	ExpiresAt         time.Time
 }
 
 type Receipt struct {
@@ -59,4 +60,11 @@ type Provider interface {
 	Name() string
 	ValidateRegistration(Registration) error
 	Send(context.Context, Notification) (Receipt, error)
+}
+
+// RequestIdentifierProvider obtains a provider-issued identifier that makes
+// retries of the same accepted request idempotent. The worker persists it
+// before the first send attempt.
+type RequestIdentifierProvider interface {
+	NewRequestIdentifier(context.Context) (string, error)
 }

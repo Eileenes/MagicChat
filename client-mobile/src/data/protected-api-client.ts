@@ -10,7 +10,7 @@ export function createProtectedApiClient(target: AuthenticatedTarget, fetcher?: 
   })
 }
 
-/** Explicit inactive-account boundary used only for cleanup such as Push revocation. */
+/** Explicit inactive-account boundary for narrowly scoped account-owned cleanup and metadata reads. */
 export function createStoredAccountApiClient(target: AuthenticatedTarget, accountId: string, fetcher?: ApiFetch) {
   if (createAccountId(target.url, target.userId) !== accountId) throw new Error("账号与 Push 目标不匹配")
   return createApiClient(target.url, fetcher, {

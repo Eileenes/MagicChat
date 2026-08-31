@@ -39,6 +39,8 @@ type ApiSuccessEnvelope<T> = { data?: T; success?: boolean }
 
 type ApiRequestOptions = Omit<RequestInit, "credentials"> & {
   errorMessage: string
+  /** 401 business codes which do not invalidate the authenticated Session. */
+  nonSessionUnauthorizedCodes?: readonly string[]
   timeoutMs?: number
 }
 
@@ -85,6 +87,7 @@ export function createApiClient(
     async request<T>(path: string, options: ApiRequestOptions) {
       const {
         errorMessage,
+        nonSessionUnauthorizedCodes = [],
         signal: parentSignal,
         timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
         ...requestInit
@@ -165,7 +168,7 @@ export function createApiClient(
 
         if (!response.ok || payload?.success === false) {
           const error = (payload as ApiErrorEnvelope | undefined)?.error
-          if (response.status === 401 && snapshot) {
+          if (response.status === 401 && snapshot && !nonSessionUnauthorizedCodes.includes(error?.code ?? "")) {
             const unauthorized = new AccountUnauthorizedError(
               snapshot.accountId,
               { code: error?.code }

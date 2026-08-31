@@ -2,6 +2,10 @@ import { useXGUIToast } from "@/xgui"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { PreparedClientMessageUpload } from "@/data/messages/message-upload"
+import {
+  MediaPermissionSettingsRequiredError,
+  type MediaPermissionKind,
+} from "@/features/permissions/media-permission"
 
 type UploadPicker = () => Promise<PreparedClientMessageUpload | null>
 
@@ -17,6 +21,8 @@ export function useComposerUpload({
   const selectedRef = useRef<PreparedClientMessageUpload | null>(null)
   const uploadInFlightRef = useRef(false)
   const [preparing, setPreparing] = useState(false)
+  const [permissionSettingsRequired, setPermissionSettingsRequired] =
+    useState<MediaPermissionKind | null>(null)
   const [selected, setSelected] =
     useState<PreparedClientMessageUpload | null>(null)
 
@@ -59,7 +65,11 @@ export function useComposerUpload({
         }
         return selection
       } catch (error: unknown) {
-        toast.show({ message: `${"无法选择文件"}：${error instanceof Error ? error.message : "请稍后重试"}`, modal: false, type: "text", duration: 1_000 })
+        if (error instanceof MediaPermissionSettingsRequiredError) {
+          setPermissionSettingsRequired(error.kind)
+        } else {
+          toast.show({ message: `${"无法选择文件"}：${error instanceof Error ? error.message : "请稍后重试"}`, modal: false, type: "text", duration: 1_000 })
+        }
         return null
       } finally {
         if (mountedRef.current) setPreparing(false)
@@ -89,5 +99,13 @@ export function useComposerUpload({
 
   const cancel = useCallback(() => replaceSelected(null), [replaceSelected])
 
-  return { cancel, confirm, pick, preparing, selected }
+  return {
+    cancel,
+    confirm,
+    dismissPermissionSettings: () => setPermissionSettingsRequired(null),
+    permissionSettingsRequired,
+    pick,
+    preparing,
+    selected,
+  }
 }
