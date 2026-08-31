@@ -1516,7 +1516,11 @@ describe("桌面设置服务器管理", () => {
     expect(screen.getByText("发现 1.2.0")).toBeInTheDocument()
     const macGuide = screen.getByText("手动更新 macOS").closest(".desktop-mac-update-guide")
     expect(macGuide).not.toBeNull()
-    expect(screen.getByText("将 MagicChat 拖入“应用程序”，选择替换")).toBeInTheDocument()
+    expect(screen.getByText("退出旧版 MagicChat，下载并打开 DMG")).toBeInTheDocument()
+    expect(
+      screen.getByText("将即应拖入“应用程序”，再将旧 MagicChat.app 移入废纸篓"),
+    ).toBeInTheDocument()
+    expect(screen.getByText("打开即应确认数据正常后，再清空废纸篓")).toBeInTheDocument()
     const manualDownload = screen.getByRole("button", { name: "下载 macOS 安装包" })
     const check = screen.getByRole("button", { name: "检查更新" })
     const automaticDownload = screen.getByRole("button", { name: "下载并自动更新" })

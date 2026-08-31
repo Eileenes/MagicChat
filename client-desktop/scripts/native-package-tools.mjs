@@ -52,9 +52,9 @@ export async function verifyWindowsPackage({
   const installerMachine = await readPeMachine(artifact)
   const installerVersion = await windowsProductVersion(artifact, executeCommand)
   assertWindowsProductVersion(installerVersion, [expectedVersion], "Windows 安装器文件版本")
-  const executable = path.join(applicationDirectory, "MagicChat.exe")
+  const executable = path.join(applicationDirectory, "即应.exe")
   const executableStat = await lstat(executable).catch(() => undefined)
-  if (!executableStat?.isFile()) throw new Error("Windows 打包应用缺少 MagicChat.exe")
+  if (!executableStat?.isFile()) throw new Error("Windows 打包应用缺少即应.exe")
   assertMachine(await readPeMachine(executable), arch, "PE")
   const applicationVersion = await windowsProductVersion(executable, executeCommand)
   assertWindowsProductVersion(
@@ -127,20 +127,8 @@ export async function verifyMacPackage({
   expectedVersion,
   executeCommand = execute,
   readAsarVersion = packagedVersion,
-  zip,
 }) {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "magicchat-mac-package-"))
-  const zipRoot = path.join(workspace, "zip")
-  await executeCommand("/usr/bin/ditto", ["-x", "-k", zip, zipRoot])
-  const zipApp = await findUnique(zipRoot, "MagicChat.app", "ZIP 内缺少 MagicChat.app", true)
-  await verifyMacApplication(
-    zipApp,
-    expectedVersion,
-    expectedTeamId,
-    executeCommand,
-    readAsarVersion,
-  )
-
   const mountpoint = path.join(workspace, "dmg")
   await mkdir(mountpoint)
   await executeCommand("/usr/bin/hdiutil", [
@@ -152,7 +140,7 @@ export async function verifyMacPackage({
     dmg,
   ])
   try {
-    const dmgApp = await findUnique(mountpoint, "MagicChat.app", "DMG 内缺少 MagicChat.app", true)
+    const dmgApp = await findUnique(mountpoint, "即应.app", "DMG 内缺少即应.app", true)
     await verifyMacApplication(
       dmgApp,
       expectedVersion,
@@ -200,7 +188,7 @@ async function verifyMacApplication(
   ])
   if (String(version.stdout).trim() !== expectedVersion)
     throw new Error("macOS 应用版本与 Tag 不一致")
-  const executable = path.join(application, "Contents", "MacOS", "MagicChat")
+  const executable = path.join(application, "Contents", "MacOS", "即应")
   const { stdout } = await executeCommand("/usr/bin/lipo", ["-archs", executable])
   const architectures = new Set(String(stdout).trim().split(/\s+/))
   if (!architectures.has("x86_64") || !architectures.has("arm64") || architectures.size !== 2) {

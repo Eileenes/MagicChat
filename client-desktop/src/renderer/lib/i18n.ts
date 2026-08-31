@@ -171,10 +171,10 @@ const zhCN = {
   "settings.update.downloadAuto": "下载并自动更新",
   "settings.update.mac.title": "手动更新 macOS",
   "settings.update.mac.desc":
-    "自动更新不可用时，可以下载安装包覆盖当前版本，聊天记录和本地设置会保留。",
-  "settings.update.mac.step1": "下载并打开 DMG 安装包",
-  "settings.update.mac.step2": "将 MagicChat 拖入“应用程序”，选择替换",
-  "settings.update.mac.step3": "重新打开 MagicChat，确认版本已更新",
+    "从旧版 MagicChat 迁移时只删除应用程序，不要删除本地数据目录，聊天记录和设置会继续保留。",
+  "settings.update.mac.step1": "退出旧版 MagicChat，下载并打开 DMG",
+  "settings.update.mac.step2": "将即应拖入“应用程序”，再将旧 MagicChat.app 移入废纸篓",
+  "settings.update.mac.step3": "打开即应确认数据正常后，再清空废纸篓",
   "settings.update.status.manual": "当前通道或安装来源仅支持手动升级",
   "settings.update.status.unsupported": "当前平台或架构不支持更新",
   "settings.update.status.installing": "正在准备重启安装",
@@ -216,7 +216,7 @@ const zhCN = {
   "nav.theme.emerald": "翠绿",
   "nav.website": "打开即应官网",
   "nav.website.short": "即应官网",
-  "nav.github": "在 GitHub 查看 MagicChat",
+  "nav.github": "在 GitHub 查看即应",
 
   "user.menu": "用户菜单",
   "user.profile": "个人资料",
@@ -382,7 +382,7 @@ const zhCN = {
   "composer.sendLabel": "发送",
 
   "screenshot.error.permissionDenied":
-    "截图需要屏幕录制权限，请前往“系统设置 > 隐私与安全性 > 屏幕录制”允许 MagicChat",
+    "截图需要屏幕录制权限，请前往“系统设置 > 隐私与安全性 > 屏幕录制”允许即应",
   "screenshot.error.captureTimeout": "屏幕截图响应超时，请重试",
   "screenshot.error.unsupportedMultiDisplay": "当前桌面环境暂不支持多显示器截图",
   "screenshot.error.captureUnavailable": "当前没有可用的屏幕截图来源",
@@ -1528,9 +1528,9 @@ const zhCN = {
 } as const
 
 const en: Record<TranslationKey, string> = {
-  "brand.name": "MagicChat",
+  "brand.name": "Jiying",
   "settings.title": "Settings",
-  "settings.description": "Manage MagicChat desktop settings",
+  "settings.description": "Manage Jiying desktop settings",
   "settings.close": "Close settings",
   "settings.loading": "Preparing settings",
   "settings.loadError": "Failed to load settings, please try again",
@@ -1552,7 +1552,7 @@ const en: Record<TranslationKey, string> = {
   "settings.nav.updates.desc": "Check and install versions",
   "settings.nav.workspace": "Workspace",
   "settings.nav.workspace.desc": "Server connection info",
-  "settings.nav.about": "About MagicChat",
+  "settings.nav.about": "About Jiying",
   "settings.nav.about.desc": "Version and diagnostics",
 
   "settings.general.title": "General",
@@ -1600,8 +1600,8 @@ const en: Record<TranslationKey, string> = {
   "settings.storage.disk.loading": "Reading disk usage",
   "settings.storage.disk.summary": "Disk used {used} · Disk available {available}",
   "settings.storage.disk.aria":
-    "MagicChat local data {app}, disk used {used}, disk available {available}",
-  "settings.storage.disk.app": "MagicChat local data",
+    "Jiying local data {app}, disk used {used}, disk available {available}",
+  "settings.storage.disk.app": "Jiying local data",
   "settings.storage.disk.other": "Other disk used",
   "settings.storage.disk.available": "Disk available",
   "settings.storage.cacheData.title": "Cached data",
@@ -1630,7 +1630,7 @@ const en: Record<TranslationKey, string> = {
   "settings.storage.status.loading": "Reading cache status",
   "settings.storage.other.title": "Other",
   "settings.storage.other.desc":
-    "MagicChat installation files, settings, sessions, and local application data. Clearing is not recommended",
+    "Jiying installation files, settings, sessions, and local application data. Clearing is not recommended",
   "settings.storage.diagnostics.title": "Realtime diagnostic logs",
   "settings.storage.diagnostics.clear": "Clear logs",
   "settings.storage.diagnostics.clear.aria": "Clear realtime diagnostic logs",
@@ -1680,7 +1680,7 @@ const en: Record<TranslationKey, string> = {
   "settings.workspace.error.rename": "Failed to save the workspace name, please try again",
   "settings.workspace.error.remove": "Failed to remove the server",
 
-  "settings.about.title": "About MagicChat",
+  "settings.about.title": "About Jiying",
   "settings.about.version.loading": "Reading version info",
   "settings.about.export": "Export sanitized diagnostics",
 
@@ -1705,10 +1705,11 @@ const en: Record<TranslationKey, string> = {
   "settings.update.downloadAuto": "Download and update automatically",
   "settings.update.mac.title": "Manual macOS update",
   "settings.update.mac.desc":
-    "If automatic updates are unavailable, download the installer to replace the current version. Chat history and local settings are preserved.",
-  "settings.update.mac.step1": "Download and open the DMG installer",
-  "settings.update.mac.step2": "Drag MagicChat into the Applications folder and choose Replace",
-  "settings.update.mac.step3": "Reopen MagicChat and confirm the version has been updated",
+    "When migrating from MagicChat, remove only the application. Do not delete local data; chat history and settings are preserved.",
+  "settings.update.mac.step1": "Quit MagicChat, then download and open the DMG",
+  "settings.update.mac.step2":
+    "Drag Jiying into Applications, then move the old MagicChat.app to Trash",
+  "settings.update.mac.step3": "Open Jiying and verify your data before emptying Trash",
   "settings.update.status.manual":
     "Manual updates are required for this channel or installation source",
   "settings.update.status.unsupported":
@@ -1753,9 +1754,9 @@ const en: Record<TranslationKey, string> = {
   "nav.theme.rose": "Rose",
   "nav.theme.amber": "Amber",
   "nav.theme.emerald": "Emerald",
-  "nav.website": "Open MagicChat website",
-  "nav.website.short": "MagicChat website",
-  "nav.github": "View MagicChat on GitHub",
+  "nav.website": "Open Jiying website",
+  "nav.website.short": "Jiying website",
+  "nav.github": "View Jiying on GitHub",
 
   "user.menu": "User menu",
   "user.profile": "Profile",
@@ -1839,7 +1840,7 @@ const en: Record<TranslationKey, string> = {
 
   "error.pageTitle": "Workspace failed to load",
   "error.connection": "Connection interrupted",
-  "error.desc": "MagicChat could not sync the workspace. Reload to return to your previous state.",
+  "error.desc": "Jiying could not sync the workspace. Reload to return to your previous state.",
   "error.failedToConnect": "Could not connect to the workspace",
   "error.workspace": "Workspace",
   "error.network.title": "Network",
@@ -1921,7 +1922,7 @@ const en: Record<TranslationKey, string> = {
   "composer.sendLabel": "Send",
 
   "screenshot.error.permissionDenied":
-    "Screen recording permission is required to take a screenshot. Allow MagicChat under System Settings > Privacy & Security > Screen Recording",
+    "Screen recording permission is required to take a screenshot. Allow Jiying under System Settings > Privacy & Security > Screen Recording",
   "screenshot.error.captureTimeout": "Screenshot timed out, please try again",
   "screenshot.error.unsupportedMultiDisplay":
     "Multi-display screenshots are not supported in this desktop environment",
@@ -1933,7 +1934,7 @@ const en: Record<TranslationKey, string> = {
   "screenshot.openSettingsFailed":
     "Could not open system settings, please allow screen recording permission manually",
 
-  "startup.starting": "Starting MagicChat",
+  "startup.starting": "Starting Jiying",
   "startup.connecting": "Connecting to workspace",
   "startup.unknownServer":
     "The link points to an unconfigured server ({serverId}). Add it and confirm the address first.",
@@ -1965,16 +1966,16 @@ const en: Record<TranslationKey, string> = {
   "setup.addServerError": "Could not add the server",
   "setup.brandSlogan": "From conversation to action, keep collaboration moving forward",
   "setup.brandDesc":
-    "MagicChat is a communication and collaboration platform for enterprise teams. Chat, AI apps, projects and tasks live in one context, so conversations can move forward.",
+    "Jiying is a communication and collaboration platform for enterprise teams. Chat, AI apps, projects and tasks live in one context, so conversations can move forward.",
   "setup.feature.chat.title": "Real-time chat",
   "setup.feature.chat.desc": "Messages, files and context stay in sync",
   "setup.feature.team.title": "Team collaboration",
   "setup.feature.team.desc": "Contacts, projects and conversations in one place",
   "setup.feature.security.title": "Secure connection",
   "setup.feature.security.desc": "Credentials are only sent to your confirmed workspace",
-  "setup.brand": "MagicChat · Enterprise collaboration space",
+  "setup.brand": "Jiying · Enterprise collaboration space",
   "setup.connectWorkspace": "Connect your team space",
-  "setup.getStarted": "Get started with MagicChat",
+  "setup.getStarted": "Get started with Jiying",
   "setup.getStarted.desc":
     "Enter the server address provided by your administrator to join your team workspace.",
   "setup.serverAddress": "Server address",
@@ -1985,7 +1986,7 @@ const en: Record<TranslationKey, string> = {
   "setup.verifying": "Verifying connection",
   "setup.connect": "Connect and continue",
   "setup.trustedOnly": "Only connect to server addresses you trust",
-  "setup.preparingWorkspace": "Preparing your MagicChat workspace",
+  "setup.preparingWorkspace": "Preparing your Jiying workspace",
 
   "topic.loadFailed": "Failed to load the topic",
   "topic.joined": "Joined the topic",

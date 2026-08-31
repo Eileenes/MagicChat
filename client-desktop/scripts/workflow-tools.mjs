@@ -44,6 +44,10 @@ export function validateDesktopReleaseWorkflow(workflow) {
   }
   const packageCommands = commands(jobs.package)
   assert(!JSON.stringify(jobs.package).includes("*.blockmap"), "package 不得上传外置 blockmap")
+  assert(!JSON.stringify(jobs.package).includes("latest.yml"), "package 不得上传旧版更新清单")
+  assert(!JSON.stringify(jobs.package).includes("latest-mac.yml"), "package 不得上传旧版更新清单")
+  assert(!JSON.stringify(jobs.package).includes("latest-linux"), "package 不得上传旧版更新清单")
+  assert(!JSON.stringify(jobs.package).includes("*.zip"), "macOS 不得生成或上传 ZIP")
   assert(
     !/pnpm (?:check|test|lint|typecheck|verify:boundaries)/.test(packageCommands),
     "package 重复执行平台无关门禁",
@@ -80,6 +84,11 @@ export function validateDesktopReleaseWorkflow(workflow) {
   )
   const releaseCommands = commands(jobs.release)
   assert(releaseCommands.includes("release:prepare-assets"), "release 必须使用单一资产准备入口")
+  assert(
+    releaseCommands.includes("github.run_attempt"),
+    "Desktop build 必须使用同一 workflow run 的执行轮次",
+  )
+  assert(!releaseCommands.includes("github.run_number"), "Desktop build 不得使用仓库累计运行编号")
   assert(releaseCommands.includes("release:prepare-official"), "release 必须生成官网手工上传目录")
   assert(releaseCommands.includes("release:publish"), "release 必须使用 Draft 发布事务")
   assert(!releaseCommands.includes("gh release delete"), "禁止按 Tag 删除 Release")
