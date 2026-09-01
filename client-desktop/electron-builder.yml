@@ -1,6 +1,6 @@
 appId: com.magicchat.desktop
-productName: MagicChat
-artifactName: "MagicChat-${version}-${os}-${arch}.${ext}"
+productName: 即应
+artifactName: "Jiying-${version}-${os}-${arch}.${ext}"
 asar: true
 electronDownload:
   mirrorOptions:
@@ -18,16 +18,11 @@ files:
   - out/**/*
   - package.json
 extraMetadata:
-  description: MagicChat Desktop Stable OTA 构建
+  description: 即应 Desktop Stable OTA 构建
 protocols:
-  - name: MagicChat
+  - name: 即应
     schemes:
       - magicchat
-publish:
-  provider: github
-  owner: ptonlix
-  repo: MagicChat
-  releaseType: release
 win:
   icon: public/logo.png
   target:
@@ -52,13 +47,11 @@ mac:
   target:
     - target: dmg
       arch: [universal]
-    - target: zip
-      arch: [universal]
   minimumSystemVersion: "13.0"
 linux:
   icon: public/logo.png
   category: Network;Chat
-  maintainer: "MagicChat <support@magicchat.com>"
+  maintainer: "即应 <support@magicchat.com>"
   target:
     - target: AppImage
       arch: [x64, arm64]
@@ -66,5 +59,5 @@ linux:
       arch: [x64, arm64]
   desktop:
     entry:
-      StartupWMClass: MagicChat
+      StartupWMClass: 即应
       MimeType: x-scheme-handler/magicchat;

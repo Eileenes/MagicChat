@@ -23,12 +23,13 @@ export class NotificationService {
   ) {}
 
   async show(input: NotificationInput): Promise<void> {
+    const settings = this.settings()
+    if (!settings.messageNotificationsEnabled) return
     if (input.muted || !Notification.isSupported()) return
     this.cleanup()
     const key = `${targetKey(input.target)}:${input.messageId}`
     if (this.shown.has(key)) return
     this.shown.set(key, Date.now())
-    const settings = this.settings()
     const privacy = resolveNotificationPrivacy(
       settings.notificationPrivacy,
       this.options.enterpriseMaximum ?? "preview",
@@ -52,8 +53,8 @@ export class NotificationService {
     }
     const title =
       privacy === "hidden"
-        ? "MagicChat 新消息"
-        : cleanNotificationText(input.workspace || input.sender || "MagicChat", 80)
+        ? "即应新消息"
+        : cleanNotificationText(input.workspace || input.sender || "即应", 80)
     const body =
       privacy === "hidden"
         ? "你收到了一条新消息"

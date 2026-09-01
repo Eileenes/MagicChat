@@ -2,10 +2,10 @@
   "name": "magicchat-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "MagicChat 三平台桌面客户端",
-  "homepage": "https://magicchat.com",
+  "description": "即应三平台桌面客户端",
+  "homepage": "https://jiying.chat",
   "author": {
-    "name": "MagicChat",
+    "name": "即应",
     "email": "support@magicchat.com"
   },
   "main": "out/main/index.js",
@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "release:prepare-assets": "node scripts/prepare-release-assets.mjs",
+    "release:prepare-official": "node scripts/prepare-official-release-assets.mjs",
     "release:publish": "node scripts/publish-release.mjs",
     "verify:build": "node scripts/verify-build.mjs",
     "verify:boundaries": "node scripts/verify-renderer-boundaries.mjs",
@@ -29,7 +30,7 @@
     "verify:workflow": "node scripts/verify-release-workflow.mjs",
     "pack": "pnpm build && electron-builder --dir --config electron-builder.yml",
     "pack:win": "pnpm build && electron-builder --win nsis --x64 --arm64 --config electron-builder.yml",
-    "pack:mac": "pnpm build && electron-builder --mac dmg zip --universal --config electron-builder.yml",
+    "pack:mac": "pnpm build && electron-builder --mac dmg --universal --config electron-builder.yml",
     "pack:linux": "pnpm build && electron-builder --linux AppImage deb --x64 --arm64 --config electron-builder.yml"
   },
   "dependencies": {
@@ -65,7 +66,6 @@
     "clsx": "2.1.1",
     "date-fns": "4.4.0",
     "electron-log": "5.4.3",
-    "electron-updater": "6.8.9",
     "https-proxy-agent": "7.0.6",
     "katex": "0.18.3",
     "konva": "10.3.0",

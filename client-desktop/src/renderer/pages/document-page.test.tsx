@@ -179,7 +179,9 @@ describe("DocumentPage", () => {
     mocks.refreshProjects.mockReset().mockResolvedValue(undefined)
     mocks.currentRefreshMe = mocks.refreshMe
     mocks.currentRefreshProjects = mocks.refreshProjects
-    mocks.updateCollaborativeDocumentTitle.mockReset().mockResolvedValue(document.title)
+    mocks.updateCollaborativeDocumentTitle
+      .mockReset()
+      .mockImplementation((_documentId: string, title: string) => Promise.resolve(title))
   })
 
   afterEach(() => {
@@ -274,9 +276,11 @@ describe("DocumentPage", () => {
     )
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
     const router = renderPage()
+    const user = userEvent.setup()
     await screen.findByRole("textbox", { name: "顶部文档标题" })
 
-    fireEvent.click(screen.getByRole("button", { name: "新建文档" }))
+    await user.click(screen.getByRole("button", { name: "新建文档" }))
+    await user.click(await screen.findByRole("menuitem", { name: "富文本文档" }))
     fireEvent.change(screen.getByRole("textbox", { name: "顶部文档标题" }), {
       target: { value: "请求期间的新修改" },
     })
